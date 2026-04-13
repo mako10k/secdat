@@ -19,6 +19,7 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
 python3 - "$bin_path" "$work_root" <<'PY'
 import os
+import json
 import shlex
 import subprocess
 import sys
@@ -35,6 +36,11 @@ child_dir = root_dir / "child"
 invalid_dir = work_root / "workspace" / "invalid"
 for path in [root_dir, child_dir, invalid_dir]:
     path.mkdir(parents=True, exist_ok=True)
+
+hostile_payload = "$(touch SHOULD_NOT_EXIST);`uname`;semi;quo'te\nline\tend"
+long_payload = "L" * 16384
+control_payload = "first\nsecond\tthird\rfourth"
+marker_path = work_root / "SHOULD_NOT_EXIST"
 
 
 def fail(message):
@@ -79,6 +85,9 @@ for args in [
     [bin_path, "--dir", str(child_dir), "set", "CHILD_TOKEN", "child secret's value"],
     [bin_path, "--dir", str(root_dir), "--store", "app", "set", "APP_TOKEN", "app-secret"],
     [bin_path, "--dir", str(invalid_dir), "set", "BAD-KEY", "bad-secret"],
+    [bin_path, "--dir", str(child_dir), "set", "HOSTILE_TOKEN", "--value", hostile_payload],
+    [bin_path, "--dir", str(child_dir), "set", "LONG_TOKEN", "--value", long_payload],
+    [bin_path, "--dir", str(child_dir), "set", "CONTROL_TOKEN", "--value", control_payload],
 ]:
     rc, stdout, stderr = run(args)
     if rc != 0 or stdout != "" or stderr != "":
@@ -93,19 +102,78 @@ if not any(candidate in stdout for candidate in quoted_paths):
     fail(f"quoted command path: missing one of {sorted(quoted_paths)!r} in [{stdout}]")
 assert_contains(stdout, "get 'CHILD_TOKEN' --shellescaped)\"", "child local key line")
 assert_contains(stdout, "get 'ROOT_TOKEN' --shellescaped)\"", "child inherited key line")
+assert_contains(stdout, "get 'HOSTILE_TOKEN' --shellescaped)\"", "hostile token line")
+assert_contains(stdout, "get 'LONG_TOKEN' --shellescaped)\"", "long token line")
+assert_contains(stdout, "get 'CONTROL_TOKEN' --shellescaped)\"", "control token line")
 if "child secret's value" in stdout or "root-secret" in stdout:
     fail(f"export leaked raw secrets: {stdout!r}")
+if hostile_payload in stdout or long_payload in stdout or control_payload in stdout:
+    fail("export leaked hostile, long, or control payloads")
 
-cmd = stdout + "python3 -c \"import os; print(os.environ['CHILD_TOKEN']); print(os.environ['ROOT_TOKEN'])\""
+cmd = (
+    stdout
+    + "python3 -c \"import json, os; print(json.dumps({"
+    + "'CHILD_TOKEN': os.environ['CHILD_TOKEN'], "
+    + "'ROOT_TOKEN': os.environ['ROOT_TOKEN'], "
+    + "'HOSTILE_TOKEN': os.environ['HOSTILE_TOKEN'], "
+    + "'LONG_TOKEN_LEN': len(os.environ['LONG_TOKEN']), "
+    + "'CONTROL_TOKEN': os.environ['CONTROL_TOKEN']"
+    + "}, sort_keys=True))\""
+)
 rc, eval_stdout, eval_stderr = run(["bash", "-lc", cmd])
-if rc != 0 or eval_stderr != "" or eval_stdout.splitlines() != ["child secret's value", "root-secret"]:
+if rc != 0 or eval_stderr != "":
     fail(f"evaluated export failed: rc={rc} stdout={eval_stdout!r} stderr={eval_stderr!r}")
+evaluated = json.loads(eval_stdout)
+if evaluated != {
+    "CHILD_TOKEN": "child secret's value",
+    "CONTROL_TOKEN": control_payload,
+    "HOSTILE_TOKEN": hostile_payload,
+    "LONG_TOKEN_LEN": len(long_payload),
+    "ROOT_TOKEN": "root-secret",
+}:
+    fail(f"evaluated export payload mismatch: {evaluated!r}")
+if marker_path.exists():
+    fail("hostile payload triggered unintended shell execution")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(child_dir), "get", "CHILD_TOKEN", "--shellescaped"])
 if rc != 0 or stderr != "":
     fail(f"shellescaped get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if stdout != "'child secret'\\''s value'":
     fail(f"unexpected shellescaped output: {stdout!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(child_dir), "get", "HOSTILE_TOKEN", "--shellescaped"])
+if rc != 0 or stderr != "":
+    fail(f"hostile shellescaped get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if stdout == hostile_payload or "$(`touch SHOULD_NOT_EXIST`" in stdout:
+    fail(f"hostile shellescaped output was not safely quoted: {stdout!r}")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--pattern",
+    "HOSTILE_*",
+    "python3",
+    "-c",
+    "import os,sys; sys.stdout.write(os.environ['HOSTILE_TOKEN'])",
+])
+if rc != 0 or stderr != "" or stdout != hostile_payload:
+    fail(f"hostile exec payload mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--pattern",
+    "CONTROL_*",
+    "python3",
+    "-c",
+    "import os,sys; sys.stdout.write(repr(os.environ['CONTROL_TOKEN']))",
+])
+if rc != 0 or stderr != "" or stdout != repr(control_payload):
+    fail(f"control exec payload mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(root_dir), "--store", "app", "export"])
 if rc != 0 or stderr != "":
