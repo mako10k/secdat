@@ -33,14 +33,20 @@ LANGUAGE=ja ./src/secdat --help
 
 ## First use
 
-Initialize `secdat` once with a shell-provided master secret, then switch to passphrase-based `unlock`:
+Initialize `secdat` once directly with a passphrase:
+
+```sh
+./src/secdat unlock
+```
+
+The first interactive `unlock` generates a fresh master key, stores a wrapped copy under `XDG_DATA_HOME`, and starts the session agent. After that, later `unlock` calls need only your passphrase.
+
+If you already have a master key to migrate or explicitly override with, `SECDAT_MASTER_KEY` still works:
 
 ```sh
 export SECDAT_MASTER_KEY='change-me'
 ./src/secdat unlock
 ```
-
-The first interactive `unlock` stores a wrapped copy of the current master key under `XDG_DATA_HOME` and starts the session agent. After that, you can unset `SECDAT_MASTER_KEY` and unlock later with only your passphrase.
 
 For a less guessable test value, you can generate one instead of typing it manually:
 
@@ -109,7 +115,9 @@ You can keep the active master key in a login-session-scoped session agent and a
 ./src/secdat lock
 ```
 
-If `SECDAT_MASTER_KEY` is already set, `unlock` reuses it and can bootstrap the persistent wrapped key. Otherwise it prompts on the terminal with echo disabled and unwraps the stored master key into the session agent.
+If `SECDAT_MASTER_KEY` is already set, `unlock` reuses it as an explicit override or migration source and can bootstrap the persistent wrapped key from it. Otherwise, the first terminal `unlock` generates and wraps a fresh master key, and later unlocks unwrap the stored master key into the session agent.
+
+There is no supported raw master-key retrieval command in the normal workflow. The intended design keeps the generated master key internal to the wrapped-key and session-agent path unless an explicit future recovery/export flow is added.
 
 Help is also available per command:
 

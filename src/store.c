@@ -32,6 +32,7 @@
 #define SECDAT_TAG_LEN 16
 #define SECDAT_HEADER_LEN 16
 #define SECDAT_BUNDLE_HEADER_LEN 20
+#define SECDAT_MASTER_KEY_RANDOM_BYTES 32
 #define SECDAT_SESSION_IDLE_SECONDS 1800
 #define SECDAT_WRAP_SALT_LEN 16
 #define SECDAT_WRAP_HEADER_LEN 20
@@ -1461,6 +1462,30 @@ static int secdat_wrap_key_from_passphrase(
     return 0;
 }
 
+static int secdat_generate_master_key(char *buffer, size_t size)
+{
+    static const char hex_digits[] = "0123456789abcdef";
+    unsigned char random_bytes[SECDAT_MASTER_KEY_RANDOM_BYTES];
+    size_t index;
+
+    if (size < SECDAT_MASTER_KEY_RANDOM_BYTES * 2 + 1) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    if (RAND_bytes(random_bytes, sizeof(random_bytes)) != 1) {
+        fprintf(stderr, _("failed to generate nonce\n"));
+        return 1;
+    }
+
+    for (index = 0; index < sizeof(random_bytes); index += 1) {
+        buffer[index * 2] = hex_digits[random_bytes[index] >> 4];
+        buffer[index * 2 + 1] = hex_digits[random_bytes[index] & 0x0f];
+    }
+    buffer[sizeof(random_bytes) * 2] = '\0';
+    secdat_secure_clear(random_bytes, sizeof(random_bytes));
+    return 0;
+}
+
 static int secdat_write_wrapped_master_key(const char *passphrase, const char *master_key)
 {
     char state_dir[PATH_MAX];
@@ -2157,6 +2182,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     int wrapped_present = secdat_wrapped_master_key_exists();
     int initialized = 0;
     char passphrase[512];
+    const char *session_master_key = env_master_key;
     char secret[512];
 
     if (cli->argc != 0 || cli->dir != NULL || cli->store != NULL) {
@@ -2165,30 +2191,50 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (env_master_key != NULL && env_master_key[0] != '\0') {
-        if (!wrapped_present && isatty(STDIN_FILENO)) {
-            if (secdat_read_secret_confirmation(passphrase, sizeof(passphrase)) != 0) {
-                return 1;
-            }
-            if (secdat_write_wrapped_master_key(passphrase, env_master_key) != 0) {
+    if (!wrapped_present) {
+        if (secdat_read_secret_confirmation(passphrase, sizeof(passphrase)) != 0) {
+            return 1;
+        }
+        if (session_master_key == NULL || session_master_key[0] == '\0') {
+            if (secdat_generate_master_key(secret, sizeof(secret)) != 0) {
                 secdat_secure_clear(passphrase, strlen(passphrase));
                 return 1;
             }
-            initialized = 1;
-            secdat_secure_clear(passphrase, strlen(passphrase));
+            session_master_key = secret;
         }
-
-        if (secdat_session_agent_set(env_master_key) != 0) {
+        if (secdat_write_wrapped_master_key(passphrase, session_master_key) != 0) {
+            secdat_secure_clear(passphrase, strlen(passphrase));
+            if (session_master_key == secret) {
+                secdat_secure_clear(secret, strlen(secret));
+            }
             return 1;
         }
-        puts(initialized
-                 ? _("persistent master key initialized; session unlocked from environment")
-                 : _("session unlocked from environment"));
+        initialized = 1;
+        secdat_secure_clear(passphrase, strlen(passphrase));
+    }
+
+    if (session_master_key != NULL && session_master_key[0] != '\0') {
+        if (secdat_session_agent_set(session_master_key) != 0) {
+            if (session_master_key == secret) {
+                secdat_secure_clear(secret, strlen(secret));
+            }
+            return 1;
+        }
+        if (session_master_key == secret) {
+            secdat_secure_clear(secret, strlen(secret));
+        }
+        if (initialized) {
+            puts(env_master_key != NULL && env_master_key[0] != '\0'
+                     ? _("persistent master key initialized; session unlocked from environment")
+                     : _("persistent master key initialized; session unlocked"));
+        } else {
+            puts(_("session unlocked from environment"));
+        }
         return 0;
     }
 
     if (!wrapped_present) {
-        fprintf(stderr, _("no persistent master key is initialized; export SECDAT_MASTER_KEY and run secdat unlock once\n"));
+        fprintf(stderr, _("no persistent master key is initialized; run secdat unlock once on a terminal to create one\n"));
         return 1;
     }
 

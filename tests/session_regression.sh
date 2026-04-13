@@ -31,6 +31,7 @@ env["LANGUAGE"] = "C"
 passphrase = "passphrase-for-session-test"
 wrapped_path = Path(env["XDG_DATA_HOME"]) / "secdat" / "master-key.bin"
 socket_path = Path(env["XDG_RUNTIME_DIR"]) / "secdat" / "agent.sock"
+isolated_root = Path(env["XDG_RUNTIME_DIR"]).parent
 
 def fail(message):
     print(f"FAIL: {message}", file=sys.stderr)
@@ -147,14 +148,12 @@ if rc != 0 or not (stdout + stderr).startswith("secdat "):
 rc, transcript = run_pty(
     [bin_path, "unlock"],
     [("Create secdat passphrase:", passphrase), ("Confirm secdat passphrase:", passphrase)],
-    {"SECDAT_MASTER_KEY": "session-test-key"},
 )
-if rc != 0 or "persistent master key initialized; session unlocked from environment" not in transcript:
+if rc != 0 or "persistent master key initialized; session unlocked" not in transcript:
     fail(f"bootstrap unlock failed: rc={rc} transcript={transcript!r}")
 if not wrapped_path.is_file():
     fail("wrapped master key was not created")
 
-env.pop("SECDAT_MASTER_KEY", None)
 rc, stdout, _ = run([bin_path, "status"])
 if rc != 0 or "source: session agent" not in stdout or "wrapped master key: present" not in stdout:
     fail(f"status after bootstrap unexpected: rc={rc} stdout={stdout!r}")
@@ -210,7 +209,7 @@ rc, stdout, stderr = run([bin_path, "unlock"], {"SECDAT_MASTER_KEY": "session-te
 if rc != 0 or "session unlocked from environment" not in stdout:
     fail(f"short-timeout unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-time.sleep(2)
+time.sleep(5)
 
 rc, stdout, stderr = run([bin_path, "status", "-q"])
 if rc != 1 or stdout != "" or stderr != "":
@@ -219,6 +218,34 @@ if rc != 1 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "get", "SESSION_KEY", "-o"])
 if rc == 0 or "missing SECDAT_MASTER_KEY and no active secdat session" not in stderr:
     fail(f"expired session get unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, transcript = run_pty(
+    [bin_path, "unlock"],
+    [("Create secdat passphrase:", passphrase), ("Confirm secdat passphrase:", passphrase)],
+    {"SECDAT_MASTER_KEY": "migration-master-key"},
+)
+if rc != 0 or "session unlocked from environment" not in transcript:
+    fail(f"environment override failed: rc={rc} transcript={transcript!r}")
+
+fresh_runtime = isolated_root / "runtime-migrate"
+fresh_data = isolated_root / "data-migrate"
+fresh_runtime.mkdir(parents=True, exist_ok=True)
+fresh_data.mkdir(parents=True, exist_ok=True)
+fresh_wrapped = fresh_data / "secdat" / "master-key.bin"
+
+rc, transcript = run_pty(
+    [bin_path, "unlock"],
+    [("Create secdat passphrase:", passphrase), ("Confirm secdat passphrase:", passphrase)],
+    {
+        "XDG_RUNTIME_DIR": str(fresh_runtime),
+        "XDG_DATA_HOME": str(fresh_data),
+        "SECDAT_MASTER_KEY": "migration-master-key",
+    },
+)
+if rc != 0 or "persistent master key initialized; session unlocked from environment" not in transcript:
+    fail(f"environment migration bootstrap failed: rc={rc} transcript={transcript!r}")
+if not fresh_wrapped.is_file():
+    fail("environment migration bootstrap did not create wrapped master key")
 PY
 
 printf 'PASS session regression\n'

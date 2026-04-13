@@ -176,11 +176,12 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat status --quiet` suppresses output and reports state only through the exit code
 - `status` without `--quiet` reports the active source and whether a wrapped persistent master key is present
 - `secdat unlock` creates or refreshes a session-scoped cache of the current master key
-- if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it without prompting
-- if no wrapped persistent master key exists and `SECDAT_MASTER_KEY` is set on a terminal, `unlock` prompts twice and stores a wrapped copy of that master key
+- if no wrapped persistent master key exists, `unlock` prompts twice on a terminal, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
+- if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
 - otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent
 - `secdat lock` removes the active agent-backed session state
 - the current implementation refreshes the idle timeout when the agent serves the cached key
+- no raw master-key retrieval path is required for normal operation; the generated key remains internal unless a separate future recovery/export flow is introduced
 
 #### FR-7b Secret Bundle Save/Load
 
