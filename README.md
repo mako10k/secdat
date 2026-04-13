@@ -7,8 +7,11 @@ Current status:
 - requirements and design are documented in `docs/secdat-spec.md`
 - autotools support is available through `configure.ac` and `Makefile.am`
 - gettext-based localization is wired in for user-facing CLI messages
-- `ls`, `get`, `set`, and `rm` are implemented with encrypted local storage
-- the current runtime uses the fallback `default` domain only
+- `ls`, `get`, `set`, `rm`, `mv`, and `cp` are implemented with encrypted local storage
+- `domain create`, `domain delete`, and `domain ls` are implemented
+- `store create`, `store delete`, and `store ls` are implemented
+- normal store commands resolve the current domain from `--dir` or the working directory and fall back through parent domains
+- stores are domain-local namespaces, not global objects shared across all domains
 - encryption currently requires `SECDAT_MASTER_KEY` to be set in the environment
 
 ## Bootstrap
@@ -48,6 +51,16 @@ Then you can store and read values:
 ./src/secdat get HOGE --stdout
 ```
 
+You can also create a domain for a project directory and manage per-domain stores:
+
+```sh
+mkdir -p ~/example/project
+./src/secdat --dir ~/example/project domain create
+./src/secdat --dir ~/example/project store create app
+./src/secdat --dir ~/example/project --store app set API_TOKEN --value token-123
+./src/secdat --dir ~/example/project store ls
+```
+
 To avoid writing secrets to your shell history, prefer stdin for sensitive values:
 
 ```sh
@@ -69,6 +82,6 @@ Treat this key like any other secret. Anyone who can read your shell startup fil
 ## Next implementation steps
 
 1. Implement domain resolution and registry handling.
-2. Implement inherited-domain lookup and tombstone behavior.
-3. Implement `mv`, `cp`, `exec`, and `domain` subcommands.
+2. Implement `exec`.
+3. Harden edge cases, translations, and test coverage around domain/store lifecycle commands and key moves/copies.
 

@@ -36,6 +36,10 @@ secdat [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY
 
 secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]
 
+secdat [--dir DIR] store create STORE
+secdat [--dir DIR] store delete STORE
+secdat [--dir DIR] store ls [--pattern GLOBPATTERN]
+
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
 secdat [--dir DIR] domain ls [--pattern GLOBPATTERN]
@@ -61,6 +65,7 @@ To make the requested behavior implementable, the following are treated as norma
 - values are modeled as arbitrary byte strings internally
 - domains are resolved from a directory context
 - `--dir` is a global option that overrides the directory context used for domain resolution
+- stores are domain-local namespaces, not global objects shared across domains
 - reads fall back from the current domain to parent domains
 - writes and deletes apply to the current domain only
 - hiding a value inherited from a parent domain is represented by a tombstone
@@ -87,6 +92,7 @@ To make the requested behavior implementable, the following are treated as norma
 ### 3.3 Terms
 
 - Store: a logical grouping of secrets selected with `--store`
+- Store metadata and entries live inside exactly one resolved domain
 - Domain: a configuration boundary associated with a directory path
 - Key: the logical name of a stored value
 - Value: secret plaintext
@@ -149,8 +155,19 @@ To make the requested behavior implementable, the following are treated as norma
 
 - `secdat --store STORE ...` selects the target store within the resolved domain
 - if `--store` is omitted, the default store is used
+- stores are domain-local, so the same store name may exist independently in multiple domains
 
-#### FR-9 Domain Management
+#### FR-9 Store Management
+
+- `secdat [--dir DIR] store create STORE` creates an empty store in the resolved current domain
+- creating a store that already exists in the current domain is an error
+- `secdat [--dir DIR] store delete STORE` deletes a store from the resolved current domain
+- deleting a store fails if the store still contains local entries or tombstones
+- `secdat [--dir DIR] store ls` lists store names defined in the resolved current domain
+- `secdat [--dir DIR] store ls --pattern GLOBPATTERN` filters listed store names using a glob pattern
+- `store` management never creates, deletes, or lists stores in parent or child domains
+
+#### FR-10 Domain Management
 
 - `secdat [--dir DIR] domain create` creates a domain rooted at the target directory
 - if `--dir` is omitted, the target directory is the current working directory
@@ -162,18 +179,19 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat --dir DIR domain ls` restricts the listing scope to ancestor domains of `DIR`, the domain rooted at `DIR` itself, and descendant domains under `DIR`
 - sibling directories of `DIR` and their descendants are excluded from that restricted listing
 
-#### FR-10 Domain Resolution
+#### FR-11 Domain Resolution
 
 - all commands accept `--dir` as a global option
-- for normal store commands, the current domain is resolved from the nearest ancestor domain of the base directory
+- for normal store commands and `store` management commands, the current domain is resolved from the nearest ancestor domain of the base directory
 - the base directory is `DIR` when `--dir DIR` is provided, otherwise it is the current working directory
 - if no ancestor domain exists, the per-user default domain is used
 - `get`, `ls`, and `exec` resolve values from the current domain and then fall back through parent domains
 - `set`, `mv`, `cp`, and `rm` apply changes to the current domain only
+- `store create`, `store delete`, and `store ls` apply to the current domain only
 - for `domain create` and `domain delete`, `--dir` identifies the target directory
 - for `domain ls`, `--dir` identifies the directory that constrains the listing scope
 
-#### FR-11 Inheritance and Tombstones
+#### FR-12 Inheritance and Tombstones
 
 - if a key does not exist in the current domain, the parent domain chain may satisfy the lookup
 - setting a key in the current domain shadows the same key inherited from a parent

@@ -75,6 +75,26 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
     } else if (strcmp(argv[index], "exec") == 0) {
         cli->command = SECDAT_COMMAND_EXEC;
         index += 1;
+    } else if (strcmp(argv[index], "store") == 0) {
+        index += 1;
+        if (index >= argc) {
+            fprintf(stderr, _("missing store subcommand\n"));
+            return 2;
+        }
+
+        if (strcmp(argv[index], "create") == 0) {
+            cli->command = SECDAT_COMMAND_STORE_CREATE;
+            index += 1;
+        } else if (strcmp(argv[index], "delete") == 0) {
+            cli->command = SECDAT_COMMAND_STORE_DELETE;
+            index += 1;
+        } else if (strcmp(argv[index], "ls") == 0) {
+            cli->command = SECDAT_COMMAND_STORE_LS;
+            index += 1;
+        } else {
+            fprintf(stderr, _("unknown store subcommand: %s\n"), argv[index]);
+            return 2;
+        }
     } else if (strcmp(argv[index], "domain") == 0) {
         index += 1;
         if (index >= argc) {
@@ -115,6 +135,9 @@ void secdat_cli_print_usage(const char *program_name)
     printf(_("  %s [--dir DIR] [--store STORE] mv SRC_KEY DST_KEY\n"), program_name);
     printf(_("  %s [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY\n"), program_name);
     printf(_("  %s [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]\n"), program_name);
+    printf(_("  %s [--dir DIR] store create STORE\n"), program_name);
+    printf(_("  %s [--dir DIR] store delete STORE\n"), program_name);
+    printf(_("  %s [--dir DIR] store ls [--pattern GLOBPATTERN]\n"), program_name);
     printf(_("  %s [--dir DIR] domain create\n"), program_name);
     printf(_("  %s [--dir DIR] domain delete\n"), program_name);
     printf(_("  %s [--dir DIR] domain ls [--pattern GLOBPATTERN]\n"), program_name);
@@ -139,6 +162,12 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "cp";
     case SECDAT_COMMAND_EXEC:
         return "exec";
+    case SECDAT_COMMAND_STORE_CREATE:
+        return "store create";
+    case SECDAT_COMMAND_STORE_DELETE:
+        return "store delete";
+    case SECDAT_COMMAND_STORE_LS:
+        return "store ls";
     case SECDAT_COMMAND_DOMAIN_CREATE:
         return "domain create";
     case SECDAT_COMMAND_DOMAIN_DELETE:

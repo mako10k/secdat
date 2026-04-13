@@ -9,6 +9,8 @@ secdat_SOURCES = \
 	main.c \
 	cli.c \
 	cli.h \
+	domain.c \
+	domain.h \
 	i18n.h \
 	store.c \
 	store.h
