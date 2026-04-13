@@ -19,9 +19,9 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 python3 - "$bin_path" <<'PY'
 import os
 import pty
-import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 bin_path = sys.argv[1]
@@ -30,6 +30,7 @@ env["LC_ALL"] = "C"
 env["LANGUAGE"] = "C"
 passphrase = "passphrase-for-session-test"
 wrapped_path = Path(env["XDG_DATA_HOME"]) / "secdat" / "master-key.bin"
+socket_path = Path(env["XDG_RUNTIME_DIR"]) / "secdat" / "agent.sock"
 
 def fail(message):
     print(f"FAIL: {message}", file=sys.stderr)
@@ -162,9 +163,23 @@ rc, stdout, _ = run([bin_path, "status", "-q"])
 if rc != 0 or stdout != "":
     fail(f"status -q after unlock unexpected: rc={rc} stdout={stdout!r}")
 
-rc, stdout, _ = run([bin_path, "lock"])
+rc, stdout, stderr = run([bin_path, "lock"])
 if rc != 0 or stdout.strip() != "session locked":
-    fail(f"lock failed: rc={rc} stdout={stdout!r}")
+    fail(f"lock before reconnect check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+socket_path.parent.mkdir(parents=True, exist_ok=True)
+socket_path.write_text("stale")
+rc, stdout, stderr = run([bin_path, "unlock"], {"SECDAT_MASTER_KEY": "session-test-key"})
+if rc != 0 or stdout.strip() != "session unlocked from environment":
+    fail(f"stale socket unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "status"])
+if rc != 0 or "source: session agent" not in stdout or stderr != "":
+    fail(f"status after reconnect unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "lock"])
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"second lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, _ = run([bin_path, "status", "-q"])
 if rc != 1 or stdout != "":
@@ -186,6 +201,24 @@ if rc == 0 or "key not found: MISSING_KEY" not in output or "Hint: check secdat 
 rc, stdout, stderr = run([bin_path, "get", "SESSION_KEY", "-o"])
 if rc != 0 or stdout != "value" or stderr != "":
     fail(f"get after passphrase unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "lock"])
+if rc != 0 or stdout.strip() != "session locked" or stderr != "":
+    fail(f"lock before expiry check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "unlock"], {"SECDAT_MASTER_KEY": "session-test-key", "SECDAT_SESSION_IDLE_SECONDS": "1"})
+if rc != 0 or "session unlocked from environment" not in stdout:
+    fail(f"short-timeout unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+time.sleep(2)
+
+rc, stdout, stderr = run([bin_path, "status", "-q"])
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"status -q after expiry unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "get", "SESSION_KEY", "-o"])
+if rc == 0 or "missing SECDAT_MASTER_KEY and no active secdat session" not in stderr:
+    fail(f"expired session get unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 PY
 
 printf 'PASS session regression\n'

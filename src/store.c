@@ -36,6 +36,7 @@
 #define SECDAT_WRAP_HEADER_LEN 20
 #define SECDAT_WRAP_PBKDF2_ITERATIONS 200000
 #define SECDAT_AGENT_CONNECT_RETRIES 50
+#define SECDAT_SESSION_IDLE_ENV "SECDAT_SESSION_IDLE_SECONDS"
 
 static const unsigned char secdat_entry_magic[8] = {'S', 'E', 'C', 'D', 'A', 'T', '1', '\0'};
 static const unsigned char secdat_wrapped_key_magic[8] = {'S', 'E', 'C', 'D', 'W', 'R', 'P', '\0'};
@@ -868,6 +869,18 @@ static int secdat_parse_i64(const char *value, time_t *result)
     return 0;
 }
 
+static time_t secdat_session_idle_seconds(void)
+{
+    const char *value = getenv(SECDAT_SESSION_IDLE_ENV);
+    time_t parsed = 0;
+
+    if (value != NULL && value[0] != '\0' && secdat_parse_i64(value, &parsed) == 0 && parsed > 0) {
+        return parsed;
+    }
+
+    return SECDAT_SESSION_IDLE_SECONDS;
+}
+
 static void secdat_trim_newline(char *buffer)
 {
     size_t length = strlen(buffer);
@@ -939,7 +952,7 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         if (record->master_key[0] == '\0') {
             fprintf(stream, "ERR locked\n");
         } else {
-            record->expires_at = time(NULL) + SECDAT_SESSION_IDLE_SECONDS;
+            record->expires_at = time(NULL) + secdat_session_idle_seconds();
             fprintf(stream, "OK %lld\n%s\n", (long long)record->expires_at, record->master_key);
         }
         fflush(stream);
@@ -957,7 +970,7 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
             fclose(stream);
             return 1;
         }
-        record->expires_at = time(NULL) + SECDAT_SESSION_IDLE_SECONDS;
+        record->expires_at = time(NULL) + secdat_session_idle_seconds();
         fprintf(stream, "OK %lld\n", (long long)record->expires_at);
         fflush(stream);
         fclose(stream);
