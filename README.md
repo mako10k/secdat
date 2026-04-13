@@ -7,7 +7,7 @@ Current status:
 - requirements and design are documented in `docs/secdat-spec.md`
 - autotools support is available through `configure.ac` and `Makefile.am`
 - gettext-based localization is wired in for user-facing CLI messages
-- `ls`, `get`, `set`, `rm`, `mv`, and `cp` are implemented with encrypted local storage
+- `ls`, `get`, `set`, `rm`, `mv`, `cp`, and `exec` are implemented with encrypted local storage
 - `domain create`, `domain delete`, and `domain ls` are implemented
 - `store create`, `store delete`, and `store ls` are implemented
 - normal store commands resolve the current domain from `--dir` or the working directory and fall back through parent domains
@@ -82,6 +82,6 @@ Treat this key like any other secret. Anyone who can read your shell startup fil
 ## Next implementation steps
 
 1. Implement domain resolution and registry handling.
-2. Implement `exec`.
-3. Harden edge cases, translations, and test coverage around domain/store lifecycle commands and key moves/copies.
+2. Harden edge cases and translations around `exec`, domain/store lifecycle commands, and key moves/copies.
+3. Add broader behavioral test coverage for inheritance, tombstones, and command execution.
 

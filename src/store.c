@@ -1549,6 +1549,120 @@ static int secdat_store_command_delete(const struct secdat_cli *cli)
     return 0;
 }
 
+static int secdat_plaintext_to_env_value(
+    const char *key,
+    const unsigned char *plaintext,
+    size_t plaintext_length,
+    char **value_out
+)
+{
+    char *value;
+
+    if (memchr(plaintext, '\0', plaintext_length) != NULL) {
+        fprintf(stderr, _("key value contains NUL byte and cannot be exported: %s\n"), key);
+        return 1;
+    }
+
+    value = malloc(plaintext_length + 1);
+    if (value == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+
+    if (plaintext_length > 0) {
+        memcpy(value, plaintext, plaintext_length);
+    }
+    value[plaintext_length] = '\0';
+    *value_out = value;
+    return 0;
+}
+
+static int secdat_command_exec(const struct secdat_cli *cli)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_key_list visible_keys = {0};
+    const char *pattern = NULL;
+    char **command_argv;
+    size_t command_index;
+    size_t key_index;
+    int status;
+
+    if (cli->argc >= 2 && strcmp(cli->argv[0], "--pattern") == 0) {
+        pattern = cli->argv[1];
+        command_index = 2;
+    } else {
+        command_index = 0;
+    }
+
+    if (command_index >= (size_t)cli->argc) {
+        fprintf(stderr, _("invalid arguments for exec\n"));
+        return 2;
+    }
+
+    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+        return 1;
+    }
+    if (secdat_collect_visible_keys(&chain, cli->store, pattern, &visible_keys) != 0) {
+        secdat_domain_chain_free(&chain);
+        secdat_key_list_free(&visible_keys);
+        return 1;
+    }
+
+    for (key_index = 0; key_index < visible_keys.count; key_index += 1) {
+        unsigned char *plaintext = NULL;
+        size_t plaintext_length = 0;
+        char *env_value = NULL;
+
+        status = secdat_load_resolved_plaintext(
+            &chain,
+            cli->store,
+            visible_keys.items[key_index],
+            &plaintext,
+            &plaintext_length,
+            NULL
+        );
+        if (status != 0) {
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+
+        status = secdat_plaintext_to_env_value(
+            visible_keys.items[key_index],
+            plaintext,
+            plaintext_length,
+            &env_value
+        );
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
+        if (status != 0) {
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+
+        if (setenv(visible_keys.items[key_index], env_value, 1) != 0) {
+            fprintf(stderr, _("failed to export key to environment: %s\n"), visible_keys.items[key_index]);
+            secdat_secure_clear(env_value, strlen(env_value));
+            free(env_value);
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+
+        secdat_secure_clear(env_value, strlen(env_value));
+        free(env_value);
+    }
+
+    command_argv = &cli->argv[command_index];
+    execvp(command_argv[0], command_argv);
+
+    fprintf(stderr, _("failed to execute command: %s\n"), command_argv[0]);
+    secdat_domain_chain_free(&chain);
+    secdat_key_list_free(&visible_keys);
+    return 1;
+}
+
 int secdat_run_command(const struct secdat_cli *cli)
 {
     int status;
@@ -1566,6 +1680,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_mv(cli);
     case SECDAT_COMMAND_CP:
         return secdat_command_cp(cli);
+    case SECDAT_COMMAND_EXEC:
+        return secdat_command_exec(cli);
     case SECDAT_COMMAND_STORE_CREATE:
         return secdat_store_command_create(cli);
     case SECDAT_COMMAND_STORE_DELETE:
