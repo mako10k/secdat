@@ -2,35 +2,64 @@
 
 #include "i18n.h"
 
+#include <getopt.h>
 #include <stdio.h>
 #include <string.h>
 
 static int parse_global_options(int argc, char **argv, int *index, struct secdat_cli *cli)
 {
-    while (*index < argc) {
-        if (strcmp(argv[*index], "--dir") == 0) {
-            if (*index + 1 >= argc) {
+    static const struct option long_options[] = {
+        {"dir", required_argument, NULL, 'd'},
+        {"store", required_argument, NULL, 's'},
+        {"help", no_argument, NULL, 'h'},
+        {"version", no_argument, NULL, 'V'},
+        {NULL, 0, NULL, 0},
+    };
+    int option;
+
+    opterr = 0;
+    optind = *index;
+    while ((option = getopt_long(argc, argv, "+:d:s:hV", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'd':
+            cli->dir = optarg;
+            break;
+        case 's':
+            cli->store = optarg;
+            break;
+        case 'h':
+            cli->show_help = 1;
+            if (optind < argc && argv[optind][0] != '-') {
+                cli->help_target = argv[optind];
+            }
+            *index = optind;
+            return 0;
+        case 'V':
+            cli->show_version = 1;
+            *index = optind;
+            return 0;
+        case ':':
+            if (optind > 0 && strcmp(argv[optind - 1], "--dir") == 0) {
                 fprintf(stderr, _("missing value for --dir\n"));
-                return 2;
-            }
-            cli->dir = argv[*index + 1];
-            *index += 2;
-            continue;
-        }
-
-        if (strcmp(argv[*index], "--store") == 0) {
-            if (*index + 1 >= argc) {
+            } else if (optind > 0 && strcmp(argv[optind - 1], "--store") == 0) {
                 fprintf(stderr, _("missing value for --store\n"));
-                return 2;
+            } else if (optopt == 'd') {
+                fprintf(stderr, _("missing value for --dir\n"));
+            } else if (optopt == 's') {
+                fprintf(stderr, _("missing value for --store\n"));
+            } else {
+                fprintf(stderr, _("missing option value\n"));
             }
-            cli->store = argv[*index + 1];
-            *index += 2;
-            continue;
+            return 2;
+        case '?':
+            fprintf(stderr, _("unknown option: %s\n"), argv[optind - 1]);
+            return 2;
+        default:
+            break;
         }
-
-        break;
     }
 
+    *index = optind;
     return 0;
 }
 
@@ -79,25 +108,25 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
 {
     switch (command) {
     case SECDAT_COMMAND_LS:
-        printf(_("  %s [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--canonical|--canonical-domain|--canonical-store]\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]\n"), program_name);
         break;
     case SECDAT_COMMAND_GET:
-        printf(_("  %s [--dir DIR] [--store STORE] get KEYREF [--stdout]\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get KEYREF [-o|--stdout]\n"), program_name);
         break;
     case SECDAT_COMMAND_SET:
-        printf(_("  %s [--dir DIR] [--store STORE] set KEYREF [VALUE|--stdin|--env ENVNAME|--value VALUE]\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] set KEYREF [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]\n"), program_name);
         break;
     case SECDAT_COMMAND_RM:
-        printf(_("  %s [--dir DIR] [--store STORE] rm KEYREF\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm KEYREF\n"), program_name);
         break;
     case SECDAT_COMMAND_MV:
-        printf(_("  %s [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mv SRC_KEYREF DST_KEYREF\n"), program_name);
         break;
     case SECDAT_COMMAND_CP:
-        printf(_("  %s [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] cp SRC_KEYREF DST_KEYREF\n"), program_name);
         break;
     case SECDAT_COMMAND_EXEC:
-        printf(_("  %s [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN] CMD [ARGS...]\n"), program_name);
         break;
     case SECDAT_COMMAND_UNLOCK:
         printf(_("  %s unlock\n"), program_name);
@@ -106,28 +135,117 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         printf(_("  %s lock\n"), program_name);
         break;
     case SECDAT_COMMAND_STATUS:
-        printf(_("  %s status [--quiet]\n"), program_name);
+        printf(_("  %s status [-q|--quiet]\n"), program_name);
         break;
     case SECDAT_COMMAND_STORE_CREATE:
-        printf(_("  %s [--dir DIR] store create STORE\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] store create STORE\n"), program_name);
         break;
     case SECDAT_COMMAND_STORE_DELETE:
-        printf(_("  %s [--dir DIR] store delete STORE\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] store delete STORE\n"), program_name);
         break;
     case SECDAT_COMMAND_STORE_LS:
-        printf(_("  %s [--dir DIR] store ls [GLOBPATTERN]\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] store ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"), program_name);
         break;
     case SECDAT_COMMAND_DOMAIN_CREATE:
-        printf(_("  %s [--dir DIR] domain create\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] domain create\n"), program_name);
         break;
     case SECDAT_COMMAND_DOMAIN_DELETE:
-        printf(_("  %s [--dir DIR] domain delete\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] domain delete\n"), program_name);
         break;
     case SECDAT_COMMAND_DOMAIN_LS:
-        printf(_("  %s [--dir DIR] domain ls [GLOBPATTERN]\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] domain ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"), program_name);
         break;
     default:
         break;
+    }
+}
+
+static void secdat_cli_print_help_routes(const char *program_name, const char *target)
+{
+    printf(_("\nHelp:\n"));
+    printf(_("  %s --help\n"), program_name);
+    if (target == NULL) {
+        printf(_("  %s --help COMMAND\n"), program_name);
+        printf(_("  %s COMMAND --help\n"), program_name);
+    } else {
+        printf(_("  %s --help %s\n"), program_name, target);
+        printf(_("  %s %s --help\n"), program_name, target);
+    }
+    printf(_("  %s --version\n"), program_name);
+}
+
+static void secdat_cli_print_group_meanings(void)
+{
+    printf(_("\nGroups:\n"));
+    printf(_("  store: manage store namespaces inside the resolved current domain\n"));
+    printf(_("  domain: manage domain roots and domain discovery scope\n"));
+}
+
+static void secdat_cli_print_command_meanings(void)
+{
+    printf(_("\nCommands:\n"));
+    printf(_("  ls: list effective keys visible from the current domain view\n"));
+    printf(_("  get: decrypt one resolved key and write it to standard output\n"));
+    printf(_("  set: store or update one key in the resolved current domain\n"));
+    printf(_("  rm: remove one key locally or create a tombstone for an inherited key\n"));
+    printf(_("  mv: rename or relocate one key between resolved locations\n"));
+    printf(_("  cp: copy one key into another resolved location\n"));
+    printf(_("  exec: inject resolved keys into a child process environment\n"));
+    printf(_("  unlock: start or refresh an authenticated secret session\n"));
+    printf(_("  lock: clear the active secret session\n"));
+    printf(_("  status: report whether secret material is currently available\n"));
+}
+
+static void secdat_cli_print_target_meaning(const char *target)
+{
+    printf(_("\nMeaning:\n"));
+    if (target != NULL && strcmp(target, "ls") == 0) {
+        printf(_("  list effective keys visible from the current domain view\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "get") == 0) {
+        printf(_("  decrypt one resolved key and write it to standard output\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "set") == 0) {
+        printf(_("  store or update one key in the resolved current domain\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "rm") == 0) {
+        printf(_("  remove one key locally or create a tombstone for an inherited key\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "mv") == 0) {
+        printf(_("  rename or relocate one key between resolved locations\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "cp") == 0) {
+        printf(_("  copy one key into another resolved location\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "exec") == 0) {
+        printf(_("  inject resolved keys into a child process environment\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "unlock") == 0) {
+        printf(_("  start or refresh an authenticated secret session\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "lock") == 0) {
+        printf(_("  clear the active secret session\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "status") == 0) {
+        printf(_("  report whether secret material is currently available\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "store") == 0) {
+        printf(_("  manage store namespaces inside the resolved current domain\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "domain") == 0) {
+        printf(_("  manage domain roots and domain discovery scope\n"));
+        return;
     }
 }
 
@@ -150,6 +268,7 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
     cli->help_target = NULL;
     cli->command = SECDAT_COMMAND_HELP;
     cli->show_help = 0;
+    cli->show_version = 0;
     cli->argc = 0;
     cli->argv = NULL;
 
@@ -162,11 +281,7 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         return 0;
     }
 
-    if (strcmp(argv[index], "--help") == 0 || strcmp(argv[index], "-h") == 0) {
-        cli->show_help = 1;
-        if (index + 1 < argc) {
-            cli->help_target = argv[index + 1];
-        }
+    if (cli->show_help || cli->show_version) {
         return 0;
     }
 
@@ -289,11 +404,16 @@ void secdat_cli_print_usage(const char *program_name)
     secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_LS);
     printf(_("\n"));
     printf(_("  KEYREF syntax: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"));
+    secdat_cli_print_help_routes(program_name, NULL);
+    secdat_cli_print_group_meanings();
+    secdat_cli_print_command_meanings();
     secdat_cli_print_semantics();
 }
 
 void secdat_cli_print_command_usage(const char *program_name, enum secdat_command_type command)
 {
+    const char *target = secdat_cli_command_name(command);
+
     printf(_("Usage:\n"));
     secdat_cli_print_usage_line(program_name, command);
     if (command == SECDAT_COMMAND_LS || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
@@ -301,6 +421,8 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
         printf(_("\n"));
         printf(_("  KEYREF syntax: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"));
     }
+    secdat_cli_print_help_routes(program_name, target);
+    secdat_cli_print_target_meaning(target);
     secdat_cli_print_semantics();
 }
 
@@ -311,6 +433,8 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_CREATE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_DELETE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_LS);
+        secdat_cli_print_help_routes(program_name, target);
+        secdat_cli_print_target_meaning(target);
         secdat_cli_print_semantics();
         return;
     }
@@ -320,6 +444,8 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_CREATE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_DELETE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_LS);
+        secdat_cli_print_help_routes(program_name, target);
+        secdat_cli_print_target_meaning(target);
         secdat_cli_print_semantics();
         return;
     }

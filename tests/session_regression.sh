@@ -81,14 +81,40 @@ if rc != 1:
     fail(f"status --quiet while locked returned {rc}")
 
 for args, marker in [
-    ([bin_path, "--help", "status"], "status [--quiet]"),
-    ([bin_path, "status", "--help"], "status [--quiet]"),
+    ([bin_path, "--help", "status"], "status [-q|--quiet]"),
+    ([bin_path, "-h", "status"], "status [-q|--quiet]"),
+    ([bin_path, "status", "--help"], "status [-q|--quiet]"),
+    ([bin_path, "status", "-h"], "status [-q|--quiet]"),
     ([bin_path, "store", "--help"], "store create STORE"),
+    ([bin_path, "store", "-h"], "store create STORE"),
 ]:
     rc, stdout, stderr = run(args)
     output = stdout + stderr
-    if rc != 0 or marker not in output or "Semantics:" not in output or "DIR:" not in output or "STORE:" not in output or "KEY / KEYREF:" not in output:
+    if (
+        rc != 0
+        or marker not in output
+        or "Help:" not in output
+        or "Semantics:" not in output
+        or "Meaning:" not in output
+        or "DIR:" not in output
+        or "DOMAIN:" not in output
+        or "STORE:" not in output
+        or "KEY / KEYREF:" not in output
+    ):
         fail(f"help check failed for {args}: rc={rc} output={(stdout + stderr)!r}")
+
+rc, stdout, stderr = run([bin_path, "--help"])
+output = stdout + stderr
+if rc != 0 or "Commands:" not in output or "Groups:" not in output or "--help COMMAND" not in output or "COMMAND --help" not in output or "--version" not in output:
+    fail(f"global help check failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run([bin_path, "--version"])
+if rc != 0 or not (stdout + stderr).startswith("secdat "):
+    fail(f"--version failed: rc={rc} output={(stdout + stderr)!r}")
+
+rc, stdout, stderr = run([bin_path, "-V"])
+if rc != 0 or not (stdout + stderr).startswith("secdat "):
+    fail(f"-V failed: rc={rc} output={(stdout + stderr)!r}")
 
 rc, transcript = run_pty(
     [bin_path, "unlock"],
@@ -105,26 +131,26 @@ rc, stdout, _ = run([bin_path, "status"])
 if rc != 0 or "source: session agent" not in stdout or "wrapped master key: present" not in stdout:
     fail(f"status after bootstrap unexpected: rc={rc} stdout={stdout!r}")
 
-rc, stdout, _ = run([bin_path, "status", "--quiet"])
+rc, stdout, _ = run([bin_path, "status", "-q"])
 if rc != 0 or stdout != "":
-    fail(f"status --quiet after unlock unexpected: rc={rc} stdout={stdout!r}")
+    fail(f"status -q after unlock unexpected: rc={rc} stdout={stdout!r}")
 
 rc, stdout, _ = run([bin_path, "lock"])
 if rc != 0 or stdout.strip() != "session locked":
     fail(f"lock failed: rc={rc} stdout={stdout!r}")
 
-rc, stdout, _ = run([bin_path, "status", "--quiet"])
+rc, stdout, _ = run([bin_path, "status", "-q"])
 if rc != 1 or stdout != "":
-    fail(f"status --quiet after lock unexpected: rc={rc} stdout={stdout!r}")
+    fail(f"status -q after lock unexpected: rc={rc} stdout={stdout!r}")
 
 rc, transcript = run_pty([bin_path, "unlock"], [("Enter secdat passphrase:", passphrase)])
 if rc != 0 or "session unlocked" not in transcript:
     fail(f"passphrase unlock failed: rc={rc} transcript={transcript!r}")
 
-rc, stdout, stderr = run([bin_path, "set", "SESSION_KEY", "value"])
+rc, stdout, stderr = run([bin_path, "set", "SESSION_KEY", "-v", "value"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set after passphrase unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "get", "SESSION_KEY", "--stdout"])
+rc, stdout, stderr = run([bin_path, "get", "SESSION_KEY", "-o"])
 if rc != 0 or stdout != "value" or stderr != "":
     fail(f"get after passphrase unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 PY

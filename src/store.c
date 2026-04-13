@@ -253,7 +253,7 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
     memset(options, 0, sizeof(*options));
 
     for (index = 0; index < cli->argc; index += 1) {
-        if (strcmp(cli->argv[index], "--pattern") == 0) {
+        if (strcmp(cli->argv[index], "--pattern") == 0 || strcmp(cli->argv[index], "-p") == 0) {
             if (index + 1 >= cli->argc || options->pattern != NULL) {
                 fprintf(stderr, _("invalid arguments for ls\n"));
                 return 2;
@@ -262,16 +262,16 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
             index += 1;
             continue;
         }
-        if (strcmp(cli->argv[index], "--canonical") == 0) {
+        if (strcmp(cli->argv[index], "--canonical") == 0 || strcmp(cli->argv[index], "-c") == 0) {
             options->canonical_domain = 1;
             options->canonical_store = 1;
             continue;
         }
-        if (strcmp(cli->argv[index], "--canonical-domain") == 0) {
+        if (strcmp(cli->argv[index], "--canonical-domain") == 0 || strcmp(cli->argv[index], "-D") == 0) {
             options->canonical_domain = 1;
             continue;
         }
-        if (strcmp(cli->argv[index], "--canonical-store") == 0) {
+        if (strcmp(cli->argv[index], "--canonical-store") == 0 || strcmp(cli->argv[index], "-S") == 0) {
             options->canonical_store = 1;
             continue;
         }
@@ -287,7 +287,7 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
 
 static int secdat_parse_simple_ls_pattern(const struct secdat_cli *cli, const char *command_name, const char **pattern)
 {
-    if (cli->argc == 2 && strcmp(cli->argv[0], "--pattern") == 0) {
+    if (cli->argc == 2 && (strcmp(cli->argv[0], "--pattern") == 0 || strcmp(cli->argv[0], "-p") == 0)) {
         *pattern = cli->argv[1];
         return 0;
     }
@@ -1694,7 +1694,7 @@ static int secdat_command_status(const struct secdat_cli *cli)
     int quiet = 0;
     int wrapped_present = secdat_wrapped_master_key_exists();
 
-    if (cli->argc == 1 && strcmp(cli->argv[0], "--quiet") == 0) {
+    if (cli->argc == 1 && (strcmp(cli->argv[0], "--quiet") == 0 || strcmp(cli->argv[0], "-q") == 0)) {
         quiet = 1;
     } else if (cli->argc != 0) {
         fprintf(stderr, _("invalid arguments for status\n"));
@@ -2318,7 +2318,7 @@ static int secdat_command_get(const struct secdat_cli *cli)
     ssize_t written;
     size_t offset;
 
-    if (cli->argc != 1 && !(cli->argc == 2 && strcmp(cli->argv[1], "--stdout") == 0)) {
+    if (cli->argc != 1 && !(cli->argc == 2 && (strcmp(cli->argv[1], "--stdout") == 0 || strcmp(cli->argv[1], "-o") == 0))) {
         fprintf(stderr, _("invalid arguments for get\n"));
         return 2;
     }
@@ -2424,7 +2424,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
     }
 
     key = reference.key;
-    if (cli->argc == 1 || (cli->argc == 2 && strcmp(cli->argv[1], "--stdin") == 0)) {
+    if (cli->argc == 1 || (cli->argc == 2 && (strcmp(cli->argv[1], "--stdin") == 0 || strcmp(cli->argv[1], "-i") == 0))) {
         if (isatty(STDIN_FILENO)) {
             fprintf(stderr, _("refusing to read secret from a terminal\n"));
             return 1;
@@ -2441,7 +2441,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
             return 1;
         }
         memcpy(plaintext, cli->argv[1], plaintext_length);
-    } else if (cli->argc == 3 && strcmp(cli->argv[1], "--value") == 0) {
+    } else if (cli->argc == 3 && (strcmp(cli->argv[1], "--value") == 0 || strcmp(cli->argv[1], "-v") == 0)) {
         plaintext_length = strlen(cli->argv[2]);
         plaintext = malloc(plaintext_length == 0 ? 1 : plaintext_length);
         if (plaintext == NULL) {
@@ -2449,7 +2449,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
             return 1;
         }
         memcpy(plaintext, cli->argv[2], plaintext_length);
-    } else if (cli->argc == 3 && strcmp(cli->argv[1], "--env") == 0) {
+    } else if (cli->argc == 3 && (strcmp(cli->argv[1], "--env") == 0 || strcmp(cli->argv[1], "-e") == 0)) {
         environment_name = cli->argv[2];
         environment_value = getenv(environment_name);
         if (environment_value == NULL) {
@@ -2905,7 +2905,7 @@ static int secdat_command_exec(const struct secdat_cli *cli)
     size_t key_index;
     int status;
 
-    if (cli->argc >= 2 && strcmp(cli->argv[0], "--pattern") == 0) {
+    if (cli->argc >= 2 && (strcmp(cli->argv[0], "--pattern") == 0 || strcmp(cli->argv[0], "-p") == 0)) {
         pattern = cli->argv[1];
         command_index = 2;
     } else {

@@ -1,3 +1,4 @@
+#include "config.h"
 #include "cli.h"
 
 #include "i18n.h"
@@ -65,6 +66,11 @@ int main(int argc, char **argv)
     if (result != 0) {
         secdat_cli_print_usage(argv[0]);
         return result;
+    }
+
+    if (cli.show_version) {
+        printf("%s %s\n", PACKAGE_NAME, PACKAGE_VERSION);
+        return 0;
     }
 
     if (cli.show_help) {

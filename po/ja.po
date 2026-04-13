@@ -53,44 +53,42 @@ msgstr "使い方:\n"
 
 #: src/cli.c:121
 #, c-format
-msgid "  %s [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--canonical|--canonical-domain|--canonical-store]\n"
-msgstr "  %s [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--canonical|--canonical-domain|--canonical-store]\n"
+msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]\n"
+msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]\n"
 
 #: src/cli.c:122
 #, c-format
-msgid "  %s [--dir DIR] [--store STORE] get KEYREF [--stdout]\n"
-msgstr "  %s [--dir DIR] [--store STORE] get KEYREF [--stdout]\n"
+msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get KEYREF [-o|--stdout]\n"
+msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get KEYREF [-o|--stdout]\n"
 
 #: src/cli.c:123
 #, c-format
 msgid ""
-"  %s [--dir DIR] [--store STORE] set KEYREF [VALUE|--stdin|--env ENVNAME|--"
-"value VALUE]\n"
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] set KEYREF [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]\n"
 msgstr ""
-"  %s [--dir DIR] [--store STORE] set KEYREF [VALUE|--stdin|--env ENVNAME|--"
-"value VALUE]\n"
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] set KEYREF [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]\n"
 
 #: src/cli.c:124
 #, c-format
-msgid "  %s [--dir DIR] [--store STORE] rm KEYREF\n"
-msgstr "  %s [--dir DIR] [--store STORE] rm KEYREF\n"
+msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm KEYREF\n"
+msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm KEYREF\n"
 
 #: src/cli.c:125
 #, c-format
-msgid "  %s [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF\n"
-msgstr "  %s [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF\n"
+msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mv SRC_KEYREF DST_KEYREF\n"
+msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mv SRC_KEYREF DST_KEYREF\n"
 
 #: src/cli.c:126
 #, c-format
-msgid "  %s [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF\n"
-msgstr "  %s [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF\n"
+msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] cp SRC_KEYREF DST_KEYREF\n"
+msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] cp SRC_KEYREF DST_KEYREF\n"
 
 #: src/cli.c:127
 #, c-format
 msgid ""
-"  %s [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]\n"
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN] CMD [ARGS...]\n"
 msgstr ""
-"  %s [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]\n"
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN] CMD [ARGS...]\n"
 
 #: src/cli.c:128
 #, c-format
@@ -104,38 +102,38 @@ msgstr "  %s lock\n"
 
 #: src/cli.c:130
 #, c-format
-msgid "  %s status [--quiet]\n"
-msgstr "  %s status [--quiet]\n"
+msgid "  %s status [-q|--quiet]\n"
+msgstr "  %s status [-q|--quiet]\n"
 
 #: src/cli.c:131
 #, c-format
-msgid "  %s [--dir DIR] store create STORE\n"
-msgstr "  %s [--dir DIR] store create STORE\n"
+msgid "  %s [-d DIR|--dir DIR] store create STORE\n"
+msgstr "  %s [-d DIR|--dir DIR] store create STORE\n"
 
 #: src/cli.c:132
 #, c-format
-msgid "  %s [--dir DIR] store delete STORE\n"
-msgstr "  %s [--dir DIR] store delete STORE\n"
+msgid "  %s [-d DIR|--dir DIR] store delete STORE\n"
+msgstr "  %s [-d DIR|--dir DIR] store delete STORE\n"
 
 #: src/cli.c:133
 #, c-format
-msgid "  %s [--dir DIR] store ls [GLOBPATTERN]\n"
-msgstr "  %s [--dir DIR] store ls [GLOBPATTERN]\n"
+msgid "  %s [-d DIR|--dir DIR] store ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"
+msgstr "  %s [-d DIR|--dir DIR] store ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"
 
 #: src/cli.c:134
 #, c-format
-msgid "  %s [--dir DIR] domain create\n"
-msgstr "  %s [--dir DIR] domain create\n"
+msgid "  %s [-d DIR|--dir DIR] domain create\n"
+msgstr "  %s [-d DIR|--dir DIR] domain create\n"
 
 #: src/cli.c:135
 #, c-format
-msgid "  %s [--dir DIR] domain delete\n"
-msgstr "  %s [--dir DIR] domain delete\n"
+msgid "  %s [-d DIR|--dir DIR] domain delete\n"
+msgstr "  %s [-d DIR|--dir DIR] domain delete\n"
 
 #: src/cli.c:136
 #, c-format
-msgid "  %s [--dir DIR] domain ls [GLOBPATTERN]\n"
-msgstr "  %s [--dir DIR] domain ls [GLOBPATTERN]\n"
+msgid "  %s [-d DIR|--dir DIR] domain ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"
+msgstr "  %s [-d DIR|--dir DIR] domain ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"
 
 #: src/cli.c:137
 #, c-format
@@ -149,8 +147,188 @@ msgstr "  KEYREF 構文: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"
 
 #: src/cli.c:0
 #, c-format
+msgid "missing option value\n"
+msgstr "オプション値が不足しています\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "unknown option: %s\n"
+msgstr "不明なオプションです: %s\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "\nHelp:\n"
+msgstr "\nヘルプ:\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  %s --help\n"
+msgstr "  %s --help\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  %s --help COMMAND\n"
+msgstr "  %s --help COMMAND\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  %s COMMAND --help\n"
+msgstr "  %s COMMAND --help\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  %s --help %s\n"
+msgstr "  %s --help %s\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  %s %s --help\n"
+msgstr "  %s %s --help\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  %s --version\n"
+msgstr "  %s --version\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "\nGroups:\n"
+msgstr "\nグループ:\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  store: manage store namespaces inside the resolved current domain\n"
+msgstr "  store: 解決された current domain 内の store namespace を管理します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  domain: manage domain roots and domain discovery scope\n"
+msgstr "  domain: domain root と domain 探索スコープを管理します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "\nCommands:\n"
+msgstr "\nコマンド:\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  ls: list effective keys visible from the current domain view\n"
+msgstr "  ls: 現在の domain view から見える有効な key を一覧します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  get: decrypt one resolved key and write it to standard output\n"
+msgstr "  get: 解決された 1 つの key を復号して標準出力へ書き出します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  set: store or update one key in the resolved current domain\n"
+msgstr "  set: 解決された current domain に 1 つの key を保存または更新します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  rm: remove one key locally or create a tombstone for an inherited key\n"
+msgstr "  rm: 1 つの key をローカルに削除するか、継承 key 用の tombstone を作成します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  mv: rename or relocate one key between resolved locations\n"
+msgstr "  mv: 1 つの key を解決先の場所どうしで改名または移動します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  cp: copy one key into another resolved location\n"
+msgstr "  cp: 1 つの key を別の解決先へコピーします\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  exec: inject resolved keys into a child process environment\n"
+msgstr "  exec: 解決された key を子プロセス環境へ注入します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  unlock: start or refresh an authenticated secret session\n"
+msgstr "  unlock: 認証済み secret session を開始または更新します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  lock: clear the active secret session\n"
+msgstr "  lock: 現在の secret session を消去します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  status: report whether secret material is currently available\n"
+msgstr "  status: 現在 secret material が利用可能かどうかを報告します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "\nMeaning:\n"
+msgstr "\n意味:\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  list effective keys visible from the current domain view\n"
+msgstr "  現在の domain view から見える有効な key を一覧します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  decrypt one resolved key and write it to standard output\n"
+msgstr "  解決された 1 つの key を復号して標準出力へ書き出します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  store or update one key in the resolved current domain\n"
+msgstr "  解決された current domain に 1 つの key を保存または更新します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  remove one key locally or create a tombstone for an inherited key\n"
+msgstr "  1 つの key をローカルに削除するか、継承 key 用の tombstone を作成します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  rename or relocate one key between resolved locations\n"
+msgstr "  1 つの key を解決先の場所どうしで改名または移動します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  copy one key into another resolved location\n"
+msgstr "  1 つの key を別の解決先へコピーします\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  inject resolved keys into a child process environment\n"
+msgstr "  解決された key を子プロセス環境へ注入します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  start or refresh an authenticated secret session\n"
+msgstr "  認証済み secret session を開始または更新します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  clear the active secret session\n"
+msgstr "  現在の secret session を消去します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  report whether secret material is currently available\n"
+msgstr "  現在 secret material が利用可能かどうかを報告します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  manage store namespaces inside the resolved current domain\n"
+msgstr "  解決された current domain 内の store namespace を管理します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  manage domain roots and domain discovery scope\n"
+msgstr "  domain root と domain 探索スコープを管理します\n"
+
+#: src/cli.c:0
+#, c-format
 msgid "\nSemantics:\n"
-msgstr "\nSemantics:\n"
+msgstr "\nセマンティクス:\n"
 
 #: src/cli.c:0
 #, c-format
@@ -225,17 +403,17 @@ msgstr "status の引数が不正です\n"
 #: src/store.c:0
 #, c-format
 msgid "unlocked"
-msgstr "unlocked"
+msgstr "アンロック済み"
 
 #: src/store.c:0
 #, c-format
 msgid "source: environment"
-msgstr "source: environment"
+msgstr "取得元: environment"
 
 #: src/store.c:0
 #, c-format
 msgid "source: session agent"
-msgstr "source: session agent"
+msgstr "取得元: session agent"
 
 #: src/store.c:0
 #, c-format
@@ -245,17 +423,17 @@ msgstr "残り %lld 秒\n"
 #: src/store.c:0
 #, c-format
 msgid "wrapped master key: present"
-msgstr "wrapped master key: present"
+msgstr "wrapped master key: あり"
 
 #: src/store.c:0
 #, c-format
 msgid "wrapped master key: absent"
-msgstr "wrapped master key: absent"
+msgstr "wrapped master key: なし"
 
 #: src/store.c:0
 #, c-format
 msgid "locked"
-msgstr "locked"
+msgstr "ロック中"
 
 #: src/store.c:0
 #, c-format

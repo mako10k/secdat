@@ -29,6 +29,7 @@ struct secdat_cli {
     const char *help_target;
     enum secdat_command_type command;
     int show_help;
+    int show_version;
     int argc;
     char **argv;
 };
