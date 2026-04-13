@@ -56,6 +56,7 @@ void secdat_i18n_init(const char *argv0)
 int main(int argc, char **argv)
 {
     struct secdat_cli cli;
+    enum secdat_command_type help_command;
     int result;
 
     secdat_i18n_init(argv[0]);
@@ -64,6 +65,24 @@ int main(int argc, char **argv)
     if (result != 0) {
         secdat_cli_print_usage(argv[0]);
         return result;
+    }
+
+    if (cli.show_help) {
+        if (cli.command != SECDAT_COMMAND_HELP) {
+            secdat_cli_print_command_usage(argv[0], cli.command);
+            return 0;
+        }
+        if (cli.help_target != NULL) {
+            help_command = secdat_cli_parse_command_name(cli.help_target);
+            if (help_command != SECDAT_COMMAND_HELP) {
+                if (strcmp(cli.help_target, "store") == 0 || strcmp(cli.help_target, "domain") == 0) {
+                    secdat_cli_print_help_target(argv[0], cli.help_target);
+                } else {
+                    secdat_cli_print_command_usage(argv[0], help_command);
+                }
+                return 0;
+            }
+        }
     }
 
     if (cli.command == SECDAT_COMMAND_HELP) {

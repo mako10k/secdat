@@ -36,6 +36,10 @@ secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]
 
+secdat unlock
+secdat lock
+secdat status [--quiet]
+
 secdat [--dir DIR] store create STORE
 secdat [--dir DIR] store delete STORE
 secdat [--dir DIR] store ls [GLOBPATTERN]
@@ -49,7 +53,6 @@ secdat [--dir DIR] domain ls [GLOBPATTERN]
 
 - displaying or interactively entering secret values through a terminal must be rejected
 - stored values must always be encrypted at rest
-- master key persistence is out of scope for this document
 - the implementation language is C
 - the design should remain simple
 - domains are isolated per OS user
@@ -62,6 +65,10 @@ To make the requested behavior implementable, the following are treated as norma
 - `set KEYREF VALUE` is equivalent to `set KEYREF --value VALUE`
 - `set KEYREF` is equivalent to `set KEYREF --stdin`
 - `exec` injects matched keys into the child process environment
+- `secdat --help SUBCOMMAND` and `secdat SUBCOMMAND --help` are equivalent for command-local usage output
+- `unlock` caches the current master key in a session-scoped runtime location
+- `status` reports whether a master-key session is active
+- `lock` clears the active master-key session
 - values are modeled as arbitrary byte strings internally
 - domains are resolved from a directory context
 - `--dir` is a global option that overrides the directory context used for domain resolution
@@ -82,7 +89,6 @@ To make the requested behavior implementable, the following are treated as norma
 
 ### 3.2 Out of Scope
 
-- persistent master key storage
 - network sharing
 - ACLs and multi-user collaboration
 - automated key rotation
@@ -102,6 +108,7 @@ To make the requested behavior implementable, the following are treated as norma
 - if the store suffix is omitted, the command falls back to `--store STORE` and then the default store
 - Value: secret plaintext
 - Master key: key material used to encrypt and decrypt values
+- Session: a temporary login-scoped cache of the active master key
 - Tombstone: a delete marker in the current domain that hides an inherited key
 
 ### 3.4 Functional Requirements
@@ -158,6 +165,19 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat exec --pattern GLOBPATTERN CMD [ARGS...]` injects only matched keys
 - the parent process environment is not modified
 - resolved values are decrypted and passed through an `execve`-style API
+
+#### FR-7a Session Control
+
+- `secdat status` returns success and reports an unlocked state when `SECDAT_MASTER_KEY` is set or a valid runtime session exists
+- `secdat status` returns non-zero and reports `locked` when no active master-key source exists
+- `secdat status --quiet` suppresses output and reports state only through the exit code
+- `status` without `--quiet` reports the active source and whether a wrapped persistent master key is present
+- `secdat unlock` creates or refreshes a session-scoped cache of the current master key
+- if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it without prompting
+- if no wrapped persistent master key exists and `SECDAT_MASTER_KEY` is set on a terminal, `unlock` prompts twice and stores a wrapped copy of that master key
+- otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent
+- `secdat lock` removes the active agent-backed session state
+- the current implementation refreshes the idle timeout when the agent serves the cached key
 
 #### FR-8 Store Selection
 

@@ -94,40 +94,55 @@ msgstr ""
 
 #: src/cli.c:128
 #, c-format
+msgid "  %s unlock\n"
+msgstr "  %s unlock\n"
+
+#: src/cli.c:129
+#, c-format
+msgid "  %s lock\n"
+msgstr "  %s lock\n"
+
+#: src/cli.c:130
+#, c-format
+msgid "  %s status [--quiet]\n"
+msgstr "  %s status [--quiet]\n"
+
+#: src/cli.c:131
+#, c-format
 msgid "  %s [--dir DIR] store create STORE\n"
 msgstr "  %s [--dir DIR] store create STORE\n"
 
-#: src/cli.c:129
+#: src/cli.c:132
 #, c-format
 msgid "  %s [--dir DIR] store delete STORE\n"
 msgstr "  %s [--dir DIR] store delete STORE\n"
 
-#: src/cli.c:130
+#: src/cli.c:133
 #, c-format
 msgid "  %s [--dir DIR] store ls [GLOBPATTERN]\n"
 msgstr "  %s [--dir DIR] store ls [GLOBPATTERN]\n"
 
-#: src/cli.c:131
+#: src/cli.c:134
 #, c-format
 msgid "  %s [--dir DIR] domain create\n"
 msgstr "  %s [--dir DIR] domain create\n"
 
-#: src/cli.c:132
+#: src/cli.c:135
 #, c-format
 msgid "  %s [--dir DIR] domain delete\n"
 msgstr "  %s [--dir DIR] domain delete\n"
 
-#: src/cli.c:133
+#: src/cli.c:136
 #, c-format
 msgid "  %s [--dir DIR] domain ls [GLOBPATTERN]\n"
 msgstr "  %s [--dir DIR] domain ls [GLOBPATTERN]\n"
 
-#: src/cli.c:134
+#: src/cli.c:137
 #, c-format
 msgid "\n"
 msgstr "\n"
 
-#: src/cli.c:135
+#: src/cli.c:138
 #, c-format
 msgid "  KEYREF syntax: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"
 msgstr "  KEYREF 構文: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"
@@ -146,6 +161,176 @@ msgstr "%s の引数が不正です\n"
 #, c-format
 msgid "missing SECDAT_MASTER_KEY; export a secret first, for example: export SECDAT_MASTER_KEY='change-me'\n"
 msgstr "SECDAT_MASTER_KEY が未設定です。先に秘密値を export してください。例: export SECDAT_MASTER_KEY='change-me'\n"
+
+#: src/store.c:0
+#, c-format
+msgid "missing SECDAT_MASTER_KEY and no active secdat session; run secdat unlock or export SECDAT_MASTER_KEY\n"
+msgstr "SECDAT_MASTER_KEY が未設定で、有効な secdat セッションもありません。secdat unlock を実行するか SECDAT_MASTER_KEY を export してください\n"
+
+#: src/store.c:0
+#, c-format
+msgid "unlock requires a terminal for passphrase input\n"
+msgstr "unlock にはパスフレーズ入力用の端末が必要です\n"
+
+#: src/store.c:0
+#, c-format
+msgid "failed to read terminal settings\n"
+msgstr "端末設定の読み取りに失敗しました\n"
+
+#: src/store.c:0
+#, c-format
+msgid "failed to update terminal settings\n"
+msgstr "端末設定の更新に失敗しました\n"
+
+#: src/store.c:0
+#, c-format
+msgid "failed to read passphrase\n"
+msgstr "パスフレーズの読み取りに失敗しました\n"
+
+#: src/store.c:0
+#, c-format
+msgid "empty passphrase is not allowed\n"
+msgstr "空のパスフレーズは許可されません\n"
+
+#: src/store.c:0
+#, c-format
+msgid "invalid arguments for status\n"
+msgstr "status の引数が不正です\n"
+
+#: src/store.c:0
+#, c-format
+msgid "unlocked"
+msgstr "unlocked"
+
+#: src/store.c:0
+#, c-format
+msgid "source: environment"
+msgstr "source: environment"
+
+#: src/store.c:0
+#, c-format
+msgid "source: session agent"
+msgstr "source: session agent"
+
+#: src/store.c:0
+#, c-format
+msgid "expires in: %lld seconds\n"
+msgstr "残り %lld 秒\n"
+
+#: src/store.c:0
+#, c-format
+msgid "wrapped master key: present"
+msgstr "wrapped master key: present"
+
+#: src/store.c:0
+#, c-format
+msgid "wrapped master key: absent"
+msgstr "wrapped master key: absent"
+
+#: src/store.c:0
+#, c-format
+msgid "locked"
+msgstr "locked"
+
+#: src/store.c:0
+#, c-format
+msgid "invalid arguments for unlock\n"
+msgstr "unlock の引数が不正です\n"
+
+#: src/store.c:0
+#, c-format
+msgid "Enter secdat passphrase: "
+msgstr "secdat パスフレーズを入力してください: "
+
+#: src/store.c:0
+#, c-format
+msgid "Create secdat passphrase: "
+msgstr "secdat パスフレーズを作成してください: "
+
+#: src/store.c:0
+#, c-format
+msgid "Confirm secdat passphrase: "
+msgstr "secdat パスフレーズを再入力してください: "
+
+#: src/store.c:0
+#, c-format
+msgid "passphrase confirmation did not match\n"
+msgstr "確認用パスフレーズが一致しません\n"
+
+#: src/store.c:0
+#, c-format
+msgid "session unlocked from environment"
+msgstr "環境変数からセッションをアンロックしました"
+
+#: src/store.c:0
+#, c-format
+msgid "persistent master key initialized; session unlocked from environment"
+msgstr "永続 master key を初期化し、環境変数からセッションをアンロックしました"
+
+#: src/store.c:0
+#, c-format
+msgid "session unlocked"
+msgstr "セッションをアンロックしました"
+
+#: src/store.c:0
+#, c-format
+msgid "invalid arguments for lock\n"
+msgstr "lock の引数が不正です\n"
+
+#: src/store.c:0
+#, c-format
+msgid "session locked"
+msgstr "セッションをロックしました"
+
+#: src/store.c:0
+#, c-format
+msgid "no persistent master key is initialized; export SECDAT_MASTER_KEY and run secdat unlock once\n"
+msgstr "永続 master key が未初期化です。SECDAT_MASTER_KEY を export して一度 secdat unlock を実行してください\n"
+
+#: src/store.c:0
+#, c-format
+msgid "failed to bind session agent socket\n"
+msgstr "session agent のソケット bind に失敗しました\n"
+
+#: src/store.c:0
+#, c-format
+msgid "failed to listen on session agent socket\n"
+msgstr "session agent のソケット listen に失敗しました\n"
+
+#: src/store.c:0
+#, c-format
+msgid "failed to start session agent\n"
+msgstr "session agent の起動に失敗しました\n"
+
+#: src/store.c:0
+#, c-format
+msgid "failed to connect to session agent\n"
+msgstr "session agent への接続に失敗しました\n"
+
+#: src/store.c:0
+#, c-format
+msgid "failed to create session agent socket\n"
+msgstr "session agent のソケット作成に失敗しました\n"
+
+#: src/store.c:0
+#, c-format
+msgid "failed to open file descriptor\n"
+msgstr "ファイル記述子のオープンに失敗しました\n"
+
+#: src/store.c:0
+#, c-format
+msgid "failed to derive wrap key\n"
+msgstr "wrap key の導出に失敗しました\n"
+
+#: src/store.c:0
+#, c-format
+msgid "invalid wrapped master key\n"
+msgstr "wrapped master key が不正です\n"
+
+#: src/store.c:0
+#, c-format
+msgid "failed to unlock persistent master key\n"
+msgstr "永続 master key の unlock に失敗しました\n"
 
 #, c-format
 #~ msgid "command not implemented yet: %s\n"

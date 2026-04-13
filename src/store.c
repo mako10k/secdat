@@ -17,8 +17,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/un.h>
+#include <sys/wait.h>
+#include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #define SECDAT_ENTRY_VERSION 1
@@ -26,8 +31,14 @@
 #define SECDAT_NONCE_LEN 12
 #define SECDAT_TAG_LEN 16
 #define SECDAT_HEADER_LEN 16
+#define SECDAT_SESSION_IDLE_SECONDS 1800
+#define SECDAT_WRAP_SALT_LEN 16
+#define SECDAT_WRAP_HEADER_LEN 20
+#define SECDAT_WRAP_PBKDF2_ITERATIONS 200000
+#define SECDAT_AGENT_CONNECT_RETRIES 50
 
 static const unsigned char secdat_entry_magic[8] = {'S', 'E', 'C', 'D', 'A', 'T', '1', '\0'};
+static const unsigned char secdat_wrapped_key_magic[8] = {'S', 'E', 'C', 'D', 'W', 'R', 'P', '\0'};
 
 struct secdat_key_list {
     char **items;
@@ -48,6 +59,22 @@ struct secdat_ls_options {
     int canonical_domain;
     int canonical_store;
 };
+
+struct secdat_session_record {
+    char master_key[512];
+    time_t expires_at;
+};
+
+struct secdat_wrapped_master_key {
+    uint32_t iterations;
+    unsigned char salt[SECDAT_WRAP_SALT_LEN];
+    unsigned char nonce[SECDAT_NONCE_LEN];
+    unsigned char *ciphertext;
+    size_t ciphertext_length;
+};
+
+static void secdat_write_be32(unsigned char *buffer, uint32_t value);
+static uint32_t secdat_read_be32(const unsigned char *buffer);
 
 static void secdat_secure_clear(void *buffer, size_t length)
 {
@@ -743,6 +770,879 @@ static int secdat_read_file(const char *path, unsigned char **data, size_t *leng
     return 0;
 }
 
+static int secdat_runtime_dir(char *buffer, size_t size)
+{
+    const char *runtime_dir = getenv("XDG_RUNTIME_DIR");
+    const char *tmp_dir = getenv("TMPDIR");
+    int written;
+
+    if (runtime_dir != NULL && runtime_dir[0] != '\0') {
+        written = snprintf(buffer, size, "%s/secdat", runtime_dir);
+    } else if (tmp_dir != NULL && tmp_dir[0] != '\0') {
+        written = snprintf(buffer, size, "%s/secdat-%ld", tmp_dir, (long)getuid());
+    } else {
+        written = snprintf(buffer, size, "/tmp/secdat-%ld", (long)getuid());
+    }
+
+    if (written < 0 || (size_t)written >= size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+
+    return 0;
+}
+
+static int secdat_data_home(char *buffer, size_t size)
+{
+    const char *xdg_data_home = getenv("XDG_DATA_HOME");
+    const char *home = getenv("HOME");
+    int written;
+
+    if (xdg_data_home != NULL && xdg_data_home[0] != '\0') {
+        written = snprintf(buffer, size, "%s", xdg_data_home);
+    } else if (home != NULL && home[0] != '\0') {
+        written = snprintf(buffer, size, "%s/.local/share", home);
+    } else {
+        fprintf(stderr, _("HOME is not set\n"));
+        return 1;
+    }
+
+    if (written < 0 || (size_t)written >= size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+
+    return 0;
+}
+
+static int secdat_state_dir(char *buffer, size_t size)
+{
+    char data_home[PATH_MAX];
+
+    if (secdat_data_home(data_home, sizeof(data_home)) != 0) {
+        return 1;
+    }
+
+    if (snprintf(buffer, size, "%s/secdat", data_home) >= (int)size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+
+    return 0;
+}
+
+static int secdat_session_agent_path(char *buffer, size_t size)
+{
+    char runtime_dir[PATH_MAX];
+
+    if (secdat_runtime_dir(runtime_dir, sizeof(runtime_dir)) != 0) {
+        return 1;
+    }
+
+    return secdat_join_path(buffer, size, runtime_dir, "agent.sock");
+}
+
+static int secdat_wrapped_master_key_path(char *buffer, size_t size)
+{
+    char state_dir[PATH_MAX];
+
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
+        return 1;
+    }
+
+    return secdat_join_path(buffer, size, state_dir, "master-key.bin");
+}
+
+static int secdat_parse_i64(const char *value, time_t *result)
+{
+    char *end = NULL;
+    long long parsed;
+
+    errno = 0;
+    parsed = strtoll(value, &end, 10);
+    if (errno != 0 || end == value || *end != '\0') {
+        return 1;
+    }
+
+    *result = (time_t)parsed;
+    return 0;
+}
+
+static void secdat_trim_newline(char *buffer)
+{
+    size_t length = strlen(buffer);
+
+    while (length > 0 && (buffer[length - 1] == '\n' || buffer[length - 1] == '\r')) {
+        buffer[length - 1] = '\0';
+        length -= 1;
+    }
+}
+
+static void secdat_session_record_reset(struct secdat_session_record *record)
+{
+    secdat_secure_clear(record->master_key, sizeof(record->master_key));
+    record->master_key[0] = '\0';
+    record->expires_at = 0;
+}
+
+static void secdat_session_record_expire_if_needed(struct secdat_session_record *record)
+{
+    time_t now = time(NULL);
+
+    if (record->master_key[0] != '\0' && record->expires_at <= now) {
+        secdat_session_record_reset(record);
+    }
+}
+
+static int secdat_read_line(FILE *stream, char *buffer, size_t size)
+{
+    if (fgets(buffer, (int)size, stream) == NULL) {
+        return 1;
+    }
+
+    secdat_trim_newline(buffer);
+    return 0;
+}
+
+static int secdat_session_agent_handle_client(int client_fd, struct secdat_session_record *record, int *should_exit)
+{
+    FILE *stream;
+    char command[64];
+    char payload[sizeof(record->master_key)];
+
+    *should_exit = 0;
+    secdat_session_record_expire_if_needed(record);
+
+    stream = fdopen(client_fd, "r+");
+    if (stream == NULL) {
+        fprintf(stderr, _("failed to open file descriptor\n"));
+        return 1;
+    }
+
+    if (secdat_read_line(stream, command, sizeof(command)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+
+    if (strcmp(command, "STATUS") == 0) {
+        if (record->master_key[0] == '\0') {
+            fprintf(stream, "ERR locked\n");
+        } else {
+            fprintf(stream, "OK %lld\n", (long long)record->expires_at);
+        }
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "GET") == 0) {
+        if (record->master_key[0] == '\0') {
+            fprintf(stream, "ERR locked\n");
+        } else {
+            record->expires_at = time(NULL) + SECDAT_SESSION_IDLE_SECONDS;
+            fprintf(stream, "OK %lld\n%s\n", (long long)record->expires_at, record->master_key);
+        }
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "SET") == 0) {
+        if (secdat_read_line(stream, payload, sizeof(payload)) != 0) {
+            fclose(stream);
+            return 1;
+        }
+        secdat_session_record_reset(record);
+        if (secdat_copy_string(record->master_key, sizeof(record->master_key), payload) != 0) {
+            fclose(stream);
+            return 1;
+        }
+        record->expires_at = time(NULL) + SECDAT_SESSION_IDLE_SECONDS;
+        fprintf(stream, "OK %lld\n", (long long)record->expires_at);
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "CLEAR") == 0) {
+        secdat_session_record_reset(record);
+        fprintf(stream, "OK\n");
+        fflush(stream);
+        fclose(stream);
+        *should_exit = 1;
+        return 0;
+    }
+
+    fprintf(stream, "ERR invalid\n");
+    fflush(stream);
+    fclose(stream);
+    return 0;
+}
+
+static int secdat_run_session_agent(const char *socket_path)
+{
+    int server_fd;
+    int client_fd;
+    int should_exit;
+    struct sockaddr_un address;
+    struct secdat_session_record record;
+
+    memset(&record, 0, sizeof(record));
+    server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        return 1;
+    }
+
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    if (strlen(socket_path) >= sizeof(address.sun_path)) {
+        close(server_fd);
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    strcpy(address.sun_path, socket_path);
+
+    unlink(socket_path);
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) != 0) {
+        close(server_fd);
+        fprintf(stderr, _("failed to bind session agent socket\n"));
+        return 1;
+    }
+    if (listen(server_fd, 8) != 0) {
+        unlink(socket_path);
+        close(server_fd);
+        fprintf(stderr, _("failed to listen on session agent socket\n"));
+        return 1;
+    }
+
+    for (;;) {
+        client_fd = accept(server_fd, NULL, NULL);
+        if (client_fd < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if (secdat_session_agent_handle_client(client_fd, &record, &should_exit) != 0) {
+            close(client_fd);
+        }
+        if (should_exit) {
+            break;
+        }
+    }
+
+    secdat_session_record_reset(&record);
+    close(server_fd);
+    unlink(socket_path);
+    return 0;
+}
+
+static int secdat_spawn_session_agent(void)
+{
+    char runtime_dir[PATH_MAX];
+    char socket_path[PATH_MAX];
+    pid_t pid;
+    int status;
+    int retry;
+
+    if (secdat_runtime_dir(runtime_dir, sizeof(runtime_dir)) != 0) {
+        return 1;
+    }
+    if (secdat_ensure_directory(runtime_dir, 0700) != 0) {
+        return 1;
+    }
+    if (secdat_session_agent_path(socket_path, sizeof(socket_path)) != 0) {
+        return 1;
+    }
+
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, _("failed to start session agent\n"));
+        return 1;
+    }
+    if (pid == 0) {
+        pid_t worker;
+        int devnull;
+
+        if (setsid() < 0) {
+            _exit(1);
+        }
+
+        worker = fork();
+        if (worker < 0) {
+            _exit(1);
+        }
+        if (worker > 0) {
+            _exit(0);
+        }
+
+        devnull = open("/dev/null", O_RDWR);
+        if (devnull >= 0) {
+            dup2(devnull, STDIN_FILENO);
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            if (devnull > STDERR_FILENO) {
+                close(devnull);
+            }
+        }
+
+        _exit(secdat_run_session_agent(socket_path) == 0 ? 0 : 1);
+    }
+
+    if (waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        fprintf(stderr, _("failed to start session agent\n"));
+        return 1;
+    }
+
+    for (retry = 0; retry < SECDAT_AGENT_CONNECT_RETRIES; retry += 1) {
+        int fd;
+        struct sockaddr_un address;
+
+        fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (fd < 0) {
+            break;
+        }
+        memset(&address, 0, sizeof(address));
+        address.sun_family = AF_UNIX;
+        strcpy(address.sun_path, socket_path);
+        if (connect(fd, (struct sockaddr *)&address, sizeof(address)) == 0) {
+            close(fd);
+            return 0;
+        }
+        close(fd);
+        usleep(10000);
+    }
+
+    fprintf(stderr, _("failed to connect to session agent\n"));
+    return 1;
+}
+
+static int secdat_read_secret_from_tty(const char *prompt, char *buffer, size_t size)
+{
+    struct termios old_settings;
+    struct termios new_settings;
+    int restored = 0;
+    size_t length;
+
+    if (!isatty(STDIN_FILENO)) {
+        fprintf(stderr, _("unlock requires a terminal for passphrase input\n"));
+        return 1;
+    }
+
+    fprintf(stderr, "%s", prompt);
+    fflush(stderr);
+
+    if (tcgetattr(STDIN_FILENO, &old_settings) != 0) {
+        fprintf(stderr, _("failed to read terminal settings\n"));
+        return 1;
+    }
+
+    new_settings = old_settings;
+    new_settings.c_lflag &= ~(ECHO);
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_settings) != 0) {
+        fprintf(stderr, _("failed to update terminal settings\n"));
+        return 1;
+    }
+
+    if (fgets(buffer, (int)size, stdin) == NULL) {
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_settings);
+        fprintf(stderr, _("failed to read passphrase\n"));
+        return 1;
+    }
+
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_settings) == 0) {
+        restored = 1;
+    }
+    fprintf(stderr, "\n");
+
+    if (!restored) {
+        fprintf(stderr, _("failed to update terminal settings\n"));
+        return 1;
+    }
+
+    length = strlen(buffer);
+    while (length > 0 && (buffer[length - 1] == '\n' || buffer[length - 1] == '\r')) {
+        buffer[length - 1] = '\0';
+        length -= 1;
+    }
+
+    if (buffer[0] == '\0') {
+        fprintf(stderr, _("empty passphrase is not allowed\n"));
+        return 1;
+    }
+
+    return 0;
+}
+
+static int secdat_read_secret_confirmation(char *buffer, size_t size)
+{
+    char confirmation[512];
+
+    if (secdat_read_secret_from_tty(_("Create secdat passphrase: "), buffer, size) != 0) {
+        return 1;
+    }
+    if (secdat_read_secret_from_tty(_("Confirm secdat passphrase: "), confirmation, sizeof(confirmation)) != 0) {
+        secdat_secure_clear(buffer, strlen(buffer));
+        return 1;
+    }
+    if (strcmp(buffer, confirmation) != 0) {
+        secdat_secure_clear(confirmation, strlen(confirmation));
+        secdat_secure_clear(buffer, strlen(buffer));
+        fprintf(stderr, _("passphrase confirmation did not match\n"));
+        return 1;
+    }
+
+    secdat_secure_clear(confirmation, strlen(confirmation));
+    return 0;
+}
+
+static int secdat_session_agent_connect(int start_if_missing)
+{
+    char socket_path[PATH_MAX];
+    int fd;
+    struct sockaddr_un address;
+
+    if (secdat_session_agent_path(socket_path, sizeof(socket_path)) != 0) {
+        return -1;
+    }
+
+    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) {
+        fprintf(stderr, _("failed to create session agent socket\n"));
+        return -1;
+    }
+
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    strcpy(address.sun_path, socket_path);
+
+    if (connect(fd, (struct sockaddr *)&address, sizeof(address)) == 0) {
+        return fd;
+    }
+
+    close(fd);
+    if (errno == ECONNREFUSED || errno == ENOTSOCK) {
+        unlink(socket_path);
+    }
+    if (!start_if_missing) {
+        return -1;
+    }
+    if (secdat_spawn_session_agent() != 0) {
+        return -1;
+    }
+
+    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) {
+        fprintf(stderr, _("failed to create session agent socket\n"));
+        return -1;
+    }
+    if (connect(fd, (struct sockaddr *)&address, sizeof(address)) != 0) {
+        close(fd);
+        fprintf(stderr, _("failed to connect to session agent\n"));
+        return -1;
+    }
+
+    return fd;
+}
+
+static int secdat_session_agent_status(struct secdat_session_record *record)
+{
+    FILE *stream;
+    int fd;
+    char response[64];
+
+    memset(record, 0, sizeof(*record));
+    fd = secdat_session_agent_connect(0);
+    if (fd < 0) {
+        return 1;
+    }
+
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+
+    fprintf(stream, "STATUS\n");
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fclose(stream);
+
+    if (strncmp(response, "OK ", 3) != 0) {
+        return 1;
+    }
+    if (secdat_parse_i64(response + 3, &record->expires_at) != 0) {
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_session_agent_get(struct secdat_session_record *record)
+{
+    FILE *stream;
+    int fd;
+    char response[64];
+    char secret[sizeof(record->master_key)];
+
+    memset(record, 0, sizeof(*record));
+    fd = secdat_session_agent_connect(0);
+    if (fd < 0) {
+        return 1;
+    }
+
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+
+    fprintf(stream, "GET\n");
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    if (strncmp(response, "OK ", 3) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    if (secdat_parse_i64(response + 3, &record->expires_at) != 0 || secdat_read_line(stream, secret, sizeof(secret)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fclose(stream);
+
+    return secdat_copy_string(record->master_key, sizeof(record->master_key), secret);
+}
+
+static int secdat_session_agent_set(const char *master_key)
+{
+    FILE *stream;
+    int fd;
+    char response[64];
+
+    fd = secdat_session_agent_connect(1);
+    if (fd < 0) {
+        return 1;
+    }
+
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+
+    fprintf(stream, "SET\n%s\n", master_key);
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fclose(stream);
+    return strncmp(response, "OK ", 3) == 0 ? 0 : 1;
+}
+
+static int secdat_session_agent_clear(void)
+{
+    FILE *stream;
+    int fd;
+    char response[64];
+
+    fd = secdat_session_agent_connect(0);
+    if (fd < 0) {
+        return 0;
+    }
+
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+
+    fprintf(stream, "CLEAR\n");
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fclose(stream);
+    return strcmp(response, "OK") == 0 ? 0 : 1;
+}
+
+static int secdat_wrapped_master_key_exists(void)
+{
+    char path[PATH_MAX];
+
+    if (secdat_wrapped_master_key_path(path, sizeof(path)) != 0) {
+        return 0;
+    }
+
+    return secdat_file_exists(path);
+}
+
+static int secdat_wrap_key_from_passphrase(
+    const char *passphrase,
+    const unsigned char salt[SECDAT_WRAP_SALT_LEN],
+    uint32_t iterations,
+    unsigned char key[32]
+)
+{
+    if (PKCS5_PBKDF2_HMAC(passphrase, (int)strlen(passphrase), salt, SECDAT_WRAP_SALT_LEN, (int)iterations, EVP_sha256(), 32, key) != 1) {
+        fprintf(stderr, _("failed to derive wrap key\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_write_wrapped_master_key(const char *passphrase, const char *master_key)
+{
+    char state_dir[PATH_MAX];
+    char path[PATH_MAX];
+    unsigned char wrap_key[32];
+    unsigned char salt[SECDAT_WRAP_SALT_LEN];
+    unsigned char nonce[SECDAT_NONCE_LEN];
+    unsigned char tag[SECDAT_TAG_LEN];
+    unsigned char *buffer = NULL;
+    EVP_CIPHER_CTX *context = NULL;
+    size_t plaintext_length = strlen(master_key) + 1;
+    size_t total_length;
+    int written_length;
+    int final_length;
+    int status = 1;
+
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
+        return 1;
+    }
+    if (secdat_ensure_directory(state_dir, 0700) != 0) {
+        return 1;
+    }
+    if (secdat_wrapped_master_key_path(path, sizeof(path)) != 0) {
+        return 1;
+    }
+    if (RAND_bytes(salt, sizeof(salt)) != 1 || RAND_bytes(nonce, sizeof(nonce)) != 1) {
+        fprintf(stderr, _("failed to generate nonce\n"));
+        return 1;
+    }
+    if (secdat_wrap_key_from_passphrase(passphrase, salt, SECDAT_WRAP_PBKDF2_ITERATIONS, wrap_key) != 0) {
+        return 1;
+    }
+
+    total_length = SECDAT_WRAP_HEADER_LEN + sizeof(salt) + sizeof(nonce) + plaintext_length + SECDAT_TAG_LEN;
+    buffer = calloc(1, total_length);
+    if (buffer == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+
+    memcpy(buffer, secdat_wrapped_key_magic, sizeof(secdat_wrapped_key_magic));
+    buffer[8] = 1;
+    buffer[9] = SECDAT_WRAP_SALT_LEN;
+    buffer[10] = SECDAT_NONCE_LEN;
+    buffer[11] = 0;
+    secdat_write_be32(buffer + 12, SECDAT_WRAP_PBKDF2_ITERATIONS);
+    secdat_write_be32(buffer + 16, (uint32_t)(plaintext_length + SECDAT_TAG_LEN));
+    memcpy(buffer + SECDAT_WRAP_HEADER_LEN, salt, sizeof(salt));
+    memcpy(buffer + SECDAT_WRAP_HEADER_LEN + sizeof(salt), nonce, sizeof(nonce));
+
+    context = EVP_CIPHER_CTX_new();
+    if (context == NULL) {
+        fprintf(stderr, _("failed to create encryption context\n"));
+        goto cleanup;
+    }
+    if (EVP_EncryptInit_ex(context, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1
+        || EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, sizeof(nonce), NULL) != 1
+        || EVP_EncryptInit_ex(context, NULL, NULL, wrap_key, nonce) != 1) {
+        fprintf(stderr, _("failed to initialize encryption\n"));
+        goto cleanup;
+    }
+    if (EVP_EncryptUpdate(
+            context,
+            buffer + SECDAT_WRAP_HEADER_LEN + sizeof(salt) + sizeof(nonce),
+            &written_length,
+            (const unsigned char *)master_key,
+            (int)plaintext_length
+        ) != 1) {
+        fprintf(stderr, _("failed to encrypt value\n"));
+        goto cleanup;
+    }
+    if (EVP_EncryptFinal_ex(
+            context,
+            buffer + SECDAT_WRAP_HEADER_LEN + sizeof(salt) + sizeof(nonce) + written_length,
+            &final_length
+        ) != 1) {
+        fprintf(stderr, _("failed to finalize encryption\n"));
+        goto cleanup;
+    }
+    written_length += final_length;
+    if (EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_GET_TAG, sizeof(tag), tag) != 1) {
+        fprintf(stderr, _("failed to obtain authentication tag\n"));
+        goto cleanup;
+    }
+    memcpy(buffer + SECDAT_WRAP_HEADER_LEN + sizeof(salt) + sizeof(nonce) + written_length, tag, sizeof(tag));
+
+    if (secdat_atomic_write_file(path, buffer, total_length) != 0) {
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(wrap_key, sizeof(wrap_key));
+    secdat_secure_clear(tag, sizeof(tag));
+    if (buffer != NULL) {
+        secdat_secure_clear(buffer, total_length);
+        free(buffer);
+    }
+    if (context != NULL) {
+        EVP_CIPHER_CTX_free(context);
+    }
+    return status;
+}
+
+static int secdat_read_wrapped_master_key(struct secdat_wrapped_master_key *wrapped)
+{
+    char path[PATH_MAX];
+    unsigned char *data = NULL;
+    size_t length = 0;
+
+    memset(wrapped, 0, sizeof(*wrapped));
+    if (secdat_wrapped_master_key_path(path, sizeof(path)) != 0) {
+        return 1;
+    }
+    if (!secdat_file_exists(path) || secdat_read_file(path, &data, &length) != 0) {
+        return 1;
+    }
+    if (length < SECDAT_WRAP_HEADER_LEN + SECDAT_WRAP_SALT_LEN + SECDAT_NONCE_LEN + SECDAT_TAG_LEN
+        || memcmp(data, secdat_wrapped_key_magic, sizeof(secdat_wrapped_key_magic)) != 0
+        || data[8] != 1
+        || data[9] != SECDAT_WRAP_SALT_LEN
+        || data[10] != SECDAT_NONCE_LEN) {
+        free(data);
+        fprintf(stderr, _("invalid wrapped master key\n"));
+        return 1;
+    }
+
+    wrapped->iterations = secdat_read_be32(data + 12);
+    wrapped->ciphertext_length = secdat_read_be32(data + 16);
+    if (length != SECDAT_WRAP_HEADER_LEN + SECDAT_WRAP_SALT_LEN + SECDAT_NONCE_LEN + wrapped->ciphertext_length) {
+        free(data);
+        fprintf(stderr, _("invalid wrapped master key\n"));
+        return 1;
+    }
+
+    memcpy(wrapped->salt, data + SECDAT_WRAP_HEADER_LEN, sizeof(wrapped->salt));
+    memcpy(wrapped->nonce, data + SECDAT_WRAP_HEADER_LEN + sizeof(wrapped->salt), sizeof(wrapped->nonce));
+    wrapped->ciphertext = malloc(wrapped->ciphertext_length);
+    if (wrapped->ciphertext == NULL) {
+        free(data);
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    memcpy(
+        wrapped->ciphertext,
+        data + SECDAT_WRAP_HEADER_LEN + sizeof(wrapped->salt) + sizeof(wrapped->nonce),
+        wrapped->ciphertext_length
+    );
+
+    secdat_secure_clear(data, length);
+    free(data);
+    return 0;
+}
+
+static void secdat_wrapped_master_key_free(struct secdat_wrapped_master_key *wrapped)
+{
+    if (wrapped->ciphertext != NULL) {
+        secdat_secure_clear(wrapped->ciphertext, wrapped->ciphertext_length);
+        free(wrapped->ciphertext);
+    }
+    memset(wrapped, 0, sizeof(*wrapped));
+}
+
+static int secdat_unwrap_master_key(const char *passphrase, char *buffer, size_t size)
+{
+    struct secdat_wrapped_master_key wrapped;
+    EVP_CIPHER_CTX *context = NULL;
+    unsigned char wrap_key[32];
+    unsigned char *plaintext = NULL;
+    size_t plaintext_length;
+    int written_length;
+    int final_length;
+    int status = 1;
+
+    if (secdat_read_wrapped_master_key(&wrapped) != 0) {
+        return 1;
+    }
+    if (secdat_wrap_key_from_passphrase(passphrase, wrapped.salt, wrapped.iterations, wrap_key) != 0) {
+        secdat_wrapped_master_key_free(&wrapped);
+        return 1;
+    }
+
+    plaintext_length = wrapped.ciphertext_length - SECDAT_TAG_LEN;
+    plaintext = malloc(plaintext_length == 0 ? 1 : plaintext_length);
+    if (plaintext == NULL) {
+        secdat_wrapped_master_key_free(&wrapped);
+        secdat_secure_clear(wrap_key, sizeof(wrap_key));
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+
+    context = EVP_CIPHER_CTX_new();
+    if (context == NULL) {
+        fprintf(stderr, _("failed to create decryption context\n"));
+        goto cleanup;
+    }
+    if (EVP_DecryptInit_ex(context, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1
+        || EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, sizeof(wrapped.nonce), NULL) != 1
+        || EVP_DecryptInit_ex(context, NULL, NULL, wrap_key, wrapped.nonce) != 1) {
+        fprintf(stderr, _("failed to initialize decryption\n"));
+        goto cleanup;
+    }
+    if (EVP_DecryptUpdate(
+            context,
+            plaintext,
+            &written_length,
+            wrapped.ciphertext,
+            (int)plaintext_length
+        ) != 1) {
+        fprintf(stderr, _("failed to decrypt value\n"));
+        goto cleanup;
+    }
+    if (EVP_CIPHER_CTX_ctrl(
+            context,
+            EVP_CTRL_GCM_SET_TAG,
+            SECDAT_TAG_LEN,
+            wrapped.ciphertext + plaintext_length
+        ) != 1) {
+        fprintf(stderr, _("failed to set authentication tag\n"));
+        goto cleanup;
+    }
+    if (EVP_DecryptFinal_ex(context, plaintext + written_length, &final_length) != 1) {
+        fprintf(stderr, _("failed to unlock persistent master key\n"));
+        goto cleanup;
+    }
+    written_length += final_length;
+    if (written_length <= 0 || (size_t)written_length > size || plaintext[written_length - 1] != '\0') {
+        fprintf(stderr, _("invalid wrapped master key\n"));
+        goto cleanup;
+    }
+    memcpy(buffer, plaintext, (size_t)written_length);
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(wrap_key, sizeof(wrap_key));
+    if (plaintext != NULL) {
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
+    }
+    if (context != NULL) {
+        EVP_CIPHER_CTX_free(context);
+    }
+    secdat_wrapped_master_key_free(&wrapped);
+    return status;
+}
+
 static void secdat_write_be32(unsigned char *buffer, uint32_t value)
 {
     buffer[0] = (unsigned char)((value >> 24) & 0xff);
@@ -761,22 +1661,148 @@ static uint32_t secdat_read_be32(const unsigned char *buffer)
 
 static int secdat_derive_key(unsigned char key[32])
 {
+    struct secdat_session_record record = {0};
     const char *master_key = getenv("SECDAT_MASTER_KEY");
     unsigned int key_length = 0;
 
     if (master_key == NULL || master_key[0] == '\0') {
-        fprintf(
-            stderr,
-            _("missing SECDAT_MASTER_KEY; export a secret first, for example: export SECDAT_MASTER_KEY='change-me'\n")
-        );
-        return 1;
+        if (secdat_session_agent_get(&record) == 0) {
+            master_key = record.master_key;
+        } else {
+            fprintf(
+                stderr,
+                _("missing SECDAT_MASTER_KEY and no active secdat session; run secdat unlock or export SECDAT_MASTER_KEY\n")
+            );
+            return 1;
+        }
     }
 
     if (EVP_Digest(master_key, strlen(master_key), key, &key_length, EVP_sha256(), NULL) != 1 || key_length != 32) {
+        secdat_secure_clear(record.master_key, strlen(record.master_key));
         fprintf(stderr, _("failed to derive encryption key\n"));
         return 1;
     }
 
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+
+    return 0;
+}
+
+static int secdat_command_status(const struct secdat_cli *cli)
+{
+    struct secdat_session_record record = {0};
+    int quiet = 0;
+    int wrapped_present = secdat_wrapped_master_key_exists();
+
+    if (cli->argc == 1 && strcmp(cli->argv[0], "--quiet") == 0) {
+        quiet = 1;
+    } else if (cli->argc != 0) {
+        fprintf(stderr, _("invalid arguments for status\n"));
+        return 2;
+    }
+
+    if (cli->dir != NULL || cli->store != NULL) {
+        fprintf(stderr, _("invalid arguments for status\n"));
+        return 2;
+    }
+
+    if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
+        if (!quiet) {
+            puts(_("unlocked"));
+            puts(_("source: environment"));
+            puts(wrapped_present ? _("wrapped master key: present") : _("wrapped master key: absent"));
+        }
+        return 0;
+    }
+
+    if (secdat_session_agent_status(&record) == 0) {
+        if (!quiet) {
+            puts(_("unlocked"));
+            puts(_("source: session agent"));
+            printf(_("expires in: %lld seconds\n"), (long long)(record.expires_at - time(NULL)));
+            puts(wrapped_present ? _("wrapped master key: present") : _("wrapped master key: absent"));
+        }
+        secdat_secure_clear(record.master_key, strlen(record.master_key));
+        return 0;
+    }
+
+    if (!quiet) {
+        puts(_("locked"));
+        puts(wrapped_present ? _("wrapped master key: present") : _("wrapped master key: absent"));
+    }
+    return 1;
+}
+
+static int secdat_command_unlock(const struct secdat_cli *cli)
+{
+    const char *env_master_key = getenv("SECDAT_MASTER_KEY");
+    int wrapped_present = secdat_wrapped_master_key_exists();
+    int initialized = 0;
+    char passphrase[512];
+    char secret[512];
+
+    if (cli->argc != 0 || cli->dir != NULL || cli->store != NULL) {
+        fprintf(stderr, _("invalid arguments for unlock\n"));
+        return 2;
+    }
+
+    if (env_master_key != NULL && env_master_key[0] != '\0') {
+        if (!wrapped_present && isatty(STDIN_FILENO)) {
+            if (secdat_read_secret_confirmation(passphrase, sizeof(passphrase)) != 0) {
+                return 1;
+            }
+            if (secdat_write_wrapped_master_key(passphrase, env_master_key) != 0) {
+                secdat_secure_clear(passphrase, strlen(passphrase));
+                return 1;
+            }
+            initialized = 1;
+            secdat_secure_clear(passphrase, strlen(passphrase));
+        }
+
+        if (secdat_session_agent_set(env_master_key) != 0) {
+            return 1;
+        }
+        puts(initialized
+                 ? _("persistent master key initialized; session unlocked from environment")
+                 : _("session unlocked from environment"));
+        return 0;
+    }
+
+    if (!wrapped_present) {
+        fprintf(stderr, _("no persistent master key is initialized; export SECDAT_MASTER_KEY and run secdat unlock once\n"));
+        return 1;
+    }
+
+    if (secdat_read_secret_from_tty(_("Enter secdat passphrase: "), passphrase, sizeof(passphrase)) != 0) {
+        return 1;
+    }
+    if (secdat_unwrap_master_key(passphrase, secret, sizeof(secret)) != 0) {
+        secdat_secure_clear(passphrase, strlen(passphrase));
+        return 1;
+    }
+    secdat_secure_clear(passphrase, strlen(passphrase));
+    if (secdat_session_agent_set(secret) != 0) {
+        secdat_secure_clear(secret, strlen(secret));
+        return 1;
+    }
+
+    secdat_secure_clear(secret, strlen(secret));
+    puts(_("session unlocked"));
+    return 0;
+}
+
+static int secdat_command_lock(const struct secdat_cli *cli)
+{
+    if (cli->argc != 0 || cli->dir != NULL || cli->store != NULL) {
+        fprintf(stderr, _("invalid arguments for lock\n"));
+        return 2;
+    }
+
+    if (secdat_session_agent_clear() != 0) {
+        return 1;
+    }
+
+    puts(_("session locked"));
     return 0;
 }
 
@@ -1974,6 +3000,12 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_cp(cli);
     case SECDAT_COMMAND_EXEC:
         return secdat_command_exec(cli);
+    case SECDAT_COMMAND_UNLOCK:
+        return secdat_command_unlock(cli);
+    case SECDAT_COMMAND_LOCK:
+        return secdat_command_lock(cli);
+    case SECDAT_COMMAND_STATUS:
+        return secdat_command_status(cli);
     case SECDAT_COMMAND_STORE_CREATE:
         return secdat_store_command_create(cli);
     case SECDAT_COMMAND_STORE_DELETE:
