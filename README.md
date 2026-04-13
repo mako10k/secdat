@@ -5,6 +5,7 @@ Minimal C implementation of the secdat secure local secret store.
 Current status:
 
 - requirements and design are documented in `docs/secdat-spec.md`
+- repository-local coding workflow and project rules are documented in `.github/copilot-instructions.md`
 - autotools support is available through `configure.ac` and `Makefile.am`
 - gettext-based localization is wired in for user-facing CLI messages
 - `ls`, `get`, `set`, `rm`, `mv`, `cp`, and `exec` are implemented with encrypted local storage
