@@ -83,6 +83,7 @@ if rc != 1:
     fail(f"status --quiet while locked returned {rc}")
 
 for args, marker in [
+    ([bin_path, "help", "status"], "status [-q|--quiet]"),
     ([bin_path, "--help", "status"], "status [-q|--quiet]"),
     ([bin_path, "-h", "status"], "status [-q|--quiet]"),
     ([bin_path, "status", "--help"], "status [-q|--quiet]"),
@@ -105,6 +106,11 @@ for args, marker in [
     ):
         fail(f"help check failed for {args}: rc={rc} output={(stdout + stderr)!r}")
 
+rc, stdout, stderr = run([bin_path, "help"])
+output = stdout + stderr
+if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "Commands:" not in output or "help: show global help" not in output or "version: print the secdat version" not in output:
+    fail(f"help subcommand check failed: rc={rc} output={output!r}")
+
 rc, stdout, stderr = run([bin_path, "--help"])
 output = stdout + stderr
 if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "-d, --dir DIR" not in output or "Commands:" not in output or "Groups:" not in output or "--help COMMAND" not in output or "COMMAND --help" not in output or "--version" not in output:
@@ -113,6 +119,10 @@ if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in outp
 rc, stdout, stderr = run([bin_path, "--version"])
 if rc != 0 or not (stdout + stderr).startswith("secdat "):
     fail(f"--version failed: rc={rc} output={(stdout + stderr)!r}")
+
+rc, stdout, stderr = run([bin_path, "version"])
+if rc != 0 or not (stdout + stderr).startswith("secdat "):
+    fail(f"version failed: rc={rc} output={(stdout + stderr)!r}")
 
 rc, stdout, stderr = run([bin_path, "-V"])
 if rc != 0 or not (stdout + stderr).startswith("secdat "):

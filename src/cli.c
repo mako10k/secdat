@@ -68,6 +68,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     if (strcmp(name, "ls") == 0) {
         return SECDAT_COMMAND_LS;
     }
+    if (strcmp(name, "help") == 0) {
+        return SECDAT_COMMAND_HELP;
+    }
     if (strcmp(name, "get") == 0) {
         return SECDAT_COMMAND_GET;
     }
@@ -174,10 +177,22 @@ static void secdat_cli_print_common_options(void)
     printf(_("  -V, --version      print the secdat version\n"));
 }
 
+static void secdat_cli_print_meta_usage_line(const char *program_name, const char *target)
+{
+    if (target != NULL && strcmp(target, "help") == 0) {
+        printf(_("  %s help [COMMAND]\n"), program_name);
+        return;
+    }
+    if (target != NULL && strcmp(target, "version") == 0) {
+        printf(_("  %s version\n"), program_name);
+    }
+}
+
 static void secdat_cli_print_help_routes(const char *program_name, const char *target)
 {
     printf(_("\nHelp:\n"));
     printf(_("  %s --help\n"), program_name);
+    printf(_("  %s help [COMMAND]\n"), program_name);
     if (target == NULL) {
         printf(_("  %s --help COMMAND\n"), program_name);
         printf(_("  %s COMMAND --help\n"), program_name);
@@ -186,6 +201,7 @@ static void secdat_cli_print_help_routes(const char *program_name, const char *t
         printf(_("  %s %s --help\n"), program_name, target);
     }
     printf(_("  %s --version\n"), program_name);
+    printf(_("  %s version\n"), program_name);
 }
 
 static void secdat_cli_print_group_meanings(void)
@@ -198,6 +214,7 @@ static void secdat_cli_print_group_meanings(void)
 static void secdat_cli_print_command_meanings(void)
 {
     printf(_("\nCommands:\n"));
+    printf(_("  help: show global help or detailed help for one command\n"));
     printf(_("  ls: list effective keys visible from the current domain view\n"));
     printf(_("  get: decrypt one resolved key and write it to standard output\n"));
     printf(_("  set: store or update one key in the resolved current domain\n"));
@@ -208,11 +225,16 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("  unlock: start or refresh an authenticated secret session\n"));
     printf(_("  lock: clear the active secret session\n"));
     printf(_("  status: report whether secret material is currently available\n"));
+    printf(_("  version: print the secdat version\n"));
 }
 
 static void secdat_cli_print_target_meaning(const char *target)
 {
     printf(_("\nMeaning:\n"));
+    if (target != NULL && strcmp(target, "help") == 0) {
+        printf(_("  show global help or detailed help for one command\n"));
+        return;
+    }
     if (target != NULL && strcmp(target, "ls") == 0) {
         printf(_("  list effective keys visible from the current domain view\n"));
         return;
@@ -251,6 +273,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "status") == 0) {
         printf(_("  report whether secret material is currently available\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "version") == 0) {
+        printf(_("  print the secdat version\n"));
         return;
     }
     if (target != NULL && strcmp(target, "store") == 0) {
@@ -299,7 +325,17 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         return 0;
     }
 
-    if (strcmp(argv[index], "ls") == 0) {
+    if (strcmp(argv[index], "help") == 0) {
+        cli->show_help = 1;
+        index += 1;
+        if (index < argc) {
+            cli->help_target = argv[index];
+        }
+        return 0;
+    } else if (strcmp(argv[index], "version") == 0) {
+        cli->show_version = 1;
+        return 0;
+    } else if (strcmp(argv[index], "ls") == 0) {
         cli->command = SECDAT_COMMAND_LS;
         index += 1;
     } else if (strcmp(argv[index], "get") == 0) {
@@ -426,6 +462,14 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
 
 void secdat_cli_print_help_target(const char *program_name, const char *target)
 {
+    if (target != NULL && (strcmp(target, "help") == 0 || strcmp(target, "version") == 0)) {
+        printf(_("Usage:\n"));
+        secdat_cli_print_meta_usage_line(program_name, target);
+        secdat_cli_print_help_routes(program_name, target);
+        secdat_cli_print_target_meaning(target);
+        return;
+    }
+
     if (target != NULL && strcmp(target, "store") == 0) {
         printf(_("Usage:\n"));
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_CREATE);
