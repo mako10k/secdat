@@ -21,83 +21,128 @@ msgstr "--dir に値が必要です\n"
 msgid "missing value for --store\n"
 msgstr "--store に値が必要です\n"
 
-#: src/cli.c:81
+#: src/cli.c:71
+#, c-format
+msgid "missing store subcommand\n"
+msgstr "store サブコマンドが必要です\n"
+
+#: src/cli.c:85
+#, c-format
+msgid "unknown store subcommand: %s\n"
+msgstr "不明な store サブコマンドです: %s\n"
+
+#: src/cli.c:91
 #, c-format
 msgid "missing domain subcommand\n"
 msgstr "domain サブコマンドが必要です\n"
 
-#: src/cli.c:95
+#: src/cli.c:105
 #, c-format
 msgid "unknown domain subcommand: %s\n"
 msgstr "不明な domain サブコマンドです: %s\n"
 
-#: src/cli.c:99
+#: src/cli.c:109
 #, c-format
 msgid "unknown command: %s\n"
 msgstr "不明なコマンドです: %s\n"
 
-#: src/cli.c:110
+#: src/cli.c:120
 #, c-format
 msgid "Usage:\n"
 msgstr "使い方:\n"
 
-#: src/cli.c:111
+#: src/cli.c:121
 #, c-format
-msgid "  %s [--dir DIR] [--store STORE] ls [--pattern GLOBPATTERN]\n"
-msgstr "  %s [--dir DIR] [--store STORE] ls [--pattern GLOBPATTERN]\n"
+msgid "  %s [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--canonical|--canonical-domain|--canonical-store]\n"
+msgstr "  %s [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--canonical|--canonical-domain|--canonical-store]\n"
 
-#: src/cli.c:112
+#: src/cli.c:122
 #, c-format
-msgid "  %s [--dir DIR] [--store STORE] get KEY [--stdout]\n"
-msgstr "  %s [--dir DIR] [--store STORE] get KEY [--stdout]\n"
+msgid "  %s [--dir DIR] [--store STORE] get KEYREF [--stdout]\n"
+msgstr "  %s [--dir DIR] [--store STORE] get KEYREF [--stdout]\n"
 
-#: src/cli.c:113
+#: src/cli.c:123
 #, c-format
 msgid ""
-"  %s [--dir DIR] [--store STORE] set KEY [VALUE|--stdin|--env ENVNAME|--"
+"  %s [--dir DIR] [--store STORE] set KEYREF [VALUE|--stdin|--env ENVNAME|--"
 "value VALUE]\n"
 msgstr ""
-"  %s [--dir DIR] [--store STORE] set KEY [VALUE|--stdin|--env ENVNAME|--"
+"  %s [--dir DIR] [--store STORE] set KEYREF [VALUE|--stdin|--env ENVNAME|--"
 "value VALUE]\n"
 
-#: src/cli.c:114
+#: src/cli.c:124
 #, c-format
-msgid "  %s [--dir DIR] [--store STORE] rm KEY\n"
-msgstr "  %s [--dir DIR] [--store STORE] rm KEY\n"
+msgid "  %s [--dir DIR] [--store STORE] rm KEYREF\n"
+msgstr "  %s [--dir DIR] [--store STORE] rm KEYREF\n"
 
-#: src/cli.c:115
+#: src/cli.c:125
 #, c-format
-msgid "  %s [--dir DIR] [--store STORE] mv SRC_KEY DST_KEY\n"
-msgstr "  %s [--dir DIR] [--store STORE] mv SRC_KEY DST_KEY\n"
+msgid "  %s [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF\n"
+msgstr "  %s [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF\n"
 
-#: src/cli.c:116
+#: src/cli.c:126
 #, c-format
-msgid "  %s [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY\n"
-msgstr "  %s [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY\n"
+msgid "  %s [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF\n"
+msgstr "  %s [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF\n"
 
-#: src/cli.c:117
+#: src/cli.c:127
 #, c-format
 msgid ""
 "  %s [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]\n"
 msgstr ""
 "  %s [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]\n"
 
-#: src/cli.c:118
+#: src/cli.c:128
+#, c-format
+msgid "  %s [--dir DIR] store create STORE\n"
+msgstr "  %s [--dir DIR] store create STORE\n"
+
+#: src/cli.c:129
+#, c-format
+msgid "  %s [--dir DIR] store delete STORE\n"
+msgstr "  %s [--dir DIR] store delete STORE\n"
+
+#: src/cli.c:130
+#, c-format
+msgid "  %s [--dir DIR] store ls [GLOBPATTERN]\n"
+msgstr "  %s [--dir DIR] store ls [GLOBPATTERN]\n"
+
+#: src/cli.c:131
 #, c-format
 msgid "  %s [--dir DIR] domain create\n"
 msgstr "  %s [--dir DIR] domain create\n"
 
-#: src/cli.c:119
+#: src/cli.c:132
 #, c-format
 msgid "  %s [--dir DIR] domain delete\n"
 msgstr "  %s [--dir DIR] domain delete\n"
 
-#: src/cli.c:120
+#: src/cli.c:133
 #, c-format
-msgid "  %s [--dir DIR] domain ls [--pattern GLOBPATTERN]\n"
-msgstr "  %s [--dir DIR] domain ls [--pattern GLOBPATTERN]\n"
+msgid "  %s [--dir DIR] domain ls [GLOBPATTERN]\n"
+msgstr "  %s [--dir DIR] domain ls [GLOBPATTERN]\n"
 
-#: src/store.c:586
+#: src/cli.c:134
+#, c-format
+msgid "\n"
+msgstr "\n"
+
+#: src/cli.c:135
+#, c-format
+msgid "  KEYREF syntax: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"
+msgstr "  KEYREF 構文: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"
+
+#: src/store.c:177
+#, c-format
+msgid "invalid key reference: %s\n"
+msgstr "不正なキー参照です: %s\n"
+
+#: src/store.c:272
+#, c-format
+msgid "invalid arguments for %s\n"
+msgstr "%s の引数が不正です\n"
+
+#: src/store.c:694
 #, c-format
 msgid "missing SECDAT_MASTER_KEY; export a secret first, for example: export SECDAT_MASTER_KEY='change-me'\n"
 msgstr "SECDAT_MASTER_KEY が未設定です。先に秘密値を export してください。例: export SECDAT_MASTER_KEY='change-me'\n"
