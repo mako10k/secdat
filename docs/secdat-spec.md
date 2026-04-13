@@ -23,6 +23,7 @@ secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--canonical|--canonical-dom
 
 secdat [--dir DIR] [--store STORE] get KEYREF
 secdat [--dir DIR] [--store STORE] get KEYREF --stdout
+secdat [--dir DIR] [--store STORE] get KEYREF --shellescaped
 
 secdat [--dir DIR] [--store STORE] set KEYREF
 secdat [--dir DIR] [--store STORE] set KEYREF VALUE
@@ -66,6 +67,7 @@ secdat [--dir DIR] [--store STORE] export [--pattern GLOBPATTERN]
 To make the requested behavior implementable, the following are treated as normative:
 
 - `get KEYREF` is equivalent to `get KEYREF --stdout`
+- `get KEYREF --shellescaped` emits a shell-escaped single-value representation suitable for `eval`-style shell assignment
 - `set KEYREF VALUE` is equivalent to `set KEYREF --value VALUE`
 - `set KEYREF` is equivalent to `set KEYREF --stdin`
 - `exec` injects matched keys into the child process environment
@@ -173,8 +175,9 @@ To make the requested behavior implementable, the following are treated as norma
 #### FR-7c Shell Export
 
 - `secdat export` emits bash-oriented `export ...` lines for the currently visible keys in the current `--dir` and `--store` view
-- emitted lines must reference `secdat get ... --stdout` command substitutions rather than embedding raw secret values directly
+- emitted lines must reference `secdat get ... --shellescaped` command substitutions rather than embedding raw secret values directly
 - `secdat export --pattern GLOBPATTERN` limits output to matched keys
+- emitted lines use `eval "export ...=$(...)"` so the `--shellescaped` payload is interpreted as shell syntax at assignment time
 - output uses shell quoting for the command path and arguments, and currently requires keys to already be valid shell identifiers
 - keys that are not valid shell identifiers cause the command to fail rather than guessing a normalization rule
 

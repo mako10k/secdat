@@ -83,6 +83,7 @@ To avoid writing secrets to your shell history, prefer stdin for sensitive value
 ```sh
 printf '%s' 'super-secret-value' | ./src/secdat set API_TOKEN --stdin
 ./src/secdat get API_TOKEN --stdout
+./src/secdat get API_TOKEN --shellescaped
 ```
 
 For shell setup, you can emit bash-oriented export lines that defer the real secret read to `secdat get`:
@@ -92,7 +93,7 @@ For shell setup, you can emit bash-oriented export lines that defer the real sec
 eval "$(./src/secdat --dir ~/example/project --store app export)"
 ```
 
-The output is shell-ready text such as `export API_TOKEN="$(./src/secdat ... get API_TOKEN --stdout)"`; it does not print raw secret values directly. The current implementation is bash-oriented, single-quote escapes command arguments, and rejects keys that are not valid shell identifiers.
+The output is shell-ready text such as `eval "export API_TOKEN=$(./src/secdat ... get API_TOKEN --shellescaped)"`; it does not print raw secret values directly. `get --shellescaped` emits a single-quoted shell literal for one secret value, and `export` reuses that path. The current implementation is bash-oriented, single-quote escapes command arguments, and rejects keys that are not valid shell identifiers.
 
 You can also save the currently visible secrets from one view and load them into another domain/store context:
 

@@ -2776,12 +2776,40 @@ static int secdat_command_ls(const struct secdat_cli *cli)
     return 0;
 }
 
+static void secdat_write_shell_quoted(FILE *stream, const char *value);
+
+static int secdat_write_shell_quoted_bytes(FILE *stream, const char *key, const unsigned char *value, size_t value_length)
+{
+    size_t index;
+
+    if (memchr(value, '\0', value_length) != NULL) {
+        fprintf(stderr, _("key value contains NUL byte and cannot be shell-escaped: %s\n"), key);
+        return 1;
+    }
+
+    fputc('\'', stream);
+    for (index = 0; index < value_length; index += 1) {
+        if (value[index] == '\'') {
+            fputs("'\\''", stream);
+        } else {
+            fputc((int)value[index], stream);
+        }
+    }
+    fputc('\'', stream);
+    if (fflush(stream) != 0 || ferror(stream)) {
+        fprintf(stderr, _("failed to write standard output\n"));
+        return 1;
+    }
+    return 0;
+}
+
 static int secdat_command_get(const struct secdat_cli *cli)
 {
     struct secdat_key_reference reference;
     struct secdat_domain_chain chain = {0};
     unsigned char *plaintext = NULL;
     size_t plaintext_length = 0;
+    int shellescaped = 0;
     ssize_t written;
     size_t offset;
 
@@ -2791,7 +2819,17 @@ static int secdat_command_get(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (cli->argc != 1 && !(cli->argc == 2 && (strcmp(cli->argv[1], "--stdout") == 0 || strcmp(cli->argv[1], "-o") == 0))) {
+    if (cli->argc == 2) {
+        if (strcmp(cli->argv[1], "--stdout") == 0 || strcmp(cli->argv[1], "-o") == 0) {
+            shellescaped = 0;
+        } else if (strcmp(cli->argv[1], "--shellescaped") == 0) {
+            shellescaped = 1;
+        } else {
+            fprintf(stderr, _("invalid arguments for get\n"));
+            secdat_cli_print_try_help(cli, "get");
+            return 2;
+        }
+    } else if (cli->argc != 1) {
         fprintf(stderr, _("invalid arguments for get\n"));
         secdat_cli_print_try_help(cli, "get");
         return 2;
@@ -2815,17 +2853,26 @@ static int secdat_command_get(const struct secdat_cli *cli)
         return 1;
     }
 
-    offset = 0;
-    while (offset < plaintext_length) {
-        written = write(STDOUT_FILENO, plaintext + offset, plaintext_length - offset);
-        if (written <= 0) {
-            fprintf(stderr, _("failed to write standard output\n"));
+    if (shellescaped) {
+        if (secdat_write_shell_quoted_bytes(stdout, reference.key, plaintext, plaintext_length) != 0) {
             secdat_domain_chain_free(&chain);
             secdat_secure_clear(plaintext, plaintext_length);
             free(plaintext);
             return 1;
         }
-        offset += (size_t)written;
+    } else {
+        offset = 0;
+        while (offset < plaintext_length) {
+            written = write(STDOUT_FILENO, plaintext + offset, plaintext_length - offset);
+            if (written <= 0) {
+                fprintf(stderr, _("failed to write standard output\n"));
+                secdat_domain_chain_free(&chain);
+                secdat_secure_clear(plaintext, plaintext_length);
+                free(plaintext);
+                return 1;
+            }
+            offset += (size_t)written;
+        }
     }
 
     secdat_domain_chain_free(&chain);
@@ -3457,9 +3504,9 @@ static int secdat_command_export(const struct secdat_cli *cli)
             return 1;
         }
 
-        fputs("export ", stdout);
+        fputs("eval \"export ", stdout);
         fputs(visible_keys.items[key_index], stdout);
-        fputs("=\"$(", stdout);
+        fputs("=$(", stdout);
         secdat_write_shell_quoted(stdout, cli->program_name == NULL ? "secdat" : cli->program_name);
         fputs(" --dir ", stdout);
         secdat_write_shell_quoted(stdout, canonical_dir);
@@ -3469,7 +3516,7 @@ static int secdat_command_export(const struct secdat_cli *cli)
         }
         fputs(" get ", stdout);
         secdat_write_shell_quoted(stdout, visible_keys.items[key_index]);
-        fputs(" --stdout)\"\n", stdout);
+        fputs(" --shellescaped)\"\n", stdout);
     }
 
     secdat_domain_chain_free(&chain);

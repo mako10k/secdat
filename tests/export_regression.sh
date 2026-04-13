@@ -58,6 +58,7 @@ def assert_contains(text, expected, label):
 for args, marker in [
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN]"),
     ([bin_path, "export", "--help"], "emit shell-ready export lines"),
+    ([bin_path, "help", "get"], "get KEYREF [-o|--stdout|--shellescaped]"),
 ]:
     rc, stdout, stderr = run(args)
     output = stdout + stderr
@@ -75,7 +76,7 @@ if rc != 0 or stdout != "" or stderr != "":
 
 for args in [
     [bin_path, "--dir", str(root_dir), "set", "ROOT_TOKEN", "root-secret"],
-    [bin_path, "--dir", str(child_dir), "set", "CHILD_TOKEN", "child-secret"],
+    [bin_path, "--dir", str(child_dir), "set", "CHILD_TOKEN", "child secret's value"],
     [bin_path, "--dir", str(root_dir), "--store", "app", "set", "APP_TOKEN", "app-secret"],
     [bin_path, "--dir", str(invalid_dir), "set", "BAD-KEY", "bad-secret"],
 ]:
@@ -86,25 +87,31 @@ for args in [
 rc, stdout, stderr = run([bin_path, "--dir", str(child_dir), "export"])
 if rc != 0 or stderr != "":
     fail(f"export current view failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, 'export CHILD_TOKEN="$(', "child export command")
+assert_contains(stdout, 'eval "export CHILD_TOKEN=$(', "child export command")
 quoted_paths = {shlex.quote(bin_path), shlex.quote(str(Path(bin_path).resolve()))}
 if not any(candidate in stdout for candidate in quoted_paths):
     fail(f"quoted command path: missing one of {sorted(quoted_paths)!r} in [{stdout}]")
-assert_contains(stdout, "get 'CHILD_TOKEN' --stdout)", "child local key line")
-assert_contains(stdout, "get 'ROOT_TOKEN' --stdout)", "child inherited key line")
-if "child-secret" in stdout or "root-secret" in stdout:
+assert_contains(stdout, "get 'CHILD_TOKEN' --shellescaped)\"", "child local key line")
+assert_contains(stdout, "get 'ROOT_TOKEN' --shellescaped)\"", "child inherited key line")
+if "child secret's value" in stdout or "root-secret" in stdout:
     fail(f"export leaked raw secrets: {stdout!r}")
 
 cmd = stdout + "python3 -c \"import os; print(os.environ['CHILD_TOKEN']); print(os.environ['ROOT_TOKEN'])\""
 rc, eval_stdout, eval_stderr = run(["bash", "-lc", cmd])
-if rc != 0 or eval_stderr != "" or eval_stdout.splitlines() != ["child-secret", "root-secret"]:
+if rc != 0 or eval_stderr != "" or eval_stdout.splitlines() != ["child secret's value", "root-secret"]:
     fail(f"evaluated export failed: rc={rc} stdout={eval_stdout!r} stderr={eval_stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(child_dir), "get", "CHILD_TOKEN", "--shellescaped"])
+if rc != 0 or stderr != "":
+    fail(f"shellescaped get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if stdout != "'child secret'\\''s value'":
+    fail(f"unexpected shellescaped output: {stdout!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(root_dir), "--store", "app", "export"])
 if rc != 0 or stderr != "":
     fail(f"store export failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "--store 'app'", "store option present")
-assert_contains(stdout, "get 'APP_TOKEN' --stdout)", "store key present")
+assert_contains(stdout, "get 'APP_TOKEN' --shellescaped)\"", "store key present")
 if "ROOT_TOKEN" in stdout:
     fail(f"store export unexpectedly included default-store key: {stdout!r}")
 
