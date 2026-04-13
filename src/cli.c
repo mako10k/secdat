@@ -128,19 +128,21 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
 void secdat_cli_print_usage(const char *program_name)
 {
     printf(_("Usage:\n"));
-    printf(_("  %s [--dir DIR] [--store STORE] ls [--pattern GLOBPATTERN]\n"), program_name);
-    printf(_("  %s [--dir DIR] [--store STORE] get KEY [--stdout]\n"), program_name);
-    printf(_("  %s [--dir DIR] [--store STORE] set KEY [VALUE|--stdin|--env ENVNAME|--value VALUE]\n"), program_name);
-    printf(_("  %s [--dir DIR] [--store STORE] rm KEY\n"), program_name);
-    printf(_("  %s [--dir DIR] [--store STORE] mv SRC_KEY DST_KEY\n"), program_name);
-    printf(_("  %s [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY\n"), program_name);
+    printf(_("  %s [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--canonical|--canonical-domain|--canonical-store]\n"), program_name);
+    printf(_("  %s [--dir DIR] [--store STORE] get KEYREF [--stdout]\n"), program_name);
+    printf(_("  %s [--dir DIR] [--store STORE] set KEYREF [VALUE|--stdin|--env ENVNAME|--value VALUE]\n"), program_name);
+    printf(_("  %s [--dir DIR] [--store STORE] rm KEYREF\n"), program_name);
+    printf(_("  %s [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF\n"), program_name);
+    printf(_("  %s [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF\n"), program_name);
     printf(_("  %s [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]\n"), program_name);
     printf(_("  %s [--dir DIR] store create STORE\n"), program_name);
     printf(_("  %s [--dir DIR] store delete STORE\n"), program_name);
-    printf(_("  %s [--dir DIR] store ls [--pattern GLOBPATTERN]\n"), program_name);
+    printf(_("  %s [--dir DIR] store ls [GLOBPATTERN]\n"), program_name);
     printf(_("  %s [--dir DIR] domain create\n"), program_name);
     printf(_("  %s [--dir DIR] domain delete\n"), program_name);
-    printf(_("  %s [--dir DIR] domain ls [--pattern GLOBPATTERN]\n"), program_name);
+    printf(_("  %s [--dir DIR] domain ls [GLOBPATTERN]\n"), program_name);
+    printf(_("\n"));
+    printf(_("  KEYREF syntax: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"));
 }
 
 const char *secdat_cli_command_name(enum secdat_command_type command)

@@ -752,6 +752,42 @@ int secdat_domain_resolve_chain(const char *dir_override, struct secdat_domain_c
     return 0;
 }
 
+int secdat_domain_root_path(const char *domain_id, char *buffer, size_t size)
+{
+    char domain_root[PATH_MAX];
+    char meta_dir[PATH_MAX];
+    char root_file[PATH_MAX];
+    int status;
+
+    if (strcmp(domain_id, "default") == 0) {
+        if (size == 0) {
+            fprintf(stderr, _("path is too long\n"));
+            return 1;
+        }
+        buffer[0] = '\0';
+        return 0;
+    }
+
+    status = secdat_domain_root_for_id(domain_id, domain_root, sizeof(domain_root));
+    if (status != 0) {
+        return status;
+    }
+    if (secdat_join_path(meta_dir, sizeof(meta_dir), domain_root, "meta") != 0) {
+        return 1;
+    }
+    if (secdat_join_path(root_file, sizeof(root_file), meta_dir, "root") != 0) {
+        return 1;
+    }
+
+    status = secdat_read_text_file(root_file, buffer, size);
+    if (status != 0) {
+        fprintf(stderr, _("failed to read file: %s\n"), root_file);
+        return 1;
+    }
+
+    return 0;
+}
+
 int secdat_domain_store_root(const char *domain_id, const char *store_name, char *buffer, size_t size)
 {
     char domain_root[PATH_MAX];
@@ -928,6 +964,8 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
 
     if (cli->argc == 2 && strcmp(cli->argv[0], "--pattern") == 0) {
         pattern = cli->argv[1];
+    } else if (cli->argc == 1 && cli->argv[0][0] != '-') {
+        pattern = cli->argv[0];
     } else if (cli->argc != 0) {
         fprintf(stderr, _("invalid arguments for domain ls\n"));
         return 2;

@@ -19,30 +19,30 @@ This document consolidates the initial requirements, defines the product and sec
 The intended command set is:
 
 ```text
-secdat [--dir DIR] [--store STORE] ls [--pattern GLOBPATTERN]
+secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--canonical|--canonical-domain|--canonical-store]
 
-secdat [--dir DIR] [--store STORE] get KEY
-secdat [--dir DIR] [--store STORE] get KEY --stdout
+secdat [--dir DIR] [--store STORE] get KEYREF
+secdat [--dir DIR] [--store STORE] get KEYREF --stdout
 
-secdat [--dir DIR] [--store STORE] set KEY
-secdat [--dir DIR] [--store STORE] set KEY VALUE
-secdat [--dir DIR] [--store STORE] set KEY --stdin
-secdat [--dir DIR] [--store STORE] set KEY --env ENVNAME
-secdat [--dir DIR] [--store STORE] set KEY --value VALUE
+secdat [--dir DIR] [--store STORE] set KEYREF
+secdat [--dir DIR] [--store STORE] set KEYREF VALUE
+secdat [--dir DIR] [--store STORE] set KEYREF --stdin
+secdat [--dir DIR] [--store STORE] set KEYREF --env ENVNAME
+secdat [--dir DIR] [--store STORE] set KEYREF --value VALUE
 
-secdat [--dir DIR] [--store STORE] rm KEY
-secdat [--dir DIR] [--store STORE] mv SRC_KEY DST_KEY
-secdat [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY
+secdat [--dir DIR] [--store STORE] rm KEYREF
+secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
+secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]
 
 secdat [--dir DIR] store create STORE
 secdat [--dir DIR] store delete STORE
-secdat [--dir DIR] store ls [--pattern GLOBPATTERN]
+secdat [--dir DIR] store ls [GLOBPATTERN]
 
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
-secdat [--dir DIR] domain ls [--pattern GLOBPATTERN]
+secdat [--dir DIR] domain ls [GLOBPATTERN]
 ```
 
 ### 2.2 Explicitly Stated Requirements
@@ -58,9 +58,9 @@ secdat [--dir DIR] domain ls [--pattern GLOBPATTERN]
 
 To make the requested behavior implementable, the following are treated as normative:
 
-- `get KEY` is equivalent to `get KEY --stdout`
-- `set KEY VALUE` is equivalent to `set KEY --value VALUE`
-- `set KEY` is equivalent to `set KEY --stdin`
+- `get KEYREF` is equivalent to `get KEYREF --stdout`
+- `set KEYREF VALUE` is equivalent to `set KEYREF --value VALUE`
+- `set KEYREF` is equivalent to `set KEYREF --stdin`
 - `exec` injects matched keys into the child process environment
 - values are modeled as arbitrary byte strings internally
 - domains are resolved from a directory context
@@ -95,6 +95,11 @@ To make the requested behavior implementable, the following are treated as norma
 - Store metadata and entries live inside exactly one resolved domain
 - Domain: a configuration boundary associated with a directory path
 - Key: the logical name of a stored value
+- Key reference (`KEYREF`): `KEY[/ABSOLUTE/DOMAIN][:STORE]`
+- the `/ABSOLUTE/DOMAIN` suffix is optional and must begin with `/`
+- the `:STORE` suffix is optional
+- if the domain suffix is omitted, the command falls back to `--dir DIR` and then the current working directory
+- if the store suffix is omitted, the command falls back to `--store STORE` and then the default store
 - Value: secret plaintext
 - Master key: key material used to encrypt and decrypt values
 - Tombstone: a delete marker in the current domain that hides an inherited key
@@ -104,21 +109,24 @@ To make the requested behavior implementable, the following are treated as norma
 #### FR-1 Key Listing
 
 - `secdat ls` lists the effective keys visible from the current domain view
-- `secdat ls --pattern GLOBPATTERN` filters keys using a glob pattern
+- `secdat ls PATTERN` and `secdat ls --pattern PATTERN` are equivalent
+- `secdat ls --canonical` prints `KEYREF` with both canonical domain and canonical store suffixes
+- `secdat ls --canonical-domain` prints `KEYREF` with the canonical domain suffix only
+- `secdat ls --canonical-store` prints `KEYREF` with the canonical store suffix only
 - output is sorted lexicographically
 - output format is one key per line
 
 #### FR-2 Value Retrieval
 
-- `secdat get KEY` is equivalent to `secdat get KEY --stdout`
+- `secdat get KEYREF` is equivalent to `secdat get KEYREF --stdout`
 - the resolved plaintext value is written to standard output unchanged
 - no trailing newline is added automatically
 - it is an error if the key is not found in the effective domain view
 
 #### FR-3 Value Storage
 
-- `secdat set KEY` is equivalent to `secdat set KEY --stdin`
-- `secdat set KEY VALUE` is equivalent to `secdat set KEY --value VALUE`
+- `secdat set KEYREF` is equivalent to `secdat set KEYREF --stdin`
+- `secdat set KEYREF VALUE` is equivalent to `secdat set KEYREF --value VALUE`
 - `--stdin` reads bytes from standard input until EOF
 - `--env ENVNAME` stores the value of the named environment variable
 - `--value VALUE` stores the literal argument value
@@ -126,22 +134,22 @@ To make the requested behavior implementable, the following are treated as norma
 
 #### FR-4 Key Removal
 
-- `secdat rm KEY` applies deletion in the current domain
+- `secdat rm KEYREF` applies deletion in the resolved target domain and store
 - if the key exists as a concrete entry in the current domain, that entry is removed
 - if the key is only inherited from a parent domain, a tombstone is created in the current domain
 - it is an error if the key does not exist in the effective domain view
 
 #### FR-5 Key Rename
 
-- `secdat mv SRC_KEY DST_KEY` renames a key
-- it is an error if `DST_KEY` already exists in the effective current-domain view
-- it is an error if `SRC_KEY` and `DST_KEY` are identical
-- if `SRC_KEY` is inherited from a parent domain, the result is materialized in the current domain and the original inherited name is hidden with a tombstone
+- `secdat mv SRC_KEYREF DST_KEYREF` moves a key between resolved source and destination locations
+- it is an error if `DST_KEYREF` already exists in the effective destination view
+- it is an error if `SRC_KEYREF` and `DST_KEYREF` are identical textually
+- if `SRC_KEYREF` is inherited from a parent domain, the source name is hidden with a tombstone in the resolved source current domain after the destination is materialized
 
 #### FR-6 Key Copy
 
-- `secdat cp SRC_KEY DST_KEY` copies the resolved plaintext value of `SRC_KEY` into `DST_KEY` in the current domain
-- it is an error if `DST_KEY` already exists in the effective current-domain view
+- `secdat cp SRC_KEYREF DST_KEYREF` copies the resolved plaintext value of `SRC_KEYREF` into `DST_KEYREF`
+- it is an error if `DST_KEYREF` already exists in the effective destination view
 - the copied value must be re-encrypted with a new nonce
 
 #### FR-7 Runtime Injection
@@ -164,7 +172,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] store delete STORE` deletes a store from the resolved current domain
 - deleting a store fails if the store still contains local entries or tombstones
 - `secdat [--dir DIR] store ls` lists store names defined in the resolved current domain
-- `secdat [--dir DIR] store ls --pattern GLOBPATTERN` filters listed store names using a glob pattern
+- `secdat [--dir DIR] store ls PATTERN` and `secdat [--dir DIR] store ls --pattern PATTERN` are equivalent
 - `store` management never creates, deletes, or lists stores in parent or child domains
 
 #### FR-10 Domain Management
@@ -175,7 +183,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] domain delete` deletes the domain definition for the target directory
 - `domain delete` does not modify parent-domain data
 - `secdat domain ls` without `--dir` lists all domains owned by the current OS user
-- `secdat domain ls --pattern GLOBPATTERN` filters the listed domains using a glob pattern
+- `secdat domain ls PATTERN` and `secdat domain ls --pattern PATTERN` are equivalent
 - `secdat --dir DIR domain ls` restricts the listing scope to ancestor domains of `DIR`, the domain rooted at `DIR` itself, and descendant domains under `DIR`
 - sibling directories of `DIR` and their descendants are excluded from that restricted listing
 

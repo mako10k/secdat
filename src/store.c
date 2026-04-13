@@ -35,6 +35,20 @@ struct secdat_key_list {
     size_t capacity;
 };
 
+struct secdat_key_reference {
+    char key[PATH_MAX];
+    char domain[PATH_MAX];
+    char store[PATH_MAX];
+    const char *domain_value;
+    const char *store_value;
+};
+
+struct secdat_ls_options {
+    const char *pattern;
+    int canonical_domain;
+    int canonical_store;
+};
+
 static void secdat_secure_clear(void *buffer, size_t length)
 {
     if (buffer != NULL && length > 0) {
@@ -109,6 +123,187 @@ static int secdat_compare_strings(const void *left, const void *right)
     const char *const *right_string = right;
 
     return strcmp(*left_string, *right_string);
+}
+
+static int secdat_copy_string(char *buffer, size_t size, const char *value)
+{
+    size_t length = strlen(value);
+
+    if (length >= size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+
+    memcpy(buffer, value, length + 1);
+    return 0;
+}
+
+static int secdat_canonicalize_directory_path(const char *input, char *buffer, size_t size)
+{
+    const char *resolved_input = input == NULL ? "." : input;
+
+    if (realpath(resolved_input, buffer) == NULL) {
+        fprintf(stderr, _("failed to resolve directory: %s\n"), resolved_input);
+        return 1;
+    }
+
+    if (strlen(buffer) >= size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+
+    return 0;
+}
+
+static int secdat_parse_key_reference(
+    const char *raw,
+    const char *fallback_dir,
+    const char *fallback_store,
+    struct secdat_key_reference *reference
+)
+{
+    const char *store_separator;
+    const char *domain_separator;
+    size_t base_length;
+    size_t key_length;
+
+    memset(reference, 0, sizeof(*reference));
+    reference->domain_value = fallback_dir;
+    reference->store_value = fallback_store;
+
+    store_separator = strrchr(raw, ':');
+    if (store_separator != NULL) {
+        if (store_separator[1] == '\0') {
+            fprintf(stderr, _("invalid key reference: %s\n"), raw);
+            return 1;
+        }
+        if (secdat_copy_string(reference->store, sizeof(reference->store), store_separator + 1) != 0) {
+            return 1;
+        }
+        reference->store_value = reference->store;
+        base_length = (size_t)(store_separator - raw);
+    } else {
+        base_length = strlen(raw);
+    }
+
+    domain_separator = memchr(raw, '/', base_length);
+    if (domain_separator != NULL) {
+        if (domain_separator == raw) {
+            fprintf(stderr, _("invalid key reference: %s\n"), raw);
+            return 1;
+        }
+        key_length = (size_t)(domain_separator - raw);
+        if (base_length - key_length >= sizeof(reference->domain)) {
+            fprintf(stderr, _("path is too long\n"));
+            return 1;
+        }
+        memcpy(reference->domain, domain_separator, base_length - key_length);
+        reference->domain[base_length - key_length] = '\0';
+        reference->domain_value = reference->domain;
+    } else {
+        key_length = base_length;
+    }
+
+    if (key_length == 0 || key_length >= sizeof(reference->key)) {
+        fprintf(stderr, _("invalid key reference: %s\n"), raw);
+        return 1;
+    }
+
+    memcpy(reference->key, raw, key_length);
+    reference->key[key_length] = '\0';
+    return 0;
+}
+
+static const char *secdat_effective_store_name(const char *store_name)
+{
+    return store_name == NULL ? "default" : store_name;
+}
+
+static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_ls_options *options)
+{
+    int index;
+
+    memset(options, 0, sizeof(*options));
+
+    for (index = 0; index < cli->argc; index += 1) {
+        if (strcmp(cli->argv[index], "--pattern") == 0) {
+            if (index + 1 >= cli->argc || options->pattern != NULL) {
+                fprintf(stderr, _("invalid arguments for ls\n"));
+                return 2;
+            }
+            options->pattern = cli->argv[index + 1];
+            index += 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--canonical") == 0) {
+            options->canonical_domain = 1;
+            options->canonical_store = 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--canonical-domain") == 0) {
+            options->canonical_domain = 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--canonical-store") == 0) {
+            options->canonical_store = 1;
+            continue;
+        }
+        if (cli->argv[index][0] == '-' || options->pattern != NULL) {
+            fprintf(stderr, _("invalid arguments for ls\n"));
+            return 2;
+        }
+        options->pattern = cli->argv[index];
+    }
+
+    return 0;
+}
+
+static int secdat_parse_simple_ls_pattern(const struct secdat_cli *cli, const char *command_name, const char **pattern)
+{
+    if (cli->argc == 2 && strcmp(cli->argv[0], "--pattern") == 0) {
+        *pattern = cli->argv[1];
+        return 0;
+    }
+    if (cli->argc == 1 && cli->argv[0][0] != '-') {
+        *pattern = cli->argv[0];
+        return 0;
+    }
+    if (cli->argc != 0) {
+        fprintf(stderr, _("invalid arguments for %s\n"), command_name);
+        return 2;
+    }
+
+    *pattern = NULL;
+    return 0;
+}
+
+static int secdat_format_canonical_key(
+    char *buffer,
+    size_t size,
+    const char *key,
+    const char *domain,
+    const char *store,
+    int include_domain,
+    int include_store
+)
+{
+    int written;
+
+    written = snprintf(
+        buffer,
+        size,
+        "%s%s%s%s",
+        key,
+        include_domain && domain != NULL && domain[0] != '\0' ? domain : "",
+        include_store ? ":" : "",
+        include_store ? store : ""
+    );
+    if (written < 0 || (size_t)written >= size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+
+    return 0;
 }
 
 static int secdat_is_unreserved(unsigned char character)
@@ -1011,13 +1206,11 @@ static int secdat_command_ls(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
     struct secdat_key_list visible_keys = {0};
-    const char *pattern = NULL;
+    struct secdat_ls_options options;
+    char canonical_base_dir[PATH_MAX];
     size_t index;
 
-    if (cli->argc == 2 && strcmp(cli->argv[0], "--pattern") == 0) {
-        pattern = cli->argv[1];
-    } else if (cli->argc != 0) {
-        fprintf(stderr, _("invalid arguments for ls\n"));
+    if (secdat_parse_ls_options(cli, &options) != 0) {
         return 2;
     }
 
@@ -1025,14 +1218,64 @@ static int secdat_command_ls(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_collect_visible_keys(&chain, cli->store, pattern, &visible_keys) != 0) {
+    if (secdat_canonicalize_directory_path(cli->dir, canonical_base_dir, sizeof(canonical_base_dir)) != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+
+    if (secdat_collect_visible_keys(&chain, cli->store, options.pattern, &visible_keys) != 0) {
         secdat_domain_chain_free(&chain);
         secdat_key_list_free(&visible_keys);
         return 1;
     }
 
     for (index = 0; index < visible_keys.count; index += 1) {
-        puts(visible_keys.items[index]);
+        char output[PATH_MAX * 2];
+        size_t resolved_index = 0;
+        char domain_path[PATH_MAX];
+
+        if (!options.canonical_domain && !options.canonical_store) {
+            puts(visible_keys.items[index]);
+            continue;
+        }
+
+        if (secdat_find_effective_entry(&chain, cli->store, visible_keys.items[index], output, sizeof(output), &resolved_index) != 0) {
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+
+        if (options.canonical_domain) {
+            if (secdat_domain_root_path(chain.ids[resolved_index], domain_path, sizeof(domain_path)) != 0) {
+                secdat_domain_chain_free(&chain);
+                secdat_key_list_free(&visible_keys);
+                return 1;
+            }
+            if (domain_path[0] == '\0') {
+                if (secdat_copy_string(domain_path, sizeof(domain_path), canonical_base_dir) != 0) {
+                    secdat_domain_chain_free(&chain);
+                    secdat_key_list_free(&visible_keys);
+                    return 1;
+                }
+            }
+        } else {
+            domain_path[0] = '\0';
+        }
+
+        if (secdat_format_canonical_key(
+                output,
+                sizeof(output),
+                visible_keys.items[index],
+                domain_path,
+                secdat_effective_store_name(cli->store),
+                options.canonical_domain,
+                options.canonical_store) != 0) {
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+
+        puts(output);
     }
 
     secdat_domain_chain_free(&chain);
@@ -1042,6 +1285,7 @@ static int secdat_command_ls(const struct secdat_cli *cli)
 
 static int secdat_command_get(const struct secdat_cli *cli)
 {
+    struct secdat_key_reference reference;
     struct secdat_domain_chain chain = {0};
     unsigned char *plaintext = NULL;
     size_t plaintext_length = 0;
@@ -1058,11 +1302,15 @@ static int secdat_command_get(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(&chain, cli->store, cli->argv[0], &plaintext, &plaintext_length, NULL) != 0) {
+    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+        return 1;
+    }
+
+    if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;
     }
@@ -1087,8 +1335,8 @@ static int secdat_command_get(const struct secdat_cli *cli)
 }
 
 static int secdat_store_plaintext(
-    const struct secdat_cli *cli,
     const char *domain_id,
+    const char *store_name,
     const char *key,
     unsigned char *plaintext,
     size_t plaintext_length
@@ -1100,17 +1348,17 @@ static int secdat_store_plaintext(
     size_t encrypted_length = 0;
     int status;
 
-    status = secdat_ensure_store_dirs(domain_id, cli->store);
+    status = secdat_ensure_store_dirs(domain_id, store_name);
     if (status != 0) {
         return status;
     }
 
-    status = secdat_build_entry_path(domain_id, cli->store, key, entry_path, sizeof(entry_path));
+    status = secdat_build_entry_path(domain_id, store_name, key, entry_path, sizeof(entry_path));
     if (status != 0) {
         return status;
     }
 
-    status = secdat_build_tombstone_path(domain_id, cli->store, key, tombstone_path, sizeof(tombstone_path));
+    status = secdat_build_tombstone_path(domain_id, store_name, key, tombstone_path, sizeof(tombstone_path));
     if (status != 0) {
         return status;
     }
@@ -1131,6 +1379,7 @@ static int secdat_store_plaintext(
 
 static int secdat_command_set(const struct secdat_cli *cli)
 {
+    struct secdat_key_reference reference;
     char current_domain_id[PATH_MAX];
     const char *key;
     unsigned char *plaintext = NULL;
@@ -1144,7 +1393,11 @@ static int secdat_command_set(const struct secdat_cli *cli)
         return 2;
     }
 
-    key = cli->argv[0];
+    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
+        return 1;
+    }
+
+    key = reference.key;
     if (cli->argc == 1 || (cli->argc == 2 && strcmp(cli->argv[1], "--stdin") == 0)) {
         if (isatty(STDIN_FILENO)) {
             fprintf(stderr, _("refusing to read secret from a terminal\n"));
@@ -1190,13 +1443,13 @@ static int secdat_command_set(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_domain_resolve_current(cli->dir, current_domain_id, sizeof(current_domain_id)) != 0) {
+    if (secdat_domain_resolve_current(reference.domain_value, current_domain_id, sizeof(current_domain_id)) != 0) {
         secdat_secure_clear(plaintext, plaintext_length);
         free(plaintext);
         return 1;
     }
 
-    status = secdat_store_plaintext(cli, current_domain_id, key, plaintext, plaintext_length);
+    status = secdat_store_plaintext(current_domain_id, reference.store_value, key, plaintext, plaintext_length);
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
     return status;
@@ -1207,7 +1460,7 @@ static int secdat_write_empty_file(const char *path)
     return secdat_atomic_write_file(path, (const unsigned char *)"", 0);
 }
 
-static int secdat_remove_key_in_chain(const struct secdat_cli *cli, const struct secdat_domain_chain *chain, const char *key)
+static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, const char *store_name, const char *key)
 {
     char current_domain_id[PATH_MAX];
     char entry_path[PATH_MAX];
@@ -1221,10 +1474,10 @@ static int secdat_remove_key_in_chain(const struct secdat_cli *cli, const struct
     }
     strcpy(current_domain_id, chain->ids[0]);
 
-    if (secdat_build_entry_path(current_domain_id, cli->store, key, entry_path, sizeof(entry_path)) != 0) {
+    if (secdat_build_entry_path(current_domain_id, store_name, key, entry_path, sizeof(entry_path)) != 0) {
         return 1;
     }
-    if (secdat_build_tombstone_path(current_domain_id, cli->store, key, tombstone_path, sizeof(tombstone_path)) != 0) {
+    if (secdat_build_tombstone_path(current_domain_id, store_name, key, tombstone_path, sizeof(tombstone_path)) != 0) {
         return 1;
     }
 
@@ -1237,7 +1490,7 @@ static int secdat_remove_key_in_chain(const struct secdat_cli *cli, const struct
     }
 
     for (index = 1; index < chain->count; index += 1) {
-        if (secdat_build_entry_path(chain->ids[index], cli->store, key, entry_path, sizeof(entry_path)) != 0) {
+        if (secdat_build_entry_path(chain->ids[index], store_name, key, entry_path, sizeof(entry_path)) != 0) {
             return 1;
         }
         if (secdat_file_exists(entry_path)) {
@@ -1245,7 +1498,7 @@ static int secdat_remove_key_in_chain(const struct secdat_cli *cli, const struct
             break;
         }
 
-        if (secdat_build_tombstone_path(chain->ids[index], cli->store, key, tombstone_path, sizeof(tombstone_path)) != 0) {
+        if (secdat_build_tombstone_path(chain->ids[index], store_name, key, tombstone_path, sizeof(tombstone_path)) != 0) {
             return 1;
         }
         if (secdat_file_exists(tombstone_path)) {
@@ -1258,11 +1511,11 @@ static int secdat_remove_key_in_chain(const struct secdat_cli *cli, const struct
         return 1;
     }
 
-    if (secdat_ensure_store_dirs(current_domain_id, cli->store) != 0) {
+    if (secdat_ensure_store_dirs(current_domain_id, store_name) != 0) {
         return 1;
     }
 
-    if (secdat_build_tombstone_path(current_domain_id, cli->store, key, tombstone_path, sizeof(tombstone_path)) != 0) {
+    if (secdat_build_tombstone_path(current_domain_id, store_name, key, tombstone_path, sizeof(tombstone_path)) != 0) {
         return 1;
     }
 
@@ -1271,8 +1524,11 @@ static int secdat_remove_key_in_chain(const struct secdat_cli *cli, const struct
 
 static int secdat_command_cp(const struct secdat_cli *cli)
 {
-    struct secdat_domain_chain chain = {0};
-    char current_domain_id[PATH_MAX];
+    struct secdat_key_reference source_reference;
+    struct secdat_key_reference destination_reference;
+    struct secdat_domain_chain source_chain = {0};
+    struct secdat_domain_chain destination_chain = {0};
+    char destination_domain_id[PATH_MAX];
     char destination_path[PATH_MAX];
     unsigned char *plaintext = NULL;
     size_t plaintext_length = 0;
@@ -1287,29 +1543,44 @@ static int secdat_command_cp(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &source_reference) != 0) {
         return 1;
     }
-    if (chain.count == 0 || strlen(chain.ids[0]) >= sizeof(current_domain_id)) {
-        secdat_domain_chain_free(&chain);
+    if (secdat_parse_key_reference(cli->argv[1], cli->dir, cli->store, &destination_reference) != 0) {
+        return 1;
+    }
+
+    if (secdat_domain_resolve_chain(source_reference.domain_value, &source_chain) != 0) {
+        return 1;
+    }
+    if (secdat_domain_resolve_chain(destination_reference.domain_value, &destination_chain) != 0) {
+        secdat_domain_chain_free(&source_chain);
+        return 1;
+    }
+    if (destination_chain.count == 0 || strlen(destination_chain.ids[0]) >= sizeof(destination_domain_id)) {
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
         fprintf(stderr, _("path is too long\n"));
         return 1;
     }
-    strcpy(current_domain_id, chain.ids[0]);
+    strcpy(destination_domain_id, destination_chain.ids[0]);
 
-    if (secdat_resolve_entry_path(&chain, cli->store, cli->argv[1], destination_path, sizeof(destination_path)) == 0) {
-        secdat_domain_chain_free(&chain);
-        fprintf(stderr, _("destination key already exists: %s\n"), cli->argv[1]);
+    if (secdat_resolve_entry_path(&destination_chain, destination_reference.store_value, destination_reference.key, destination_path, sizeof(destination_path)) == 0) {
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
+        fprintf(stderr, _("destination key already exists: %s\n"), destination_reference.key);
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(&chain, cli->store, cli->argv[0], &plaintext, &plaintext_length, NULL) != 0) {
-        secdat_domain_chain_free(&chain);
+    if (secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL) != 0) {
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
         return 1;
     }
 
-    status = secdat_store_plaintext(cli, current_domain_id, cli->argv[1], plaintext, plaintext_length);
-    secdat_domain_chain_free(&chain);
+    status = secdat_store_plaintext(destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length);
+    secdat_domain_chain_free(&source_chain);
+    secdat_domain_chain_free(&destination_chain);
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
     return status;
@@ -1317,8 +1588,11 @@ static int secdat_command_cp(const struct secdat_cli *cli)
 
 static int secdat_command_mv(const struct secdat_cli *cli)
 {
-    struct secdat_domain_chain chain = {0};
-    char current_domain_id[PATH_MAX];
+    struct secdat_key_reference source_reference;
+    struct secdat_key_reference destination_reference;
+    struct secdat_domain_chain source_chain = {0};
+    struct secdat_domain_chain destination_chain = {0};
+    char destination_domain_id[PATH_MAX];
     char destination_path[PATH_MAX];
     unsigned char *plaintext = NULL;
     size_t plaintext_length = 0;
@@ -1333,48 +1607,65 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &source_reference) != 0) {
         return 1;
     }
-    if (chain.count == 0 || strlen(chain.ids[0]) >= sizeof(current_domain_id)) {
-        secdat_domain_chain_free(&chain);
+    if (secdat_parse_key_reference(cli->argv[1], cli->dir, cli->store, &destination_reference) != 0) {
+        return 1;
+    }
+
+    if (secdat_domain_resolve_chain(source_reference.domain_value, &source_chain) != 0) {
+        return 1;
+    }
+    if (secdat_domain_resolve_chain(destination_reference.domain_value, &destination_chain) != 0) {
+        secdat_domain_chain_free(&source_chain);
+        return 1;
+    }
+    if (destination_chain.count == 0 || strlen(destination_chain.ids[0]) >= sizeof(destination_domain_id)) {
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
         fprintf(stderr, _("path is too long\n"));
         return 1;
     }
-    strcpy(current_domain_id, chain.ids[0]);
+    strcpy(destination_domain_id, destination_chain.ids[0]);
 
-    if (secdat_resolve_entry_path(&chain, cli->store, cli->argv[1], destination_path, sizeof(destination_path)) == 0) {
-        secdat_domain_chain_free(&chain);
-        fprintf(stderr, _("destination key already exists: %s\n"), cli->argv[1]);
+    if (secdat_resolve_entry_path(&destination_chain, destination_reference.store_value, destination_reference.key, destination_path, sizeof(destination_path)) == 0) {
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
+        fprintf(stderr, _("destination key already exists: %s\n"), destination_reference.key);
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(&chain, cli->store, cli->argv[0], &plaintext, &plaintext_length, NULL) != 0) {
-        secdat_domain_chain_free(&chain);
+    if (secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL) != 0) {
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
         return 1;
     }
 
-    status = secdat_store_plaintext(cli, current_domain_id, cli->argv[1], plaintext, plaintext_length);
+    status = secdat_store_plaintext(destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length);
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
     if (status != 0) {
-        secdat_domain_chain_free(&chain);
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
         return status;
     }
 
-    status = secdat_remove_key_in_chain(cli, &chain, cli->argv[0]);
+    status = secdat_remove_key_in_chain(&source_chain, source_reference.store_value, source_reference.key);
     if (status != 0) {
-        if (secdat_build_entry_path(current_domain_id, cli->store, cli->argv[1], destination_path, sizeof(destination_path)) == 0) {
+        if (secdat_build_entry_path(destination_domain_id, destination_reference.store_value, destination_reference.key, destination_path, sizeof(destination_path)) == 0) {
             unlink(destination_path);
         }
     }
 
-    secdat_domain_chain_free(&chain);
+    secdat_domain_chain_free(&source_chain);
+    secdat_domain_chain_free(&destination_chain);
     return status;
 }
 
 static int secdat_command_rm(const struct secdat_cli *cli)
 {
+    struct secdat_key_reference reference;
     struct secdat_domain_chain chain = {0};
     int status;
 
@@ -1383,10 +1674,14 @@ static int secdat_command_rm(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
         return 1;
     }
-    status = secdat_remove_key_in_chain(cli, &chain, cli->argv[0]);
+
+    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+        return 1;
+    }
+    status = secdat_remove_key_in_chain(&chain, reference.store_value, reference.key);
     secdat_domain_chain_free(&chain);
     return status;
 }
@@ -1447,10 +1742,7 @@ static int secdat_store_command_ls(const struct secdat_cli *cli)
         fprintf(stderr, _("--store is not valid with store commands\n"));
         return 2;
     }
-    if (cli->argc == 2 && strcmp(cli->argv[0], "--pattern") == 0) {
-        pattern = cli->argv[1];
-    } else if (cli->argc != 0) {
-        fprintf(stderr, _("invalid arguments for store ls\n"));
+    if (secdat_parse_simple_ls_pattern(cli, "store ls", &pattern) != 0) {
         return 2;
     }
 

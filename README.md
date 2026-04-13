@@ -48,8 +48,13 @@ Then you can store and read values:
 ```sh
 ./src/secdat set HOGE 100
 ./src/secdat ls
+./src/secdat ls 'HO*'
+./src/secdat ls --canonical
 ./src/secdat get HOGE --stdout
 ```
+
+Key arguments also accept an explicit domain/store suffix as `KEY[/ABSOLUTE/DOMAIN][:STORE]`.
+If the suffixes are omitted, `--dir`, `--store`, and then the current defaults are used.
 
 You can also create a domain for a project directory and manage per-domain stores:
 
