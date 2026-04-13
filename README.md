@@ -8,6 +8,7 @@ Current status:
 - autotools support is available through `configure.ac` and `Makefile.am`
 - gettext-based localization is wired in for user-facing CLI messages
 - `ls`, `get`, `set`, `rm`, `mv`, `cp`, and `exec` are implemented with encrypted local storage
+- `save` and `load` are implemented for passphrase-protected secret bundles scoped to the current view
 - `domain create`, `domain delete`, and `domain ls` are implemented
 - `store create`, `store delete`, and `store ls` are implemented
 - `unlock`, `lock`, and `status` are implemented with a session agent and a wrapped persistent master key
@@ -76,6 +77,15 @@ To avoid writing secrets to your shell history, prefer stdin for sensitive value
 printf '%s' 'super-secret-value' | ./src/secdat set API_TOKEN --stdin
 ./src/secdat get API_TOKEN --stdout
 ```
+
+You can also save the currently visible secrets from one view and load them into another domain/store context:
+
+```sh
+./src/secdat --dir ~/example/project --store app save ~/backup/app.secdat
+./src/secdat --dir ~/example/restore --store app load ~/backup/app.secdat
+```
+
+Both commands require a passphrase on a terminal. `save` exports only the secrets visible from the current `--dir` and `--store` view, writes a passphrase-encrypted bundle, and refuses to overwrite an existing bundle file. `load` imports that bundle into the current domain/store context, overwriting matching local keys but leaving unspecified keys untouched.
 
 ## Persistent shell setup
 

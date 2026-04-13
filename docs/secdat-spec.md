@@ -47,6 +47,9 @@ secdat [--dir DIR] store ls [GLOBPATTERN]
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
 secdat [--dir DIR] domain ls [GLOBPATTERN]
+
+secdat [--dir DIR] [--store STORE] save FILE
+secdat [--dir DIR] [--store STORE] load FILE
 ```
 
 ### 2.2 Explicitly Stated Requirements
@@ -178,6 +181,15 @@ To make the requested behavior implementable, the following are treated as norma
 - otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent
 - `secdat lock` removes the active agent-backed session state
 - the current implementation refreshes the idle timeout when the agent serves the cached key
+
+#### FR-7b Secret Bundle Save/Load
+
+- `secdat save FILE` exports the currently visible secrets from the current `--dir` and `--store` view into a passphrase-protected bundle file
+- `secdat load FILE` imports a previously saved bundle into the current `--dir` and `--store` context
+- both commands require terminal-based passphrase entry; `save` asks for confirmation and `load` asks once
+- the saved bundle format is a PBKDF2 + AES-256-GCM encrypted binary payload containing key/value entries from the current visible view only
+- `save` refuses to overwrite an existing bundle file
+- `load` overwrites matching keys in the current domain/store and leaves keys not mentioned by the bundle untouched
 
 #### FR-8 Store Selection
 

@@ -31,6 +31,7 @@
 #define SECDAT_NONCE_LEN 12
 #define SECDAT_TAG_LEN 16
 #define SECDAT_HEADER_LEN 16
+#define SECDAT_BUNDLE_HEADER_LEN 20
 #define SECDAT_SESSION_IDLE_SECONDS 1800
 #define SECDAT_WRAP_SALT_LEN 16
 #define SECDAT_WRAP_HEADER_LEN 20
@@ -40,6 +41,7 @@
 
 static const unsigned char secdat_entry_magic[8] = {'S', 'E', 'C', 'D', 'A', 'T', '1', '\0'};
 static const unsigned char secdat_wrapped_key_magic[8] = {'S', 'E', 'C', 'D', 'W', 'R', 'P', '\0'};
+static const unsigned char secdat_bundle_magic[8] = {'S', 'E', 'C', 'D', 'B', 'N', 'D', 'L'};
 
 struct secdat_key_list {
     char **items;
@@ -74,8 +76,30 @@ struct secdat_wrapped_master_key {
     size_t ciphertext_length;
 };
 
+struct secdat_secret_bundle {
+    uint32_t iterations;
+    unsigned char salt[SECDAT_WRAP_SALT_LEN];
+    unsigned char nonce[SECDAT_NONCE_LEN];
+    unsigned char *ciphertext;
+    size_t ciphertext_length;
+};
+
 static void secdat_write_be32(unsigned char *buffer, uint32_t value);
 static uint32_t secdat_read_be32(const unsigned char *buffer);
+static int secdat_collect_visible_keys(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *pattern,
+    struct secdat_key_list *visible_keys
+);
+static int secdat_load_resolved_plaintext(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    unsigned char **plaintext,
+    size_t *plaintext_length,
+    size_t *resolved_index
+);
 
 static void secdat_secure_clear(void *buffer, size_t length)
 {
@@ -1138,7 +1162,7 @@ static int secdat_read_secret_from_tty(const char *prompt, char *buffer, size_t 
     size_t length;
 
     if (!isatty(STDIN_FILENO)) {
-        fprintf(stderr, _("unlock requires a terminal for passphrase input\n"));
+        fprintf(stderr, _("this command requires a terminal for passphrase input\n"));
         return 1;
     }
 
@@ -1195,6 +1219,33 @@ static int secdat_read_secret_confirmation(char *buffer, size_t size)
         return 1;
     }
     if (secdat_read_secret_from_tty(_("Confirm secdat passphrase: "), confirmation, sizeof(confirmation)) != 0) {
+        secdat_secure_clear(buffer, strlen(buffer));
+        return 1;
+    }
+    if (strcmp(buffer, confirmation) != 0) {
+        secdat_secure_clear(confirmation, strlen(confirmation));
+        secdat_secure_clear(buffer, strlen(buffer));
+        fprintf(stderr, _("passphrase confirmation did not match\n"));
+        return 1;
+    }
+
+    secdat_secure_clear(confirmation, strlen(confirmation));
+    return 0;
+}
+
+static int secdat_read_secret_confirmation_prompts(
+    const char *prompt,
+    const char *confirm_prompt,
+    char *buffer,
+    size_t size
+)
+{
+    char confirmation[512];
+
+    if (secdat_read_secret_from_tty(prompt, buffer, size) != 0) {
+        return 1;
+    }
+    if (secdat_read_secret_from_tty(confirm_prompt, confirmation, sizeof(confirmation)) != 0) {
         secdat_secure_clear(buffer, strlen(buffer));
         return 1;
     }
@@ -1571,6 +1622,358 @@ static void secdat_wrapped_master_key_free(struct secdat_wrapped_master_key *wra
         free(wrapped->ciphertext);
     }
     memset(wrapped, 0, sizeof(*wrapped));
+}
+
+static void secdat_secret_bundle_free(struct secdat_secret_bundle *bundle)
+{
+    if (bundle->ciphertext != NULL) {
+        secdat_secure_clear(bundle->ciphertext, bundle->ciphertext_length);
+        free(bundle->ciphertext);
+    }
+    memset(bundle, 0, sizeof(*bundle));
+}
+
+static int secdat_bundle_append(
+    unsigned char **buffer,
+    size_t *length,
+    size_t *capacity,
+    const void *data,
+    size_t data_length
+)
+{
+    unsigned char *new_buffer;
+    size_t new_capacity;
+
+    if (*length + data_length > *capacity) {
+        new_capacity = *capacity == 0 ? 256 : *capacity;
+        while (new_capacity < *length + data_length) {
+            new_capacity *= 2;
+        }
+        new_buffer = realloc(*buffer, new_capacity);
+        if (new_buffer == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        *buffer = new_buffer;
+        *capacity = new_capacity;
+    }
+
+    if (data_length > 0) {
+        memcpy(*buffer + *length, data, data_length);
+    }
+    *length += data_length;
+    return 0;
+}
+
+static int secdat_bundle_append_u32(unsigned char **buffer, size_t *length, size_t *capacity, uint32_t value)
+{
+    unsigned char encoded[4];
+
+    secdat_write_be32(encoded, value);
+    return secdat_bundle_append(buffer, length, capacity, encoded, sizeof(encoded));
+}
+
+static int secdat_bundle_read_u32(const unsigned char *buffer, size_t length, size_t *offset, uint32_t *value)
+{
+    if (*offset + 4 > length) {
+        fprintf(stderr, _("invalid secret bundle\n"));
+        return 1;
+    }
+
+    *value = secdat_read_be32(buffer + *offset);
+    *offset += 4;
+    return 0;
+}
+
+static int secdat_collect_bundle_payload(const struct secdat_cli *cli, unsigned char **payload_out, size_t *payload_length_out)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_key_list visible_keys = {0};
+    unsigned char *payload = NULL;
+    size_t payload_length = 0;
+    size_t capacity = 0;
+    size_t index;
+    int status = 1;
+
+    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+        return 1;
+    }
+    if (secdat_collect_visible_keys(&chain, cli->store, NULL, &visible_keys) != 0) {
+        secdat_domain_chain_free(&chain);
+        secdat_key_list_free(&visible_keys);
+        return 1;
+    }
+    if (secdat_bundle_append_u32(&payload, &payload_length, &capacity, (uint32_t)visible_keys.count) != 0) {
+        goto cleanup;
+    }
+
+    for (index = 0; index < visible_keys.count; index += 1) {
+        unsigned char *plaintext = NULL;
+        size_t plaintext_length = 0;
+        uint32_t key_length = (uint32_t)strlen(visible_keys.items[index]);
+
+        if (secdat_load_resolved_plaintext(&chain, cli->store, visible_keys.items[index], &plaintext, &plaintext_length, NULL) != 0) {
+            goto cleanup;
+        }
+        if (plaintext_length > UINT32_MAX) {
+            fprintf(stderr, _("secret bundle entry is too large\n"));
+            secdat_secure_clear(plaintext, plaintext_length);
+            free(plaintext);
+            goto cleanup;
+        }
+        if (secdat_bundle_append_u32(&payload, &payload_length, &capacity, key_length) != 0
+            || secdat_bundle_append_u32(&payload, &payload_length, &capacity, (uint32_t)plaintext_length) != 0
+            || secdat_bundle_append(&payload, &payload_length, &capacity, visible_keys.items[index], key_length) != 0
+            || secdat_bundle_append(&payload, &payload_length, &capacity, plaintext, plaintext_length) != 0) {
+            secdat_secure_clear(plaintext, plaintext_length);
+            free(plaintext);
+            goto cleanup;
+        }
+
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
+    }
+
+    *payload_out = payload;
+    *payload_length_out = payload_length;
+    payload = NULL;
+    payload_length = 0;
+    status = 0;
+
+cleanup:
+    if (payload != NULL) {
+        secdat_secure_clear(payload, payload_length);
+        free(payload);
+    }
+    secdat_domain_chain_free(&chain);
+    secdat_key_list_free(&visible_keys);
+    return status;
+}
+
+static int secdat_write_secret_bundle_file(
+    const char *path,
+    const char *passphrase,
+    const unsigned char *payload,
+    size_t payload_length
+)
+{
+    unsigned char wrap_key[32];
+    unsigned char salt[SECDAT_WRAP_SALT_LEN];
+    unsigned char nonce[SECDAT_NONCE_LEN];
+    unsigned char tag[SECDAT_TAG_LEN];
+    unsigned char *buffer = NULL;
+    EVP_CIPHER_CTX *context = NULL;
+    size_t total_length;
+    int written_length;
+    int final_length;
+    int status = 1;
+
+    if (secdat_file_exists(path)) {
+        fprintf(stderr, _("bundle file already exists: %s\n"), path);
+        return 1;
+    }
+    if (payload_length > UINT32_MAX - SECDAT_TAG_LEN) {
+        fprintf(stderr, _("secret bundle is too large\n"));
+        return 1;
+    }
+    if (RAND_bytes(salt, sizeof(salt)) != 1 || RAND_bytes(nonce, sizeof(nonce)) != 1) {
+        fprintf(stderr, _("failed to generate nonce\n"));
+        return 1;
+    }
+    if (secdat_wrap_key_from_passphrase(passphrase, salt, SECDAT_WRAP_PBKDF2_ITERATIONS, wrap_key) != 0) {
+        return 1;
+    }
+
+    total_length = SECDAT_BUNDLE_HEADER_LEN + sizeof(salt) + sizeof(nonce) + payload_length + SECDAT_TAG_LEN;
+    buffer = calloc(1, total_length);
+    if (buffer == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+
+    memcpy(buffer, secdat_bundle_magic, sizeof(secdat_bundle_magic));
+    buffer[8] = 1;
+    buffer[9] = SECDAT_WRAP_SALT_LEN;
+    buffer[10] = SECDAT_NONCE_LEN;
+    buffer[11] = 0;
+    secdat_write_be32(buffer + 12, SECDAT_WRAP_PBKDF2_ITERATIONS);
+    secdat_write_be32(buffer + 16, (uint32_t)(payload_length + SECDAT_TAG_LEN));
+    memcpy(buffer + SECDAT_BUNDLE_HEADER_LEN, salt, sizeof(salt));
+    memcpy(buffer + SECDAT_BUNDLE_HEADER_LEN + sizeof(salt), nonce, sizeof(nonce));
+
+    context = EVP_CIPHER_CTX_new();
+    if (context == NULL) {
+        fprintf(stderr, _("failed to create encryption context\n"));
+        goto cleanup;
+    }
+    if (EVP_EncryptInit_ex(context, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1
+        || EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, sizeof(nonce), NULL) != 1
+        || EVP_EncryptInit_ex(context, NULL, NULL, wrap_key, nonce) != 1) {
+        fprintf(stderr, _("failed to initialize encryption\n"));
+        goto cleanup;
+    }
+    if (EVP_EncryptUpdate(
+            context,
+            buffer + SECDAT_BUNDLE_HEADER_LEN + sizeof(salt) + sizeof(nonce),
+            &written_length,
+            payload,
+            (int)payload_length
+        ) != 1) {
+        fprintf(stderr, _("failed to encrypt value\n"));
+        goto cleanup;
+    }
+    if (EVP_EncryptFinal_ex(
+            context,
+            buffer + SECDAT_BUNDLE_HEADER_LEN + sizeof(salt) + sizeof(nonce) + written_length,
+            &final_length
+        ) != 1) {
+        fprintf(stderr, _("failed to finalize encryption\n"));
+        goto cleanup;
+    }
+    written_length += final_length;
+    if (EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_GET_TAG, sizeof(tag), tag) != 1) {
+        fprintf(stderr, _("failed to obtain authentication tag\n"));
+        goto cleanup;
+    }
+    memcpy(buffer + SECDAT_BUNDLE_HEADER_LEN + sizeof(salt) + sizeof(nonce) + written_length, tag, sizeof(tag));
+
+    if (secdat_atomic_write_file(path, buffer, total_length) != 0) {
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(wrap_key, sizeof(wrap_key));
+    secdat_secure_clear(tag, sizeof(tag));
+    if (buffer != NULL) {
+        secdat_secure_clear(buffer, total_length);
+        free(buffer);
+    }
+    if (context != NULL) {
+        EVP_CIPHER_CTX_free(context);
+    }
+    return status;
+}
+
+static int secdat_read_secret_bundle(struct secdat_secret_bundle *bundle, const char *path)
+{
+    unsigned char *data = NULL;
+    size_t length = 0;
+
+    memset(bundle, 0, sizeof(*bundle));
+    if (secdat_read_file(path, &data, &length) != 0) {
+        return 1;
+    }
+    if (length < SECDAT_BUNDLE_HEADER_LEN + SECDAT_WRAP_SALT_LEN + SECDAT_NONCE_LEN + SECDAT_TAG_LEN
+        || memcmp(data, secdat_bundle_magic, sizeof(secdat_bundle_magic)) != 0
+        || data[8] != 1
+        || data[9] != SECDAT_WRAP_SALT_LEN
+        || data[10] != SECDAT_NONCE_LEN) {
+        secdat_secure_clear(data, length);
+        free(data);
+        fprintf(stderr, _("invalid secret bundle\n"));
+        return 1;
+    }
+
+    bundle->iterations = secdat_read_be32(data + 12);
+    bundle->ciphertext_length = secdat_read_be32(data + 16);
+    if (length != SECDAT_BUNDLE_HEADER_LEN + SECDAT_WRAP_SALT_LEN + SECDAT_NONCE_LEN + bundle->ciphertext_length) {
+        secdat_secure_clear(data, length);
+        free(data);
+        fprintf(stderr, _("invalid secret bundle\n"));
+        return 1;
+    }
+
+    memcpy(bundle->salt, data + SECDAT_BUNDLE_HEADER_LEN, sizeof(bundle->salt));
+    memcpy(bundle->nonce, data + SECDAT_BUNDLE_HEADER_LEN + sizeof(bundle->salt), sizeof(bundle->nonce));
+    bundle->ciphertext = malloc(bundle->ciphertext_length);
+    if (bundle->ciphertext == NULL) {
+        secdat_secure_clear(data, length);
+        free(data);
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    memcpy(
+        bundle->ciphertext,
+        data + SECDAT_BUNDLE_HEADER_LEN + sizeof(bundle->salt) + sizeof(bundle->nonce),
+        bundle->ciphertext_length
+    );
+
+    secdat_secure_clear(data, length);
+    free(data);
+    return 0;
+}
+
+static int secdat_decrypt_secret_bundle(
+    const char *path,
+    const char *passphrase,
+    unsigned char **payload,
+    size_t *payload_length
+)
+{
+    struct secdat_secret_bundle bundle;
+    EVP_CIPHER_CTX *context = NULL;
+    unsigned char wrap_key[32];
+    unsigned char *plaintext = NULL;
+    size_t plaintext_size;
+    int written_length;
+    int final_length;
+    int status = 1;
+
+    if (secdat_read_secret_bundle(&bundle, path) != 0) {
+        return 1;
+    }
+    if (secdat_wrap_key_from_passphrase(passphrase, bundle.salt, bundle.iterations, wrap_key) != 0) {
+        secdat_secret_bundle_free(&bundle);
+        return 1;
+    }
+
+    plaintext_size = bundle.ciphertext_length - SECDAT_TAG_LEN;
+    plaintext = malloc(plaintext_size == 0 ? 1 : plaintext_size);
+    if (plaintext == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    context = EVP_CIPHER_CTX_new();
+    if (context == NULL) {
+        fprintf(stderr, _("failed to create decryption context\n"));
+        goto cleanup;
+    }
+    if (EVP_DecryptInit_ex(context, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1
+        || EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, sizeof(bundle.nonce), NULL) != 1
+        || EVP_DecryptInit_ex(context, NULL, NULL, wrap_key, bundle.nonce) != 1) {
+        fprintf(stderr, _("failed to initialize decryption\n"));
+        goto cleanup;
+    }
+    if (EVP_DecryptUpdate(context, plaintext, &written_length, bundle.ciphertext, (int)plaintext_size) != 1) {
+        fprintf(stderr, _("failed to decrypt value\n"));
+        goto cleanup;
+    }
+    if (EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_TAG, SECDAT_TAG_LEN, bundle.ciphertext + plaintext_size) != 1) {
+        fprintf(stderr, _("failed to set authentication tag\n"));
+        goto cleanup;
+    }
+    if (EVP_DecryptFinal_ex(context, plaintext + written_length, &final_length) != 1) {
+        fprintf(stderr, _("failed to unlock secret bundle\n"));
+        goto cleanup;
+    }
+    written_length += final_length;
+    *payload = plaintext;
+    *payload_length = (size_t)written_length;
+    plaintext = NULL;
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(wrap_key, sizeof(wrap_key));
+    if (plaintext != NULL) {
+        secdat_secure_clear(plaintext, plaintext_size);
+        free(plaintext);
+    }
+    if (context != NULL) {
+        EVP_CIPHER_CTX_free(context);
+    }
+    secdat_secret_bundle_free(&bundle);
+    return status;
 }
 
 static int secdat_unwrap_master_key(const char *passphrase, char *buffer, size_t size)
@@ -3026,6 +3429,119 @@ static int secdat_command_exec(const struct secdat_cli *cli)
     return 1;
 }
 
+static int secdat_command_save(const struct secdat_cli *cli)
+{
+    unsigned char *payload = NULL;
+    size_t payload_length = 0;
+    char passphrase[512];
+    int status;
+
+    if (cli->argc != 1) {
+        fprintf(stderr, _("invalid arguments for save\n"));
+        secdat_cli_print_try_help(cli, "save");
+        return 2;
+    }
+    if (secdat_read_secret_confirmation_prompts(
+            _("Create secdat bundle passphrase: "),
+            _("Confirm secdat bundle passphrase: "),
+            passphrase,
+            sizeof(passphrase)
+        ) != 0) {
+        return 1;
+    }
+    if (secdat_collect_bundle_payload(cli, &payload, &payload_length) != 0) {
+        secdat_secure_clear(passphrase, strlen(passphrase));
+        return 1;
+    }
+
+    status = secdat_write_secret_bundle_file(cli->argv[0], passphrase, payload, payload_length);
+    secdat_secure_clear(passphrase, strlen(passphrase));
+    secdat_secure_clear(payload, payload_length);
+    free(payload);
+    return status;
+}
+
+static int secdat_command_load(const struct secdat_cli *cli)
+{
+    char current_domain_id[PATH_MAX];
+    unsigned char *payload = NULL;
+    size_t payload_length = 0;
+    size_t offset = 0;
+    uint32_t entry_count;
+    uint32_t index;
+    char passphrase[512];
+    int status = 1;
+
+    if (cli->argc != 1) {
+        fprintf(stderr, _("invalid arguments for load\n"));
+        secdat_cli_print_try_help(cli, "load");
+        return 2;
+    }
+    if (secdat_domain_resolve_current(cli->dir, current_domain_id, sizeof(current_domain_id)) != 0) {
+        return 1;
+    }
+    if (secdat_read_secret_from_tty(_("Enter secdat bundle passphrase: "), passphrase, sizeof(passphrase)) != 0) {
+        return 1;
+    }
+    if (secdat_decrypt_secret_bundle(cli->argv[0], passphrase, &payload, &payload_length) != 0) {
+        secdat_secure_clear(passphrase, strlen(passphrase));
+        return 1;
+    }
+    secdat_secure_clear(passphrase, strlen(passphrase));
+
+    if (secdat_bundle_read_u32(payload, payload_length, &offset, &entry_count) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < entry_count; index += 1) {
+        uint32_t key_length;
+        uint32_t value_length;
+        char *key = NULL;
+
+        if (secdat_bundle_read_u32(payload, payload_length, &offset, &key_length) != 0
+            || secdat_bundle_read_u32(payload, payload_length, &offset, &value_length) != 0) {
+            goto cleanup;
+        }
+        if (key_length == 0 || offset + key_length + value_length > payload_length) {
+            fprintf(stderr, _("invalid secret bundle\n"));
+            goto cleanup;
+        }
+        if (memchr(payload + offset, '\0', key_length) != NULL) {
+            fprintf(stderr, _("invalid secret bundle\n"));
+            goto cleanup;
+        }
+
+        key = malloc((size_t)key_length + 1);
+        if (key == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            goto cleanup;
+        }
+        memcpy(key, payload + offset, key_length);
+        key[key_length] = '\0';
+        offset += key_length;
+
+        if (secdat_store_plaintext(current_domain_id, cli->store, key, payload + offset, value_length) != 0) {
+            secdat_secure_clear(key, (size_t)key_length + 1);
+            free(key);
+            goto cleanup;
+        }
+        secdat_secure_clear(key, (size_t)key_length + 1);
+        free(key);
+        offset += value_length;
+    }
+    if (offset != payload_length) {
+        fprintf(stderr, _("invalid secret bundle\n"));
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    if (payload != NULL) {
+        secdat_secure_clear(payload, payload_length);
+        free(payload);
+    }
+    return status;
+}
+
 int secdat_run_command(const struct secdat_cli *cli)
 {
     int status;
@@ -3045,6 +3561,10 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_cp(cli);
     case SECDAT_COMMAND_EXEC:
         return secdat_command_exec(cli);
+    case SECDAT_COMMAND_SAVE:
+        return secdat_command_save(cli);
+    case SECDAT_COMMAND_LOAD:
+        return secdat_command_load(cli);
     case SECDAT_COMMAND_UNLOCK:
         return secdat_command_unlock(cli);
     case SECDAT_COMMAND_LOCK:
