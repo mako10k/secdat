@@ -131,6 +131,15 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
     }
 }
 
+static void secdat_cli_print_semantics(void)
+{
+    printf(_("\nSemantics:\n"));
+    printf(_("  DIR: base directory used for domain resolution; defaults to the current working directory\n"));
+    printf(_("  DOMAIN: directory-scoped configuration boundary used for inheritance and tombstones\n"));
+    printf(_("  STORE: domain-local namespace selected by --store; defaults to the default store\n"));
+    printf(_("  KEY / KEYREF: logical secret name, optionally qualified as KEY[/ABSOLUTE/DOMAIN][:STORE]\n"));
+}
+
 int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
 {
     int index = 1;
@@ -280,6 +289,7 @@ void secdat_cli_print_usage(const char *program_name)
     secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_LS);
     printf(_("\n"));
     printf(_("  KEYREF syntax: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"));
+    secdat_cli_print_semantics();
 }
 
 void secdat_cli_print_command_usage(const char *program_name, enum secdat_command_type command)
@@ -291,6 +301,7 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
         printf(_("\n"));
         printf(_("  KEYREF syntax: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"));
     }
+    secdat_cli_print_semantics();
 }
 
 void secdat_cli_print_help_target(const char *program_name, const char *target)
@@ -300,6 +311,7 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_CREATE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_DELETE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_LS);
+        secdat_cli_print_semantics();
         return;
     }
 
@@ -308,6 +320,7 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_CREATE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_DELETE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_LS);
+        secdat_cli_print_semantics();
         return;
     }
 

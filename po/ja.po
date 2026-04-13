@@ -147,6 +147,31 @@ msgstr "\n"
 msgid "  KEYREF syntax: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"
 msgstr "  KEYREF 構文: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"
 
+#: src/cli.c:0
+#, c-format
+msgid "\nSemantics:\n"
+msgstr "\nSemantics:\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  DIR: base directory used for domain resolution; defaults to the current working directory\n"
+msgstr "  DIR: domain 解決の基準ディレクトリです。省略時は現在の作業ディレクトリを使います\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  DOMAIN: directory-scoped configuration boundary used for inheritance and tombstones\n"
+msgstr "  DOMAIN: 継承と tombstone に使う、ディレクトリ単位の設定境界です\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  STORE: domain-local namespace selected by --store; defaults to the default store\n"
+msgstr "  STORE: --store で選ぶ domain ローカルな名前空間です。省略時は default store を使います\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  KEY / KEYREF: logical secret name, optionally qualified as KEY[/ABSOLUTE/DOMAIN][:STORE]\n"
+msgstr "  KEY / KEYREF: 論理的な secret 名です。必要なら KEY[/ABSOLUTE/DOMAIN][:STORE] で修飾できます\n"
+
 #: src/store.c:177
 #, c-format
 msgid "invalid key reference: %s\n"
