@@ -1,0 +1,116 @@
+.TH SECDAT 1 "2026-04-13" "secdat 0.1.0" "User Commands"
+.SH NAME
+secdat \- minimal local secret store with domain and store scoping
+.SH SYNOPSIS
+.B secdat
+[\-d DIR|\-\-dir DIR] [\-s STORE|\-\-store STORE] command [arguments]
+.SH DESCRIPTION
+.B secdat
+stores encrypted secret values locally and resolves them through directory-scoped domains and optional store namespaces.
+
+Key arguments use the canonical KEYREF syntax:
+
+.B KEY[/ABSOLUTE/DOMAIN][:STORE]
+
+When the suffixes are omitted,
+.B --dir
+and
+.B --store
+provide the current resolution context.
+.SH GLOBAL OPTIONS
+.TP
+.B \-d, \-\-dir DIR
+Set the base directory used for domain resolution.
+.TP
+.B \-s, \-\-store STORE
+Select the store namespace inside the resolved domain.
+.TP
+.B \-h, \-\-help
+Show global help, or combine with a command name for command-local help.
+.TP
+.B \-V, \-\-version
+Print the secdat version.
+.SH COMMANDS
+.TP
+.B ls [GLOBPATTERN]
+List effective keys visible from the current domain view.
+.TP
+.B get KEYREF [\-o|\-\-stdout|\-\-shellescaped]
+Decrypt one resolved key and write it to standard output. Use
+.B --shellescaped
+to emit a single shell-quoted value for bash-oriented loading.
+.TP
+.B set KEYREF [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
+Store or update one key in the resolved current domain.
+.TP
+.B rm KEYREF
+Remove one key locally or create a tombstone for an inherited key.
+.TP
+.B mv SRC_KEYREF DST_KEYREF
+Rename or relocate one key between resolved locations.
+.TP
+.B cp SRC_KEYREF DST_KEYREF
+Copy one key into another resolved location.
+.TP
+.B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] CMD [ARGS...]
+Inject resolved keys into a child process environment and execute the command.
+.TP
+.B export [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]
+Emit bash-oriented export lines for the current visible keys.
+.TP
+.B save FILE
+Write the current visible secrets into a passphrase-protected bundle.
+.TP
+.B load FILE
+Load a passphrase-protected bundle into the current domain/store context.
+.TP
+.B unlock
+Start or refresh an authenticated secret session.
+.TP
+.B lock
+Clear the active secret session.
+.TP
+.B status [\-q|\-\-quiet]
+Report whether secret material is currently available.
+.TP
+.B store create|delete|ls
+Manage store namespaces inside the resolved current domain.
+.TP
+.B domain create|delete|ls
+Manage domain roots and domain discovery scope.
+.SH SHELL INTEGRATION
+To load exported values into the current bash shell, use one of:
+
+.nf
+eval "$(secdat export)"
+source <(secdat export)
+. <(secdat export)
+.fi
+
+Plain
+.B . $(secdat export)
+is not valid because the dot command expects a file path, not command text.
+
+Bash completion is provided in the repository at
+.B completions/secdat.bash .
+.SH FILES
+.TP
+.B docs/secdat-spec.md
+Specification and design notes.
+.TP
+.B docs/secdat.1
+This manual page source as tracked in the repository.
+.TP
+.B .github/copilot-instructions.md
+Repository-local implementation workflow and project rules.
+.SH EXAMPLES
+.nf
+secdat set API_TOKEN --value token-123
+secdat get API_TOKEN --stdout
+secdat get API_TOKEN --shellescaped
+secdat --dir ~/project domain create
+secdat --dir ~/project --store app export
+source <(secdat --dir ~/project --store app export)
+.fi
+.SH SEE ALSO
+.BR bash (1)

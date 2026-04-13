@@ -1,6 +1,6 @@
 SUBDIRS = po src
-dist_doc_DATA = README.md docs/secdat-spec.md
-EXTRA_DIST = tests/keyref_regression.sh tests/session_regression.sh tests/e2e_regression.sh tests/save_load_regression.sh tests/export_regression.sh
+dist_doc_DATA = README.md docs/secdat-spec.md docs/secdat.1
+EXTRA_DIST = completions/secdat.bash tests/keyref_regression.sh tests/session_regression.sh tests/e2e_regression.sh tests/save_load_regression.sh tests/export_regression.sh
 
 all-local:
 	@set -e; \

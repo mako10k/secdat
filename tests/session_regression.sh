@@ -90,6 +90,7 @@ for args, marker in [
     ([bin_path, "-h", "status"], "status [-q|--quiet]"),
     ([bin_path, "status", "--help"], "status [-q|--quiet]"),
     ([bin_path, "status", "-h"], "status [-q|--quiet]"),
+    ([bin_path, "help", "export"], "bash load current shell vars: source <("),
     ([bin_path, "store", "--help"], "store create STORE"),
     ([bin_path, "store", "-h"], "store create STORE"),
 ]:

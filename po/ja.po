@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: secdat 0.1.0\n"
 "Report-Msgid-Bugs-To: noreply@example.invalid\n"
-"POT-Creation-Date: 2026-04-13 18:37+0900\n"
+"POT-Creation-Date: 2026-04-13 19:49+0900\n"
 "PO-Revision-Date: 2026-04-13 00:00+0000\n"
 "Last-Translator: GitHub Copilot <noreply@example.invalid>\n"
 "Language-Team: ja\n"
@@ -255,22 +255,51 @@ msgstr "  %s --version\n"
 #, c-format
 msgid ""
 "\n"
+"Shell:\n"
+msgstr ""
+"\n"
+"シェル:\n"
+
+#: src/cli.c:228
+#, c-format
+msgid "  bash load current shell vars: source <(%s export)\n"
+msgstr "  bash で現在の shell に読み込む: source <(%s export)\n"
+
+#: src/cli.c:229
+#, c-format
+msgid "  bash alternative: eval \"$(%s export)\"\n"
+msgstr "  bash の別案: eval \"$(%s export)\"\n"
+
+#: src/cli.c:230
+#, c-format
+msgid "  bash completion script: completions/secdat.bash\n"
+msgstr "  bash completion script: completions/secdat.bash\n"
+
+#: src/cli.c:231
+#, c-format
+msgid "  man page source: docs/secdat.1\n"
+msgstr "  man page source: docs/secdat.1\n"
+
+#: src/cli.c:236
+#, c-format
+msgid ""
+"\n"
 "Groups:\n"
 msgstr ""
 "\n"
 "グループ:\n"
 
-#: src/cli.c:228
+#: src/cli.c:237
 #, c-format
 msgid "  store: manage store namespaces inside the resolved current domain\n"
 msgstr "  store: 解決された current domain 内の store namespace を管理します\n"
 
-#: src/cli.c:229
+#: src/cli.c:238
 #, c-format
 msgid "  domain: manage domain roots and domain discovery scope\n"
 msgstr "  domain: domain root と domain 探索スコープを管理します\n"
 
-#: src/cli.c:234
+#: src/cli.c:243
 #, c-format
 msgid ""
 "\n"
@@ -279,28 +308,28 @@ msgstr ""
 "\n"
 "コマンド:\n"
 
-#: src/cli.c:235
+#: src/cli.c:244
 #, c-format
 msgid "  help: show global help or detailed help for one command\n"
 msgstr "  help: 全体ヘルプ、または 1 つのコマンドの詳細ヘルプを表示します\n"
 
-#: src/cli.c:236
+#: src/cli.c:245
 #, c-format
 msgid "  ls: list effective keys visible from the current domain view\n"
 msgstr "  ls: 現在の domain view から見える有効な key を一覧します\n"
 
-#: src/cli.c:237
+#: src/cli.c:246
 #, c-format
 msgid "  get: decrypt one resolved key and write it to standard output\n"
 msgstr "  get: 解決された 1 つの key を復号して標準出力へ書き出します\n"
 
-#: src/cli.c:238
+#: src/cli.c:247
 #, c-format
 msgid "  set: store or update one key in the resolved current domain\n"
 msgstr ""
 "  set: 解決された current domain に 1 つの key を保存または更新します\n"
 
-#: src/cli.c:239
+#: src/cli.c:248
 #, c-format
 msgid ""
 "  rm: remove one key locally or create a tombstone for an inherited key\n"
@@ -308,22 +337,22 @@ msgstr ""
 "  rm: 1 つの key をローカルに削除するか、継承 key 用の tombstone を作成しま"
 "す\n"
 
-#: src/cli.c:240
+#: src/cli.c:249
 #, c-format
 msgid "  mv: rename or relocate one key between resolved locations\n"
 msgstr "  mv: 1 つの key を解決先の場所どうしで改名または移動します\n"
 
-#: src/cli.c:241
+#: src/cli.c:250
 #, c-format
 msgid "  cp: copy one key into another resolved location\n"
 msgstr "  cp: 1 つの key を別の解決先へコピーします\n"
 
-#: src/cli.c:242
+#: src/cli.c:251
 #, c-format
 msgid "  exec: inject resolved keys into a child process environment\n"
 msgstr "  exec: 解決された key を子プロセス環境へ注入します\n"
 
-#: src/cli.c:243
+#: src/cli.c:252
 #, c-format
 msgid ""
 "  export: emit shell-ready export lines that defer secret reads to secdat "
@@ -332,7 +361,7 @@ msgstr ""
 "  export: secret の読み出しを secdat get に委ねる shell 向け export 行を出力"
 "します\n"
 
-#: src/cli.c:244
+#: src/cli.c:253
 #, c-format
 msgid ""
 "  save: export the current visible secrets into a passphrase-protected "
@@ -341,34 +370,34 @@ msgstr ""
 "  save: 現在の view から見える secret をパスフレーズ保護された bundle として"
 "出力します\n"
 
-#: src/cli.c:245
+#: src/cli.c:254
 #, c-format
 msgid ""
 "  load: import a passphrase-protected bundle into the current domain view\n"
 msgstr ""
 "  load: パスフレーズ保護された bundle を現在の domain view に取り込みます\n"
 
-#: src/cli.c:246
+#: src/cli.c:255
 #, c-format
 msgid "  unlock: start or refresh an authenticated secret session\n"
 msgstr "  unlock: 認証済み secret session を開始または更新します\n"
 
-#: src/cli.c:247
+#: src/cli.c:256
 #, c-format
 msgid "  lock: clear the active secret session\n"
 msgstr "  lock: 現在の secret session を消去します\n"
 
-#: src/cli.c:248
+#: src/cli.c:257
 #, c-format
 msgid "  status: report whether secret material is currently available\n"
 msgstr "  status: 現在 secret material が利用可能かどうかを報告します\n"
 
-#: src/cli.c:249
+#: src/cli.c:258
 #, c-format
 msgid "  version: print the secdat version\n"
 msgstr "  version: secdat のバージョンを表示します\n"
 
-#: src/cli.c:254
+#: src/cli.c:263
 #, c-format
 msgid ""
 "\n"
@@ -377,54 +406,54 @@ msgstr ""
 "\n"
 "意味:\n"
 
-#: src/cli.c:256
+#: src/cli.c:265
 #, c-format
 msgid "  show global help or detailed help for one command\n"
 msgstr "  全体ヘルプ、または 1 つのコマンドの詳細ヘルプを表示します\n"
 
-#: src/cli.c:260
+#: src/cli.c:269
 #, c-format
 msgid "  list effective keys visible from the current domain view\n"
 msgstr "  現在の domain view から見える有効な key を一覧します\n"
 
-#: src/cli.c:264
+#: src/cli.c:273
 #, c-format
 msgid "  decrypt one resolved key and write it to standard output\n"
 msgstr "  解決された 1 つの key を復号して標準出力へ書き出します\n"
 
-#: src/cli.c:268
+#: src/cli.c:277
 #, c-format
 msgid "  store or update one key in the resolved current domain\n"
 msgstr "  解決された current domain に 1 つの key を保存または更新します\n"
 
-#: src/cli.c:272
+#: src/cli.c:281
 #, c-format
 msgid "  remove one key locally or create a tombstone for an inherited key\n"
 msgstr ""
 "  1 つの key をローカルに削除するか、継承 key 用の tombstone を作成します\n"
 
-#: src/cli.c:276
+#: src/cli.c:285
 #, c-format
 msgid "  rename or relocate one key between resolved locations\n"
 msgstr "  1 つの key を解決先の場所どうしで改名または移動します\n"
 
-#: src/cli.c:280
+#: src/cli.c:289
 #, c-format
 msgid "  copy one key into another resolved location\n"
 msgstr "  1 つの key を別の解決先へコピーします\n"
 
-#: src/cli.c:284
+#: src/cli.c:293
 #, c-format
 msgid "  inject resolved keys into a child process environment\n"
 msgstr "  解決された key を子プロセス環境へ注入します\n"
 
-#: src/cli.c:288
+#: src/cli.c:297
 #, c-format
 msgid "  emit shell-ready export lines that defer secret reads to secdat get\n"
 msgstr ""
 "  secret の読み出しを secdat get に委ねる shell 向け export 行を出力します\n"
 
-#: src/cli.c:292
+#: src/cli.c:301
 #, c-format
 msgid ""
 "  export the current visible secrets into a passphrase-protected bundle\n"
@@ -432,42 +461,42 @@ msgstr ""
 "  現在の view から見える secret をパスフレーズ保護された bundle として出力し"
 "ます\n"
 
-#: src/cli.c:296
+#: src/cli.c:305
 #, c-format
 msgid "  import a passphrase-protected bundle into the current domain view\n"
 msgstr "  パスフレーズ保護された bundle を現在の domain view に取り込みます\n"
 
-#: src/cli.c:300
+#: src/cli.c:309
 #, c-format
 msgid "  start or refresh an authenticated secret session\n"
 msgstr "  認証済み secret session を開始または更新します\n"
 
-#: src/cli.c:304
+#: src/cli.c:313
 #, c-format
 msgid "  clear the active secret session\n"
 msgstr "  現在の secret session を消去します\n"
 
-#: src/cli.c:308
+#: src/cli.c:317
 #, c-format
 msgid "  report whether secret material is currently available\n"
 msgstr "  現在 secret material が利用可能かどうかを報告します\n"
 
-#: src/cli.c:312
+#: src/cli.c:321
 #, c-format
 msgid "  print the secdat version\n"
 msgstr "  secdat のバージョンを表示します\n"
 
-#: src/cli.c:316
+#: src/cli.c:325
 #, c-format
 msgid "  manage store namespaces inside the resolved current domain\n"
 msgstr "  解決された current domain 内の store namespace を管理します\n"
 
-#: src/cli.c:320
+#: src/cli.c:329
 #, c-format
 msgid "  manage domain roots and domain discovery scope\n"
 msgstr "  domain root と domain 探索スコープを管理します\n"
 
-#: src/cli.c:327
+#: src/cli.c:336
 #, c-format
 msgid ""
 "\n"
@@ -476,7 +505,7 @@ msgstr ""
 "\n"
 "セマンティクス:\n"
 
-#: src/cli.c:328
+#: src/cli.c:337
 #, c-format
 msgid ""
 "  DIR: base directory used for domain resolution; defaults to the current "
@@ -485,14 +514,14 @@ msgstr ""
 "  DIR: domain 解決の基準ディレクトリです。省略時は現在の作業ディレクトリを使"
 "います\n"
 
-#: src/cli.c:329
+#: src/cli.c:338
 #, c-format
 msgid ""
 "  DOMAIN: directory-scoped configuration boundary used for inheritance and "
 "tombstones\n"
 msgstr "  DOMAIN: 継承と tombstone に使う、ディレクトリ単位の設定境界です\n"
 
-#: src/cli.c:330
+#: src/cli.c:339
 #, c-format
 msgid ""
 "  STORE: domain-local namespace selected by --store; defaults to the default "
@@ -501,7 +530,7 @@ msgstr ""
 "  STORE: --store で選ぶ domain ローカルな名前空間です。省略時は default "
 "store を使います\n"
 
-#: src/cli.c:331
+#: src/cli.c:340
 #, c-format
 msgid ""
 "  KEY / KEYREF: logical secret name, optionally qualified as KEY[/ABSOLUTE/"
@@ -510,42 +539,42 @@ msgstr ""
 "  KEY / KEYREF: 論理的な secret 名です。必要なら KEY[/ABSOLUTE/DOMAIN][:"
 "STORE] で修飾できます\n"
 
-#: src/cli.c:435
+#: src/cli.c:444
 #, c-format
 msgid "unknown store subcommand: %s\n"
 msgstr "不明な store サブコマンドです: %s\n"
 
-#: src/cli.c:462
+#: src/cli.c:472
 #, c-format
 msgid "unknown domain subcommand: %s\n"
 msgstr "不明な domain サブコマンドです: %s\n"
 
-#: src/cli.c:466
+#: src/cli.c:477
 #, c-format
 msgid "unknown command: %s\n"
 msgstr "不明なコマンドです: %s\n"
 
-#: src/cli.c:481 src/cli.c:494 src/cli.c:509 src/cli.c:517 src/cli.c:528
+#: src/cli.c:493 src/cli.c:507 src/cli.c:525 src/cli.c:533 src/cli.c:544
 #, c-format
 msgid "Usage:\n"
 msgstr "使い方:\n"
 
-#: src/cli.c:498
+#: src/cli.c:511
 #, c-format
 msgid "\n"
 msgstr "\n"
 
-#: src/cli.c:499
+#: src/cli.c:512
 #, c-format
 msgid "  KEYREF syntax: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"
 msgstr "  KEYREF 構文: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"
 
-#: src/cli.c:550
+#: src/cli.c:566
 #, c-format
 msgid "Try: %s help %s\n"
 msgstr "試してください: %s help %s\n"
 
-#: src/cli.c:554
+#: src/cli.c:570
 #, c-format
 msgid "Try: %s help\n"
 msgstr "試してください: %s help\n"

@@ -135,6 +135,23 @@ if evaluated != {
 if marker_path.exists():
     fail("hostile payload triggered unintended shell execution")
 
+rc, sourced_stdout, sourced_stderr = run([
+    "bash",
+    "-lc",
+    "source <("
+    + shlex.quote(bin_path)
+    + " --dir "
+    + shlex.quote(str(child_dir))
+    + " export) && python3 -c \"import json, os; print(json.dumps({'CHILD_TOKEN': os.environ['CHILD_TOKEN'], 'HOSTILE_TOKEN': os.environ['HOSTILE_TOKEN']}, sort_keys=True))\"",
+])
+if rc != 0 or sourced_stderr != "":
+    fail(f"sourced export failed: rc={rc} stdout={sourced_stdout!r} stderr={sourced_stderr!r}")
+if json.loads(sourced_stdout) != {
+    "CHILD_TOKEN": "child secret's value",
+    "HOSTILE_TOKEN": hostile_payload,
+}:
+    fail(f"sourced export payload mismatch: {sourced_stdout!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(child_dir), "get", "CHILD_TOKEN", "--shellescaped"])
 if rc != 0 or stderr != "":
     fail(f"shellescaped get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

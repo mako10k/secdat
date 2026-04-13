@@ -222,6 +222,15 @@ static void secdat_cli_print_help_routes(const char *program_name, const char *t
     printf(_("  %s version\n"), program_name);
 }
 
+static void secdat_cli_print_shell_routes(const char *program_name)
+{
+    printf(_("\nShell:\n"));
+    printf(_("  bash load current shell vars: source <(%s export)\n"), program_name);
+    printf(_("  bash alternative: eval \"$(%s export)\"\n"), program_name);
+    printf(_("  bash completion script: completions/secdat.bash\n"));
+    printf(_("  man page source: docs/secdat.1\n"));
+}
+
 static void secdat_cli_print_group_meanings(void)
 {
     printf(_("\nGroups:\n"));
@@ -485,6 +494,7 @@ void secdat_cli_print_usage(const char *program_name)
     secdat_cli_print_common_usage(program_name);
     secdat_cli_print_common_options();
     secdat_cli_print_help_routes(program_name, NULL);
+    secdat_cli_print_shell_routes(program_name);
     secdat_cli_print_group_meanings();
     secdat_cli_print_command_meanings();
     secdat_cli_print_semantics();
@@ -503,6 +513,9 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
     }
     secdat_cli_print_help_routes(program_name, target);
     secdat_cli_print_target_meaning(target);
+    if (command == SECDAT_COMMAND_EXPORT) {
+        secdat_cli_print_shell_routes(program_name);
+    }
     secdat_cli_print_semantics();
 }
 
