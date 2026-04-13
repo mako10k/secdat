@@ -8,6 +8,7 @@ Current status:
 - autotools support is available through `configure.ac` and `Makefile.am`
 - gettext-based localization is wired in for user-facing CLI messages
 - `ls`, `get`, `set`, `rm`, `mv`, `cp`, and `exec` are implemented with encrypted local storage
+- `export` is implemented for shell-friendly setup without embedding raw secret values
 - `save` and `load` are implemented for passphrase-protected secret bundles scoped to the current view
 - `domain create`, `domain delete`, and `domain ls` are implemented
 - `store create`, `store delete`, and `store ls` are implemented
@@ -83,6 +84,15 @@ To avoid writing secrets to your shell history, prefer stdin for sensitive value
 printf '%s' 'super-secret-value' | ./src/secdat set API_TOKEN --stdin
 ./src/secdat get API_TOKEN --stdout
 ```
+
+For shell setup, you can emit bash-oriented export lines that defer the real secret read to `secdat get`:
+
+```sh
+./src/secdat --dir ~/example/project --store app export
+eval "$(./src/secdat --dir ~/example/project --store app export)"
+```
+
+The output is shell-ready text such as `export API_TOKEN="$(./src/secdat ... get API_TOKEN --stdout)"`; it does not print raw secret values directly. The current implementation is bash-oriented, single-quote escapes command arguments, and rejects keys that are not valid shell identifiers.
 
 You can also save the currently visible secrets from one view and load them into another domain/store context:
 

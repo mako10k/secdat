@@ -3388,6 +3388,95 @@ static int secdat_plaintext_to_env_value(
     return 0;
 }
 
+static int secdat_is_shell_identifier(const char *value)
+{
+    size_t index;
+
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+    if (!(isalpha((unsigned char)value[0]) || value[0] == '_')) {
+        return 0;
+    }
+    for (index = 1; value[index] != '\0'; index += 1) {
+        if (!(isalnum((unsigned char)value[index]) || value[index] == '_')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void secdat_write_shell_quoted(FILE *stream, const char *value)
+{
+    size_t index;
+
+    fputc('\'', stream);
+    for (index = 0; value[index] != '\0'; index += 1) {
+        if (value[index] == '\'') {
+            fputs("'\\''", stream);
+        } else {
+            fputc(value[index], stream);
+        }
+    }
+    fputc('\'', stream);
+}
+
+static int secdat_command_export(const struct secdat_cli *cli)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_key_list visible_keys = {0};
+    const char *pattern = NULL;
+    char canonical_dir[PATH_MAX];
+    size_t key_index;
+
+    if (cli->argc == 2 && (strcmp(cli->argv[0], "--pattern") == 0 || strcmp(cli->argv[0], "-p") == 0)) {
+        pattern = cli->argv[1];
+    } else if (cli->argc != 0) {
+        fprintf(stderr, _("invalid arguments for export\n"));
+        secdat_cli_print_try_help(cli, "export");
+        return 2;
+    }
+
+    if (secdat_canonicalize_directory_path(cli->dir, canonical_dir, sizeof(canonical_dir)) != 0) {
+        return 1;
+    }
+    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+        return 1;
+    }
+    if (secdat_collect_visible_keys(&chain, cli->store, pattern, &visible_keys) != 0) {
+        secdat_domain_chain_free(&chain);
+        secdat_key_list_free(&visible_keys);
+        return 1;
+    }
+
+    for (key_index = 0; key_index < visible_keys.count; key_index += 1) {
+        if (!secdat_is_shell_identifier(visible_keys.items[key_index])) {
+            fprintf(stderr, _("key is not a valid shell identifier: %s\n"), visible_keys.items[key_index]);
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+
+        fputs("export ", stdout);
+        fputs(visible_keys.items[key_index], stdout);
+        fputs("=\"$(", stdout);
+        secdat_write_shell_quoted(stdout, cli->program_name == NULL ? "secdat" : cli->program_name);
+        fputs(" --dir ", stdout);
+        secdat_write_shell_quoted(stdout, canonical_dir);
+        if (cli->store != NULL) {
+            fputs(" --store ", stdout);
+            secdat_write_shell_quoted(stdout, cli->store);
+        }
+        fputs(" get ", stdout);
+        secdat_write_shell_quoted(stdout, visible_keys.items[key_index]);
+        fputs(" --stdout)\"\n", stdout);
+    }
+
+    secdat_domain_chain_free(&chain);
+    secdat_key_list_free(&visible_keys);
+    return 0;
+}
+
 static int secdat_command_exec(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
@@ -3607,6 +3696,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_cp(cli);
     case SECDAT_COMMAND_EXEC:
         return secdat_command_exec(cli);
+    case SECDAT_COMMAND_EXPORT:
+        return secdat_command_export(cli);
     case SECDAT_COMMAND_SAVE:
         return secdat_command_save(cli);
     case SECDAT_COMMAND_LOAD:

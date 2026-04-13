@@ -89,6 +89,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     if (strcmp(name, "exec") == 0) {
         return SECDAT_COMMAND_EXEC;
     }
+    if (strcmp(name, "export") == 0) {
+        return SECDAT_COMMAND_EXPORT;
+    }
     if (strcmp(name, "save") == 0) {
         return SECDAT_COMMAND_SAVE;
     }
@@ -136,6 +139,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_EXEC:
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN] CMD [ARGS...]\n"), program_name);
+        break;
+    case SECDAT_COMMAND_EXPORT:
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] export [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"), program_name);
         break;
     case SECDAT_COMMAND_SAVE:
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] save FILE\n"), program_name);
@@ -234,6 +240,7 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("  mv: rename or relocate one key between resolved locations\n"));
     printf(_("  cp: copy one key into another resolved location\n"));
     printf(_("  exec: inject resolved keys into a child process environment\n"));
+    printf(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
     printf(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
     printf(_("  load: import a passphrase-protected bundle into the current domain view\n"));
     printf(_("  unlock: start or refresh an authenticated secret session\n"));
@@ -275,6 +282,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "exec") == 0) {
         printf(_("  inject resolved keys into a child process environment\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "export") == 0) {
+        printf(_("  emit shell-ready export lines that defer secret reads to secdat get\n"));
         return;
     }
     if (target != NULL && strcmp(target, "save") == 0) {
@@ -378,6 +389,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         index += 1;
     } else if (strcmp(argv[index], "exec") == 0) {
         cli->command = SECDAT_COMMAND_EXEC;
+        index += 1;
+    } else if (strcmp(argv[index], "export") == 0) {
+        cli->command = SECDAT_COMMAND_EXPORT;
         index += 1;
     } else if (strcmp(argv[index], "save") == 0) {
         cli->command = SECDAT_COMMAND_SAVE;
@@ -559,6 +573,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "cp";
     case SECDAT_COMMAND_EXEC:
         return "exec";
+    case SECDAT_COMMAND_EXPORT:
+        return "export";
     case SECDAT_COMMAND_SAVE:
         return "save";
     case SECDAT_COMMAND_LOAD:

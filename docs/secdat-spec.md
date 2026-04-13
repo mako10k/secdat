@@ -50,6 +50,7 @@ secdat [--dir DIR] domain ls [GLOBPATTERN]
 
 secdat [--dir DIR] [--store STORE] save FILE
 secdat [--dir DIR] [--store STORE] load FILE
+secdat [--dir DIR] [--store STORE] export [--pattern GLOBPATTERN]
 ```
 
 ### 2.2 Explicitly Stated Requirements
@@ -168,6 +169,14 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat exec --pattern GLOBPATTERN CMD [ARGS...]` injects only matched keys
 - the parent process environment is not modified
 - resolved values are decrypted and passed through an `execve`-style API
+
+#### FR-7c Shell Export
+
+- `secdat export` emits bash-oriented `export ...` lines for the currently visible keys in the current `--dir` and `--store` view
+- emitted lines must reference `secdat get ... --stdout` command substitutions rather than embedding raw secret values directly
+- `secdat export --pattern GLOBPATTERN` limits output to matched keys
+- output uses shell quoting for the command path and arguments, and currently requires keys to already be valid shell identifiers
+- keys that are not valid shell identifiers cause the command to fail rather than guessing a normalization rule
 
 #### FR-7a Session Control
 

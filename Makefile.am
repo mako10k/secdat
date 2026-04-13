@@ -1,6 +1,6 @@
 SUBDIRS = po src
 dist_doc_DATA = README.md docs/secdat-spec.md
-EXTRA_DIST = tests/keyref_regression.sh tests/session_regression.sh tests/e2e_regression.sh tests/save_load_regression.sh
+EXTRA_DIST = tests/keyref_regression.sh tests/session_regression.sh tests/e2e_regression.sh tests/save_load_regression.sh tests/export_regression.sh
 
 all-local:
 	@set -e; \
@@ -26,6 +26,7 @@ check-local:
 	bash $(srcdir)/tests/session_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/e2e_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/save_load_regression.sh "$(abs_top_builddir)/src/secdat"
+	bash $(srcdir)/tests/export_regression.sh "$(abs_top_builddir)/src/secdat"
 
 clean-local:
 	rm -rf $(abs_top_builddir)/po/.locale
