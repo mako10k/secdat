@@ -433,6 +433,7 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
             index += 1;
         } else {
             fprintf(stderr, _("unknown store subcommand: %s\n"), argv[index]);
+            secdat_cli_print_try_help(cli, "store");
             return 2;
         }
     } else if (strcmp(argv[index], "domain") == 0) {
@@ -460,10 +461,12 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
             index += 1;
         } else {
             fprintf(stderr, _("unknown domain subcommand: %s\n"), argv[index]);
+            secdat_cli_print_try_help(cli, "domain");
             return 2;
         }
     } else {
         fprintf(stderr, _("unknown command: %s\n"), argv[index]);
+        secdat_cli_print_try_help(cli, NULL);
         return 2;
     }
 

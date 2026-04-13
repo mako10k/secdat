@@ -117,6 +117,16 @@ for args, expected in [
     ([bin_path, "unlock", "--bad"], f"Try: {bin_path} help unlock"),
     ([bin_path, "status", "--dir", "/tmp"], f"Try: {bin_path} help status"),
     ([bin_path, "store", "create"], f"Try: {bin_path} help store"),
+    ([bin_path, "get", "KEY", "--bad"], f"Try: {bin_path} help get"),
+    ([bin_path, "set", "KEY", "--bad"], f"Try: {bin_path} help set"),
+    ([bin_path, "cp", "ONLY_ONE"], f"Try: {bin_path} help cp"),
+    ([bin_path, "mv", "ONLY_ONE"], f"Try: {bin_path} help mv"),
+    ([bin_path, "rm"], f"Try: {bin_path} help rm"),
+    ([bin_path, "exec"], f"Try: {bin_path} help exec"),
+    ([bin_path, "lock", "--bad"], f"Try: {bin_path} help lock"),
+    ([bin_path, "store", "bogus"], f"Try: {bin_path} help store"),
+    ([bin_path, "domain", "bogus"], f"Try: {bin_path} help domain"),
+    ([bin_path, "bogus"], f"Try: {bin_path} help"),
 ]:
     rc, stdout, stderr = run(args)
     output = stdout + stderr
