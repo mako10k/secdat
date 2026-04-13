@@ -18,6 +18,9 @@ missing
 stamp-h1
 Makefile
 Makefile.in
+secdat-*.tar.gz
+secdat-*.tar.xz
+secdat-*.tar.bz2
 *.o
 *.a
 *.so

@@ -1,6 +1,7 @@
 #include "cli.h"
 
 #include "i18n.h"
+#include "store.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -52,18 +53,6 @@ void secdat_i18n_init(const char *argv0)
     textdomain(PACKAGE_NAME);
 }
 
-static int run_placeholder(const struct secdat_cli *cli)
-{
-    fprintf(stderr, _("command not implemented yet: %s\n"), secdat_cli_command_name(cli->command));
-    if (cli->dir != NULL) {
-        fprintf(stderr, _("  dir=%s\n"), cli->dir);
-    }
-    if (cli->store != NULL) {
-        fprintf(stderr, _("  store=%s\n"), cli->store);
-    }
-    return 1;
-}
-
 int main(int argc, char **argv)
 {
     struct secdat_cli cli;
@@ -82,5 +71,5 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    return run_placeholder(&cli);
+    return secdat_run_command(&cli);
 }

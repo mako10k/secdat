@@ -5,6 +5,8 @@ AC_CONFIG_HEADERS([config.h])
 AM_INIT_AUTOMAKE([foreign subdir-objects -Wall])
 
 AC_PROG_CC
+PKG_PROG_PKG_CONFIG
+PKG_CHECK_MODULES([OPENSSL], [openssl])
 AM_GNU_GETTEXT_VERSION([0.21])
 AM_GNU_GETTEXT([external])
 

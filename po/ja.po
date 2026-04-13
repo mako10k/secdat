@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: secdat 0.1.0\n"
 "Report-Msgid-Bugs-To: noreply@example.invalid\n"
-"POT-Creation-Date: 2026-04-13 13:17+0900\n"
+"POT-Creation-Date: 2026-04-13 13:37+0900\n"
 "PO-Revision-Date: 2026-04-13 00:00+0000\n"
 "Last-Translator: GitHub Copilot <noreply@example.invalid>\n"
 "Language-Team: ja\n"
@@ -97,17 +97,19 @@ msgstr "  %s [--dir DIR] domain delete\n"
 msgid "  %s [--dir DIR] domain ls [--pattern GLOBPATTERN]\n"
 msgstr "  %s [--dir DIR] domain ls [--pattern GLOBPATTERN]\n"
 
-#: src/main.c:18
+#: src/store.c:586
 #, c-format
-msgid "command not implemented yet: %s\n"
-msgstr "コマンドは未実装です: %s\n"
+msgid "missing SECDAT_MASTER_KEY; export a secret first, for example: export SECDAT_MASTER_KEY='change-me'\n"
+msgstr "SECDAT_MASTER_KEY が未設定です。先に秘密値を export してください。例: export SECDAT_MASTER_KEY='change-me'\n"
 
-#: src/main.c:20
 #, c-format
-msgid "  dir=%s\n"
-msgstr "  dir=%s\n"
+#~ msgid "command not implemented yet: %s\n"
+#~ msgstr "コマンドは未実装です: %s\n"
 
-#: src/main.c:23
 #, c-format
-msgid "  store=%s\n"
-msgstr "  store=%s\n"
+#~ msgid "  dir=%s\n"
+#~ msgstr "  dir=%s\n"
+
+#, c-format
+#~ msgid "  store=%s\n"
+#~ msgstr "  store=%s\n"
