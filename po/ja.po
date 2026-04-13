@@ -1,0 +1,113 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: secdat 0.1.0\n"
+"Report-Msgid-Bugs-To: noreply@example.invalid\n"
+"POT-Creation-Date: 2026-04-13 13:17+0900\n"
+"PO-Revision-Date: 2026-04-13 00:00+0000\n"
+"Last-Translator: GitHub Copilot <noreply@example.invalid>\n"
+"Language-Team: ja\n"
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/cli.c:13
+#, c-format
+msgid "missing value for --dir\n"
+msgstr "--dir に値が必要です\n"
+
+#: src/cli.c:23
+#, c-format
+msgid "missing value for --store\n"
+msgstr "--store に値が必要です\n"
+
+#: src/cli.c:81
+#, c-format
+msgid "missing domain subcommand\n"
+msgstr "domain サブコマンドが必要です\n"
+
+#: src/cli.c:95
+#, c-format
+msgid "unknown domain subcommand: %s\n"
+msgstr "不明な domain サブコマンドです: %s\n"
+
+#: src/cli.c:99
+#, c-format
+msgid "unknown command: %s\n"
+msgstr "不明なコマンドです: %s\n"
+
+#: src/cli.c:110
+#, c-format
+msgid "Usage:\n"
+msgstr "使い方:\n"
+
+#: src/cli.c:111
+#, c-format
+msgid "  %s [--dir DIR] [--store STORE] ls [--pattern GLOBPATTERN]\n"
+msgstr "  %s [--dir DIR] [--store STORE] ls [--pattern GLOBPATTERN]\n"
+
+#: src/cli.c:112
+#, c-format
+msgid "  %s [--dir DIR] [--store STORE] get KEY [--stdout]\n"
+msgstr "  %s [--dir DIR] [--store STORE] get KEY [--stdout]\n"
+
+#: src/cli.c:113
+#, c-format
+msgid ""
+"  %s [--dir DIR] [--store STORE] set KEY [VALUE|--stdin|--env ENVNAME|--"
+"value VALUE]\n"
+msgstr ""
+"  %s [--dir DIR] [--store STORE] set KEY [VALUE|--stdin|--env ENVNAME|--"
+"value VALUE]\n"
+
+#: src/cli.c:114
+#, c-format
+msgid "  %s [--dir DIR] [--store STORE] rm KEY\n"
+msgstr "  %s [--dir DIR] [--store STORE] rm KEY\n"
+
+#: src/cli.c:115
+#, c-format
+msgid "  %s [--dir DIR] [--store STORE] mv SRC_KEY DST_KEY\n"
+msgstr "  %s [--dir DIR] [--store STORE] mv SRC_KEY DST_KEY\n"
+
+#: src/cli.c:116
+#, c-format
+msgid "  %s [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY\n"
+msgstr "  %s [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY\n"
+
+#: src/cli.c:117
+#, c-format
+msgid ""
+"  %s [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]\n"
+msgstr ""
+"  %s [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]\n"
+
+#: src/cli.c:118
+#, c-format
+msgid "  %s [--dir DIR] domain create\n"
+msgstr "  %s [--dir DIR] domain create\n"
+
+#: src/cli.c:119
+#, c-format
+msgid "  %s [--dir DIR] domain delete\n"
+msgstr "  %s [--dir DIR] domain delete\n"
+
+#: src/cli.c:120
+#, c-format
+msgid "  %s [--dir DIR] domain ls [--pattern GLOBPATTERN]\n"
+msgstr "  %s [--dir DIR] domain ls [--pattern GLOBPATTERN]\n"
+
+#: src/main.c:18
+#, c-format
+msgid "command not implemented yet: %s\n"
+msgstr "コマンドは未実装です: %s\n"
+
+#: src/main.c:20
+#, c-format
+msgid "  dir=%s\n"
+msgstr "  dir=%s\n"
+
+#: src/main.c:23
+#, c-format
+msgid "  store=%s\n"
+msgstr "  store=%s\n"

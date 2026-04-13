@@ -1,0 +1,8 @@
+DOMAIN = $(PACKAGE)
+subdir = po
+top_builddir = ..
+
+XGETTEXT_OPTIONS = --keyword=_
+
+COPYRIGHT_HOLDER = secdat contributors
+MSGID_BUGS_ADDRESS = noreply@example.invalid
