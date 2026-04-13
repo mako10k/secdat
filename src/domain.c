@@ -852,6 +852,7 @@ static int secdat_domain_command_create(const struct secdat_cli *cli)
 
     if (cli->argc != 0) {
         fprintf(stderr, _("invalid arguments for domain create\n"));
+        secdat_cli_print_try_help(cli, "domain");
         return 2;
     }
 
@@ -913,6 +914,7 @@ static int secdat_domain_command_delete(const struct secdat_cli *cli)
 
     if (cli->argc != 0) {
         fprintf(stderr, _("invalid arguments for domain delete\n"));
+        secdat_cli_print_try_help(cli, "domain");
         return 2;
     }
 
@@ -968,6 +970,7 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
         pattern = cli->argv[0];
     } else if (cli->argc != 0) {
         fprintf(stderr, _("invalid arguments for domain ls\n"));
+        secdat_cli_print_try_help(cli, "domain");
         return 2;
     }
 

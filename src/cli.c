@@ -303,6 +303,7 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
     int index = 1;
     int result;
 
+    cli->program_name = argc > 0 ? argv[0] : "secdat";
     cli->dir = NULL;
     cli->store = NULL;
     cli->help_target = NULL;
@@ -493,6 +494,22 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
     }
 
     secdat_cli_print_usage(program_name);
+}
+
+void secdat_cli_print_try_help(const struct secdat_cli *cli, const char *target)
+{
+    const char *program_name = "secdat";
+
+    if (cli != NULL && cli->program_name != NULL && cli->program_name[0] != '\0') {
+        program_name = cli->program_name;
+    }
+
+    if (target != NULL && target[0] != '\0') {
+        fprintf(stderr, _("Try: %s help %s\n"), program_name, target);
+        return;
+    }
+
+    fprintf(stderr, _("Try: %s help\n"), program_name);
 }
 
 const char *secdat_cli_command_name(enum secdat_command_type command)

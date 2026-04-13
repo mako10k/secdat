@@ -1698,11 +1698,13 @@ static int secdat_command_status(const struct secdat_cli *cli)
         quiet = 1;
     } else if (cli->argc != 0) {
         fprintf(stderr, _("invalid arguments for status\n"));
+        secdat_cli_print_try_help(cli, "status");
         return 2;
     }
 
     if (cli->dir != NULL || cli->store != NULL) {
         fprintf(stderr, _("invalid arguments for status\n"));
+        secdat_cli_print_try_help(cli, "status");
         return 2;
     }
 
@@ -1743,6 +1745,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
 
     if (cli->argc != 0 || cli->dir != NULL || cli->store != NULL) {
         fprintf(stderr, _("invalid arguments for unlock\n"));
+        secdat_cli_print_try_help(cli, "unlock");
         return 2;
     }
 
@@ -1795,6 +1798,7 @@ static int secdat_command_lock(const struct secdat_cli *cli)
 {
     if (cli->argc != 0 || cli->dir != NULL || cli->store != NULL) {
         fprintf(stderr, _("invalid arguments for lock\n"));
+        secdat_cli_print_try_help(cli, "lock");
         return 2;
     }
 
@@ -2216,6 +2220,7 @@ static int secdat_load_resolved_plaintext(
     status = secdat_find_effective_entry(chain, store_name, key, entry_path, sizeof(entry_path), resolved_index);
     if (status != 0) {
         fprintf(stderr, _("key not found: %s\n"), key);
+        fprintf(stderr, _("Hint: check secdat status, --dir, and --store to confirm the lookup context\n"));
         return 1;
     }
 
@@ -2318,8 +2323,15 @@ static int secdat_command_get(const struct secdat_cli *cli)
     ssize_t written;
     size_t offset;
 
+    if (cli->argc == 0) {
+        fprintf(stderr, _("missing key for get\n"));
+        secdat_cli_print_try_help(cli, "get");
+        return 2;
+    }
+
     if (cli->argc != 1 && !(cli->argc == 2 && (strcmp(cli->argv[1], "--stdout") == 0 || strcmp(cli->argv[1], "-o") == 0))) {
         fprintf(stderr, _("invalid arguments for get\n"));
+        secdat_cli_print_try_help(cli, "get");
         return 2;
     }
 
@@ -2466,6 +2478,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
         memcpy(plaintext, environment_value, plaintext_length);
     } else {
         fprintf(stderr, _("invalid arguments for set\n"));
+        secdat_cli_print_try_help(cli, "set");
         return 2;
     }
 
@@ -2562,6 +2575,7 @@ static int secdat_command_cp(const struct secdat_cli *cli)
 
     if (cli->argc != 2) {
         fprintf(stderr, _("invalid arguments for cp\n"));
+        secdat_cli_print_try_help(cli, "cp");
         return 2;
     }
     if (strcmp(cli->argv[0], cli->argv[1]) == 0) {
@@ -2626,6 +2640,7 @@ static int secdat_command_mv(const struct secdat_cli *cli)
 
     if (cli->argc != 2) {
         fprintf(stderr, _("invalid arguments for mv\n"));
+        secdat_cli_print_try_help(cli, "mv");
         return 2;
     }
     if (strcmp(cli->argv[0], cli->argv[1]) == 0) {
@@ -2697,6 +2712,7 @@ static int secdat_command_rm(const struct secdat_cli *cli)
 
     if (cli->argc != 1) {
         fprintf(stderr, _("invalid arguments for rm\n"));
+        secdat_cli_print_try_help(cli, "rm");
         return 2;
     }
 
@@ -2766,6 +2782,7 @@ static int secdat_store_command_ls(const struct secdat_cli *cli)
 
     if (cli->store != NULL) {
         fprintf(stderr, _("--store is not valid with store commands\n"));
+        secdat_cli_print_try_help(cli, "store");
         return 2;
     }
     if (secdat_parse_simple_ls_pattern(cli, "store ls", &pattern) != 0) {
@@ -2798,10 +2815,17 @@ static int secdat_store_command_create(const struct secdat_cli *cli)
 
     if (cli->store != NULL) {
         fprintf(stderr, _("--store is not valid with store commands\n"));
+        secdat_cli_print_try_help(cli, "store");
+        return 2;
+    }
+    if (cli->argc == 0) {
+        fprintf(stderr, _("missing store name for store create\n"));
+        secdat_cli_print_try_help(cli, "store");
         return 2;
     }
     if (cli->argc != 1) {
         fprintf(stderr, _("invalid arguments for store create\n"));
+        secdat_cli_print_try_help(cli, "store");
         return 2;
     }
 
@@ -2836,10 +2860,17 @@ static int secdat_store_command_delete(const struct secdat_cli *cli)
 
     if (cli->store != NULL) {
         fprintf(stderr, _("--store is not valid with store commands\n"));
+        secdat_cli_print_try_help(cli, "store");
+        return 2;
+    }
+    if (cli->argc == 0) {
+        fprintf(stderr, _("missing store name for store delete\n"));
+        secdat_cli_print_try_help(cli, "store");
         return 2;
     }
     if (cli->argc != 1) {
         fprintf(stderr, _("invalid arguments for store delete\n"));
+        secdat_cli_print_try_help(cli, "store");
         return 2;
     }
 
@@ -2914,6 +2945,7 @@ static int secdat_command_exec(const struct secdat_cli *cli)
 
     if (command_index >= (size_t)cli->argc) {
         fprintf(stderr, _("invalid arguments for exec\n"));
+        secdat_cli_print_try_help(cli, "exec");
         return 2;
     }
 

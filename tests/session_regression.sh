@@ -111,6 +111,21 @@ output = stdout + stderr
 if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "Commands:" not in output or "help: show global help" not in output or "version: print the secdat version" not in output:
     fail(f"help subcommand check failed: rc={rc} output={output!r}")
 
+for args, expected in [
+    ([bin_path, "unlock", "--bad"], f"Try: {bin_path} help unlock"),
+    ([bin_path, "status", "--dir", "/tmp"], f"Try: {bin_path} help status"),
+    ([bin_path, "store", "create"], f"Try: {bin_path} help store"),
+]:
+    rc, stdout, stderr = run(args)
+    output = stdout + stderr
+    if rc != 2 or expected not in output:
+        fail(f"recovery hint check failed for {args}: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run([bin_path, "store", "create"])
+output = stdout + stderr
+if rc != 2 or "missing store name for store create" not in output:
+    fail(f"missing operand check failed for store create: rc={rc} output={output!r}")
+
 rc, stdout, stderr = run([bin_path, "--help"])
 output = stdout + stderr
 if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "-d, --dir DIR" not in output or "Commands:" not in output or "Groups:" not in output or "--help COMMAND" not in output or "COMMAND --help" not in output or "--version" not in output:
@@ -162,6 +177,12 @@ if rc != 0 or "session unlocked" not in transcript:
 rc, stdout, stderr = run([bin_path, "set", "SESSION_KEY", "-v", "value"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set after passphrase unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "get", "MISSING_KEY", "-o"])
+output = stdout + stderr
+if rc == 0 or "key not found: MISSING_KEY" not in output or "Hint: check secdat status, --dir, and --store" not in output:
+    fail(f"missing key guidance failed: rc={rc} output={output!r}")
+
 rc, stdout, stderr = run([bin_path, "get", "SESSION_KEY", "-o"])
 if rc != 0 or stdout != "value" or stderr != "":
     fail(f"get after passphrase unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

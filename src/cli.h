@@ -24,6 +24,7 @@ enum secdat_command_type {
 };
 
 struct secdat_cli {
+    const char *program_name;
     const char *dir;
     const char *store;
     const char *help_target;
@@ -38,6 +39,7 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli);
 void secdat_cli_print_usage(const char *program_name);
 void secdat_cli_print_command_usage(const char *program_name, enum secdat_command_type command);
 void secdat_cli_print_help_target(const char *program_name, const char *target);
+void secdat_cli_print_try_help(const struct secdat_cli *cli, const char *target);
 enum secdat_command_type secdat_cli_parse_command_name(const char *name);
 const char *secdat_cli_command_name(enum secdat_command_type command);
 
