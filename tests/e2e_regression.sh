@@ -29,11 +29,15 @@ env = os.environ.copy()
 env["LC_ALL"] = "C"
 env["LANGUAGE"] = "C"
 passphrase = "e2e-passphrase"
+bundle_passphrase = "e2e-bundle-passphrase"
 
 project_root = work_root / "workspace" / "root"
 service_dir = project_root / "service"
 ops_dir = project_root / "ops"
-for path in [project_root, service_dir, ops_dir]:
+restore_dir = work_root / "workspace" / "restore"
+bundle_path = work_root / "backup" / "service-app.secdat"
+bundle_path.parent.mkdir(parents=True, exist_ok=True)
+for path in [project_root, service_dir, ops_dir, restore_dir]:
     path.mkdir(parents=True, exist_ok=True)
 
 
@@ -119,6 +123,9 @@ if rc != 0 or stderr != "":
 rc, _, stderr = run([bin_path, "--dir", str(service_dir), "domain", "create"])
 if rc != 0 or stderr != "":
     fail(f"service domain create failed: rc={rc} stderr={stderr!r}")
+rc, _, stderr = run([bin_path, "--dir", str(restore_dir), "domain", "create"])
+if rc != 0 or stderr != "":
+    fail(f"restore domain create failed: rc={rc} stderr={stderr!r}")
 rc, _, stderr = run([bin_path, "--dir", str(project_root), "store", "create", "app"])
 if rc != 0 or stderr != "":
     fail(f"app store create failed: rc={rc} stderr={stderr!r}")
@@ -221,7 +228,62 @@ if rc != 0 or stderr != "":
 assert_eq(stdout, "child-secret", "exec overridden child key")
 
 
-# Scenario 3: locking clears the session-backed workflow.
+# Scenario 3: save/load/export supports app-store migration into a new domain.
+rc, _, stderr = run([bin_path, "--dir", str(service_dir), "--store", "app", "set", "SERVICE_TOKEN", "-v", "service-token"])
+if rc != 0 or stderr != "":
+    fail(f"set service app token failed: rc={rc} stderr={stderr!r}")
+
+rc, transcript = run_pty(
+    [bin_path, "--dir", str(service_dir), "--store", "app", "save", str(bundle_path)],
+    [("Create secdat bundle passphrase:", bundle_passphrase), ("Confirm secdat bundle passphrase:", bundle_passphrase)],
+)
+if rc != 0:
+    fail(f"save bundle failed: rc={rc} transcript={transcript!r}")
+if not bundle_path.is_file() or bundle_path.stat().st_size == 0:
+    fail("save bundle did not create a non-empty file")
+
+rc, _, stderr = run([bin_path, "--dir", str(restore_dir), "store", "create", "app"])
+if rc != 0 or stderr != "":
+    fail(f"restore app store create failed: rc={rc} stderr={stderr!r}")
+rc, _, stderr = run([bin_path, "--dir", str(restore_dir), "--store", "app", "set", "EXTRA_TOKEN", "-v", "keep-me"])
+if rc != 0 or stderr != "":
+    fail(f"set restore extra token failed: rc={rc} stderr={stderr!r}")
+
+rc, transcript = run_pty(
+    [bin_path, "--dir", str(restore_dir), "--store", "app", "load", str(bundle_path)],
+    [("Enter secdat bundle passphrase:", bundle_passphrase)],
+)
+if rc != 0:
+    fail(f"load bundle failed: rc={rc} transcript={transcript!r}")
+
+for args, expected, label in [
+    ([bin_path, "--dir", str(restore_dir), "--store", "app", "get", "API_TOKEN", "-o"], "app-token", "restored inherited app token"),
+    ([bin_path, "--dir", str(restore_dir), "--store", "app", "get", "SERVICE_TOKEN", "-o"], "service-token", "restored local service token"),
+    ([bin_path, "--dir", str(restore_dir), "--store", "app", "get", "EXTRA_TOKEN", "-o"], "keep-me", "preserved extra token"),
+]:
+    rc, stdout, stderr = run(args)
+    if rc != 0 or stderr != "":
+        fail(f"post-load get failed for {label}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    assert_eq(stdout, expected, label)
+
+rc, stdout, stderr = run([bin_path, "--dir", str(restore_dir), "--store", "app", "export"])
+if rc != 0 or stderr != "":
+    fail(f"restore export failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "API_TOKEN", "restore export API_TOKEN")
+assert_contains(stdout, "SERVICE_TOKEN", "restore export SERVICE_TOKEN")
+assert_contains(stdout, "EXTRA_TOKEN", "restore export EXTRA_TOKEN")
+
+rc, stdout, stderr = run([
+    "bash",
+    "-lc",
+    stdout + "python3 -c \"import os; print(os.environ['API_TOKEN']); print(os.environ['SERVICE_TOKEN']); print(os.environ['EXTRA_TOKEN'])\"",
+])
+if rc != 0 or stderr != "":
+    fail(f"evaluated restore export failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, "app-token\nservice-token\nkeep-me\n", "evaluated restore export values")
+
+
+# Scenario 4: locking clears the session-backed workflow.
 rc, stdout, stderr = run([bin_path, "lock"])
 if rc != 0 or stderr != "":
     fail(f"lock after e2e scenarios failed: rc={rc} stderr={stderr!r}")
