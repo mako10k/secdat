@@ -160,6 +160,20 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
     }
 }
 
+static void secdat_cli_print_common_usage(const char *program_name)
+{
+    printf(_("  %s [options] subcommand ...\n"), program_name);
+}
+
+static void secdat_cli_print_common_options(void)
+{
+    printf(_("\nOptions:\n"));
+    printf(_("  -d, --dir DIR      set the base directory used for domain resolution\n"));
+    printf(_("  -s, --store STORE  select the store namespace inside the resolved domain\n"));
+    printf(_("  -h, --help         show global help, or combine with COMMAND for detailed help\n"));
+    printf(_("  -V, --version      print the secdat version\n"));
+}
+
 static void secdat_cli_print_help_routes(const char *program_name, const char *target)
 {
     printf(_("\nHelp:\n"));
@@ -386,24 +400,8 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
 void secdat_cli_print_usage(const char *program_name)
 {
     printf(_("Usage:\n"));
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_LS);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_GET);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_SET);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_RM);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_MV);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_CP);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_EXEC);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_UNLOCK);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_LOCK);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STATUS);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_CREATE);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_DELETE);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_LS);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_CREATE);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_DELETE);
-    secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_LS);
-    printf(_("\n"));
-    printf(_("  KEYREF syntax: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"));
+    secdat_cli_print_common_usage(program_name);
+    secdat_cli_print_common_options();
     secdat_cli_print_help_routes(program_name, NULL);
     secdat_cli_print_group_meanings();
     secdat_cli_print_command_meanings();

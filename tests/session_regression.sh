@@ -26,6 +26,8 @@ from pathlib import Path
 
 bin_path = sys.argv[1]
 env = os.environ.copy()
+env["LC_ALL"] = "C"
+env["LANGUAGE"] = "C"
 passphrase = "passphrase-for-session-test"
 wrapped_path = Path(env["XDG_DATA_HOME"]) / "secdat" / "master-key.bin"
 
@@ -105,7 +107,7 @@ for args, marker in [
 
 rc, stdout, stderr = run([bin_path, "--help"])
 output = stdout + stderr
-if rc != 0 or "Commands:" not in output or "Groups:" not in output or "--help COMMAND" not in output or "COMMAND --help" not in output or "--version" not in output:
+if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "-d, --dir DIR" not in output or "Commands:" not in output or "Groups:" not in output or "--help COMMAND" not in output or "COMMAND --help" not in output or "--version" not in output:
     fail(f"global help check failed: rc={rc} output={output!r}")
 
 rc, stdout, stderr = run([bin_path, "--version"])
