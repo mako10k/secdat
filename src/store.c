@@ -217,7 +217,7 @@ static int secdat_parse_key_reference(
 )
 {
     const char *store_separator;
-    const char *domain_separator;
+    const char *key_separator;
     size_t base_length;
     size_t key_length;
 
@@ -240,31 +240,48 @@ static int secdat_parse_key_reference(
         base_length = strlen(raw);
     }
 
-    domain_separator = memchr(raw, '/', base_length);
-    if (domain_separator != NULL) {
-        if (domain_separator == raw) {
+    if (raw[0] == '/') {
+        key_separator = raw;
+        while (key_separator != NULL) {
+            const char *next_separator = memchr(key_separator + 1, '/', base_length - (size_t)(key_separator + 1 - raw));
+
+            if (next_separator == NULL) {
+                break;
+            }
+            key_separator = next_separator;
+        }
+
+        if (key_separator == raw || (size_t)(key_separator - raw) >= base_length) {
             fprintf(stderr, _("invalid key reference: %s\n"), raw);
             return 1;
         }
-        key_length = (size_t)(domain_separator - raw);
-        if (base_length - key_length >= sizeof(reference->domain)) {
+
+        key_length = base_length - (size_t)(key_separator + 1 - raw);
+        if ((size_t)(key_separator - raw) >= sizeof(reference->domain)) {
             fprintf(stderr, _("path is too long\n"));
             return 1;
         }
-        memcpy(reference->domain, domain_separator, base_length - key_length);
-        reference->domain[base_length - key_length] = '\0';
+
+        memcpy(reference->domain, raw, (size_t)(key_separator - raw));
+        reference->domain[key_separator - raw] = '\0';
         reference->domain_value = reference->domain;
+
+        memcpy(reference->key, key_separator + 1, key_length);
+        reference->key[key_length] = '\0';
     } else {
+        if (memchr(raw, '/', base_length) != NULL) {
+            fprintf(stderr, _("invalid key reference: %s\n"), raw);
+            return 1;
+        }
         key_length = base_length;
+        memcpy(reference->key, raw, key_length);
+        reference->key[key_length] = '\0';
     }
 
     if (key_length == 0 || key_length >= sizeof(reference->key)) {
         fprintf(stderr, _("invalid key reference: %s\n"), raw);
         return 1;
     }
-
-    memcpy(reference->key, raw, key_length);
-    reference->key[key_length] = '\0';
     return 0;
 }
 
@@ -342,13 +359,19 @@ static int secdat_format_canonical_key(
 )
 {
     int written;
+    const char *domain_separator = "";
+
+    if (include_domain && domain != NULL && domain[0] != '\0' && domain[strlen(domain) - 1] != '/') {
+        domain_separator = "/";
+    }
 
     written = snprintf(
         buffer,
         size,
-        "%s%s%s%s",
-        key,
+        "%s%s%s%s%s",
         include_domain && domain != NULL && domain[0] != '\0' ? domain : "",
+        include_domain && domain != NULL && domain[0] != '\0' ? domain_separator : "",
+        key,
         include_store ? ":" : "",
         include_store ? store : ""
     );

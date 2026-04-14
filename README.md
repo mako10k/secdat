@@ -77,8 +77,8 @@ If you explicitly need a value to remain readable while `secdat` is locked, `set
 
 `--unsafe` is intentionally outside the normal secret workflow. It does not require the master key, remains readable while locked, and should only be used for values you accept storing in plaintext.
 
-Key arguments also accept an explicit domain/store suffix as `KEY[/ABSOLUTE/DOMAIN][:STORE]`.
-If the suffixes are omitted, `--dir`, `--store`, and then the current defaults are used.
+Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
+When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--dir`, `--store`, and then the current defaults are used.
 
 You can also create a domain for a project directory and manage per-domain stores:
 

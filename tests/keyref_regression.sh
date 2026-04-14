@@ -47,31 +47,35 @@ ls_output="$("$bin_path" --dir "$root" ls 'prefix_*')"
 assert_contains_line "$ls_output" 'prefix_one'
 assert_contains_line "$ls_output" 'prefix_two'
 
-"$bin_path" set explicit_key/"$root":team explicit_value >/dev/null
-explicit_value="$("$bin_path" get explicit_key/"$root":team --stdout)"
+"$bin_path" set "$root"/explicit_key:team explicit_value >/dev/null
+explicit_value="$("$bin_path" get "$root"/explicit_key:team --stdout)"
 assert_eq "$explicit_value" 'explicit_value' 'KEYREF set/get'
 
+if "$bin_path" get explicit_key/"$root":team --stdout >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'old KEYREF syntax still accepted'
+fi
+
 canonical_output="$("$bin_path" --dir "$root" ls --canonical)"
-assert_contains_line "$canonical_output" "other_key$root:default"
+assert_contains_line "$canonical_output" "$root/other_key:default"
 
 team_canonical_output="$("$bin_path" --dir "$root" --store team ls --canonical)"
-assert_contains_line "$team_canonical_output" "explicit_key$root:team"
+assert_contains_line "$team_canonical_output" "$root/explicit_key:team"
 
 canonical_domain_output="$("$bin_path" --dir "$root" ls --canonical-domain)"
-assert_contains_line "$canonical_domain_output" "other_key$root"
+assert_contains_line "$canonical_domain_output" "$root/other_key"
 
 canonical_store_output="$("$bin_path" --dir "$root" --store team ls --canonical-store)"
 assert_contains_line "$canonical_store_output" 'explicit_key:team'
 
-"$bin_path" cp explicit_key/"$root":team copied_key/"$child":temp >/dev/null
-copied_value="$("$bin_path" get copied_key/"$child":temp --stdout)"
+"$bin_path" cp "$root"/explicit_key:team "$child"/copied_key:temp >/dev/null
+copied_value="$("$bin_path" get "$child"/copied_key:temp --stdout)"
 assert_eq "$copied_value" 'explicit_value' 'KEYREF cp'
 
-"$bin_path" mv copied_key/"$child":temp moved_key/"$root":team >/dev/null
-moved_value="$("$bin_path" get moved_key/"$root":team --stdout)"
+"$bin_path" mv "$child"/copied_key:temp "$root"/moved_key:team >/dev/null
+moved_value="$("$bin_path" get "$root"/moved_key:team --stdout)"
 assert_eq "$moved_value" 'explicit_value' 'KEYREF mv'
 
-if "$bin_path" get copied_key/"$child":temp --stdout >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+if "$bin_path" get "$child"/copied_key:temp --stdout >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'moved source still visible'
 fi
 

@@ -10,9 +10,11 @@ stores encrypted secret values locally and resolves them through directory-scope
 
 Key arguments use the canonical KEYREF syntax:
 
-.B KEY[/ABSOLUTE/DOMAIN][:STORE]
+.B [/ABSOLUTE/DOMAIN/]KEY[:STORE]
 
-When the suffixes are omitted,
+When the domain qualifier is present, the trailing slash before
+.B KEY
+is required. When the qualifiers are omitted,
 .B --dir
 and
 .B --store

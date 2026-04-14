@@ -356,7 +356,7 @@ static void secdat_cli_print_semantics(void)
     printf(_("  DIR: base directory used for domain resolution; defaults to the current working directory\n"));
     printf(_("  DOMAIN: directory-scoped configuration boundary used for inheritance and tombstones\n"));
     printf(_("  STORE: domain-local namespace selected by --store; defaults to the default store\n"));
-    printf(_("  KEY / KEYREF: logical secret name, optionally qualified as KEY[/ABSOLUTE/DOMAIN][:STORE]\n"));
+    printf(_("  KEY / KEYREF: logical secret name, optionally qualified as [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
 }
 
 int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
@@ -532,7 +532,7 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
     if (command == SECDAT_COMMAND_LS || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
         || command == SECDAT_COMMAND_RM || command == SECDAT_COMMAND_MV || command == SECDAT_COMMAND_CP) {
         printf(_("\n"));
-        printf(_("  KEYREF syntax: KEY[/ABSOLUTE/DOMAIN][:STORE]\n"));
+        printf(_("  KEYREF syntax: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
     }
     secdat_cli_print_help_routes(program_name, target);
     secdat_cli_print_target_meaning(target);

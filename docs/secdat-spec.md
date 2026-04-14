@@ -111,11 +111,11 @@ To make the requested behavior implementable, the following are treated as norma
 - Store metadata and entries live inside exactly one resolved domain
 - Domain: a configuration boundary associated with a directory path
 - Key: the logical name of a stored value
-- Key reference (`KEYREF`): `KEY[/ABSOLUTE/DOMAIN][:STORE]`
-- the `/ABSOLUTE/DOMAIN` suffix is optional and must begin with `/`
-- the `:STORE` suffix is optional
-- if the domain suffix is omitted, the command falls back to `--dir DIR` and then the current working directory
-- if the store suffix is omitted, the command falls back to `--store STORE` and then the default store
+- Key reference (`KEYREF`): `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`
+- the `/ABSOLUTE/DOMAIN/` qualifier is optional, must begin with `/`, and must include the trailing slash before `KEY`
+- the `:STORE` qualifier is optional
+- if the domain qualifier is omitted, the command falls back to `--dir DIR` and then the current working directory
+- if the store qualifier is omitted, the command falls back to `--store STORE` and then the default store
 - Value: secret plaintext
 - Master key: key material used to encrypt and decrypt values
 - Session: a temporary login-scoped cache of the active master key
