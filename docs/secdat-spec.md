@@ -99,6 +99,7 @@ To make the requested behavior implementable, the following are treated as norma
 ### 3.1 In Scope
 
 - a local secret store for a single host
+- single-user local workflows under one OS account
 - simple CRUD operations and listing
 - runtime injection into external commands
 - encryption at rest
@@ -108,6 +109,9 @@ To make the requested behavior implementable, the following are treated as norma
 
 - network sharing
 - ACLs and multi-user collaboration
+- shared-host and shared-container hardening beyond normal OS user separation
+- root compromise and other host-compromise scenarios
+- forwarded or multiplexed session boundary guarantees across unrelated login contexts
 - automated key rotation
 - secret versioning
 - tamper-proof audit logs
@@ -244,6 +248,8 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat passwd` re-wraps the persistent master key under a new passphrase without changing stored secret payloads
 - `secdat passwd` requires an initialized wrapped master key and fails clearly if bootstrap has not happened yet
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `passwd`
+- for the current single-user local scope, the wrapped-key passphrase KDF cost remains at the current setting unless a future review justifies a change
+- any future increase or configurability change for the wrapped-key KDF must preserve compatibility with existing wrapped-key files
 
 #### FR-7b Secret Bundle Save/Load
 
@@ -347,6 +353,7 @@ To make the requested behavior implementable, the following are treated as norma
 - domain definitions and stored data are isolated per OS user
 - no shared cross-user registry is provided
 - persistent storage must stay inside a private area under the user's home or XDG data directory
+- runtime session handling assumes the OS preserves privacy for the user's XDG runtime area and related local process boundaries
 
 ### 3.6 Non-Functional Requirements
 

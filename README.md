@@ -18,6 +18,14 @@ Current status:
 - stores are domain-local namespaces, not global objects shared across all domains
 - encryption currently uses `SECDAT_MASTER_KEY` or an active `secdat unlock` session
 
+## Security scope
+
+`secdat` is intended for local single-user use on one host, primarily for developer workflows under the same OS account.
+
+The current design does not try to support shared hosts, shared containers, multi-user collaboration, root compromise, or forwarded/multiplexed session edge cases as first-class deployment targets.
+
+The session-agent path relies on normal OS user separation and private XDG runtime/data locations. If those assumptions do not hold in your environment, treat that deployment as unsupported.
+
 ## Bootstrap
 
 ```sh
@@ -188,6 +196,8 @@ SECDAT_MASTER_KEY_PASSPHRASE='current-passphrase' ./src/secdat passwd
 
 `passwd` unwraps the persistent master key with the current passphrase and re-wraps it with the new one.
 
+For the current single-user local scope, the wrapped-key passphrase protection remains on the current KDF cost. Future hardening may revisit that cost or make it more configurable, but compatibility with existing wrapped keys must be preserved.
+
 There is no supported raw master-key retrieval command in the normal workflow. The intended design keeps the generated master key internal to the wrapped-key and session-agent path unless an explicit future recovery/export flow is added.
 
 Help is also available per command:
@@ -201,6 +211,6 @@ Help is also available per command:
 ## Next implementation steps
 
 1. Add pinentry or askpass support for non-terminal passphrase entry.
-2. Add passphrase rotation for the wrapped master key without re-encrypting stored values.
+2. Revisit wrapped-key passphrase KDF cost and configurability while keeping compatibility with existing wrapped keys.
 3. Expose more structured status output for scripts if a machine-readable mode becomes necessary.
 
