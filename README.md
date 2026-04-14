@@ -68,6 +68,15 @@ Then you can store and read values:
 ./src/secdat get HOGE --stdout
 ```
 
+If you explicitly need a value to remain readable while `secdat` is locked, `set --unsafe` stores it in plaintext on disk:
+
+```sh
+./src/secdat set PUBLIC_ENDPOINT --unsafe --value https://example.invalid/api
+./src/secdat get PUBLIC_ENDPOINT --stdout
+```
+
+`--unsafe` is intentionally outside the normal secret workflow. It does not require the master key, remains readable while locked, and should only be used for values you accept storing in plaintext.
+
 Key arguments also accept an explicit domain/store suffix as `KEY[/ABSOLUTE/DOMAIN][:STORE]`.
 If the suffixes are omitted, `--dir`, `--store`, and then the current defaults are used.
 

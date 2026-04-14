@@ -129,7 +129,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get KEYREF [-o|--stdout|--shellescaped]\n"), program_name);
         break;
     case SECDAT_COMMAND_SET:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] set KEYREF [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] set KEYREF [--unsafe] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]\n"), program_name);
         break;
     case SECDAT_COMMAND_RM:
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm KEYREF\n"), program_name);
@@ -258,7 +258,7 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("  help: show global help or detailed help for one command\n"));
     printf(_("  ls: list effective keys visible from the current domain view\n"));
     printf(_("  get: decrypt one resolved key and write it to standard output\n"));
-    printf(_("  set: store or update one key in the resolved current domain\n"));
+    printf(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
     printf(_("  rm: remove one key locally or create a tombstone for an inherited key\n"));
     printf(_("  mv: rename or relocate one key between resolved locations\n"));
     printf(_("  cp: copy one key into another resolved location\n"));
@@ -289,7 +289,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "set") == 0) {
-        printf(_("  store or update one key in the resolved current domain\n"));
+        printf(_("  store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
         return;
     }
     if (target != NULL && strcmp(target, "rm") == 0) {

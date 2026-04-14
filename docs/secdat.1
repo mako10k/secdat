@@ -40,8 +40,10 @@ Decrypt one resolved key and write it to standard output. Use
 .B --shellescaped
 to emit a single shell-quoted value for bash-oriented loading.
 .TP
-.B set KEYREF [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
-Store or update one key in the resolved current domain.
+.B set KEYREF [\-\-unsafe] [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
+Store or update one key in the resolved current domain. Use
+.B --unsafe
+to write a plaintext entry that remains readable while locked.
 .TP
 .B rm KEYREF
 Remove one key locally or create a tombstone for an inherited key.

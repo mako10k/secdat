@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #define SECDAT_ENTRY_VERSION 1
+#define SECDAT_ENTRY_ALGORITHM_PLAINTEXT 1
 #define SECDAT_ENTRY_ALGORITHM_AES_256_GCM 2
 #define SECDAT_NONCE_LEN 12
 #define SECDAT_TAG_LEN 16
@@ -2449,6 +2450,7 @@ static int secdat_decrypt_value(const unsigned char *encrypted, size_t encrypted
     const unsigned char *nonce;
     const unsigned char *ciphertext;
     const unsigned char *tag;
+    unsigned char algorithm;
     uint32_t ciphertext_length;
     size_t header_length;
     size_t payload_length;
@@ -2457,7 +2459,7 @@ static int secdat_decrypt_value(const unsigned char *encrypted, size_t encrypted
     int final_length;
     int status = 1;
 
-    if (encrypted_length < SECDAT_HEADER_LEN + SECDAT_NONCE_LEN + SECDAT_TAG_LEN) {
+    if (encrypted_length < SECDAT_HEADER_LEN) {
         fprintf(stderr, _("invalid encrypted entry\n"));
         return 1;
     }
@@ -2467,15 +2469,41 @@ static int secdat_decrypt_value(const unsigned char *encrypted, size_t encrypted
         return 1;
     }
 
-    if (encrypted[9] != SECDAT_ENTRY_ALGORITHM_AES_256_GCM || encrypted[10] != SECDAT_NONCE_LEN) {
+    algorithm = encrypted[9];
+    if (algorithm != SECDAT_ENTRY_ALGORITHM_PLAINTEXT && algorithm != SECDAT_ENTRY_ALGORITHM_AES_256_GCM) {
         fprintf(stderr, _("unsupported encryption algorithm\n"));
         return 1;
     }
 
     ciphertext_length = secdat_read_be32(encrypted + 12);
     header_length = SECDAT_HEADER_LEN + encrypted[10];
+    if (encrypted_length < header_length) {
+        fprintf(stderr, _("invalid encrypted entry\n"));
+        return 1;
+    }
     payload_length = encrypted_length - header_length;
-    if (payload_length != ciphertext_length || ciphertext_length < SECDAT_TAG_LEN) {
+    if (payload_length != ciphertext_length) {
+        fprintf(stderr, _("invalid encrypted entry\n"));
+        return 1;
+    }
+
+    if (algorithm == SECDAT_ENTRY_ALGORITHM_PLAINTEXT) {
+        if (encrypted[10] != 0) {
+            fprintf(stderr, _("invalid encrypted entry\n"));
+            return 1;
+        }
+        buffer = malloc(payload_length == 0 ? 1 : payload_length);
+        if (buffer == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        memcpy(buffer, encrypted + header_length, payload_length);
+        *plaintext = buffer;
+        *plaintext_length = payload_length;
+        return 0;
+    }
+
+    if (encrypted[10] != SECDAT_NONCE_LEN || ciphertext_length < SECDAT_TAG_LEN) {
         fprintf(stderr, _("invalid encrypted entry\n"));
         return 1;
     }
@@ -2966,7 +2994,8 @@ static int secdat_store_plaintext(
     const char *store_name,
     const char *key,
     unsigned char *plaintext,
-    size_t plaintext_length
+    size_t plaintext_length,
+    int unsafe_store
 )
 {
     char entry_path[PATH_MAX];
@@ -2990,7 +3019,21 @@ static int secdat_store_plaintext(
         return status;
     }
 
-    if (secdat_encrypt_value(plaintext, plaintext_length, &encrypted, &encrypted_length) != 0) {
+    if (unsafe_store) {
+        encrypted_length = SECDAT_HEADER_LEN + plaintext_length;
+        encrypted = calloc(1, encrypted_length == 0 ? 1 : encrypted_length);
+        if (encrypted == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        memcpy(encrypted, secdat_entry_magic, sizeof(secdat_entry_magic));
+        encrypted[8] = SECDAT_ENTRY_VERSION;
+        encrypted[9] = SECDAT_ENTRY_ALGORITHM_PLAINTEXT;
+        encrypted[10] = 0;
+        encrypted[11] = 0;
+        secdat_write_be32(encrypted + 12, (uint32_t)plaintext_length);
+        memcpy(encrypted + SECDAT_HEADER_LEN, plaintext, plaintext_length);
+    } else if (secdat_encrypt_value(plaintext, plaintext_length, &encrypted, &encrypted_length) != 0) {
         return 1;
     }
 
@@ -3013,6 +3056,10 @@ static int secdat_command_set(const struct secdat_cli *cli)
     size_t plaintext_length = 0;
     const char *environment_name;
     const char *environment_value;
+    const char *literal_value = NULL;
+    int read_stdin = 1;
+    int unsafe_store = 0;
+    int index;
     int status;
 
     if (cli->argc < 1) {
@@ -3025,7 +3072,71 @@ static int secdat_command_set(const struct secdat_cli *cli)
     }
 
     key = reference.key;
-    if (cli->argc == 1 || (cli->argc == 2 && (strcmp(cli->argv[1], "--stdin") == 0 || strcmp(cli->argv[1], "-i") == 0))) {
+    for (index = 1; index < cli->argc; index += 1) {
+        if (strcmp(cli->argv[index], "--unsafe") == 0) {
+            if (unsafe_store) {
+                fprintf(stderr, _("invalid arguments for set\n"));
+                secdat_cli_print_try_help(cli, "set");
+                return 2;
+            }
+            unsafe_store = 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--stdin") == 0 || strcmp(cli->argv[index], "-i") == 0) {
+            if (!read_stdin || literal_value != NULL) {
+                fprintf(stderr, _("invalid arguments for set\n"));
+                secdat_cli_print_try_help(cli, "set");
+                return 2;
+            }
+            read_stdin = 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--value") == 0 || strcmp(cli->argv[index], "-v") == 0) {
+            if (!read_stdin || literal_value != NULL || index + 1 >= cli->argc) {
+                fprintf(stderr, _("invalid arguments for set\n"));
+                secdat_cli_print_try_help(cli, "set");
+                return 2;
+            }
+            literal_value = cli->argv[index + 1];
+            read_stdin = 0;
+            index += 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--env") == 0 || strcmp(cli->argv[index], "-e") == 0) {
+            if (!read_stdin || literal_value != NULL || index + 1 >= cli->argc) {
+                fprintf(stderr, _("invalid arguments for set\n"));
+                secdat_cli_print_try_help(cli, "set");
+                return 2;
+            }
+            environment_name = cli->argv[index + 1];
+            environment_value = getenv(environment_name);
+            if (environment_value == NULL) {
+                fprintf(stderr, _("environment variable is not set: %s\n"), environment_name);
+                return 1;
+            }
+
+            literal_value = environment_value;
+            read_stdin = 0;
+            index += 1;
+            continue;
+        }
+        if (cli->argv[index][0] != '-') {
+            if (!read_stdin || literal_value != NULL) {
+                fprintf(stderr, _("invalid arguments for set\n"));
+                secdat_cli_print_try_help(cli, "set");
+                return 2;
+            }
+            literal_value = cli->argv[index];
+            read_stdin = 0;
+            continue;
+        }
+
+        fprintf(stderr, _("invalid arguments for set\n"));
+        secdat_cli_print_try_help(cli, "set");
+        return 2;
+    }
+
+    if (read_stdin) {
         if (isatty(STDIN_FILENO)) {
             fprintf(stderr, _("refusing to read secret from a terminal\n"));
             return 1;
@@ -3034,41 +3145,14 @@ static int secdat_command_set(const struct secdat_cli *cli)
         if (secdat_read_stdin(&plaintext, &plaintext_length) != 0) {
             return 1;
         }
-    } else if (cli->argc == 2 && cli->argv[1][0] != '-') {
-        plaintext_length = strlen(cli->argv[1]);
-        plaintext = malloc(plaintext_length == 0 ? 1 : plaintext_length);
-        if (plaintext == NULL) {
-            fprintf(stderr, _("out of memory\n"));
-            return 1;
-        }
-        memcpy(plaintext, cli->argv[1], plaintext_length);
-    } else if (cli->argc == 3 && (strcmp(cli->argv[1], "--value") == 0 || strcmp(cli->argv[1], "-v") == 0)) {
-        plaintext_length = strlen(cli->argv[2]);
-        plaintext = malloc(plaintext_length == 0 ? 1 : plaintext_length);
-        if (plaintext == NULL) {
-            fprintf(stderr, _("out of memory\n"));
-            return 1;
-        }
-        memcpy(plaintext, cli->argv[2], plaintext_length);
-    } else if (cli->argc == 3 && (strcmp(cli->argv[1], "--env") == 0 || strcmp(cli->argv[1], "-e") == 0)) {
-        environment_name = cli->argv[2];
-        environment_value = getenv(environment_name);
-        if (environment_value == NULL) {
-            fprintf(stderr, _("environment variable is not set: %s\n"), environment_name);
-            return 1;
-        }
-
-        plaintext_length = strlen(environment_value);
-        plaintext = malloc(plaintext_length == 0 ? 1 : plaintext_length);
-        if (plaintext == NULL) {
-            fprintf(stderr, _("out of memory\n"));
-            return 1;
-        }
-        memcpy(plaintext, environment_value, plaintext_length);
     } else {
-        fprintf(stderr, _("invalid arguments for set\n"));
-        secdat_cli_print_try_help(cli, "set");
-        return 2;
+        plaintext_length = strlen(literal_value);
+        plaintext = malloc(plaintext_length == 0 ? 1 : plaintext_length);
+        if (plaintext == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        memcpy(plaintext, literal_value, plaintext_length);
     }
 
     if (secdat_domain_resolve_current(reference.domain_value, current_domain_id, sizeof(current_domain_id)) != 0) {
@@ -3077,7 +3161,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
         return 1;
     }
 
-    status = secdat_store_plaintext(current_domain_id, reference.store_value, key, plaintext, plaintext_length);
+    status = secdat_store_plaintext(current_domain_id, reference.store_value, key, plaintext, plaintext_length, unsafe_store);
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
     return status;
@@ -3207,7 +3291,7 @@ static int secdat_command_cp(const struct secdat_cli *cli)
         return 1;
     }
 
-    status = secdat_store_plaintext(destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length);
+    status = secdat_store_plaintext(destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, 0);
     secdat_domain_chain_free(&source_chain);
     secdat_domain_chain_free(&destination_chain);
     secdat_secure_clear(plaintext, plaintext_length);
@@ -3272,7 +3356,7 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         return 1;
     }
 
-    status = secdat_store_plaintext(destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length);
+    status = secdat_store_plaintext(destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, 0);
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
     if (status != 0) {
@@ -3781,7 +3865,7 @@ static int secdat_command_load(const struct secdat_cli *cli)
         key[key_length] = '\0';
         offset += key_length;
 
-        if (secdat_store_plaintext(current_domain_id, cli->store, key, payload + offset, value_length) != 0) {
+        if (secdat_store_plaintext(current_domain_id, cli->store, key, payload + offset, value_length, 0) != 0) {
             secdat_secure_clear(key, (size_t)key_length + 1);
             free(key);
             goto cleanup;

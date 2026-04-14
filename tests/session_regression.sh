@@ -84,12 +84,21 @@ rc, _, _ = run([bin_path, "status", "--quiet"])
 if rc != 1:
     fail(f"status --quiet while locked returned {rc}")
 
+rc, stdout, stderr = run([bin_path, "set", "UNSAFE_VISIBLE_KEY", "--unsafe", "--value", "visible-while-locked"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"set --unsafe while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "get", "UNSAFE_VISIBLE_KEY", "-o"])
+if rc != 0 or stdout != "visible-while-locked" or stderr != "":
+    fail(f"get unsafe key while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 for args, marker in [
     ([bin_path, "help", "status"], "status [-q|--quiet]"),
     ([bin_path, "--help", "status"], "status [-q|--quiet]"),
     ([bin_path, "-h", "status"], "status [-q|--quiet]"),
     ([bin_path, "status", "--help"], "status [-q|--quiet]"),
     ([bin_path, "status", "-h"], "status [-q|--quiet]"),
+    ([bin_path, "help", "set"], "set KEYREF [--unsafe]"),
     ([bin_path, "help", "export"], "bash load current shell vars: source <("),
     ([bin_path, "help", "passwd"], "passwd"),
     ([bin_path, "store", "--help"], "store create STORE"),

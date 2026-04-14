@@ -27,6 +27,7 @@ secdat [--dir DIR] [--store STORE] get KEYREF --shellescaped
 
 secdat [--dir DIR] [--store STORE] set KEYREF
 secdat [--dir DIR] [--store STORE] set KEYREF VALUE
+secdat [--dir DIR] [--store STORE] set KEYREF --unsafe VALUE
 secdat [--dir DIR] [--store STORE] set KEYREF --stdin
 secdat [--dir DIR] [--store STORE] set KEYREF --env ENVNAME
 secdat [--dir DIR] [--store STORE] set KEYREF --value VALUE
@@ -58,7 +59,7 @@ secdat [--dir DIR] [--store STORE] export [--pattern GLOBPATTERN]
 ### 2.2 Explicitly Stated Requirements
 
 - displaying or interactively entering secret values through a terminal must be rejected
-- stored values must always be encrypted at rest
+- stored values must always be encrypted at rest, except for an explicit `set --unsafe` plaintext path
 - the implementation language is C
 - the design should remain simple
 - domains are isolated per OS user
@@ -71,6 +72,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `get KEYREF --shellescaped` emits a shell-escaped single-value representation suitable for `eval`-style shell assignment
 - `set KEYREF VALUE` is equivalent to `set KEYREF --value VALUE`
 - `set KEYREF` is equivalent to `set KEYREF --stdin`
+- `set KEYREF --unsafe ...` explicitly opts into plaintext-at-rest storage that remains readable while locked
 - `exec` injects matched keys into the child process environment
 - `secdat --help SUBCOMMAND` and `secdat SUBCOMMAND --help` are equivalent for command-local usage output
 - `unlock` caches the current master key in a session-scoped runtime location
@@ -142,10 +144,12 @@ To make the requested behavior implementable, the following are treated as norma
 
 - `secdat set KEYREF` is equivalent to `secdat set KEYREF --stdin`
 - `secdat set KEYREF VALUE` is equivalent to `secdat set KEYREF --value VALUE`
+- `secdat set KEYREF --unsafe ...` stores the value in plaintext and does not require the master key
 - `--stdin` reads bytes from standard input until EOF
 - `--env ENVNAME` stores the value of the named environment variable
 - `--value VALUE` stores the literal argument value
 - `set` overwrites an existing key in the current domain
+- `get`, `ls`, and other read paths must continue to resolve `--unsafe` entries while the runtime is locked
 
 #### FR-4 Key Removal
 
