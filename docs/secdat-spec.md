@@ -38,6 +38,7 @@ secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]
 
 secdat unlock
+secdat passwd
 secdat lock
 secdat status [--quiet]
 
@@ -73,6 +74,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `exec` injects matched keys into the child process environment
 - `secdat --help SUBCOMMAND` and `secdat SUBCOMMAND --help` are equivalent for command-local usage output
 - `unlock` caches the current master key in a session-scoped runtime location
+- `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit override for non-interactive `unlock` and `passwd` flows
 - `status` reports whether a master-key session is active
 - `lock` clears the active master-key session
 - values are modeled as arbitrary byte strings internally
@@ -190,10 +192,17 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat unlock` creates or refreshes a session-scoped cache of the current master key
 - if no wrapped persistent master key exists, `unlock` prompts twice on a terminal, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
 - if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
+- `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `unlock`
 - otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent
 - `secdat lock` removes the active agent-backed session state
 - the current implementation refreshes the idle timeout when the agent serves the cached key
 - no raw master-key retrieval path is required for normal operation; the generated key remains internal unless a separate future recovery/export flow is introduced
+
+#### FR-7d Wrapped-Key Passphrase Rotation
+
+- `secdat passwd` re-wraps the persistent master key under a new passphrase without changing stored secret payloads
+- `secdat passwd` requires an initialized wrapped master key and fails clearly if bootstrap has not happened yet
+- `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `passwd`
 
 #### FR-7b Secret Bundle Save/Load
 

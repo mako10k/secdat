@@ -67,6 +67,9 @@ Load a passphrase-protected bundle into the current domain/store context.
 .B unlock
 Start or refresh an authenticated secret session.
 .TP
+.B passwd
+Change the passphrase used to wrap the persistent master key.
+.TP
 .B lock
 Clear the active secret session.
 .TP
@@ -93,6 +96,19 @@ is not valid because the dot command expects a file path, not command text.
 
 Bash completion is provided in the repository at
 .B completions/secdat.bash .
+.SH PASSPHRASE SOURCES
+By default,
+.B unlock
+and
+.B passwd
+read passphrases from a terminal. For explicit non-interactive use,
+.B SECDAT_MASTER_KEY_PASSPHRASE
+may provide the current passphrase to
+.B unlock
+and the current-passphrase side of
+.B passwd .
+
+This is an explicit override path, not the recommended default, because environment variables may be exposed through process inspection or shell history.
 .SH FILES
 .TP
 .B docs/secdat-spec.md
@@ -111,6 +127,7 @@ secdat get API_TOKEN --shellescaped
 secdat --dir ~/project domain create
 secdat --dir ~/project --store app export
 source <(secdat --dir ~/project --store app export)
+SECDAT_MASTER_KEY_PASSPHRASE=secret secdat unlock
 .fi
 .SH SEE ALSO
 .BR bash (1)

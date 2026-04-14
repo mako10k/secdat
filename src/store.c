@@ -1261,6 +1261,42 @@ static int secdat_read_secret_confirmation_prompts(
     return 0;
 }
 
+static const char *secdat_master_key_passphrase_env(void)
+{
+    const char *value = getenv("SECDAT_MASTER_KEY_PASSPHRASE");
+
+    if (value == NULL || value[0] == '\0') {
+        return NULL;
+    }
+    return value;
+}
+
+static int secdat_read_unlock_passphrase(char *buffer, size_t size)
+{
+    const char *env_passphrase = secdat_master_key_passphrase_env();
+
+    if (env_passphrase != NULL) {
+        if (secdat_copy_string(buffer, size, env_passphrase) != 0) {
+            return 1;
+        }
+        return 0;
+    }
+    return secdat_read_secret_from_tty(_("Enter secdat passphrase: "), buffer, size);
+}
+
+static int secdat_read_new_master_key_passphrase(char *buffer, size_t size)
+{
+    const char *env_passphrase = secdat_master_key_passphrase_env();
+
+    if (env_passphrase != NULL) {
+        if (secdat_copy_string(buffer, size, env_passphrase) != 0) {
+            return 1;
+        }
+        return 0;
+    }
+    return secdat_read_secret_confirmation(buffer, size);
+}
+
 static int secdat_session_agent_connect(int start_if_missing)
 {
     char socket_path[PATH_MAX];
@@ -2192,7 +2228,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     }
 
     if (!wrapped_present) {
-        if (secdat_read_secret_confirmation(passphrase, sizeof(passphrase)) != 0) {
+        if (secdat_read_new_master_key_passphrase(passphrase, sizeof(passphrase)) != 0) {
             return 1;
         }
         if (session_master_key == NULL || session_master_key[0] == '\0') {
@@ -2238,7 +2274,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_read_secret_from_tty(_("Enter secdat passphrase: "), passphrase, sizeof(passphrase)) != 0) {
+    if (secdat_read_unlock_passphrase(passphrase, sizeof(passphrase)) != 0) {
         return 1;
     }
     if (secdat_unwrap_master_key(passphrase, secret, sizeof(secret)) != 0) {
@@ -2269,6 +2305,50 @@ static int secdat_command_lock(const struct secdat_cli *cli)
     }
 
     puts(_("session locked"));
+    return 0;
+}
+
+static int secdat_command_passwd(const struct secdat_cli *cli)
+{
+    char current_passphrase[512];
+    char new_passphrase[512];
+    char master_key[512];
+
+    if (cli->argc != 0 || cli->dir != NULL || cli->store != NULL) {
+        fprintf(stderr, _("invalid arguments for passwd\n"));
+        secdat_cli_print_try_help(cli, "passwd");
+        return 2;
+    }
+    if (!secdat_wrapped_master_key_exists()) {
+        fprintf(stderr, _("no persistent master key is initialized; run secdat unlock once on a terminal to create one\n"));
+        return 1;
+    }
+    if (secdat_read_unlock_passphrase(current_passphrase, sizeof(current_passphrase)) != 0) {
+        return 1;
+    }
+    if (secdat_unwrap_master_key(current_passphrase, master_key, sizeof(master_key)) != 0) {
+        secdat_secure_clear(current_passphrase, strlen(current_passphrase));
+        return 1;
+    }
+    secdat_secure_clear(current_passphrase, strlen(current_passphrase));
+    if (secdat_read_secret_confirmation_prompts(
+            _("Create new secdat passphrase: "),
+            _("Confirm new secdat passphrase: "),
+            new_passphrase,
+            sizeof(new_passphrase)
+        ) != 0) {
+        secdat_secure_clear(master_key, strlen(master_key));
+        return 1;
+    }
+    if (secdat_write_wrapped_master_key(new_passphrase, master_key) != 0) {
+        secdat_secure_clear(master_key, strlen(master_key));
+        secdat_secure_clear(new_passphrase, strlen(new_passphrase));
+        return 1;
+    }
+
+    secdat_secure_clear(master_key, strlen(master_key));
+    secdat_secure_clear(new_passphrase, strlen(new_passphrase));
+    puts(_("persistent master key passphrase updated"));
     return 0;
 }
 
@@ -3751,6 +3831,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_load(cli);
     case SECDAT_COMMAND_UNLOCK:
         return secdat_command_unlock(cli);
+    case SECDAT_COMMAND_PASSWD:
+        return secdat_command_passwd(cli);
     case SECDAT_COMMAND_LOCK:
         return secdat_command_lock(cli);
     case SECDAT_COMMAND_STATUS:

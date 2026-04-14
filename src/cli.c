@@ -101,6 +101,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     if (strcmp(name, "unlock") == 0) {
         return SECDAT_COMMAND_UNLOCK;
     }
+    if (strcmp(name, "passwd") == 0) {
+        return SECDAT_COMMAND_PASSWD;
+    }
     if (strcmp(name, "lock") == 0) {
         return SECDAT_COMMAND_LOCK;
     }
@@ -151,6 +154,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_UNLOCK:
         printf(_("  %s unlock\n"), program_name);
+        break;
+    case SECDAT_COMMAND_PASSWD:
+        printf(_("  %s passwd\n"), program_name);
         break;
     case SECDAT_COMMAND_LOCK:
         printf(_("  %s lock\n"), program_name);
@@ -253,6 +259,7 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
     printf(_("  load: import a passphrase-protected bundle into the current domain view\n"));
     printf(_("  unlock: start or refresh an authenticated secret session\n"));
+    printf(_("  passwd: change the wrapped-master-key passphrase\n"));
     printf(_("  lock: clear the active secret session\n"));
     printf(_("  status: report whether secret material is currently available\n"));
     printf(_("  version: print the secdat version\n"));
@@ -307,6 +314,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "unlock") == 0) {
         printf(_("  start or refresh an authenticated secret session\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "passwd") == 0) {
+        printf(_("  change the wrapped-master-key passphrase\n"));
         return;
     }
     if (target != NULL && strcmp(target, "lock") == 0) {
@@ -410,6 +421,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         index += 1;
     } else if (strcmp(argv[index], "unlock") == 0) {
         cli->command = SECDAT_COMMAND_UNLOCK;
+        index += 1;
+    } else if (strcmp(argv[index], "passwd") == 0) {
+        cli->command = SECDAT_COMMAND_PASSWD;
         index += 1;
     } else if (strcmp(argv[index], "lock") == 0) {
         cli->command = SECDAT_COMMAND_LOCK;
@@ -597,6 +611,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "load";
     case SECDAT_COMMAND_UNLOCK:
         return "unlock";
+    case SECDAT_COMMAND_PASSWD:
+        return "passwd";
     case SECDAT_COMMAND_LOCK:
         return "lock";
     case SECDAT_COMMAND_STATUS:

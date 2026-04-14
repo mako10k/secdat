@@ -91,6 +91,7 @@ for args, marker in [
     ([bin_path, "status", "--help"], "status [-q|--quiet]"),
     ([bin_path, "status", "-h"], "status [-q|--quiet]"),
     ([bin_path, "help", "export"], "bash load current shell vars: source <("),
+    ([bin_path, "help", "passwd"], "passwd"),
     ([bin_path, "store", "--help"], "store create STORE"),
     ([bin_path, "store", "-h"], "store create STORE"),
 ]:
@@ -124,6 +125,7 @@ for args, expected in [
     ([bin_path, "mv", "ONLY_ONE"], f"Try: {bin_path} help mv"),
     ([bin_path, "rm"], f"Try: {bin_path} help rm"),
     ([bin_path, "exec"], f"Try: {bin_path} help exec"),
+    ([bin_path, "passwd", "--bad"], f"Try: {bin_path} help passwd"),
     ([bin_path, "lock", "--bad"], f"Try: {bin_path} help lock"),
     ([bin_path, "store", "bogus"], f"Try: {bin_path} help store"),
     ([bin_path, "domain", "bogus"], f"Try: {bin_path} help domain"),
@@ -177,7 +179,30 @@ rc, stdout, stderr = run([bin_path, "lock"])
 if rc != 0 or stdout.strip() != "session locked":
     fail(f"lock before reconnect check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([bin_path, "unlock"], {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+if rc != 0 or stdout.strip() != "session unlocked":
+    fail(f"env passphrase unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+new_passphrase = "rotated-passphrase-for-session-test"
+rc, transcript = run_pty(
+    [bin_path, "passwd"],
+    [("Create new secdat passphrase:", new_passphrase), ("Confirm new secdat passphrase:", new_passphrase)],
+    {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase},
+)
+if rc != 0 or "persistent master key passphrase updated" not in transcript:
+    fail(f"passwd rotation failed: rc={rc} transcript={transcript!r}")
+
+rc, stdout, stderr = run([bin_path, "lock"])
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"lock after passwd rotation failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "unlock"], {"SECDAT_MASTER_KEY_PASSPHRASE": new_passphrase})
+if rc != 0 or stdout.strip() != "session unlocked":
+    fail(f"unlock with rotated env passphrase failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 socket_path.parent.mkdir(parents=True, exist_ok=True)
+if socket_path.exists() or socket_path.is_socket():
+    socket_path.unlink()
 socket_path.write_text("stale")
 rc, stdout, stderr = run([bin_path, "unlock"], {"SECDAT_MASTER_KEY": "session-test-key"})
 if rc != 0 or stdout.strip() != "session unlocked from environment":
@@ -195,7 +220,7 @@ rc, stdout, _ = run([bin_path, "status", "-q"])
 if rc != 1 or stdout != "":
     fail(f"status -q after lock unexpected: rc={rc} stdout={stdout!r}")
 
-rc, transcript = run_pty([bin_path, "unlock"], [("Enter secdat passphrase:", passphrase)])
+rc, transcript = run_pty([bin_path, "unlock"], [("Enter secdat passphrase:", new_passphrase)])
 if rc != 0 or "session unlocked" not in transcript:
     fail(f"passphrase unlock failed: rc={rc} transcript={transcript!r}")
 
