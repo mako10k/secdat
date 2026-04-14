@@ -80,6 +80,12 @@ else
 fi
 ```
 
+For idempotent cleanup in shell automation, `rm --ignore-missing` treats an absent key as a successful no-op:
+
+```sh
+./src/secdat --dir ~/example/project --store app rm --ignore-missing OLD_API_TOKEN
+```
+
 If you explicitly need a value to remain readable while `secdat` is locked, `set --unsafe` stores it in plaintext on disk:
 
 ```sh

@@ -50,8 +50,10 @@ Store or update one key in the resolved current domain. Use
 .B --unsafe
 to write a plaintext entry that remains readable while locked.
 .TP
-.B rm KEYREF
-Remove one key locally or create a tombstone for an inherited key.
+.B rm [\-\-ignore-missing] KEYREF
+Remove one key locally or create a tombstone for an inherited key. With
+.B --ignore-missing,
+an absent key is treated as a successful no-op.
 .TP
 .B mv SRC_KEYREF DST_KEYREF
 Rename or relocate one key between resolved locations.

@@ -3355,7 +3355,7 @@ static int secdat_write_empty_file(const char *path)
     return secdat_atomic_write_file(path, (const unsigned char *)"", 0);
 }
 
-static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, const char *store_name, const char *key)
+static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, const char *store_name, const char *key, int ignore_missing)
 {
     char current_domain_id[PATH_MAX];
     char entry_path[PATH_MAX];
@@ -3402,6 +3402,9 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
     }
 
     if (!found_inherited) {
+        if (ignore_missing) {
+            return 0;
+        }
         fprintf(stderr, _("key not found: %s\n"), key);
         return 1;
     }
@@ -3548,7 +3551,7 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         return status;
     }
 
-    status = secdat_remove_key_in_chain(&source_chain, source_reference.store_value, source_reference.key);
+    status = secdat_remove_key_in_chain(&source_chain, source_reference.store_value, source_reference.key, 0);
     if (status != 0) {
         if (secdat_build_entry_path(destination_domain_id, destination_reference.store_value, destination_reference.key, destination_path, sizeof(destination_path)) == 0) {
             unlink(destination_path);
@@ -3564,22 +3567,25 @@ static int secdat_command_rm(const struct secdat_cli *cli)
 {
     struct secdat_key_reference reference;
     struct secdat_domain_chain chain = {0};
+    int ignore_missing = 0;
     int status;
 
-    if (cli->argc != 1) {
+    if (cli->argc == 2 && strcmp(cli->argv[0], "--ignore-missing") == 0) {
+        ignore_missing = 1;
+    } else if (cli->argc != 1) {
         fprintf(stderr, _("invalid arguments for rm\n"));
         secdat_cli_print_try_help(cli, "rm");
         return 2;
     }
 
-    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
+    if (secdat_parse_key_reference(cli->argv[ignore_missing ? 1 : 0], cli->dir, cli->store, &reference) != 0) {
         return 1;
     }
 
     if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
         return 1;
     }
-    status = secdat_remove_key_in_chain(&chain, reference.store_value, reference.key);
+    status = secdat_remove_key_in_chain(&chain, reference.store_value, reference.key, ignore_missing);
     secdat_domain_chain_free(&chain);
     return status;
 }

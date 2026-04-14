@@ -92,6 +92,10 @@ _secdat_complete()
             COMPREPLY=( $(compgen -W "--stdout -o --shellescaped" -- "$cur") )
             return 0
             ;;
+        rm)
+            COMPREPLY=( $(compgen -W "--ignore-missing" -- "$cur") )
+            return 0
+            ;;
         set)
             COMPREPLY=( $(compgen -W "--stdin -i --env -e --value -v" -- "$cur") )
             return 0

@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: secdat 0.1.0\n"
 "Report-Msgid-Bugs-To: noreply@example.invalid\n"
-"POT-Creation-Date: 2026-04-14 11:56+0900\n"
+"POT-Creation-Date: 2026-04-14 13:03+0900\n"
 "PO-Revision-Date: 2026-04-13 00:00+0000\n"
 "Last-Translator: GitHub Copilot <noreply@example.invalid>\n"
 "Language-Team: ja\n"
@@ -67,8 +67,12 @@ msgstr ""
 
 #: src/cli.c:141
 #, c-format
-msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm KEYREF\n"
-msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm KEYREF\n"
+msgid ""
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm [--ignore-missing] "
+"KEYREF\n"
+msgstr ""
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm [--ignore-missing] "
+"KEYREF\n"
 
 #: src/cli.c:144
 #, c-format
@@ -357,7 +361,8 @@ msgstr "  ls: 現在の domain view から見える有効な key を一覧しま
 msgid ""
 "  exists: check whether one resolved key is visible from the current domain "
 "view\n"
-msgstr "  exists: 解決された 1 つの key が現在の domain view から見えるか確認します\n"
+msgstr ""
+"  exists: 解決された 1 つの key が現在の domain view から見えるか確認します\n"
 
 #: src/cli.c:267
 #, c-format
@@ -376,10 +381,11 @@ msgstr ""
 #: src/cli.c:269
 #, c-format
 msgid ""
-"  rm: remove one key locally or create a tombstone for an inherited key\n"
+"  rm: remove one key locally or create a tombstone for an inherited key; --"
+"ignore-missing treats absent keys as success\n"
 msgstr ""
 "  rm: 1 つの key をローカルに削除するか、継承 key 用の tombstone を作成しま"
-"す\n"
+"す。--ignore-missing は未存在の key を成功扱いにします\n"
 
 #: src/cli.c:270
 #, c-format
@@ -466,11 +472,10 @@ msgid "  list effective keys visible from the current domain view\n"
 msgstr "  現在の domain view から見える有効な key を一覧します\n"
 
 #: src/cli.c:295
-#, fuzzy, c-format
-#| msgid "  list effective keys visible from the current domain view\n"
+#, c-format
 msgid ""
 "  check whether one resolved key is visible from the current domain view\n"
-msgstr "  現在の domain view から見える有効な key を一覧します\n"
+msgstr "  解決された 1 つの key が現在の domain view から見えるか確認します\n"
 
 #: src/cli.c:299
 #, c-format
@@ -488,9 +493,12 @@ msgstr ""
 
 #: src/cli.c:307
 #, c-format
-msgid "  remove one key locally or create a tombstone for an inherited key\n"
+msgid ""
+"  remove one key locally or create a tombstone for an inherited key; --"
+"ignore-missing treats absent keys as success\n"
 msgstr ""
-"  1 つの key をローカルに削除するか、継承 key 用の tombstone を作成します\n"
+"  1 つの key をローカルに削除するか、継承 key 用の tombstone を作成します。--"
+"ignore-missing は未存在の key を成功扱いにします\n"
 
 #: src/cli.c:311
 #, c-format
@@ -663,7 +671,7 @@ msgstr "Author: %s\n"
 #: src/store.c:890 src/store.c:1669 src/store.c:1773 src/store.c:1823
 #: src/store.c:1959 src/store.c:2062 src/store.c:2103 src/store.c:2172
 #: src/store.c:2489 src/store.c:2604 src/store.c:2625 src/store.c:2697
-#: src/store.c:3209 src/store.c:3335 src/store.c:3773 src/store.c:4056
+#: src/store.c:3209 src/store.c:3335 src/store.c:3779 src/store.c:4062
 #, c-format
 msgid "out of memory\n"
 msgstr ""
@@ -672,7 +680,7 @@ msgstr ""
 #: src/store.c:567 src/store.c:671 src/store.c:698 src/store.c:714
 #: src/store.c:801 src/store.c:922 src/store.c:945 src/store.c:961
 #: src/store.c:1146 src/store.c:1616 src/store.c:2880 src/store.c:3367
-#: src/store.c:3459 src/store.c:3524
+#: src/store.c:3462 src/store.c:3527
 #, c-format
 msgid "path is too long\n"
 msgstr ""
@@ -705,7 +713,7 @@ msgstr "lock の引数が不正です\n"
 msgid "invalid arguments for %s\n"
 msgstr "%s の引数が不正です\n"
 
-#: src/store.c:605 src/store.c:2734 src/store.c:3604
+#: src/store.c:605 src/store.c:2734 src/store.c:3610
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to open directory: %s\n"
@@ -917,8 +925,8 @@ msgstr "セッションエージェントの起動に失敗しました\n"
 msgid "invalid wrapped master key\n"
 msgstr "ラップ済み master key が不正です\n"
 
-#: src/store.c:1848 src/store.c:2043 src/store.c:2052 src/store.c:4046
-#: src/store.c:4050 src/store.c:4073
+#: src/store.c:1848 src/store.c:2043 src/store.c:2052 src/store.c:4052
+#: src/store.c:4056 src/store.c:4079
 #, c-format
 msgid "invalid secret bundle\n"
 msgstr "secret bundle が不正です\n"
@@ -1105,7 +1113,7 @@ msgstr "ファイル記述子のオープンに失敗しました\n"
 msgid "failed to read standard input\n"
 msgstr "端末設定の読み取りに失敗しました\n"
 
-#: src/store.c:2925 src/store.c:3405
+#: src/store.c:2925 src/store.c:3408
 #, fuzzy, c-format
 #| msgid "unknown command: %s\n"
 msgid "key not found: %s\n"
@@ -1185,140 +1193,144 @@ msgstr ""
 msgid "failed to remove key: %s\n"
 msgstr "wrap key の導出に失敗しました\n"
 
-#: src/store.c:3433
+#: src/store.c:3436
 #, fuzzy, c-format
 #| msgid "invalid arguments for lock\n"
 msgid "invalid arguments for cp\n"
 msgstr "lock の引数が不正です\n"
 
-#: src/store.c:3438 src/store.c:3503
+#: src/store.c:3441 src/store.c:3506
 #, c-format
 msgid "source and destination keys must differ\n"
 msgstr ""
 
-#: src/store.c:3467 src/store.c:3532
+#: src/store.c:3470 src/store.c:3535
 #, c-format
 msgid "destination key already exists: %s\n"
 msgstr ""
 
-#: src/store.c:3498
+#: src/store.c:3501
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid arguments for mv\n"
 msgstr "%s の引数が不正です\n"
 
-#: src/store.c:3570
+#: src/store.c:3576
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid arguments for rm\n"
 msgstr "%s の引数が不正です\n"
 
-#: src/store.c:3640 src/store.c:3673 src/store.c:3718
+#: src/store.c:3646 src/store.c:3679 src/store.c:3724
 #, c-format
 msgid "--store is not valid with store commands\n"
 msgstr ""
 
-#: src/store.c:3678
+#: src/store.c:3684
 #, c-format
 msgid "missing store name for store create\n"
 msgstr "store create の store 名が不足しています\n"
 
-#: src/store.c:3683
+#: src/store.c:3689
 #, fuzzy, c-format
 #| msgid "invalid arguments for status\n"
 msgid "invalid arguments for store create\n"
 msgstr "status の引数が不正です\n"
 
-#: src/store.c:3695
+#: src/store.c:3701
 #, c-format
 msgid "store already exists: %s\n"
 msgstr ""
 
-#: src/store.c:3723
+#: src/store.c:3729
 #, c-format
 msgid "missing store name for store delete\n"
 msgstr "store delete の store 名が不足しています\n"
 
-#: src/store.c:3728
+#: src/store.c:3734
 #, fuzzy, c-format
 #| msgid "invalid arguments for status\n"
 msgid "invalid arguments for store delete\n"
 msgstr "status の引数が不正です\n"
 
-#: src/store.c:3746
+#: src/store.c:3752
 #, c-format
 msgid "store is not empty: %s\n"
 msgstr ""
 
-#: src/store.c:3750
+#: src/store.c:3756
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to remove directory: %s\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:3767
+#: src/store.c:3773
 #, c-format
 msgid "key value contains NUL byte and cannot be exported: %s\n"
 msgstr ""
 
-#: src/store.c:3830
+#: src/store.c:3836
 #, c-format
 msgid "invalid arguments for export\n"
 msgstr "export の引数が不正です\n"
 
-#: src/store.c:3854
+#: src/store.c:3860
 #, c-format
 msgid "key is not a valid shell identifier: %s\n"
 msgstr "key は有効な shell 識別子ではありません: %s\n"
 
-#: src/store.c:3948
+#: src/store.c:3954
 #, fuzzy, c-format
 #| msgid "failed to connect to session agent\n"
 msgid "failed to export key to environment: %s\n"
 msgstr "セッションエージェントへの接続に失敗しました\n"
 
-#: src/store.c:3967
+#: src/store.c:3973
 #, c-format
 msgid "failed to execute command: %s\n"
 msgstr ""
 
-#: src/store.c:3981
+#: src/store.c:3987
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid arguments for save\n"
 msgstr "save の引数が不正です\n"
 
-#: src/store.c:3986
+#: src/store.c:3992
 msgid "Create secdat bundle passphrase: "
 msgstr "secdat bundle 用パスフレーズを作成してください: "
 
-#: src/store.c:3987
+#: src/store.c:3993
 msgid "Confirm secdat bundle passphrase: "
 msgstr "secdat bundle 用パスフレーズを再入力してください: "
 
-#: src/store.c:4017
+#: src/store.c:4023
 #, c-format
 msgid "invalid arguments for load\n"
 msgstr "load の引数が不正です\n"
 
-#: src/store.c:4024
+#: src/store.c:4030
 msgid "Enter secdat bundle passphrase: "
 msgstr "secdat bundle 用パスフレーズを入力してください: "
 
-#: src/store.c:4132
+#: src/store.c:4138
 #, c-format
 msgid "command not implemented yet: %s\n"
 msgstr "コマンドは未実装です: %s\n"
 
-#: src/store.c:4134
+#: src/store.c:4140
 #, c-format
 msgid "  dir=%s\n"
 msgstr "  dir=%s\n"
 
-#: src/store.c:4137
+#: src/store.c:4143
 #, c-format
 msgid "  store=%s\n"
 msgstr "  store=%s\n"
+
+#, c-format
+#~ msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm KEYREF\n"
+#~ msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm KEYREF\n"
 
 #, c-format
 #~ msgid "missing store subcommand\n"

@@ -34,7 +34,7 @@ secdat [--dir DIR] [--store STORE] set KEYREF --stdin
 secdat [--dir DIR] [--store STORE] set KEYREF --env ENVNAME
 secdat [--dir DIR] [--store STORE] set KEYREF --value VALUE
 
-secdat [--dir DIR] [--store STORE] rm KEYREF
+secdat [--dir DIR] [--store STORE] rm [--ignore-missing] KEYREF
 secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 
@@ -163,6 +163,7 @@ To make the requested behavior implementable, the following are treated as norma
 #### FR-4 Key Removal
 
 - `secdat rm KEYREF` applies deletion in the resolved target domain and store
+- `secdat rm --ignore-missing KEYREF` treats an absent key as a successful no-op
 - if the key exists as a concrete entry in the current domain, that entry is removed
 - if the key is only inherited from a parent domain, a tombstone is created in the current domain
 - it is an error if the key does not exist in the effective domain view
@@ -429,8 +430,10 @@ secdat [--dir DIR] [--store STORE] set KEY --value VALUE
 ### 4.5 `rm`
 
 ```text
-secdat [--dir DIR] [--store STORE] rm KEY
+secdat [--dir DIR] [--store STORE] rm [--ignore-missing] KEY
 ```
+
+- `--ignore-missing` converts a missing-key case into a successful no-op
 
 ### 4.6 `mv`
 
