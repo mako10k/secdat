@@ -1014,6 +1014,35 @@ static int secdat_session_agent_path(char *buffer, size_t size)
     return secdat_join_path(buffer, size, runtime_dir, "agent.sock");
 }
 
+static int secdat_session_agent_path_for_domain(const char *domain_id, char *buffer, size_t size)
+{
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_length = 0;
+    char runtime_dir[PATH_MAX];
+    char socket_name[48];
+    static const char hex_digits[] = "0123456789abcdef";
+    size_t index;
+
+    if (EVP_Digest(domain_id, strlen(domain_id), digest, &digest_length, EVP_sha256(), NULL) != 1 || digest_length != 32) {
+        fprintf(stderr, _("failed to derive encryption key\n"));
+        return 1;
+    }
+    if (secdat_runtime_dir(runtime_dir, sizeof(runtime_dir)) != 0) {
+        return 1;
+    }
+
+    digest_length = 16;
+    strcpy(socket_name, "agent-");
+    for (index = 0; index < digest_length; index += 1) {
+        socket_name[6 + index * 2] = hex_digits[digest[index] >> 4];
+        socket_name[6 + index * 2 + 1] = hex_digits[digest[index] & 0x0f];
+    }
+    strcpy(socket_name + 6 + digest_length * 2, ".sock");
+    secdat_secure_clear(digest, sizeof(digest));
+
+    return secdat_join_path(buffer, size, runtime_dir, socket_name);
+}
+
 static int secdat_wrapped_master_key_path(char *buffer, size_t size)
 {
     char state_dir[PATH_MAX];
@@ -1221,7 +1250,7 @@ static int secdat_run_session_agent(const char *socket_path)
     return 0;
 }
 
-static int secdat_spawn_session_agent(void)
+static int secdat_spawn_session_agent(const char *domain_id)
 {
     char runtime_dir[PATH_MAX];
     char socket_path[PATH_MAX];
@@ -1235,7 +1264,7 @@ static int secdat_spawn_session_agent(void)
     if (secdat_ensure_directory(runtime_dir, 0700) != 0) {
         return 1;
     }
-    if (secdat_session_agent_path(socket_path, sizeof(socket_path)) != 0) {
+    if (secdat_session_agent_path_for_domain(domain_id, socket_path, sizeof(socket_path)) != 0) {
         return 1;
     }
 
@@ -1443,13 +1472,13 @@ static int secdat_read_new_master_key_passphrase(char *buffer, size_t size)
     return secdat_read_secret_confirmation(buffer, size);
 }
 
-static int secdat_session_agent_connect(int start_if_missing)
+static int secdat_session_agent_connect_domain(const char *domain_id, int start_if_missing)
 {
     char socket_path[PATH_MAX];
     int fd;
     struct sockaddr_un address;
 
-    if (secdat_session_agent_path(socket_path, sizeof(socket_path)) != 0) {
+    if (secdat_session_agent_path_for_domain(domain_id, socket_path, sizeof(socket_path)) != 0) {
         return -1;
     }
 
@@ -1461,6 +1490,11 @@ static int secdat_session_agent_connect(int start_if_missing)
 
     memset(&address, 0, sizeof(address));
     address.sun_family = AF_UNIX;
+    if (strlen(socket_path) >= sizeof(address.sun_path)) {
+        close(fd);
+        fprintf(stderr, _("path is too long\n"));
+        return -1;
+    }
     strcpy(address.sun_path, socket_path);
 
     if (connect(fd, (struct sockaddr *)&address, sizeof(address)) == 0) {
@@ -1474,13 +1508,18 @@ static int secdat_session_agent_connect(int start_if_missing)
     if (!start_if_missing) {
         return -1;
     }
-    if (secdat_spawn_session_agent() != 0) {
+    if (secdat_spawn_session_agent(domain_id) != 0) {
         return -1;
     }
 
     fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) {
         fprintf(stderr, _("failed to create session agent socket\n"));
+        return -1;
+    }
+    if (strlen(socket_path) >= sizeof(address.sun_path)) {
+        close(fd);
+        fprintf(stderr, _("path is too long\n"));
         return -1;
     }
     if (connect(fd, (struct sockaddr *)&address, sizeof(address)) != 0) {
@@ -1492,14 +1531,29 @@ static int secdat_session_agent_connect(int start_if_missing)
     return fd;
 }
 
-static int secdat_session_agent_status(struct secdat_session_record *record)
+static int secdat_session_agent_connect_chain(const struct secdat_domain_chain *chain)
+{
+    size_t index;
+    int fd;
+
+    for (index = 0; index < chain->count; index += 1) {
+        fd = secdat_session_agent_connect_domain(chain->ids[index], 0);
+        if (fd >= 0) {
+            return fd;
+        }
+    }
+
+    return -1;
+}
+
+static int secdat_session_agent_status(const struct secdat_domain_chain *chain, struct secdat_session_record *record)
 {
     FILE *stream;
     int fd;
     char response[64];
 
     memset(record, 0, sizeof(*record));
-    fd = secdat_session_agent_connect(0);
+    fd = secdat_session_agent_connect_chain(chain);
     if (fd < 0) {
         return 1;
     }
@@ -1527,7 +1581,7 @@ static int secdat_session_agent_status(struct secdat_session_record *record)
     return 0;
 }
 
-static int secdat_session_agent_get(struct secdat_session_record *record)
+static int secdat_session_agent_get(const struct secdat_domain_chain *chain, struct secdat_session_record *record)
 {
     FILE *stream;
     int fd;
@@ -1535,7 +1589,7 @@ static int secdat_session_agent_get(struct secdat_session_record *record)
     char secret[sizeof(record->master_key)];
 
     memset(record, 0, sizeof(*record));
-    fd = secdat_session_agent_connect(0);
+    fd = secdat_session_agent_connect_chain(chain);
     if (fd < 0) {
         return 1;
     }
@@ -1565,13 +1619,13 @@ static int secdat_session_agent_get(struct secdat_session_record *record)
     return secdat_copy_string(record->master_key, sizeof(record->master_key), secret);
 }
 
-static int secdat_session_agent_set(const char *master_key)
+static int secdat_session_agent_set(const char *domain_id, const char *master_key)
 {
     FILE *stream;
     int fd;
     char response[64];
 
-    fd = secdat_session_agent_connect(1);
+    fd = secdat_session_agent_connect_domain(domain_id, 1);
     if (fd < 0) {
         return 1;
     }
@@ -1592,13 +1646,13 @@ static int secdat_session_agent_set(const char *master_key)
     return strncmp(response, "OK ", 3) == 0 ? 0 : 1;
 }
 
-static int secdat_session_agent_clear(void)
+static int secdat_session_agent_clear(const char *domain_id)
 {
     FILE *stream;
     int fd;
     char response[64];
 
-    fd = secdat_session_agent_connect(0);
+    fd = secdat_session_agent_connect_domain(domain_id, 0);
     if (fd < 0) {
         return 0;
     }
@@ -2282,14 +2336,14 @@ static uint32_t secdat_read_be32(const unsigned char *buffer)
         | (uint32_t)buffer[3];
 }
 
-static int secdat_derive_key(unsigned char key[32])
+static int secdat_derive_key(const struct secdat_domain_chain *chain, unsigned char key[32])
 {
     struct secdat_session_record record = {0};
     const char *master_key = getenv("SECDAT_MASTER_KEY");
     unsigned int key_length = 0;
 
     if (master_key == NULL || master_key[0] == '\0') {
-        if (secdat_session_agent_get(&record) == 0) {
+        if (secdat_session_agent_get(chain, &record) == 0) {
             master_key = record.master_key;
         } else {
             fprintf(
@@ -2311,8 +2365,20 @@ static int secdat_derive_key(unsigned char key[32])
     return 0;
 }
 
+static int secdat_domain_chain_from_id(const char *domain_id, struct secdat_domain_chain *chain)
+{
+    char domain_root[PATH_MAX];
+
+    if (secdat_domain_root_path(domain_id, domain_root, sizeof(domain_root)) != 0) {
+        return 1;
+    }
+
+    return secdat_domain_resolve_chain(domain_root, chain);
+}
+
 static int secdat_command_status(const struct secdat_cli *cli)
 {
+    struct secdat_domain_chain chain = {0};
     struct secdat_session_record record = {0};
     int quiet = 0;
     int wrapped_present = secdat_wrapped_master_key_exists();
@@ -2325,7 +2391,7 @@ static int secdat_command_status(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (cli->dir != NULL || cli->store != NULL) {
+    if (cli->store != NULL) {
         fprintf(stderr, _("invalid arguments for status\n"));
         secdat_cli_print_try_help(cli, "status");
         return 2;
@@ -2340,7 +2406,7 @@ static int secdat_command_status(const struct secdat_cli *cli)
         return 0;
     }
 
-    if (secdat_session_agent_status(&record) == 0) {
+    if (secdat_domain_resolve_chain(cli->dir, &chain) == 0 && secdat_session_agent_status(&chain, &record) == 0) {
         if (!quiet) {
             puts(_("unlocked"));
             puts(_("source: session agent"));
@@ -2348,8 +2414,11 @@ static int secdat_command_status(const struct secdat_cli *cli)
             puts(wrapped_present ? _("wrapped master key: present") : _("wrapped master key: absent"));
         }
         secdat_secure_clear(record.master_key, strlen(record.master_key));
+        secdat_domain_chain_free(&chain);
         return 0;
     }
+
+    secdat_domain_chain_free(&chain);
 
     if (!quiet) {
         puts(_("locked"));
@@ -2360,6 +2429,7 @@ static int secdat_command_status(const struct secdat_cli *cli)
 
 static int secdat_command_unlock(const struct secdat_cli *cli)
 {
+    char current_domain_id[PATH_MAX];
     const char *env_master_key = getenv("SECDAT_MASTER_KEY");
     int wrapped_present = secdat_wrapped_master_key_exists();
     int initialized = 0;
@@ -2367,10 +2437,13 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     const char *session_master_key = env_master_key;
     char secret[512];
 
-    if (cli->argc != 0 || cli->dir != NULL || cli->store != NULL) {
+    if (cli->argc != 0 || cli->store != NULL) {
         fprintf(stderr, _("invalid arguments for unlock\n"));
         secdat_cli_print_try_help(cli, "unlock");
         return 2;
+    }
+    if (secdat_domain_resolve_current(cli->dir, current_domain_id, sizeof(current_domain_id)) != 0) {
+        return 1;
     }
 
     if (!wrapped_present) {
@@ -2396,7 +2469,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     }
 
     if (session_master_key != NULL && session_master_key[0] != '\0') {
-        if (secdat_session_agent_set(session_master_key) != 0) {
+        if (secdat_session_agent_set(current_domain_id, session_master_key) != 0) {
             if (session_master_key == secret) {
                 secdat_secure_clear(secret, strlen(secret));
             }
@@ -2428,7 +2501,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         return 1;
     }
     secdat_secure_clear(passphrase, strlen(passphrase));
-    if (secdat_session_agent_set(secret) != 0) {
+    if (secdat_session_agent_set(current_domain_id, secret) != 0) {
         secdat_secure_clear(secret, strlen(secret));
         return 1;
     }
@@ -2440,13 +2513,18 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
 
 static int secdat_command_lock(const struct secdat_cli *cli)
 {
-    if (cli->argc != 0 || cli->dir != NULL || cli->store != NULL) {
+    char current_domain_id[PATH_MAX];
+
+    if (cli->argc != 0 || cli->store != NULL) {
         fprintf(stderr, _("invalid arguments for lock\n"));
         secdat_cli_print_try_help(cli, "lock");
         return 2;
     }
+    if (secdat_domain_resolve_current(cli->dir, current_domain_id, sizeof(current_domain_id)) != 0) {
+        return 1;
+    }
 
-    if (secdat_session_agent_clear() != 0) {
+    if (secdat_session_agent_clear(current_domain_id) != 0) {
         return 1;
     }
 
@@ -2498,8 +2576,15 @@ static int secdat_command_passwd(const struct secdat_cli *cli)
     return 0;
 }
 
-static int secdat_encrypt_value(const unsigned char *plaintext, size_t plaintext_length, unsigned char **encrypted, size_t *encrypted_length)
+static int secdat_encrypt_value(
+    const char *domain_id,
+    const unsigned char *plaintext,
+    size_t plaintext_length,
+    unsigned char **encrypted,
+    size_t *encrypted_length
+)
 {
+    struct secdat_domain_chain chain = {0};
     EVP_CIPHER_CTX *context = NULL;
     unsigned char key[32];
     unsigned char nonce[SECDAT_NONCE_LEN];
@@ -2511,9 +2596,14 @@ static int secdat_encrypt_value(const unsigned char *plaintext, size_t plaintext
     size_t total_length;
     int status = 1;
 
-    if (secdat_derive_key(key) != 0) {
+    if (secdat_domain_chain_from_id(domain_id, &chain) != 0) {
         return 1;
     }
+    if (secdat_derive_key(&chain, key) != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+    secdat_domain_chain_free(&chain);
 
     if (RAND_bytes(nonce, sizeof(nonce)) != 1) {
         fprintf(stderr, _("failed to generate nonce\n"));
@@ -2587,7 +2677,13 @@ cleanup:
     return status;
 }
 
-static int secdat_decrypt_value(const unsigned char *encrypted, size_t encrypted_length, unsigned char **plaintext, size_t *plaintext_length)
+static int secdat_decrypt_value(
+    const struct secdat_domain_chain *chain,
+    const unsigned char *encrypted,
+    size_t encrypted_length,
+    unsigned char **plaintext,
+    size_t *plaintext_length
+)
 {
     EVP_CIPHER_CTX *context = NULL;
     unsigned char key[32];
@@ -2653,7 +2749,7 @@ static int secdat_decrypt_value(const unsigned char *encrypted, size_t encrypted
         return 1;
     }
 
-    if (secdat_derive_key(key) != 0) {
+    if (secdat_derive_key(chain, key) != 0) {
         return 1;
     }
 
@@ -3065,7 +3161,7 @@ static int secdat_load_resolved_plaintext(
         return 1;
     }
 
-    status = secdat_decrypt_value(encrypted, encrypted_length, plaintext, plaintext_length);
+    status = secdat_decrypt_value(chain, encrypted, encrypted_length, plaintext, plaintext_length);
     free(encrypted);
     return status;
 }
@@ -3380,7 +3476,7 @@ static int secdat_store_plaintext(
         encrypted[11] = 0;
         secdat_write_be32(encrypted + 12, (uint32_t)plaintext_length);
         memcpy(encrypted + SECDAT_HEADER_LEN, plaintext, plaintext_length);
-    } else if (secdat_encrypt_value(plaintext, plaintext_length, &encrypted, &encrypted_length) != 0) {
+    } else if (secdat_encrypt_value(domain_id, plaintext, plaintext_length, &encrypted, &encrypted_length) != 0) {
         return 1;
     }
 

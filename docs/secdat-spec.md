@@ -45,10 +45,10 @@ secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... CMD [ARGS...]
 
-secdat unlock
+secdat [--dir DIR] unlock
 secdat passwd
-secdat lock
-secdat status [--quiet]
+secdat [--dir DIR] lock
+secdat [--dir DIR] status [--quiet]
 
 secdat [--dir DIR] store create STORE
 secdat [--dir DIR] store delete STORE
@@ -82,10 +82,10 @@ To make the requested behavior implementable, the following are treated as norma
 - `set KEYREF --unsafe ...` explicitly opts into plaintext-at-rest storage that remains readable while locked
 - `exec` injects matched keys into the child process environment
 - `secdat --help SUBCOMMAND` and `secdat SUBCOMMAND --help` are equivalent for command-local usage output
-- `unlock` caches the current master key in a session-scoped runtime location
+- `unlock` caches the current master key in a domain-scoped runtime location
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit override for non-interactive `unlock` and `passwd` flows
-- `status` reports whether a master-key session is active
-- `lock` clears the active master-key session
+- `status` reports whether a master-key session is active for the current domain scope
+- `lock` clears the current domain's local master-key session
 - values are modeled as arbitrary byte strings internally
 - domains are resolved from a directory context
 - `--dir` is a global option that overrides the directory context used for domain resolution
@@ -222,16 +222,18 @@ To make the requested behavior implementable, the following are treated as norma
 
 #### FR-7a Session Control
 
-- `secdat status` returns success and reports an unlocked state when `SECDAT_MASTER_KEY` is set or a valid runtime session exists
+- `secdat [--dir DIR] status` returns success and reports an unlocked state when `SECDAT_MASTER_KEY` is set or a valid runtime session exists in the current domain scope
 - `secdat status` returns non-zero and reports `locked` when no active master-key source exists
-- `secdat status --quiet` suppresses output and reports state only through the exit code
+- `secdat [--dir DIR] status --quiet` suppresses output and reports state only through the exit code
 - `status` without `--quiet` reports the active source and whether a wrapped persistent master key is present
-- `secdat unlock` creates or refreshes a session-scoped cache of the current master key
+- `secdat [--dir DIR] unlock` creates or refreshes a domain-scoped cache of the current master key
 - if no wrapped persistent master key exists, `unlock` prompts twice on a terminal, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
 - if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `unlock`
 - otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent
-- `secdat lock` removes the active agent-backed session state
+- unlocking one domain must not unlock sibling domains
+- descendant domains may reuse an unlocked ancestor session without an extra `unlock`
+- `secdat [--dir DIR] lock` removes only the current domain's local agent-backed session state
 - the current implementation refreshes the idle timeout when the agent serves the cached key
 - no raw master-key retrieval path is required for normal operation; the generated key remains internal unless a separate future recovery/export flow is introduced
 

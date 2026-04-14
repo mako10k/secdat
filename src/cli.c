@@ -177,16 +177,16 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] load FILE\n"), program_name);
         break;
     case SECDAT_COMMAND_UNLOCK:
-        printf(_("  %s unlock\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] unlock\n"), program_name);
         break;
     case SECDAT_COMMAND_PASSWD:
         printf(_("  %s passwd\n"), program_name);
         break;
     case SECDAT_COMMAND_LOCK:
-        printf(_("  %s lock\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] lock\n"), program_name);
         break;
     case SECDAT_COMMAND_STATUS:
-        printf(_("  %s status [-q|--quiet]\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] status [-q|--quiet]\n"), program_name);
         break;
     case SECDAT_COMMAND_STORE_CREATE:
         printf(_("  %s [-d DIR|--dir DIR] store create STORE\n"), program_name);
@@ -294,10 +294,10 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
     printf(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
     printf(_("  load: import a passphrase-protected bundle into the current domain view\n"));
-    printf(_("  unlock: start or refresh an authenticated secret session\n"));
+    printf(_("  unlock: start or refresh an authenticated secret session for the current domain\n"));
     printf(_("  passwd: change the wrapped-master-key passphrase\n"));
-    printf(_("  lock: clear the active secret session\n"));
-    printf(_("  status: report whether secret material is currently available\n"));
+    printf(_("  lock: clear the current domain's local secret session\n"));
+    printf(_("  status: report whether secret material is available from the current domain scope\n"));
     printf(_("  version: print the secdat version\n"));
 }
 
@@ -365,7 +365,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "unlock") == 0) {
-        printf(_("  start or refresh an authenticated secret session\n"));
+        printf(_("  start or refresh an authenticated secret session for the current domain\n"));
         return;
     }
     if (target != NULL && strcmp(target, "passwd") == 0) {
@@ -373,11 +373,11 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "lock") == 0) {
-        printf(_("  clear the active secret session\n"));
+        printf(_("  clear the current domain's local secret session\n"));
         return;
     }
     if (target != NULL && strcmp(target, "status") == 0) {
-        printf(_("  report whether secret material is currently available\n"));
+        printf(_("  report whether secret material is available from the current domain scope\n"));
         return;
     }
     if (target != NULL && strcmp(target, "version") == 0) {

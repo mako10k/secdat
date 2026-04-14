@@ -88,17 +88,17 @@ Write the current visible secrets into a passphrase-protected bundle.
 .B load FILE
 Load a passphrase-protected bundle into the current domain/store context.
 .TP
-.B unlock
-Start or refresh an authenticated secret session.
+.B [\-d DIR|\-\-dir DIR] unlock
+Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked.
 .TP
 .B passwd
 Change the passphrase used to wrap the persistent master key.
 .TP
-.B lock
-Clear the active secret session.
+.B [\-d DIR|\-\-dir DIR] lock
+Clear the current domain's local secret session.
 .TP
-.B status [\-q|\-\-quiet]
-Report whether secret material is currently available.
+.B [\-d DIR|\-\-dir DIR] status [\-q|\-\-quiet]
+Report whether secret material is available from the current domain scope.
 .TP
 .B store create|delete|ls
 Manage store namespaces inside the resolved current domain.

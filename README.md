@@ -13,7 +13,7 @@ Current status:
 - `save` and `load` are implemented for passphrase-protected secret bundles scoped to the current view
 - `domain create`, `domain delete`, and `domain ls` are implemented
 - `store create`, `store delete`, and `store ls` are implemented
-- `unlock`, `lock`, and `status` are implemented with a session agent and a wrapped persistent master key
+- `unlock`, `lock`, and `status` are implemented with domain-scoped session agents and a wrapped persistent master key
 - normal store commands resolve the current domain from `--dir` or the working directory and fall back through parent domains
 - stores are domain-local namespaces, not global objects shared across all domains
 - encryption currently uses `SECDAT_MASTER_KEY` or an active `secdat unlock` session
@@ -35,13 +35,13 @@ LANGUAGE=ja ./src/secdat --help
 
 ## First use
 
-Initialize `secdat` once directly with a passphrase:
+Initialize `secdat` once directly with a passphrase in the target domain:
 
 ```sh
-./src/secdat unlock
+./src/secdat --dir ~/example/project unlock
 ```
 
-The first interactive `unlock` generates a fresh master key, stores a wrapped copy under `XDG_DATA_HOME`, and starts the session agent. After that, later `unlock` calls need only your passphrase.
+The first interactive `unlock` generates a fresh master key, stores a wrapped copy under `XDG_DATA_HOME`, and starts a session agent scoped to the current domain. Descendant domains reuse an unlocked ancestor session automatically, but sibling domains stay locked until they unlock for themselves.
 
 For explicit non-interactive use, `SECDAT_MASTER_KEY_PASSPHRASE` can provide the current wrapped-key passphrase to `unlock`. This is an override path rather than the default recommendation, because environment variables are easier to expose than terminal prompts.
 
@@ -49,7 +49,7 @@ If you already have a master key to migrate or explicitly override with, `SECDAT
 
 ```sh
 export SECDAT_MASTER_KEY='change-me'
-./src/secdat unlock
+./src/secdat --dir ~/example/project unlock
 ```
 
 For a less guessable test value, you can generate one instead of typing it manually:
@@ -167,16 +167,16 @@ Treat this key like any other secret. Anyone who can read your shell startup fil
 
 ## Session commands
 
-You can keep the active master key in a login-session-scoped session agent and avoid exporting it for every command:
+You can keep the active master key in a domain-scoped session agent and avoid exporting it for every command:
 
 ```sh
 ./src/secdat status
 ./src/secdat status --quiet
-./src/secdat unlock
+./src/secdat --dir ~/example/project unlock
 ./src/secdat lock
 ```
 
-If `SECDAT_MASTER_KEY` is already set, `unlock` reuses it as an explicit override or migration source and can bootstrap the persistent wrapped key from it. Otherwise, the first terminal `unlock` generates and wraps a fresh master key, and later unlocks unwrap the stored master key into the session agent.
+If `SECDAT_MASTER_KEY` is already set, `unlock` reuses it as an explicit override or migration source and can bootstrap the persistent wrapped key from it. Otherwise, the first terminal `unlock` generates and wraps a fresh master key, and later unlocks unwrap the stored master key into the current domain's session agent.
 
 You can rotate the wrapped-master-key passphrase without changing stored secret payloads:
 
