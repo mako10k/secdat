@@ -43,6 +43,13 @@ mkdir -p "$root" "$child" "$XDG_DATA_HOME"
 "$bin_path" --dir "$root" set prefix_two two >/dev/null
 "$bin_path" --dir "$root" set other_key other >/dev/null
 
+if ! "$bin_path" --dir "$root" exists prefix_one >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'exists did not report an existing key'
+fi
+if "$bin_path" --dir "$root" exists missing_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'exists reported success for a missing key'
+fi
+
 ls_output="$("$bin_path" --dir "$root" ls 'prefix_*')"
 assert_contains_line "$ls_output" 'prefix_one'
 assert_contains_line "$ls_output" 'prefix_two'
@@ -60,6 +67,10 @@ assert_eq "$explicit_value" 'explicit_value' 'KEYREF set/get'
 
 if "$bin_path" get explicit_key/"$root":team --stdout >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'old KEYREF syntax still accepted'
+fi
+
+if ! "$bin_path" exists "$root"/explicit_key:team >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'exists KEYREF did not resolve explicit domain/store key'
 fi
 
 canonical_output="$("$bin_path" --dir "$root" ls --canonical)"

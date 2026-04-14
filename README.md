@@ -66,7 +66,18 @@ Then you can store and read values:
 ./src/secdat ls 'HO*'
 ./src/secdat ls --pattern 'HO*' --pattern 'API_*' --pattern-exclude 'HOGE'
 ./src/secdat ls --canonical
+./src/secdat exists HOGE
 ./src/secdat get HOGE --stdout
+```
+
+For shell branching without printing secret material, use `exists` and check the exit status:
+
+```sh
+if ./src/secdat --dir ~/example/project --store app exists API_TOKEN; then
+	echo present
+else
+	echo missing
+fi
 ```
 
 If you explicitly need a value to remain readable while `secdat` is locked, `set --unsafe` stores it in plaintext on disk:

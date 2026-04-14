@@ -21,6 +21,8 @@ The intended command set is:
 ```text
 secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--canonical|--canonical-domain|--canonical-store]
 
+secdat [--dir DIR] [--store STORE] exists KEYREF
+
 secdat [--dir DIR] [--store STORE] get KEYREF
 secdat [--dir DIR] [--store STORE] get KEYREF --stdout
 secdat [--dir DIR] [--store STORE] get KEYREF --shellescaped
@@ -150,6 +152,13 @@ To make the requested behavior implementable, the following are treated as norma
 - `--value VALUE` stores the literal argument value
 - `set` overwrites an existing key in the current domain
 - `get`, `ls`, and other read paths must continue to resolve `--unsafe` entries while the runtime is locked
+
+#### FR-3a Key Existence Query
+
+- `secdat exists KEYREF` checks whether the resolved key is visible in the current effective domain/store view
+- the command exits with status 0 when the key exists
+- the command exits with a non-zero status when the key does not exist or the lookup context is invalid
+- the command is intended for shell-friendly branching and should not print secret values
 
 #### FR-4 Key Removal
 
@@ -382,6 +391,16 @@ secdat [--dir DIR] [--store STORE] ls [--pattern GLOBPATTERN]... [--pattern-excl
 - repeated `--pattern` options are ORed together
 - repeated `--pattern-exclude` options subtract matches after include filtering
 - glob semantics follow `fnmatch(3)`
+
+### 4.2a `exists`
+
+```text
+secdat [--dir DIR] [--store STORE] exists KEYREF
+```
+
+- exits with status 0 when the resolved key exists
+- exits with a non-zero status when the resolved key does not exist
+- writes no secret value to standard output
 
 ### 4.3 `get`
 

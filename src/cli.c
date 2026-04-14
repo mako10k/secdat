@@ -68,6 +68,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     if (strcmp(name, "ls") == 0) {
         return SECDAT_COMMAND_LS;
     }
+    if (strcmp(name, "exists") == 0) {
+        return SECDAT_COMMAND_EXISTS;
+    }
     if (strcmp(name, "help") == 0) {
         return SECDAT_COMMAND_HELP;
     }
@@ -124,6 +127,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
     switch (command) {
     case SECDAT_COMMAND_LS:
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]\n"), program_name);
+        break;
+    case SECDAT_COMMAND_EXISTS:
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exists KEYREF\n"), program_name);
         break;
     case SECDAT_COMMAND_GET:
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get KEYREF [-o|--stdout|--shellescaped]\n"), program_name);
@@ -257,6 +263,7 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("\nCommands:\n"));
     printf(_("  help: show global help or detailed help for one command\n"));
     printf(_("  ls: list effective keys visible from the current domain view\n"));
+    printf(_("  exists: check whether one resolved key is visible from the current domain view\n"));
     printf(_("  get: decrypt one resolved key and write it to standard output\n"));
     printf(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
     printf(_("  rm: remove one key locally or create a tombstone for an inherited key\n"));
@@ -282,6 +289,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "ls") == 0) {
         printf(_("  list effective keys visible from the current domain view\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "exists") == 0) {
+        printf(_("  check whether one resolved key is visible from the current domain view\n"));
         return;
     }
     if (target != NULL && strcmp(target, "get") == 0) {
@@ -399,6 +410,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         return 0;
     } else if (strcmp(argv[index], "ls") == 0) {
         cli->command = SECDAT_COMMAND_LS;
+        index += 1;
+    } else if (strcmp(argv[index], "exists") == 0) {
+        cli->command = SECDAT_COMMAND_EXISTS;
         index += 1;
     } else if (strcmp(argv[index], "get") == 0) {
         cli->command = SECDAT_COMMAND_GET;
@@ -529,7 +543,7 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
 
     printf(_("Usage:\n"));
     secdat_cli_print_usage_line(program_name, command);
-    if (command == SECDAT_COMMAND_LS || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
+    if (command == SECDAT_COMMAND_LS || command == SECDAT_COMMAND_EXISTS || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
         || command == SECDAT_COMMAND_RM || command == SECDAT_COMMAND_MV || command == SECDAT_COMMAND_CP) {
         printf(_("\n"));
         printf(_("  KEYREF syntax: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
@@ -604,6 +618,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "help";
     case SECDAT_COMMAND_LS:
         return "ls";
+    case SECDAT_COMMAND_EXISTS:
+        return "exists";
     case SECDAT_COMMAND_GET:
         return "get";
     case SECDAT_COMMAND_SET:

@@ -3033,6 +3033,40 @@ static int secdat_command_ls(const struct secdat_cli *cli)
     return 0;
 }
 
+static int secdat_command_exists(const struct secdat_cli *cli)
+{
+    struct secdat_key_reference reference;
+    struct secdat_domain_chain chain = {0};
+    char entry_path[PATH_MAX];
+    int status;
+
+    if (cli->argc == 0) {
+        fprintf(stderr, _("missing key for exists\n"));
+        secdat_cli_print_try_help(cli, "exists");
+        return 2;
+    }
+    if (cli->argc != 1) {
+        fprintf(stderr, _("invalid arguments for exists\n"));
+        secdat_cli_print_try_help(cli, "exists");
+        return 2;
+    }
+
+    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
+        return 1;
+    }
+
+    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+        return 1;
+    }
+
+    status = secdat_resolve_entry_path(&chain, reference.store_value, reference.key, entry_path, sizeof(entry_path));
+    secdat_domain_chain_free(&chain);
+    if (status == 0) {
+        return 0;
+    }
+    return 1;
+}
+
 static void secdat_write_shell_quoted(FILE *stream, const char *value);
 
 static int secdat_write_shell_quoted_bytes(FILE *stream, const char *key, const unsigned char *value, size_t value_length)
@@ -4056,6 +4090,8 @@ int secdat_run_command(const struct secdat_cli *cli)
     switch (cli->command) {
     case SECDAT_COMMAND_LS:
         return secdat_command_ls(cli);
+    case SECDAT_COMMAND_EXISTS:
+        return secdat_command_exists(cli);
     case SECDAT_COMMAND_GET:
         return secdat_command_get(cli);
     case SECDAT_COMMAND_SET:

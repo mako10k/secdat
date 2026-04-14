@@ -37,6 +37,9 @@ Print the secdat version.
 .B ls [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-pattern-exclude GLOBPATTERN]
 List effective keys visible from the current domain view. Repeated include patterns widen the match set, and repeated exclude patterns subtract from it.
 .TP
+.B exists KEYREF
+Check whether one resolved key is visible from the current domain view. This command is intended for shell-friendly branching and does not print secret values.
+.TP
 .B get KEYREF [\-o|\-\-stdout|\-\-shellescaped]
 Decrypt one resolved key and write it to standard output. Use
 .B --shellescaped
