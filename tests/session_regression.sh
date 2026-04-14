@@ -117,6 +117,26 @@ rc, stdout, stderr = run(scoped(["get", "UNSAFE_VISIBLE_KEY", "-o"]))
 if rc != 0 or stdout != "visible-while-locked" or stderr != "":
     fail(f"get unsafe key while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run(scoped(["cp", "UNSAFE_VISIBLE_KEY", "UNSAFE_COPIED_KEY"]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"cp unsafe key while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "UNSAFE_COPIED_KEY", "-o"]))
+if rc != 0 or stdout != "visible-while-locked" or stderr != "":
+    fail(f"get copied unsafe key while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["mv", "UNSAFE_COPIED_KEY", "UNSAFE_MOVED_KEY"]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"mv unsafe key while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "UNSAFE_MOVED_KEY", "-o"]))
+if rc != 0 or stdout != "visible-while-locked" or stderr != "":
+    fail(f"get moved unsafe key while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "UNSAFE_COPIED_KEY", "-o"]))
+if rc == 0 or "key not found: UNSAFE_COPIED_KEY" not in stderr:
+    fail(f"moved unsafe source still visible while locked: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 for args, marker in [
     ([bin_path, "help", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "--help", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),

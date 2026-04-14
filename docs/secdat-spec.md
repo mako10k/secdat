@@ -195,12 +195,14 @@ To make the requested behavior implementable, the following are treated as norma
 - it is an error if `DST_KEYREF` already exists in the effective destination view
 - it is an error if `SRC_KEYREF` and `DST_KEYREF` are identical textually
 - if `SRC_KEYREF` is inherited from a parent domain, the source name is hidden with a tombstone in the resolved source current domain after the destination is materialized
+- `mv` preserves the source entry storage mode, including plaintext-at-rest entries created with `set --unsafe`
 
 #### FR-6 Key Copy
 
 - `secdat cp SRC_KEYREF DST_KEYREF` copies the resolved plaintext value of `SRC_KEYREF` into `DST_KEYREF`
 - it is an error if `DST_KEYREF` already exists in the effective destination view
 - the copied value must be re-encrypted with a new nonce
+- `cp` preserves the source entry storage mode, including plaintext-at-rest entries created with `set --unsafe`
 
 #### FR-7 Runtime Injection
 

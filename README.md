@@ -109,6 +109,7 @@ If you explicitly need a value to remain readable while `secdat` is locked, `set
 ```
 
 `--unsafe` is intentionally outside the normal secret workflow. It does not require the master key, remains readable while locked, and should only be used for values you accept storing in plaintext.
+Copying or moving a `--unsafe` key preserves that plaintext-at-rest storage mode.
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
 When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--dir`, `--store`, and then the current defaults are used.

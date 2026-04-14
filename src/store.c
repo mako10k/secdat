@@ -114,7 +114,8 @@ static int secdat_load_resolved_plaintext(
     const char *key,
     unsigned char **plaintext,
     size_t *plaintext_length,
-    size_t *resolved_index
+    size_t *resolved_index,
+    int *unsafe_store
 );
 
 static void secdat_secure_clear(void *buffer, size_t length)
@@ -1973,7 +1974,7 @@ static int secdat_collect_bundle_payload(const struct secdat_cli *cli, unsigned 
         size_t plaintext_length = 0;
         uint32_t key_length = (uint32_t)strlen(visible_keys.items[index]);
 
-        if (secdat_load_resolved_plaintext(&chain, cli->store, visible_keys.items[index], &plaintext, &plaintext_length, NULL) != 0) {
+        if (secdat_load_resolved_plaintext(&chain, cli->store, visible_keys.items[index], &plaintext, &plaintext_length, NULL, NULL) != 0) {
             goto cleanup;
         }
         if (plaintext_length > UINT32_MAX) {
@@ -3142,7 +3143,8 @@ static int secdat_load_resolved_plaintext(
     const char *key,
     unsigned char **plaintext,
     size_t *plaintext_length,
-    size_t *resolved_index
+    size_t *resolved_index,
+    int *unsafe_store
 )
 {
     char entry_path[PATH_MAX];
@@ -3159,6 +3161,25 @@ static int secdat_load_resolved_plaintext(
 
     if (secdat_read_file(entry_path, &encrypted, &encrypted_length) != 0) {
         return 1;
+    }
+
+    if (unsafe_store != NULL) {
+        if (encrypted_length < SECDAT_HEADER_LEN) {
+            fprintf(stderr, _("invalid encrypted entry\n"));
+            free(encrypted);
+            return 1;
+        }
+        if (memcmp(encrypted, secdat_entry_magic, sizeof(secdat_entry_magic)) != 0 || encrypted[8] != SECDAT_ENTRY_VERSION) {
+            fprintf(stderr, _("unsupported encrypted entry format\n"));
+            free(encrypted);
+            return 1;
+        }
+        if (encrypted[9] != SECDAT_ENTRY_ALGORITHM_PLAINTEXT && encrypted[9] != SECDAT_ENTRY_ALGORITHM_AES_256_GCM) {
+            fprintf(stderr, _("unsupported encryption algorithm\n"));
+            free(encrypted);
+            return 1;
+        }
+        *unsafe_store = encrypted[9] == SECDAT_ENTRY_ALGORITHM_PLAINTEXT;
     }
 
     status = secdat_decrypt_value(chain, encrypted, encrypted_length, plaintext, plaintext_length);
@@ -3399,7 +3420,7 @@ static int secdat_command_get(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL) != 0) {
+    if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, NULL) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;
     }
@@ -3774,6 +3795,7 @@ static int secdat_command_cp(const struct secdat_cli *cli)
     char destination_path[PATH_MAX];
     unsigned char *plaintext = NULL;
     size_t plaintext_length = 0;
+    int unsafe_store = 0;
     int status;
 
     if (cli->argc != 2) {
@@ -3815,13 +3837,13 @@ static int secdat_command_cp(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL) != 0) {
+    if (secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store) != 0) {
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
         return 1;
     }
 
-    status = secdat_store_plaintext(destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, 0);
+    status = secdat_store_plaintext(destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, unsafe_store);
     secdat_domain_chain_free(&source_chain);
     secdat_domain_chain_free(&destination_chain);
     secdat_secure_clear(plaintext, plaintext_length);
@@ -3839,6 +3861,7 @@ static int secdat_command_mv(const struct secdat_cli *cli)
     char destination_path[PATH_MAX];
     unsigned char *plaintext = NULL;
     size_t plaintext_length = 0;
+    int unsafe_store = 0;
     int status;
 
     if (cli->argc != 2) {
@@ -3880,13 +3903,13 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL) != 0) {
+    if (secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store) != 0) {
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
         return 1;
     }
 
-    status = secdat_store_plaintext(destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, 0);
+    status = secdat_store_plaintext(destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, unsafe_store);
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
     if (status != 0) {
@@ -4316,6 +4339,7 @@ static int secdat_command_exec(const struct secdat_cli *cli)
             visible_keys.items[key_index],
             &plaintext,
             &plaintext_length,
+            NULL,
             NULL
         );
         if (status != 0) {
