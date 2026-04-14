@@ -48,3 +48,4 @@ po/stamp-po
 po/Makefile
 m4/*.m4
 *~
+.envrc
