@@ -21,6 +21,8 @@ The intended command set is:
 ```text
 secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--canonical|--canonical-domain|--canonical-store]
 
+secdat [--dir DIR] [--store STORE] list [--masked] [--overridden] [--orphaned]
+
 secdat [--dir DIR] [--store STORE] exists KEYREF
 
 secdat [--dir DIR] [--store STORE] mask KEYREF
@@ -162,6 +164,14 @@ To make the requested behavior implementable, the following are treated as norma
 - the command exits with status 0 when the key exists
 - the command exits with a non-zero status when the key does not exist or the lookup context is invalid
 - the command is intended for shell-friendly branching and should not print secret values
+
+#### FR-3aa Local-State Listing
+
+- `secdat list --masked` lists keys hidden by active local tombstones in the resolved current domain
+- `secdat list --orphaned` lists keys with local tombstones whose parent-visible value no longer exists
+- `secdat list --overridden` lists keys stored locally that also remain visible from a parent domain
+- `list` operates on current-domain local state rather than the effective visible view returned by `ls`
+- `list` requires at least one state filter in the initial implementation
 
 #### FR-3b Tombstone Operations
 
@@ -403,6 +413,18 @@ secdat [--dir DIR] [--store STORE] ls [--pattern GLOBPATTERN]... [--pattern-excl
 - repeated `--pattern` options are ORed together
 - repeated `--pattern-exclude` options subtract matches after include filtering
 - glob semantics follow `fnmatch(3)`
+
+### 4.2aa `list`
+
+```text
+secdat [--dir DIR] [--store STORE] list [--masked] [--overridden] [--orphaned]
+```
+
+- lists current-domain local state selected by one or more state filters
+- `--masked` shows tombstones that still hide an inherited parent value
+- `--orphaned` shows tombstones whose parent-visible value is already gone
+- `--overridden` shows local keys that still shadow a parent-visible key
+- the initial implementation requires at least one filter
 
 ### 4.2a `exists`
 

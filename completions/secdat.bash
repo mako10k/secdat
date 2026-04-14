@@ -7,7 +7,7 @@ _secdat_complete()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     global_opts=(--dir -d --store -s --help -h --version -V)
-    commands=(help version ls mask unmask exists get set rm mv cp exec export save load unlock passwd lock status store domain)
+    commands=(help version ls list mask unmask exists get set rm mv cp exec export save load unlock passwd lock status store domain)
     store_subcommands=(create delete ls)
     domain_subcommands=(create delete ls)
 
@@ -30,7 +30,7 @@ _secdat_complete()
                 ((index += 2))
                 continue
                 ;;
-            help|version|ls|mask|unmask|exists|get|set|rm|mv|cp|exec|export|save|load|unlock|passwd|lock|status|store|domain)
+            help|version|ls|list|mask|unmask|exists|get|set|rm|mv|cp|exec|export|save|load|unlock|passwd|lock|status|store|domain)
                 cmd="${COMP_WORDS[index]}"
                 if [[ "$cmd" == "store" || "$cmd" == "domain" ]]; then
                     if (( index + 1 < COMP_CWORD )); then
@@ -86,6 +86,10 @@ _secdat_complete()
             ;;
         ls)
             COMPREPLY=( $(compgen -W "--pattern -p --pattern-exclude --canonical -c --canonical-domain -D --canonical-store -S" -- "$cur") )
+            return 0
+            ;;
+        list)
+            COMPREPLY=( $(compgen -W "--masked --overridden --orphaned" -- "$cur") )
             return 0
             ;;
         get)

@@ -37,6 +37,15 @@ Print the secdat version.
 .B ls [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-pattern-exclude GLOBPATTERN]
 List effective keys visible from the current domain view. Repeated include patterns widen the match set, and repeated exclude patterns subtract from it.
 .TP
+.B list [\-\-masked] [\-\-overridden] [\-\-orphaned]
+Inspect current-domain local state. Use
+.B --masked
+for active tombstones,
+.B --orphaned
+for tombstones whose parent-visible value is already gone, and
+.B --overridden
+for local keys that still shadow a parent-visible key.
+.TP
 .B mask KEYREF
 Create a local tombstone to hide one inherited key in the current domain.
 .TP

@@ -87,6 +87,14 @@ To hide an inherited key in a child domain without touching the parent value, us
 ./src/secdat --dir ~/example/project/child unmask API_TOKEN
 ```
 
+For current-domain state inspection, `list` can show active tombstones, orphaned tombstones, and local overrides:
+
+```sh
+./src/secdat --dir ~/example/project/child list --masked
+./src/secdat --dir ~/example/project/child list --orphaned
+./src/secdat --dir ~/example/project/child list --overridden
+```
+
 For idempotent cleanup in shell automation, `rm --ignore-missing` treats an absent key as a successful no-op:
 
 ```sh

@@ -72,6 +72,12 @@ struct secdat_exec_options {
     size_t command_index;
 };
 
+struct secdat_list_options {
+    int masked;
+    int overridden;
+    int orphaned;
+};
+
 struct secdat_session_record {
     char master_key[512];
     time_t expires_at;
@@ -407,6 +413,38 @@ static int secdat_parse_exec_options(const struct secdat_cli *cli, struct secdat
         fprintf(stderr, _("invalid arguments for exec\n"));
         secdat_key_list_free(&options->include_patterns);
         secdat_key_list_free(&options->exclude_patterns);
+        return 2;
+    }
+
+    return 0;
+}
+
+static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat_list_options *options)
+{
+    size_t index;
+
+    memset(options, 0, sizeof(*options));
+    for (index = 0; index < (size_t)cli->argc; index += 1) {
+        if (strcmp(cli->argv[index], "--masked") == 0) {
+            options->masked = 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--overridden") == 0) {
+            options->overridden = 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--orphaned") == 0) {
+            options->orphaned = 1;
+            continue;
+        }
+        fprintf(stderr, _("invalid arguments for list\n"));
+        secdat_cli_print_try_help(cli, "list");
+        return 2;
+    }
+
+    if (!options->masked && !options->overridden && !options->orphaned) {
+        fprintf(stderr, _("missing state filter for list\n"));
+        secdat_cli_print_try_help(cli, "list");
         return 2;
     }
 
@@ -2906,6 +2944,102 @@ static int secdat_resolve_entry_path(
     return secdat_find_effective_entry(chain, store_name, key, buffer, size, NULL);
 }
 
+static int secdat_parent_has_visible_key(const struct secdat_domain_chain *chain, const char *store_name, const char *key)
+{
+    char entry_path[PATH_MAX];
+    char tombstone_path[PATH_MAX];
+    size_t index;
+
+    for (index = 1; index < chain->count; index += 1) {
+        if (secdat_build_entry_path(chain->ids[index], store_name, key, entry_path, sizeof(entry_path)) != 0) {
+            return -1;
+        }
+        if (secdat_file_exists(entry_path)) {
+            return 1;
+        }
+
+        if (secdat_build_tombstone_path(chain->ids[index], store_name, key, tombstone_path, sizeof(tombstone_path)) != 0) {
+            return -1;
+        }
+        if (secdat_file_exists(tombstone_path)) {
+            return 0;
+        }
+    }
+
+    return 0;
+}
+
+static int secdat_collect_list_keys(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const struct secdat_list_options *options,
+    struct secdat_key_list *keys
+)
+{
+    char entries_dir[PATH_MAX];
+    char tombstones_dir[PATH_MAX];
+    struct secdat_key_list local_entries = {0};
+    struct secdat_key_list local_tombstones = {0};
+    size_t index;
+    int visible_in_parent;
+    int status = 1;
+
+    if (chain->count == 0) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+
+    if (secdat_store_entries_dir(chain->ids[0], store_name, entries_dir, sizeof(entries_dir)) != 0) {
+        return 1;
+    }
+    if (secdat_store_tombstones_dir(chain->ids[0], store_name, tombstones_dir, sizeof(tombstones_dir)) != 0) {
+        return 1;
+    }
+    if (secdat_collect_directory_keys(entries_dir, ".sec", &local_entries) != 0) {
+        goto cleanup;
+    }
+    if (secdat_collect_directory_keys(tombstones_dir, ".tomb", &local_tombstones) != 0) {
+        goto cleanup;
+    }
+
+    for (index = 0; index < local_entries.count; index += 1) {
+        visible_in_parent = secdat_parent_has_visible_key(chain, store_name, local_entries.items[index]);
+        if (visible_in_parent < 0) {
+            goto cleanup;
+        }
+        if (options->overridden && visible_in_parent) {
+            if (secdat_key_list_append(keys, local_entries.items[index]) != 0) {
+                goto cleanup;
+            }
+        }
+    }
+
+    for (index = 0; index < local_tombstones.count; index += 1) {
+        visible_in_parent = secdat_parent_has_visible_key(chain, store_name, local_tombstones.items[index]);
+        if (visible_in_parent < 0) {
+            goto cleanup;
+        }
+        if (options->masked && visible_in_parent) {
+            if (secdat_key_list_append(keys, local_tombstones.items[index]) != 0) {
+                goto cleanup;
+            }
+            continue;
+        }
+        if (options->orphaned && !visible_in_parent) {
+            if (secdat_key_list_append(keys, local_tombstones.items[index]) != 0) {
+                goto cleanup;
+            }
+        }
+    }
+
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&local_entries);
+    secdat_key_list_free(&local_tombstones);
+    return status;
+}
+
 static int secdat_load_resolved_plaintext(
     const struct secdat_domain_chain *chain,
     const char *store_name,
@@ -3030,6 +3164,36 @@ static int secdat_command_ls(const struct secdat_cli *cli)
     secdat_key_list_free(&options.exclude_patterns);
     secdat_domain_chain_free(&chain);
     secdat_key_list_free(&visible_keys);
+    return 0;
+}
+
+static int secdat_command_list(const struct secdat_cli *cli)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_key_list keys = {0};
+    struct secdat_list_options options;
+    size_t index;
+    int status;
+
+    status = secdat_parse_list_options(cli, &options);
+    if (status != 0) {
+        return status;
+    }
+    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+        return 1;
+    }
+    if (secdat_collect_list_keys(&chain, cli->store, &options, &keys) != 0) {
+        secdat_domain_chain_free(&chain);
+        secdat_key_list_free(&keys);
+        return 1;
+    }
+
+    for (index = 0; index < keys.count; index += 1) {
+        puts(keys.items[index]);
+    }
+
+    secdat_domain_chain_free(&chain);
+    secdat_key_list_free(&keys);
     return 0;
 }
 
@@ -4228,6 +4392,8 @@ int secdat_run_command(const struct secdat_cli *cli)
     switch (cli->command) {
     case SECDAT_COMMAND_LS:
         return secdat_command_ls(cli);
+    case SECDAT_COMMAND_LIST:
+        return secdat_command_list(cli);
     case SECDAT_COMMAND_MASK:
         return secdat_command_mask(cli);
     case SECDAT_COMMAND_UNMASK:

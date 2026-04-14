@@ -68,6 +68,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     if (strcmp(name, "ls") == 0) {
         return SECDAT_COMMAND_LS;
     }
+    if (strcmp(name, "list") == 0) {
+        return SECDAT_COMMAND_LIST;
+    }
     if (strcmp(name, "mask") == 0) {
         return SECDAT_COMMAND_MASK;
     }
@@ -133,6 +136,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
     switch (command) {
     case SECDAT_COMMAND_LS:
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]\n"), program_name);
+        break;
+    case SECDAT_COMMAND_LIST:
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] list [--masked] [--overridden] [--orphaned]\n"), program_name);
         break;
     case SECDAT_COMMAND_MASK:
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mask KEYREF\n"), program_name);
@@ -275,6 +281,7 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("\nCommands:\n"));
     printf(_("  help: show global help or detailed help for one command\n"));
     printf(_("  ls: list effective keys visible from the current domain view\n"));
+    printf(_("  list: inspect current-domain masked, overridden, or orphaned local state\n"));
     printf(_("  mask: create a local tombstone to hide one inherited key\n"));
     printf(_("  unmask: remove one local tombstone from the current domain\n"));
     printf(_("  exists: check whether one resolved key is visible from the current domain view\n"));
@@ -303,6 +310,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "ls") == 0) {
         printf(_("  list effective keys visible from the current domain view\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "list") == 0) {
+        printf(_("  inspect current-domain masked, overridden, or orphaned local state\n"));
         return;
     }
     if (target != NULL && strcmp(target, "mask") == 0) {
@@ -432,6 +443,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         return 0;
     } else if (strcmp(argv[index], "ls") == 0) {
         cli->command = SECDAT_COMMAND_LS;
+        index += 1;
+    } else if (strcmp(argv[index], "list") == 0) {
+        cli->command = SECDAT_COMMAND_LIST;
         index += 1;
     } else if (strcmp(argv[index], "mask") == 0) {
         cli->command = SECDAT_COMMAND_MASK;
@@ -647,6 +661,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "help";
     case SECDAT_COMMAND_LS:
         return "ls";
+    case SECDAT_COMMAND_LIST:
+        return "list";
     case SECDAT_COMMAND_MASK:
         return "mask";
     case SECDAT_COMMAND_UNMASK:
