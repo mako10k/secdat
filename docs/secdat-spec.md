@@ -23,6 +23,9 @@ secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--pattern GLOBPATTERN]... [
 
 secdat [--dir DIR] [--store STORE] exists KEYREF
 
+secdat [--dir DIR] [--store STORE] mask KEYREF
+secdat [--dir DIR] [--store STORE] unmask KEYREF
+
 secdat [--dir DIR] [--store STORE] get KEYREF
 secdat [--dir DIR] [--store STORE] get KEYREF --stdout
 secdat [--dir DIR] [--store STORE] get KEYREF --shellescaped
@@ -159,6 +162,14 @@ To make the requested behavior implementable, the following are treated as norma
 - the command exits with status 0 when the key exists
 - the command exits with a non-zero status when the key does not exist or the lookup context is invalid
 - the command is intended for shell-friendly branching and should not print secret values
+
+#### FR-3b Tombstone Operations
+
+- `secdat mask KEYREF` creates a local tombstone in the resolved current domain to hide one inherited key
+- `mask` is an error when the key already exists locally in the current domain
+- `mask` is an error when the key is not inherited and visible from a parent domain
+- `secdat unmask KEYREF` removes one local tombstone from the resolved current domain
+- `unmask` is an error when no local tombstone exists for that key
 
 #### FR-4 Key Removal
 
@@ -402,6 +413,26 @@ secdat [--dir DIR] [--store STORE] exists KEYREF
 - exits with status 0 when the resolved key exists
 - exits with a non-zero status when the resolved key does not exist
 - writes no secret value to standard output
+
+### 4.2b `mask`
+
+```text
+secdat [--dir DIR] [--store STORE] mask KEYREF
+```
+
+- creates a local tombstone in the current domain
+- hides one inherited key from the effective visible view
+- fails when the key already exists locally
+
+### 4.2c `unmask`
+
+```text
+secdat [--dir DIR] [--store STORE] unmask KEYREF
+```
+
+- removes one local tombstone from the current domain
+- restores inherited visibility when a parent still provides the key
+- fails when no local tombstone exists
 
 ### 4.3 `get`
 

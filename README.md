@@ -80,6 +80,13 @@ else
 fi
 ```
 
+To hide an inherited key in a child domain without touching the parent value, use `mask`. To remove that local tombstone later, use `unmask`:
+
+```sh
+./src/secdat --dir ~/example/project/child mask API_TOKEN
+./src/secdat --dir ~/example/project/child unmask API_TOKEN
+```
+
 For idempotent cleanup in shell automation, `rm --ignore-missing` treats an absent key as a successful no-op:
 
 ```sh

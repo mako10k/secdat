@@ -3420,6 +3420,90 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
     return secdat_write_empty_file(tombstone_path);
 }
 
+static int secdat_mask_key_in_chain(const struct secdat_domain_chain *chain, const char *store_name, const char *key)
+{
+    char current_domain_id[PATH_MAX];
+    char entry_path[PATH_MAX];
+    char tombstone_path[PATH_MAX];
+    size_t index;
+    int found_inherited = 0;
+
+    if (chain->count == 0 || strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    strcpy(current_domain_id, chain->ids[0]);
+
+    if (secdat_build_entry_path(current_domain_id, store_name, key, entry_path, sizeof(entry_path)) != 0) {
+        return 1;
+    }
+    if (secdat_build_tombstone_path(current_domain_id, store_name, key, tombstone_path, sizeof(tombstone_path)) != 0) {
+        return 1;
+    }
+
+    if (secdat_file_exists(tombstone_path)) {
+        return 0;
+    }
+    if (secdat_file_exists(entry_path)) {
+        fprintf(stderr, _("key exists locally and cannot be masked: %s\n"), key);
+        return 1;
+    }
+
+    for (index = 1; index < chain->count; index += 1) {
+        if (secdat_build_entry_path(chain->ids[index], store_name, key, entry_path, sizeof(entry_path)) != 0) {
+            return 1;
+        }
+        if (secdat_file_exists(entry_path)) {
+            found_inherited = 1;
+            break;
+        }
+
+        if (secdat_build_tombstone_path(chain->ids[index], store_name, key, tombstone_path, sizeof(tombstone_path)) != 0) {
+            return 1;
+        }
+        if (secdat_file_exists(tombstone_path)) {
+            break;
+        }
+    }
+
+    if (!found_inherited) {
+        fprintf(stderr, _("key not found: %s\n"), key);
+        return 1;
+    }
+
+    if (secdat_ensure_store_dirs(current_domain_id, store_name) != 0) {
+        return 1;
+    }
+
+    if (secdat_build_tombstone_path(current_domain_id, store_name, key, tombstone_path, sizeof(tombstone_path)) != 0) {
+        return 1;
+    }
+
+    return secdat_write_empty_file(tombstone_path);
+}
+
+static int secdat_unmask_key_in_chain(const struct secdat_domain_chain *chain, const char *store_name, const char *key)
+{
+    char current_domain_id[PATH_MAX];
+    char tombstone_path[PATH_MAX];
+
+    if (chain->count == 0 || strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    strcpy(current_domain_id, chain->ids[0]);
+
+    if (secdat_build_tombstone_path(current_domain_id, store_name, key, tombstone_path, sizeof(tombstone_path)) != 0) {
+        return 1;
+    }
+    if (!secdat_file_exists(tombstone_path)) {
+        fprintf(stderr, _("key is not masked in current domain: %s\n"), key);
+        return 1;
+    }
+
+    return secdat_remove_if_exists(tombstone_path);
+}
+
 static int secdat_command_cp(const struct secdat_cli *cli)
 {
     struct secdat_key_reference source_reference;
@@ -3560,6 +3644,54 @@ static int secdat_command_mv(const struct secdat_cli *cli)
 
     secdat_domain_chain_free(&source_chain);
     secdat_domain_chain_free(&destination_chain);
+    return status;
+}
+
+static int secdat_command_mask(const struct secdat_cli *cli)
+{
+    struct secdat_key_reference reference;
+    struct secdat_domain_chain chain = {0};
+    int status;
+
+    if (cli->argc != 1) {
+        fprintf(stderr, _("invalid arguments for mask\n"));
+        secdat_cli_print_try_help(cli, "mask");
+        return 2;
+    }
+
+    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
+        return 1;
+    }
+
+    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+        return 1;
+    }
+    status = secdat_mask_key_in_chain(&chain, reference.store_value, reference.key);
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
+static int secdat_command_unmask(const struct secdat_cli *cli)
+{
+    struct secdat_key_reference reference;
+    struct secdat_domain_chain chain = {0};
+    int status;
+
+    if (cli->argc != 1) {
+        fprintf(stderr, _("invalid arguments for unmask\n"));
+        secdat_cli_print_try_help(cli, "unmask");
+        return 2;
+    }
+
+    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
+        return 1;
+    }
+
+    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+        return 1;
+    }
+    status = secdat_unmask_key_in_chain(&chain, reference.store_value, reference.key);
+    secdat_domain_chain_free(&chain);
     return status;
 }
 
@@ -4096,6 +4228,10 @@ int secdat_run_command(const struct secdat_cli *cli)
     switch (cli->command) {
     case SECDAT_COMMAND_LS:
         return secdat_command_ls(cli);
+    case SECDAT_COMMAND_MASK:
+        return secdat_command_mask(cli);
+    case SECDAT_COMMAND_UNMASK:
+        return secdat_command_unmask(cli);
     case SECDAT_COMMAND_EXISTS:
         return secdat_command_exists(cli);
     case SECDAT_COMMAND_GET:

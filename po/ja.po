@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: secdat 0.1.0\n"
 "Report-Msgid-Bugs-To: noreply@example.invalid\n"
-"POT-Creation-Date: 2026-04-14 13:03+0900\n"
+"POT-Creation-Date: 2026-04-14 13:23+0900\n"
 "PO-Revision-Date: 2026-04-13 00:00+0000\n"
 "Last-Translator: GitHub Copilot <noreply@example.invalid>\n"
 "Language-Team: ja\n"
@@ -31,7 +31,7 @@ msgstr "オプション値が不足しています\n"
 msgid "unknown option: %s\n"
 msgstr "不明なオプションです: %s\n"
 
-#: src/cli.c:129
+#: src/cli.c:135
 #, c-format
 msgid ""
 "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] ls [GLOBPATTERN] [-p "
@@ -42,111 +42,121 @@ msgstr ""
 "GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [-c|--"
 "canonical] [-D|--canonical-domain] [-S|--canonical-store]\n"
 
-#: src/cli.c:132
+#: src/cli.c:138
+#, c-format
+msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mask KEYREF\n"
+msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mask KEYREF\n"
+
+#: src/cli.c:141
+#, c-format
+msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] unmask KEYREF\n"
+msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] unmask KEYREF\n"
+
+#: src/cli.c:144
 #, c-format
 msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exists KEYREF\n"
 msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exists KEYREF\n"
 
-#: src/cli.c:135
-#, c-format
-msgid ""
-"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get KEYREF [-o|--stdout|--"
-"shellescaped]\n"
-msgstr ""
-"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get KEYREF [-o|--stdout|--"
-"shellescaped]\n"
-
-#: src/cli.c:138
-#, c-format
-msgid ""
-"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] set KEYREF [--unsafe] "
-"[VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]\n"
-msgstr ""
-"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] set KEYREF [--unsafe] "
-"[VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]\n"
-
-#: src/cli.c:141
-#, c-format
-msgid ""
-"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm [--ignore-missing] "
-"KEYREF\n"
-msgstr ""
-"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm [--ignore-missing] "
-"KEYREF\n"
-
-#: src/cli.c:144
-#, c-format
-msgid ""
-"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mv SRC_KEYREF DST_KEYREF\n"
-msgstr ""
-"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mv SRC_KEYREF DST_KEYREF\n"
-
 #: src/cli.c:147
 #, c-format
 msgid ""
-"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] cp SRC_KEYREF DST_KEYREF\n"
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get KEYREF [-o|--stdout|--"
+"shellescaped]\n"
 msgstr ""
-"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] cp SRC_KEYREF DST_KEYREF\n"
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get KEYREF [-o|--stdout|--"
+"shellescaped]\n"
 
 #: src/cli.c:150
 #, c-format
 msgid ""
-"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--"
-"pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] CMD [ARGS...]\n"
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] set KEYREF [--unsafe] "
+"[VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]\n"
 msgstr ""
-"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--"
-"pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] CMD [ARGS...]\n"
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] set KEYREF [--unsafe] "
+"[VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]\n"
 
 #: src/cli.c:153
 #, c-format
 msgid ""
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm [--ignore-missing] "
+"KEYREF\n"
+msgstr ""
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm [--ignore-missing] "
+"KEYREF\n"
+
+#: src/cli.c:156
+#, c-format
+msgid ""
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mv SRC_KEYREF DST_KEYREF\n"
+msgstr ""
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mv SRC_KEYREF DST_KEYREF\n"
+
+#: src/cli.c:159
+#, c-format
+msgid ""
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] cp SRC_KEYREF DST_KEYREF\n"
+msgstr ""
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] cp SRC_KEYREF DST_KEYREF\n"
+
+#: src/cli.c:162
+#, c-format
+msgid ""
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--"
+"pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] CMD [ARGS...]\n"
+msgstr ""
+"  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--"
+"pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] CMD [ARGS...]\n"
+
+#: src/cli.c:165
+#, c-format
+msgid ""
 "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] export [-p GLOBPATTERN|--"
 "pattern GLOBPATTERN]\n"
 msgstr ""
 "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] export [-p GLOBPATTERN|--"
 "pattern GLOBPATTERN]\n"
 
-#: src/cli.c:156
+#: src/cli.c:168
 #, c-format
 msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] save FILE\n"
 msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] save FILE\n"
 
-#: src/cli.c:159
+#: src/cli.c:171
 #, c-format
 msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] load FILE\n"
 msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] load FILE\n"
 
-#: src/cli.c:162
+#: src/cli.c:174
 #, c-format
 msgid "  %s unlock\n"
 msgstr "  %s unlock\n"
 
-#: src/cli.c:165
+#: src/cli.c:177
 #, c-format
 msgid "  %s passwd\n"
 msgstr "  %s passwd\n"
 
-#: src/cli.c:168
+#: src/cli.c:180
 #, c-format
 msgid "  %s lock\n"
 msgstr "  %s lock\n"
 
-#: src/cli.c:171
+#: src/cli.c:183
 #, c-format
 msgid "  %s status [-q|--quiet]\n"
 msgstr "  %s status [-q|--quiet]\n"
 
-#: src/cli.c:174
+#: src/cli.c:186
 #, c-format
 msgid "  %s [-d DIR|--dir DIR] store create STORE\n"
 msgstr "  %s [-d DIR|--dir DIR] store create STORE\n"
 
-#: src/cli.c:177
+#: src/cli.c:189
 #, c-format
 msgid "  %s [-d DIR|--dir DIR] store delete STORE\n"
 msgstr "  %s [-d DIR|--dir DIR] store delete STORE\n"
 
-#: src/cli.c:180
+#: src/cli.c:192
 #, c-format
 msgid ""
 "  %s [-d DIR|--dir DIR] store ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern "
@@ -155,17 +165,17 @@ msgstr ""
 "  %s [-d DIR|--dir DIR] store ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern "
 "GLOBPATTERN]\n"
 
-#: src/cli.c:183
+#: src/cli.c:195
 #, c-format
 msgid "  %s [-d DIR|--dir DIR] domain create\n"
 msgstr "  %s [-d DIR|--dir DIR] domain create\n"
 
-#: src/cli.c:186
+#: src/cli.c:198
 #, c-format
 msgid "  %s [-d DIR|--dir DIR] domain delete\n"
 msgstr "  %s [-d DIR|--dir DIR] domain delete\n"
 
-#: src/cli.c:189
+#: src/cli.c:201
 #, c-format
 msgid ""
 "  %s [-d DIR|--dir DIR] domain ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern "
@@ -174,12 +184,12 @@ msgstr ""
 "  %s [-d DIR|--dir DIR] domain ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern "
 "GLOBPATTERN]\n"
 
-#: src/cli.c:198
+#: src/cli.c:210
 #, c-format
 msgid "  %s [options] subcommand ...\n"
 msgstr "  %s [オプション] サブコマンド ...\n"
 
-#: src/cli.c:203
+#: src/cli.c:215
 #, c-format
 msgid ""
 "\n"
@@ -188,13 +198,13 @@ msgstr ""
 "\n"
 "オプション:\n"
 
-#: src/cli.c:204
+#: src/cli.c:216
 #, c-format
 msgid ""
 "  -d, --dir DIR      set the base directory used for domain resolution\n"
 msgstr "  -d, --dir DIR      domain 解決に使う基準ディレクトリを指定します\n"
 
-#: src/cli.c:205
+#: src/cli.c:217
 #, c-format
 msgid ""
 "  -s, --store STORE  select the store namespace inside the resolved domain\n"
@@ -202,7 +212,7 @@ msgstr ""
 "  -s, --store STORE  解決された domain 内で使う store namespace を選択しま"
 "す\n"
 
-#: src/cli.c:206
+#: src/cli.c:218
 #, c-format
 msgid ""
 "  -h, --help         show global help, or combine with COMMAND for detailed "
@@ -211,22 +221,22 @@ msgstr ""
 "  -h, --help         全体ヘルプを表示します。COMMAND と組み合わせると詳細ヘル"
 "プを表示します\n"
 
-#: src/cli.c:207
+#: src/cli.c:219
 #, c-format
 msgid "  -V, --version      print the secdat version\n"
 msgstr "  -V, --version      secdat のバージョンを表示します\n"
 
-#: src/cli.c:213 src/cli.c:225
+#: src/cli.c:225 src/cli.c:237
 #, c-format
 msgid "  %s help [COMMAND]\n"
 msgstr "  %s help [コマンド名]\n"
 
-#: src/cli.c:217 src/cli.c:234
+#: src/cli.c:229 src/cli.c:246
 #, c-format
 msgid "  %s version\n"
 msgstr "  %s version\n"
 
-#: src/cli.c:223
+#: src/cli.c:235
 #, c-format
 msgid ""
 "\n"
@@ -235,37 +245,37 @@ msgstr ""
 "\n"
 "ヘルプ:\n"
 
-#: src/cli.c:224
+#: src/cli.c:236
 #, c-format
 msgid "  %s --help\n"
 msgstr "  %s --help\n"
 
-#: src/cli.c:227
+#: src/cli.c:239
 #, c-format
 msgid "  %s --help COMMAND\n"
 msgstr "  %s --help コマンド名\n"
 
-#: src/cli.c:228
+#: src/cli.c:240
 #, c-format
 msgid "  %s COMMAND --help\n"
 msgstr "  %s コマンド名 --help\n"
 
-#: src/cli.c:230
+#: src/cli.c:242
 #, c-format
 msgid "  %s --help %s\n"
 msgstr "  %s --help %s\n"
 
-#: src/cli.c:231
+#: src/cli.c:243
 #, c-format
 msgid "  %s %s --help\n"
 msgstr "  %s %s --help\n"
 
-#: src/cli.c:233
+#: src/cli.c:245
 #, c-format
 msgid "  %s --version\n"
 msgstr "  %s --version\n"
 
-#: src/cli.c:239
+#: src/cli.c:251
 #, c-format
 msgid ""
 "\n"
@@ -274,27 +284,27 @@ msgstr ""
 "\n"
 "シェル:\n"
 
-#: src/cli.c:240
+#: src/cli.c:252
 #, c-format
 msgid "  bash load current shell vars: source <(%s export)\n"
 msgstr "  bash で現在の shell に読み込む: source <(%s export)\n"
 
-#: src/cli.c:241
+#: src/cli.c:253
 #, c-format
 msgid "  bash alternative: eval \"$(%s export)\"\n"
 msgstr "  bash の別案: eval \"$(%s export)\"\n"
 
-#: src/cli.c:242
+#: src/cli.c:254
 #, c-format
 msgid "  bash completion script: completions/secdat.bash\n"
 msgstr "  bash completion script: completions/secdat.bash\n"
 
-#: src/cli.c:243
+#: src/cli.c:255
 #, c-format
 msgid "  man page source: docs/secdat.1\n"
 msgstr "  man page source: docs/secdat.1\n"
 
-#: src/cli.c:248
+#: src/cli.c:260
 #, c-format
 msgid ""
 "\n"
@@ -303,22 +313,22 @@ msgstr ""
 "\n"
 "サポート:\n"
 
-#: src/cli.c:249
+#: src/cli.c:261
 #, c-format
 msgid "  issues: https://github.com/mako10k/secdat/issues\n"
 msgstr "  issue 報告先: https://github.com/mako10k/secdat/issues\n"
 
-#: src/cli.c:250
+#: src/cli.c:262
 #, c-format
 msgid "  repository: https://github.com/mako10k/secdat\n"
 msgstr "  repository: https://github.com/mako10k/secdat\n"
 
-#: src/cli.c:251
+#: src/cli.c:263
 #, c-format
 msgid "  author: Makoto Katsumata <mako10k@mk10.org>\n"
 msgstr "  author: Makoto Katsumata <mako10k@mk10.org>\n"
 
-#: src/cli.c:256
+#: src/cli.c:268
 #, c-format
 msgid ""
 "\n"
@@ -327,17 +337,17 @@ msgstr ""
 "\n"
 "グループ:\n"
 
-#: src/cli.c:257
+#: src/cli.c:269
 #, c-format
 msgid "  store: manage store namespaces inside the resolved current domain\n"
 msgstr "  store: 解決された current domain 内の store namespace を管理します\n"
 
-#: src/cli.c:258
+#: src/cli.c:270
 #, c-format
 msgid "  domain: manage domain roots and domain discovery scope\n"
 msgstr "  domain: domain root と domain 探索スコープを管理します\n"
 
-#: src/cli.c:263
+#: src/cli.c:275
 #, c-format
 msgid ""
 "\n"
@@ -346,17 +356,27 @@ msgstr ""
 "\n"
 "コマンド:\n"
 
-#: src/cli.c:264
+#: src/cli.c:276
 #, c-format
 msgid "  help: show global help or detailed help for one command\n"
 msgstr "  help: 全体ヘルプ、または 1 つのコマンドの詳細ヘルプを表示します\n"
 
-#: src/cli.c:265
+#: src/cli.c:277
 #, c-format
 msgid "  ls: list effective keys visible from the current domain view\n"
 msgstr "  ls: 現在の domain view から見える有効な key を一覧します\n"
 
-#: src/cli.c:266
+#: src/cli.c:278
+#, c-format
+msgid "  mask: create a local tombstone to hide one inherited key\n"
+msgstr "  mask: 継承された 1 つの key を隠す local tombstone を作成します\n"
+
+#: src/cli.c:279
+#, c-format
+msgid "  unmask: remove one local tombstone from the current domain\n"
+msgstr "  unmask: 現在の domain から 1 つの local tombstone を削除します\n"
+
+#: src/cli.c:280
 #, c-format
 msgid ""
 "  exists: check whether one resolved key is visible from the current domain "
@@ -364,12 +384,12 @@ msgid ""
 msgstr ""
 "  exists: 解決された 1 つの key が現在の domain view から見えるか確認します\n"
 
-#: src/cli.c:267
+#: src/cli.c:281
 #, c-format
 msgid "  get: decrypt one resolved key and write it to standard output\n"
 msgstr "  get: 解決された 1 つの key を復号して標準出力へ書き出します\n"
 
-#: src/cli.c:268
+#: src/cli.c:282
 #, c-format
 msgid ""
 "  set: store or update one key in the resolved current domain; --unsafe "
@@ -378,7 +398,7 @@ msgstr ""
 "  set: 解決された current domain に 1 つの key を保存または更新します。--"
 "unsafe は lock 中も見える平文を保存します\n"
 
-#: src/cli.c:269
+#: src/cli.c:283
 #, c-format
 msgid ""
 "  rm: remove one key locally or create a tombstone for an inherited key; --"
@@ -387,22 +407,22 @@ msgstr ""
 "  rm: 1 つの key をローカルに削除するか、継承 key 用の tombstone を作成しま"
 "す。--ignore-missing は未存在の key を成功扱いにします\n"
 
-#: src/cli.c:270
+#: src/cli.c:284
 #, c-format
 msgid "  mv: rename or relocate one key between resolved locations\n"
 msgstr "  mv: 1 つの key を解決先の場所どうしで改名または移動します\n"
 
-#: src/cli.c:271
+#: src/cli.c:285
 #, c-format
 msgid "  cp: copy one key into another resolved location\n"
 msgstr "  cp: 1 つの key を別の解決先へコピーします\n"
 
-#: src/cli.c:272
+#: src/cli.c:286
 #, c-format
 msgid "  exec: inject resolved keys into a child process environment\n"
 msgstr "  exec: 解決された key を子プロセス環境へ注入します\n"
 
-#: src/cli.c:273
+#: src/cli.c:287
 #, c-format
 msgid ""
 "  export: emit shell-ready export lines that defer secret reads to secdat "
@@ -411,7 +431,7 @@ msgstr ""
 "  export: secret の読み出しを secdat get に委ねる shell 向け export 行を出力"
 "します\n"
 
-#: src/cli.c:274
+#: src/cli.c:288
 #, c-format
 msgid ""
 "  save: export the current visible secrets into a passphrase-protected "
@@ -420,39 +440,39 @@ msgstr ""
 "  save: 現在の view から見える secret をパスフレーズ保護された bundle として"
 "出力します\n"
 
-#: src/cli.c:275
+#: src/cli.c:289
 #, c-format
 msgid ""
 "  load: import a passphrase-protected bundle into the current domain view\n"
 msgstr ""
 "  load: パスフレーズ保護された bundle を現在の domain view に取り込みます\n"
 
-#: src/cli.c:276
+#: src/cli.c:290
 #, c-format
 msgid "  unlock: start or refresh an authenticated secret session\n"
 msgstr "  unlock: 認証済み secret session を開始または更新します\n"
 
-#: src/cli.c:277
+#: src/cli.c:291
 #, c-format
 msgid "  passwd: change the wrapped-master-key passphrase\n"
 msgstr "  passwd: ラップ済み master key のパスフレーズを変更します\n"
 
-#: src/cli.c:278
+#: src/cli.c:292
 #, c-format
 msgid "  lock: clear the active secret session\n"
 msgstr "  lock: 現在の secret session を消去します\n"
 
-#: src/cli.c:279
+#: src/cli.c:293
 #, c-format
 msgid "  status: report whether secret material is currently available\n"
 msgstr "  status: 現在 secret material が利用可能かどうかを報告します\n"
 
-#: src/cli.c:280
+#: src/cli.c:294
 #, c-format
 msgid "  version: print the secdat version\n"
 msgstr "  version: secdat のバージョンを表示します\n"
 
-#: src/cli.c:285
+#: src/cli.c:299
 #, c-format
 msgid ""
 "\n"
@@ -461,28 +481,38 @@ msgstr ""
 "\n"
 "意味:\n"
 
-#: src/cli.c:287
+#: src/cli.c:301
 #, c-format
 msgid "  show global help or detailed help for one command\n"
 msgstr "  全体ヘルプ、または 1 つのコマンドの詳細ヘルプを表示します\n"
 
-#: src/cli.c:291
+#: src/cli.c:305
 #, c-format
 msgid "  list effective keys visible from the current domain view\n"
 msgstr "  現在の domain view から見える有効な key を一覧します\n"
 
-#: src/cli.c:295
+#: src/cli.c:309
+#, c-format
+msgid "  create a local tombstone to hide one inherited key\n"
+msgstr "  継承された 1 つの key を隠す local tombstone を作成します\n"
+
+#: src/cli.c:313
+#, c-format
+msgid "  remove one local tombstone from the current domain\n"
+msgstr "  現在の domain から 1 つの local tombstone を削除します\n"
+
+#: src/cli.c:317
 #, c-format
 msgid ""
 "  check whether one resolved key is visible from the current domain view\n"
 msgstr "  解決された 1 つの key が現在の domain view から見えるか確認します\n"
 
-#: src/cli.c:299
+#: src/cli.c:321
 #, c-format
 msgid "  decrypt one resolved key and write it to standard output\n"
 msgstr "  解決された 1 つの key を復号して標準出力へ書き出します\n"
 
-#: src/cli.c:303
+#: src/cli.c:325
 #, c-format
 msgid ""
 "  store or update one key in the resolved current domain; --unsafe stores "
@@ -491,7 +521,7 @@ msgstr ""
 "  解決された current domain に 1 つの key を保存または更新します。--unsafe "
 "は lock 中も見える平文を保存します\n"
 
-#: src/cli.c:307
+#: src/cli.c:329
 #, c-format
 msgid ""
 "  remove one key locally or create a tombstone for an inherited key; --"
@@ -500,28 +530,28 @@ msgstr ""
 "  1 つの key をローカルに削除するか、継承 key 用の tombstone を作成します。--"
 "ignore-missing は未存在の key を成功扱いにします\n"
 
-#: src/cli.c:311
+#: src/cli.c:333
 #, c-format
 msgid "  rename or relocate one key between resolved locations\n"
 msgstr "  1 つの key を解決先の場所どうしで改名または移動します\n"
 
-#: src/cli.c:315
+#: src/cli.c:337
 #, c-format
 msgid "  copy one key into another resolved location\n"
 msgstr "  1 つの key を別の解決先へコピーします\n"
 
-#: src/cli.c:319
+#: src/cli.c:341
 #, c-format
 msgid "  inject resolved keys into a child process environment\n"
 msgstr "  解決された key を子プロセス環境へ注入します\n"
 
-#: src/cli.c:323
+#: src/cli.c:345
 #, c-format
 msgid "  emit shell-ready export lines that defer secret reads to secdat get\n"
 msgstr ""
 "  secret の読み出しを secdat get に委ねる shell 向け export 行を出力します\n"
 
-#: src/cli.c:327
+#: src/cli.c:349
 #, c-format
 msgid ""
 "  export the current visible secrets into a passphrase-protected bundle\n"
@@ -529,47 +559,47 @@ msgstr ""
 "  現在の view から見える secret をパスフレーズ保護された bundle として出力し"
 "ます\n"
 
-#: src/cli.c:331
+#: src/cli.c:353
 #, c-format
 msgid "  import a passphrase-protected bundle into the current domain view\n"
 msgstr "  パスフレーズ保護された bundle を現在の domain view に取り込みます\n"
 
-#: src/cli.c:335
+#: src/cli.c:357
 #, c-format
 msgid "  start or refresh an authenticated secret session\n"
 msgstr "  認証済み secret session を開始または更新します\n"
 
-#: src/cli.c:339
+#: src/cli.c:361
 #, c-format
 msgid "  change the wrapped-master-key passphrase\n"
 msgstr "  ラップ済み master key のパスフレーズを変更します\n"
 
-#: src/cli.c:343
+#: src/cli.c:365
 #, c-format
 msgid "  clear the active secret session\n"
 msgstr "  現在の secret session を消去します\n"
 
-#: src/cli.c:347
+#: src/cli.c:369
 #, c-format
 msgid "  report whether secret material is currently available\n"
 msgstr "  現在 secret material が利用可能かどうかを報告します\n"
 
-#: src/cli.c:351
+#: src/cli.c:373
 #, c-format
 msgid "  print the secdat version\n"
 msgstr "  secdat のバージョンを表示します\n"
 
-#: src/cli.c:355
+#: src/cli.c:377
 #, c-format
 msgid "  manage store namespaces inside the resolved current domain\n"
 msgstr "  解決された current domain 内の store namespace を管理します\n"
 
-#: src/cli.c:359
+#: src/cli.c:381
 #, c-format
 msgid "  manage domain roots and domain discovery scope\n"
 msgstr "  domain root と domain 探索スコープを管理します\n"
 
-#: src/cli.c:366
+#: src/cli.c:388
 #, c-format
 msgid ""
 "\n"
@@ -578,7 +608,7 @@ msgstr ""
 "\n"
 "セマンティクス:\n"
 
-#: src/cli.c:367
+#: src/cli.c:389
 #, c-format
 msgid ""
 "  DIR: base directory used for domain resolution; defaults to the current "
@@ -587,14 +617,14 @@ msgstr ""
 "  DIR: domain 解決の基準ディレクトリです。省略時は現在の作業ディレクトリを使"
 "います\n"
 
-#: src/cli.c:368
+#: src/cli.c:390
 #, c-format
 msgid ""
 "  DOMAIN: directory-scoped configuration boundary used for inheritance and "
 "tombstones\n"
 msgstr "  DOMAIN: 継承と tombstone に使う、ディレクトリ単位の設定境界です\n"
 
-#: src/cli.c:369
+#: src/cli.c:391
 #, c-format
 msgid ""
 "  STORE: domain-local namespace selected by --store; defaults to the default "
@@ -603,7 +633,7 @@ msgstr ""
 "  STORE: --store で選ぶ domain ローカルな名前空間です。省略時は default "
 "store を使います\n"
 
-#: src/cli.c:370
+#: src/cli.c:392
 #, c-format
 msgid ""
 "  KEY / KEYREF: logical secret name, optionally qualified as [/ABSOLUTE/"
@@ -612,42 +642,42 @@ msgstr ""
 "  KEY / KEYREF: 論理的な secret 名です。必要なら [/ABSOLUTE/DOMAIN/]KEY[:"
 "STORE] で修飾できます\n"
 
-#: src/cli.c:480
+#: src/cli.c:508
 #, c-format
 msgid "unknown store subcommand: %s\n"
 msgstr "不明な store サブコマンドです: %s\n"
 
-#: src/cli.c:508
+#: src/cli.c:536
 #, c-format
 msgid "unknown domain subcommand: %s\n"
 msgstr "不明な domain サブコマンドです: %s\n"
 
-#: src/cli.c:513
+#: src/cli.c:541
 #, c-format
 msgid "unknown command: %s\n"
 msgstr "不明なコマンドです: %s\n"
 
-#: src/cli.c:529 src/cli.c:544 src/cli.c:563 src/cli.c:572 src/cli.c:584
+#: src/cli.c:557 src/cli.c:572 src/cli.c:592 src/cli.c:601 src/cli.c:613
 #, c-format
 msgid "Usage:\n"
 msgstr "使い方:\n"
 
-#: src/cli.c:548
+#: src/cli.c:577
 #, c-format
 msgid "\n"
 msgstr "\n"
 
-#: src/cli.c:549
+#: src/cli.c:578
 #, c-format
 msgid "  KEYREF syntax: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"
 msgstr "  KEYREF 構文: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"
 
-#: src/cli.c:607
+#: src/cli.c:636
 #, c-format
 msgid "Try: %s help %s\n"
 msgstr "試してください: %s help %s\n"
 
-#: src/cli.c:611
+#: src/cli.c:640
 #, c-format
 msgid "Try: %s help\n"
 msgstr "試してください: %s help\n"
@@ -671,7 +701,7 @@ msgstr "Author: %s\n"
 #: src/store.c:890 src/store.c:1669 src/store.c:1773 src/store.c:1823
 #: src/store.c:1959 src/store.c:2062 src/store.c:2103 src/store.c:2172
 #: src/store.c:2489 src/store.c:2604 src/store.c:2625 src/store.c:2697
-#: src/store.c:3209 src/store.c:3335 src/store.c:3779 src/store.c:4062
+#: src/store.c:3209 src/store.c:3335 src/store.c:3911 src/store.c:4194
 #, c-format
 msgid "out of memory\n"
 msgstr ""
@@ -680,7 +710,7 @@ msgstr ""
 #: src/store.c:567 src/store.c:671 src/store.c:698 src/store.c:714
 #: src/store.c:801 src/store.c:922 src/store.c:945 src/store.c:961
 #: src/store.c:1146 src/store.c:1616 src/store.c:2880 src/store.c:3367
-#: src/store.c:3462 src/store.c:3527
+#: src/store.c:3432 src/store.c:3491 src/store.c:3546 src/store.c:3611
 #, c-format
 msgid "path is too long\n"
 msgstr ""
@@ -713,7 +743,7 @@ msgstr "lock の引数が不正です\n"
 msgid "invalid arguments for %s\n"
 msgstr "%s の引数が不正です\n"
 
-#: src/store.c:605 src/store.c:2734 src/store.c:3610
+#: src/store.c:605 src/store.c:2734 src/store.c:3742
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to open directory: %s\n"
@@ -925,8 +955,8 @@ msgstr "セッションエージェントの起動に失敗しました\n"
 msgid "invalid wrapped master key\n"
 msgstr "ラップ済み master key が不正です\n"
 
-#: src/store.c:1848 src/store.c:2043 src/store.c:2052 src/store.c:4052
-#: src/store.c:4056 src/store.c:4079
+#: src/store.c:1848 src/store.c:2043 src/store.c:2052 src/store.c:4184
+#: src/store.c:4188 src/store.c:4211
 #, c-format
 msgid "invalid secret bundle\n"
 msgstr "secret bundle が不正です\n"
@@ -1113,7 +1143,7 @@ msgstr "ファイル記述子のオープンに失敗しました\n"
 msgid "failed to read standard input\n"
 msgstr "端末設定の読み取りに失敗しました\n"
 
-#: src/store.c:2925 src/store.c:3408
+#: src/store.c:2925 src/store.c:3408 src/store.c:3470
 #, fuzzy, c-format
 #| msgid "unknown command: %s\n"
 msgid "key not found: %s\n"
@@ -1193,144 +1223,160 @@ msgstr ""
 msgid "failed to remove key: %s\n"
 msgstr "wrap key の導出に失敗しました\n"
 
-#: src/store.c:3436
+#: src/store.c:3448
+#, c-format
+msgid "key exists locally and cannot be masked: %s\n"
+msgstr "key はローカルに存在するため mask できません: %s\n"
+
+#: src/store.c:3500
+#, c-format
+msgid "key is not masked in current domain: %s\n"
+msgstr "key は現在の domain で mask されていません: %s\n"
+
+#: src/store.c:3520
 #, fuzzy, c-format
 #| msgid "invalid arguments for lock\n"
 msgid "invalid arguments for cp\n"
 msgstr "lock の引数が不正です\n"
 
-#: src/store.c:3441 src/store.c:3506
+#: src/store.c:3525 src/store.c:3590
 #, c-format
 msgid "source and destination keys must differ\n"
 msgstr ""
 
-#: src/store.c:3470 src/store.c:3535
+#: src/store.c:3554 src/store.c:3619
 #, c-format
 msgid "destination key already exists: %s\n"
 msgstr ""
 
-#: src/store.c:3501
+#: src/store.c:3585
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid arguments for mv\n"
 msgstr "%s の引数が不正です\n"
 
-#: src/store.c:3576
+#: src/store.c:3657
+#, c-format
+msgid "invalid arguments for mask\n"
+msgstr "mask の引数が不正です\n"
+
+#: src/store.c:3681
+#, c-format
+msgid "invalid arguments for unmask\n"
+msgstr "unmask の引数が不正です\n"
+
+#: src/store.c:3708
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid arguments for rm\n"
 msgstr "%s の引数が不正です\n"
 
-#: src/store.c:3646 src/store.c:3679 src/store.c:3724
+#: src/store.c:3778 src/store.c:3811 src/store.c:3856
 #, c-format
 msgid "--store is not valid with store commands\n"
 msgstr ""
 
-#: src/store.c:3684
+#: src/store.c:3816
 #, c-format
 msgid "missing store name for store create\n"
 msgstr "store create の store 名が不足しています\n"
 
-#: src/store.c:3689
+#: src/store.c:3821
 #, fuzzy, c-format
 #| msgid "invalid arguments for status\n"
 msgid "invalid arguments for store create\n"
 msgstr "status の引数が不正です\n"
 
-#: src/store.c:3701
+#: src/store.c:3833
 #, c-format
 msgid "store already exists: %s\n"
 msgstr ""
 
-#: src/store.c:3729
+#: src/store.c:3861
 #, c-format
 msgid "missing store name for store delete\n"
 msgstr "store delete の store 名が不足しています\n"
 
-#: src/store.c:3734
+#: src/store.c:3866
 #, fuzzy, c-format
 #| msgid "invalid arguments for status\n"
 msgid "invalid arguments for store delete\n"
 msgstr "status の引数が不正です\n"
 
-#: src/store.c:3752
+#: src/store.c:3884
 #, c-format
 msgid "store is not empty: %s\n"
 msgstr ""
 
-#: src/store.c:3756
+#: src/store.c:3888
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to remove directory: %s\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:3773
+#: src/store.c:3905
 #, c-format
 msgid "key value contains NUL byte and cannot be exported: %s\n"
 msgstr ""
 
-#: src/store.c:3836
+#: src/store.c:3968
 #, c-format
 msgid "invalid arguments for export\n"
 msgstr "export の引数が不正です\n"
 
-#: src/store.c:3860
+#: src/store.c:3992
 #, c-format
 msgid "key is not a valid shell identifier: %s\n"
 msgstr "key は有効な shell 識別子ではありません: %s\n"
 
-#: src/store.c:3954
+#: src/store.c:4086
 #, fuzzy, c-format
 #| msgid "failed to connect to session agent\n"
 msgid "failed to export key to environment: %s\n"
 msgstr "セッションエージェントへの接続に失敗しました\n"
 
-#: src/store.c:3973
+#: src/store.c:4105
 #, c-format
 msgid "failed to execute command: %s\n"
 msgstr ""
 
-#: src/store.c:3987
+#: src/store.c:4119
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid arguments for save\n"
 msgstr "save の引数が不正です\n"
 
-#: src/store.c:3992
+#: src/store.c:4124
 msgid "Create secdat bundle passphrase: "
 msgstr "secdat bundle 用パスフレーズを作成してください: "
 
-#: src/store.c:3993
+#: src/store.c:4125
 msgid "Confirm secdat bundle passphrase: "
 msgstr "secdat bundle 用パスフレーズを再入力してください: "
 
-#: src/store.c:4023
+#: src/store.c:4155
 #, c-format
 msgid "invalid arguments for load\n"
 msgstr "load の引数が不正です\n"
 
-#: src/store.c:4030
+#: src/store.c:4162
 msgid "Enter secdat bundle passphrase: "
 msgstr "secdat bundle 用パスフレーズを入力してください: "
 
-#: src/store.c:4138
+#: src/store.c:4274
 #, c-format
 msgid "command not implemented yet: %s\n"
 msgstr "コマンドは未実装です: %s\n"
 
-#: src/store.c:4140
+#: src/store.c:4276
 #, c-format
 msgid "  dir=%s\n"
 msgstr "  dir=%s\n"
 
-#: src/store.c:4143
+#: src/store.c:4279
 #, c-format
 msgid "  store=%s\n"
 msgstr "  store=%s\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm KEYREF\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm KEYREF\n"
 
 #, c-format
 #~ msgid "missing store subcommand\n"

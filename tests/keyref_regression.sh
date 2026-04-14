@@ -42,12 +42,16 @@ mkdir -p "$root" "$child" "$XDG_DATA_HOME"
 "$bin_path" --dir "$root" set prefix_one one >/dev/null
 "$bin_path" --dir "$root" set prefix_two two >/dev/null
 "$bin_path" --dir "$root" set other_key other >/dev/null
+"$bin_path" --dir "$root" set shared_key shared >/dev/null
 
 if ! "$bin_path" --dir "$root" exists prefix_one >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'exists did not report an existing key'
 fi
 if "$bin_path" --dir "$root" exists missing_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'exists reported success for a missing key'
+fi
+if ! "$bin_path" --dir "$child" exists shared_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'child did not inherit shared_key before mask'
 fi
 
 ls_output="$("$bin_path" --dir "$root" ls 'prefix_*')"
@@ -106,6 +110,19 @@ if ! "$bin_path" --dir "$root" rm --ignore-missing prefix_one >/tmp/secdat-keyre
 fi
 if "$bin_path" --dir "$root" exists prefix_one >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'rm --ignore-missing did not remove an existing key'
+fi
+
+if ! "$bin_path" --dir "$child" mask shared_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'mask failed for inherited key'
+fi
+if "$bin_path" --dir "$child" exists shared_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'mask did not hide inherited key'
+fi
+if ! "$bin_path" --dir "$child" unmask shared_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'unmask failed for masked key'
+fi
+if ! "$bin_path" --dir "$child" exists shared_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'unmask did not restore inherited visibility'
 fi
 
 store_output="$("$bin_path" --dir "$root" store ls 'te*')"

@@ -98,6 +98,8 @@ for args, marker in [
     ([bin_path, "-h", "status"], "status [-q|--quiet]"),
     ([bin_path, "status", "--help"], "status [-q|--quiet]"),
     ([bin_path, "status", "-h"], "status [-q|--quiet]"),
+    ([bin_path, "help", "mask"], "mask KEYREF"),
+    ([bin_path, "help", "unmask"], "unmask KEYREF"),
     ([bin_path, "help", "exists"], "exists KEYREF"),
     ([bin_path, "help", "ls"], "--pattern-exclude GLOBPATTERN"),
     ([bin_path, "help", "exec"], "--pattern-exclude GLOBPATTERN"),
