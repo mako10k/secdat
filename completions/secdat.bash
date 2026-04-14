@@ -85,7 +85,7 @@ _secdat_complete()
             esac
             ;;
         ls)
-            COMPREPLY=( $(compgen -W "--pattern -p --canonical -c --canonical-domain -D --canonical-store -S" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--pattern -p --pattern-exclude --canonical -c --canonical-domain -D --canonical-store -S" -- "$cur") )
             return 0
             ;;
         get)
@@ -96,7 +96,11 @@ _secdat_complete()
             COMPREPLY=( $(compgen -W "--stdin -i --env -e --value -v" -- "$cur") )
             return 0
             ;;
-        exec|export)
+        exec)
+            COMPREPLY=( $(compgen -W "--pattern -p --pattern-exclude" -- "$cur") )
+            return 0
+            ;;
+        export)
             COMPREPLY=( $(compgen -W "--pattern -p" -- "$cur") )
             return 0
             ;;

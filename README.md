@@ -111,7 +111,7 @@ The output is shell-ready text such as `eval "export API_TOKEN=$(./src/secdat ..
 
 For command injection into a child process, `exec` now accepts repeated `--pattern` and `--pattern-exclude` filters. Include patterns are ORed together, and exclude patterns are applied afterward.
 
-Bash completion is available in `completions/secdat.bash`, and the command reference is available in `docs/secdat.1`.
+Bash completion source is in `completions/secdat.bash`, and `make install` installs it for automatic loading as `secdat` under the system bash-completion directory. `make install` also installs the command reference into the system manpath from `docs/secdat.1`.
 
 You can also save the currently visible secrets from one view and load them into another domain/store context:
 

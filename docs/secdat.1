@@ -98,8 +98,15 @@ Plain
 .B . $(secdat export)
 is not valid because the dot command expects a file path, not command text.
 
-Bash completion is provided in the repository at
-.B completions/secdat.bash .
+Bash completion source is provided in the repository at
+.B completions/secdat.bash ,
+and
+.B make install
+installs it for automatic loading as
+.B secdat
+under the system bash-completion directory. The man page is installed into the normal
+.B man1
+path.
 .SH PASSPHRASE SOURCES
 By default,
 .B unlock
