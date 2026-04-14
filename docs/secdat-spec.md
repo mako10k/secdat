@@ -19,7 +19,7 @@ This document consolidates the initial requirements, defines the product and sec
 The intended command set is:
 
 ```text
-secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--canonical|--canonical-domain|--canonical-store]
+secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--canonical|--canonical-domain|--canonical-store]
 
 secdat [--dir DIR] [--store STORE] get KEYREF
 secdat [--dir DIR] [--store STORE] get KEYREF --stdout
@@ -36,7 +36,7 @@ secdat [--dir DIR] [--store STORE] rm KEYREF
 secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 
-secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... CMD [ARGS...]
 
 secdat unlock
 secdat passwd
@@ -174,6 +174,8 @@ To make the requested behavior implementable, the following are treated as norma
 #### FR-7 Runtime Injection
 
 - `secdat exec CMD [ARGS...]` injects the effective visible keys into a child process environment and executes the command
+- repeated `--pattern GLOBPATTERN` options widen the include set for both `ls` and `exec`
+- repeated `--pattern-exclude GLOBPATTERN` options remove matches from the include set for both `ls` and `exec`
 - `secdat exec --pattern GLOBPATTERN CMD [ARGS...]` injects only matched keys
 - the parent process environment is not modified
 - resolved values are decrypted and passed through an `execve`-style API
@@ -372,11 +374,13 @@ secdat --dir /work/app domain ls --pattern '/work/*'
 ### 4.2 `ls`
 
 ```text
-secdat [--dir DIR] [--store STORE] ls [--pattern GLOBPATTERN]
+secdat [--dir DIR] [--store STORE] ls [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]...
 ```
 
 - lists the effective visible keys for the resolved current domain
 - without `--pattern`, all visible keys are listed
+- repeated `--pattern` options are ORed together
+- repeated `--pattern-exclude` options subtract matches after include filtering
 - glob semantics follow `fnmatch(3)`
 
 ### 4.3 `get`
@@ -424,10 +428,12 @@ secdat [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY
 ### 4.8 `exec`
 
 ```text
-secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN] CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... CMD [ARGS...]
 ```
 
 - without `--pattern`, all effective visible keys are injected
+- repeated `--pattern` options are ORed together
+- repeated `--pattern-exclude` options subtract matches after include filtering
 - the parent process environment is unchanged
 
 Environment variable mapping:

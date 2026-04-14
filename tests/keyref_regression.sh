@@ -47,6 +47,13 @@ ls_output="$("$bin_path" --dir "$root" ls 'prefix_*')"
 assert_contains_line "$ls_output" 'prefix_one'
 assert_contains_line "$ls_output" 'prefix_two'
 
+ls_multi_output="$($bin_path --dir "$root" ls --pattern 'prefix_*' --pattern 'other_*' --pattern-exclude 'prefix_two')"
+assert_contains_line "$ls_multi_output" 'prefix_one'
+assert_contains_line "$ls_multi_output" 'other_key'
+if printf '%s\n' "$ls_multi_output" | grep -Fx -- 'prefix_two' >/dev/null; then
+    fail 'ls --pattern-exclude still returned excluded key'
+fi
+
 "$bin_path" set "$root"/explicit_key:team explicit_value >/dev/null
 explicit_value="$("$bin_path" get "$root"/explicit_key:team --stdout)"
 assert_eq "$explicit_value" 'explicit_value' 'KEYREF set/get'

@@ -60,9 +60,16 @@ struct secdat_key_reference {
 };
 
 struct secdat_ls_options {
-    const char *pattern;
+    struct secdat_key_list include_patterns;
+    struct secdat_key_list exclude_patterns;
     int canonical_domain;
     int canonical_store;
+};
+
+struct secdat_exec_options {
+    struct secdat_key_list include_patterns;
+    struct secdat_key_list exclude_patterns;
+    size_t command_index;
 };
 
 struct secdat_session_record {
@@ -91,7 +98,8 @@ static uint32_t secdat_read_be32(const unsigned char *buffer);
 static int secdat_collect_visible_keys(
     const struct secdat_domain_chain *chain,
     const char *store_name,
-    const char *pattern,
+    const struct secdat_key_list *include_patterns,
+    const struct secdat_key_list *exclude_patterns,
     struct secdat_key_list *visible_keys
 );
 static int secdat_load_resolved_plaintext(
@@ -298,11 +306,30 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
 
     for (index = 0; index < cli->argc; index += 1) {
         if (strcmp(cli->argv[index], "--pattern") == 0 || strcmp(cli->argv[index], "-p") == 0) {
-            if (index + 1 >= cli->argc || options->pattern != NULL) {
+            if (index + 1 >= cli->argc) {
                 fprintf(stderr, _("invalid arguments for ls\n"));
                 return 2;
             }
-            options->pattern = cli->argv[index + 1];
+            if (secdat_key_list_append(&options->include_patterns, cli->argv[index + 1]) != 0) {
+                secdat_key_list_free(&options->include_patterns);
+                secdat_key_list_free(&options->exclude_patterns);
+                return 1;
+            }
+            index += 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--pattern-exclude") == 0) {
+            if (index + 1 >= cli->argc) {
+                fprintf(stderr, _("invalid arguments for ls\n"));
+                secdat_key_list_free(&options->include_patterns);
+                secdat_key_list_free(&options->exclude_patterns);
+                return 2;
+            }
+            if (secdat_key_list_append(&options->exclude_patterns, cli->argv[index + 1]) != 0) {
+                secdat_key_list_free(&options->include_patterns);
+                secdat_key_list_free(&options->exclude_patterns);
+                return 1;
+            }
             index += 1;
             continue;
         }
@@ -319,11 +346,68 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
             options->canonical_store = 1;
             continue;
         }
-        if (cli->argv[index][0] == '-' || options->pattern != NULL) {
+        if (cli->argv[index][0] == '-') {
             fprintf(stderr, _("invalid arguments for ls\n"));
+            secdat_key_list_free(&options->include_patterns);
+            secdat_key_list_free(&options->exclude_patterns);
             return 2;
         }
-        options->pattern = cli->argv[index];
+        if (secdat_key_list_append(&options->include_patterns, cli->argv[index]) != 0) {
+            secdat_key_list_free(&options->include_patterns);
+            secdat_key_list_free(&options->exclude_patterns);
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int secdat_parse_exec_options(const struct secdat_cli *cli, struct secdat_exec_options *options)
+{
+    size_t index;
+
+    memset(options, 0, sizeof(*options));
+
+    for (index = 0; index < (size_t)cli->argc; ) {
+        if (strcmp(cli->argv[index], "--pattern") == 0 || strcmp(cli->argv[index], "-p") == 0) {
+            if (index + 1 >= (size_t)cli->argc) {
+                fprintf(stderr, _("invalid arguments for exec\n"));
+                secdat_key_list_free(&options->include_patterns);
+                secdat_key_list_free(&options->exclude_patterns);
+                return 2;
+            }
+            if (secdat_key_list_append(&options->include_patterns, cli->argv[index + 1]) != 0) {
+                secdat_key_list_free(&options->include_patterns);
+                secdat_key_list_free(&options->exclude_patterns);
+                return 1;
+            }
+            index += 2;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--pattern-exclude") == 0) {
+            if (index + 1 >= (size_t)cli->argc) {
+                fprintf(stderr, _("invalid arguments for exec\n"));
+                secdat_key_list_free(&options->include_patterns);
+                secdat_key_list_free(&options->exclude_patterns);
+                return 2;
+            }
+            if (secdat_key_list_append(&options->exclude_patterns, cli->argv[index + 1]) != 0) {
+                secdat_key_list_free(&options->include_patterns);
+                secdat_key_list_free(&options->exclude_patterns);
+                return 1;
+            }
+            index += 2;
+            continue;
+        }
+        break;
+    }
+
+    options->command_index = index;
+    if (options->command_index >= (size_t)cli->argc) {
+        fprintf(stderr, _("invalid arguments for exec\n"));
+        secdat_key_list_free(&options->include_patterns);
+        secdat_key_list_free(&options->exclude_patterns);
+        return 2;
     }
 
     return 0;
@@ -1783,7 +1867,7 @@ static int secdat_collect_bundle_payload(const struct secdat_cli *cli, unsigned 
     if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
         return 1;
     }
-    if (secdat_collect_visible_keys(&chain, cli->store, NULL, &visible_keys) != 0) {
+    if (secdat_collect_visible_keys(&chain, cli->store, NULL, NULL, &visible_keys) != 0) {
         secdat_domain_chain_free(&chain);
         secdat_key_list_free(&visible_keys);
         return 1;
@@ -2682,7 +2766,30 @@ static int secdat_collect_directory_keys(const char *directory_path, const char 
     return status;
 }
 
-static int secdat_collect_visible_keys(const struct secdat_domain_chain *chain, const char *store_name, const char *pattern, struct secdat_key_list *visible_keys)
+static int secdat_pattern_list_matches(const struct secdat_key_list *patterns, const char *value)
+{
+    size_t index;
+
+    if (patterns == NULL) {
+        return 0;
+    }
+
+    for (index = 0; index < patterns->count; index += 1) {
+        if (fnmatch(patterns->items[index], value, 0) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int secdat_collect_visible_keys(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const struct secdat_key_list *include_patterns,
+    const struct secdat_key_list *exclude_patterns,
+    struct secdat_key_list *visible_keys
+)
 {
     char entries_dir[PATH_MAX];
     char tombstones_dir[PATH_MAX];
@@ -2725,7 +2832,10 @@ static int secdat_collect_visible_keys(const struct secdat_domain_chain *chain, 
             if (secdat_key_list_contains(visible_keys, domain_keys.items[key_index])) {
                 continue;
             }
-            if (pattern != NULL && fnmatch(pattern, domain_keys.items[key_index], 0) != 0) {
+            if (include_patterns != NULL && include_patterns->count > 0 && !secdat_pattern_list_matches(include_patterns, domain_keys.items[key_index])) {
+                continue;
+            }
+            if (exclude_patterns != NULL && exclude_patterns->count > 0 && secdat_pattern_list_matches(exclude_patterns, domain_keys.items[key_index])) {
                 continue;
             }
             if (secdat_key_list_append(visible_keys, domain_keys.items[key_index]) != 0) {
@@ -2839,15 +2949,21 @@ static int secdat_command_ls(const struct secdat_cli *cli)
     }
 
     if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+        secdat_key_list_free(&options.include_patterns);
+        secdat_key_list_free(&options.exclude_patterns);
         return 1;
     }
 
     if (secdat_canonicalize_directory_path(cli->dir, canonical_base_dir, sizeof(canonical_base_dir)) != 0) {
+        secdat_key_list_free(&options.include_patterns);
+        secdat_key_list_free(&options.exclude_patterns);
         secdat_domain_chain_free(&chain);
         return 1;
     }
 
-    if (secdat_collect_visible_keys(&chain, cli->store, options.pattern, &visible_keys) != 0) {
+    if (secdat_collect_visible_keys(&chain, cli->store, &options.include_patterns, &options.exclude_patterns, &visible_keys) != 0) {
+        secdat_key_list_free(&options.include_patterns);
+        secdat_key_list_free(&options.exclude_patterns);
         secdat_domain_chain_free(&chain);
         secdat_key_list_free(&visible_keys);
         return 1;
@@ -2864,6 +2980,8 @@ static int secdat_command_ls(const struct secdat_cli *cli)
         }
 
         if (secdat_find_effective_entry(&chain, cli->store, visible_keys.items[index], output, sizeof(output), &resolved_index) != 0) {
+            secdat_key_list_free(&options.include_patterns);
+            secdat_key_list_free(&options.exclude_patterns);
             secdat_domain_chain_free(&chain);
             secdat_key_list_free(&visible_keys);
             return 1;
@@ -2871,12 +2989,16 @@ static int secdat_command_ls(const struct secdat_cli *cli)
 
         if (options.canonical_domain) {
             if (secdat_domain_root_path(chain.ids[resolved_index], domain_path, sizeof(domain_path)) != 0) {
+                secdat_key_list_free(&options.include_patterns);
+                secdat_key_list_free(&options.exclude_patterns);
                 secdat_domain_chain_free(&chain);
                 secdat_key_list_free(&visible_keys);
                 return 1;
             }
             if (domain_path[0] == '\0') {
                 if (secdat_copy_string(domain_path, sizeof(domain_path), canonical_base_dir) != 0) {
+                    secdat_key_list_free(&options.include_patterns);
+                    secdat_key_list_free(&options.exclude_patterns);
                     secdat_domain_chain_free(&chain);
                     secdat_key_list_free(&visible_keys);
                     return 1;
@@ -2894,6 +3016,8 @@ static int secdat_command_ls(const struct secdat_cli *cli)
                 secdat_effective_store_name(cli->store),
                 options.canonical_domain,
                 options.canonical_store) != 0) {
+            secdat_key_list_free(&options.include_patterns);
+            secdat_key_list_free(&options.exclude_patterns);
             secdat_domain_chain_free(&chain);
             secdat_key_list_free(&visible_keys);
             return 1;
@@ -2902,6 +3026,8 @@ static int secdat_command_ls(const struct secdat_cli *cli)
         puts(output);
     }
 
+    secdat_key_list_free(&options.include_patterns);
+    secdat_key_list_free(&options.exclude_patterns);
     secdat_domain_chain_free(&chain);
     secdat_key_list_free(&visible_keys);
     return 0;
@@ -3659,6 +3785,7 @@ static int secdat_command_export(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
     struct secdat_key_list visible_keys = {0};
+    struct secdat_key_list include_patterns = {0};
     const char *pattern = NULL;
     char canonical_dir[PATH_MAX];
     size_t key_index;
@@ -3677,7 +3804,12 @@ static int secdat_command_export(const struct secdat_cli *cli)
     if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
         return 1;
     }
-    if (secdat_collect_visible_keys(&chain, cli->store, pattern, &visible_keys) != 0) {
+    if (pattern != NULL && secdat_key_list_append(&include_patterns, pattern) != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+    if (secdat_collect_visible_keys(&chain, cli->store, &include_patterns, NULL, &visible_keys) != 0) {
+        secdat_key_list_free(&include_patterns);
         secdat_domain_chain_free(&chain);
         secdat_key_list_free(&visible_keys);
         return 1;
@@ -3686,6 +3818,7 @@ static int secdat_command_export(const struct secdat_cli *cli)
     for (key_index = 0; key_index < visible_keys.count; key_index += 1) {
         if (!secdat_is_shell_identifier(visible_keys.items[key_index])) {
             fprintf(stderr, _("key is not a valid shell identifier: %s\n"), visible_keys.items[key_index]);
+            secdat_key_list_free(&include_patterns);
             secdat_domain_chain_free(&chain);
             secdat_key_list_free(&visible_keys);
             return 1;
@@ -3706,6 +3839,7 @@ static int secdat_command_export(const struct secdat_cli *cli)
         fputs(" --shellescaped)\"\n", stdout);
     }
 
+    secdat_key_list_free(&include_patterns);
     secdat_domain_chain_free(&chain);
     secdat_key_list_free(&visible_keys);
     return 0;
@@ -3715,29 +3849,25 @@ static int secdat_command_exec(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
     struct secdat_key_list visible_keys = {0};
-    const char *pattern = NULL;
+    struct secdat_exec_options options;
     char **command_argv;
-    size_t command_index;
     size_t key_index;
     int status;
 
-    if (cli->argc >= 2 && (strcmp(cli->argv[0], "--pattern") == 0 || strcmp(cli->argv[0], "-p") == 0)) {
-        pattern = cli->argv[1];
-        command_index = 2;
-    } else {
-        command_index = 0;
-    }
-
-    if (command_index >= (size_t)cli->argc) {
-        fprintf(stderr, _("invalid arguments for exec\n"));
+    status = secdat_parse_exec_options(cli, &options);
+    if (status != 0) {
         secdat_cli_print_try_help(cli, "exec");
-        return 2;
+        return status;
     }
 
     if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+        secdat_key_list_free(&options.include_patterns);
+        secdat_key_list_free(&options.exclude_patterns);
         return 1;
     }
-    if (secdat_collect_visible_keys(&chain, cli->store, pattern, &visible_keys) != 0) {
+    if (secdat_collect_visible_keys(&chain, cli->store, &options.include_patterns, &options.exclude_patterns, &visible_keys) != 0) {
+        secdat_key_list_free(&options.include_patterns);
+        secdat_key_list_free(&options.exclude_patterns);
         secdat_domain_chain_free(&chain);
         secdat_key_list_free(&visible_keys);
         return 1;
@@ -3757,6 +3887,8 @@ static int secdat_command_exec(const struct secdat_cli *cli)
             NULL
         );
         if (status != 0) {
+            secdat_key_list_free(&options.include_patterns);
+            secdat_key_list_free(&options.exclude_patterns);
             secdat_domain_chain_free(&chain);
             secdat_key_list_free(&visible_keys);
             return 1;
@@ -3771,6 +3903,8 @@ static int secdat_command_exec(const struct secdat_cli *cli)
         secdat_secure_clear(plaintext, plaintext_length);
         free(plaintext);
         if (status != 0) {
+            secdat_key_list_free(&options.include_patterns);
+            secdat_key_list_free(&options.exclude_patterns);
             secdat_domain_chain_free(&chain);
             secdat_key_list_free(&visible_keys);
             return 1;
@@ -3780,6 +3914,8 @@ static int secdat_command_exec(const struct secdat_cli *cli)
             fprintf(stderr, _("failed to export key to environment: %s\n"), visible_keys.items[key_index]);
             secdat_secure_clear(env_value, strlen(env_value));
             free(env_value);
+            secdat_key_list_free(&options.include_patterns);
+            secdat_key_list_free(&options.exclude_patterns);
             secdat_domain_chain_free(&chain);
             secdat_key_list_free(&visible_keys);
             return 1;
@@ -3789,7 +3925,9 @@ static int secdat_command_exec(const struct secdat_cli *cli)
         free(env_value);
     }
 
-    command_argv = &cli->argv[command_index];
+    command_argv = &cli->argv[options.command_index];
+    secdat_key_list_free(&options.include_patterns);
+    secdat_key_list_free(&options.exclude_patterns);
     execvp(command_argv[0], command_argv);
 
     fprintf(stderr, _("failed to execute command: %s\n"), command_argv[0]);

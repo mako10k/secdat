@@ -98,6 +98,8 @@ for args, marker in [
     ([bin_path, "-h", "status"], "status [-q|--quiet]"),
     ([bin_path, "status", "--help"], "status [-q|--quiet]"),
     ([bin_path, "status", "-h"], "status [-q|--quiet]"),
+    ([bin_path, "help", "ls"], "--pattern-exclude GLOBPATTERN"),
+    ([bin_path, "help", "exec"], "--pattern-exclude GLOBPATTERN"),
     ([bin_path, "help", "set"], "set KEYREF [--unsafe]"),
     ([bin_path, "help", "export"], "bash load current shell vars: source <("),
     ([bin_path, "help", "passwd"], "passwd"),

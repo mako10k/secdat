@@ -64,6 +64,7 @@ Then you can store and read values:
 ./src/secdat set HOGE 100
 ./src/secdat ls
 ./src/secdat ls 'HO*'
+./src/secdat ls --pattern 'HO*' --pattern 'API_*' --pattern-exclude 'HOGE'
 ./src/secdat ls --canonical
 ./src/secdat get HOGE --stdout
 ```
@@ -107,6 +108,8 @@ source <(./src/secdat --dir ~/example/project --store app export)
 ```
 
 The output is shell-ready text such as `eval "export API_TOKEN=$(./src/secdat ... get API_TOKEN --shellescaped)"`; it does not print raw secret values directly. `get --shellescaped` emits a single-quoted shell literal for one secret value, and `export` reuses that path. In bash, you can either `eval "$(...)"` or source it with process substitution as `source <(...)` / `. <(...)`. Plain `. $(...)` is not valid here because `.` expects a file path, not command text. The current implementation is bash-oriented, single-quote escapes command arguments, and rejects keys that are not valid shell identifiers.
+
+For command injection into a child process, `exec` now accepts repeated `--pattern` and `--pattern-exclude` filters. Include patterns are ORed together, and exclude patterns are applied afterward.
 
 Bash completion is available in `completions/secdat.bash`, and the command reference is available in `docs/secdat.1`.
 

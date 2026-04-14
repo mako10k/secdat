@@ -192,6 +192,26 @@ rc, stdout, stderr = run([
 if rc != 0 or stderr != "" or stdout != repr(control_payload):
     fail(f"control exec payload mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--pattern",
+    "HOSTILE_*",
+    "--pattern",
+    "CONTROL_*",
+    "--pattern-exclude",
+    "HOSTILE_*",
+    "python3",
+    "-c",
+    "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k in ('HOSTILE_TOKEN', 'CONTROL_TOKEN'))}, sort_keys=True))",
+])
+if rc != 0 or stderr != "":
+    fail(f"multi-pattern exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if json.loads(stdout) != {"CONTROL_TOKEN": control_payload}:
+    fail(f"multi-pattern exec payload mismatch: {stdout!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(root_dir), "--store", "app", "export"])
 if rc != 0 or stderr != "":
     fail(f"store export failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

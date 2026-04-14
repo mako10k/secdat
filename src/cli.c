@@ -123,7 +123,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
 {
     switch (command) {
     case SECDAT_COMMAND_LS:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]\n"), program_name);
         break;
     case SECDAT_COMMAND_GET:
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get KEYREF [-o|--stdout|--shellescaped]\n"), program_name);
@@ -141,7 +141,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] cp SRC_KEYREF DST_KEYREF\n"), program_name);
         break;
     case SECDAT_COMMAND_EXEC:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN] CMD [ARGS...]\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] CMD [ARGS...]\n"), program_name);
         break;
     case SECDAT_COMMAND_EXPORT:
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] export [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"), program_name);
