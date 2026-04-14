@@ -101,6 +101,9 @@ for args, marker in [
         rc != 0
         or marker not in output
         or "Help:" not in output
+        or "Support:" not in output
+        or "issues: https://github.com/mako10k/secdat/issues" not in output
+        or "author: Makoto Katsumata <mako10k@mk10.org>" not in output
         or "Semantics:" not in output
         or "Meaning:" not in output
         or "DIR:" not in output
@@ -112,7 +115,7 @@ for args, marker in [
 
 rc, stdout, stderr = run([bin_path, "help"])
 output = stdout + stderr
-if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "Commands:" not in output or "help: show global help" not in output or "version: print the secdat version" not in output:
+if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "Commands:" not in output or "Support:" not in output or "issues: https://github.com/mako10k/secdat/issues" not in output or "help: show global help" not in output or "version: print the secdat version" not in output:
     fail(f"help subcommand check failed: rc={rc} output={output!r}")
 
 for args, expected in [
@@ -143,19 +146,22 @@ if rc != 2 or "missing store name for store create" not in output:
 
 rc, stdout, stderr = run([bin_path, "--help"])
 output = stdout + stderr
-if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "-d, --dir DIR" not in output or "Commands:" not in output or "Groups:" not in output or "--help COMMAND" not in output or "COMMAND --help" not in output or "--version" not in output:
+if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "-d, --dir DIR" not in output or "Commands:" not in output or "Groups:" not in output or "Support:" not in output or "repository: https://github.com/mako10k/secdat" not in output or "--help COMMAND" not in output or "COMMAND --help" not in output or "--version" not in output:
     fail(f"global help check failed: rc={rc} output={output!r}")
 
 rc, stdout, stderr = run([bin_path, "--version"])
-if rc != 0 or not (stdout + stderr).startswith("secdat "):
+output = stdout + stderr
+if rc != 0 or not output.startswith("secdat ") or "Issues: https://github.com/mako10k/secdat/issues" not in output or "Author: Makoto Katsumata <mako10k@mk10.org>" not in output:
     fail(f"--version failed: rc={rc} output={(stdout + stderr)!r}")
 
 rc, stdout, stderr = run([bin_path, "version"])
-if rc != 0 or not (stdout + stderr).startswith("secdat "):
+output = stdout + stderr
+if rc != 0 or not output.startswith("secdat ") or "Repository: https://github.com/mako10k/secdat" not in output:
     fail(f"version failed: rc={rc} output={(stdout + stderr)!r}")
 
 rc, stdout, stderr = run([bin_path, "-V"])
-if rc != 0 or not (stdout + stderr).startswith("secdat "):
+output = stdout + stderr
+if rc != 0 or not output.startswith("secdat ") or "Issues: https://github.com/mako10k/secdat/issues" not in output:
     fail(f"-V failed: rc={rc} output={(stdout + stderr)!r}")
 
 rc, transcript = run_pty(

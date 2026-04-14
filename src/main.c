@@ -12,6 +12,10 @@
 
 #include <string.h>
 
+#define SECDAT_REPOSITORY_URL "https://github.com/mako10k/secdat"
+#define SECDAT_ISSUES_URL "https://github.com/mako10k/secdat/issues"
+#define SECDAT_AUTHOR "Makoto Katsumata <mako10k@mk10.org>"
+
 static void bind_domain_from_candidates(const char *argv0)
 {
     const char *env_locale_dir = getenv("SECDAT_LOCALEDIR");
@@ -54,6 +58,14 @@ void secdat_i18n_init(const char *argv0)
     textdomain(PACKAGE_NAME);
 }
 
+static void secdat_print_version(void)
+{
+    printf("%s %s\n", PACKAGE_NAME, PACKAGE_VERSION);
+    printf(_("Repository: %s\n"), SECDAT_REPOSITORY_URL);
+    printf(_("Issues: %s\n"), SECDAT_ISSUES_URL);
+    printf(_("Author: %s\n"), SECDAT_AUTHOR);
+}
+
 int main(int argc, char **argv)
 {
     struct secdat_cli cli;
@@ -69,7 +81,7 @@ int main(int argc, char **argv)
     }
 
     if (cli.show_version) {
-        printf("%s %s\n", PACKAGE_NAME, PACKAGE_VERSION);
+        secdat_print_version();
         return 0;
     }
 

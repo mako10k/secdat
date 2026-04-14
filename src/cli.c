@@ -237,6 +237,14 @@ static void secdat_cli_print_shell_routes(const char *program_name)
     printf(_("  man page source: docs/secdat.1\n"));
 }
 
+static void secdat_cli_print_support_routes(void)
+{
+    printf(_("\nSupport:\n"));
+    printf(_("  issues: https://github.com/mako10k/secdat/issues\n"));
+    printf(_("  repository: https://github.com/mako10k/secdat\n"));
+    printf(_("  author: Makoto Katsumata <mako10k@mk10.org>\n"));
+}
+
 static void secdat_cli_print_group_meanings(void)
 {
     printf(_("\nGroups:\n"));
@@ -509,6 +517,7 @@ void secdat_cli_print_usage(const char *program_name)
     secdat_cli_print_common_options();
     secdat_cli_print_help_routes(program_name, NULL);
     secdat_cli_print_shell_routes(program_name);
+    secdat_cli_print_support_routes();
     secdat_cli_print_group_meanings();
     secdat_cli_print_command_meanings();
     secdat_cli_print_semantics();
@@ -530,6 +539,7 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
     if (command == SECDAT_COMMAND_EXPORT) {
         secdat_cli_print_shell_routes(program_name);
     }
+    secdat_cli_print_support_routes();
     secdat_cli_print_semantics();
 }
 
@@ -540,6 +550,7 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         secdat_cli_print_meta_usage_line(program_name, target);
         secdat_cli_print_help_routes(program_name, target);
         secdat_cli_print_target_meaning(target);
+        secdat_cli_print_support_routes();
         return;
     }
 
@@ -550,6 +561,7 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_LS);
         secdat_cli_print_help_routes(program_name, target);
         secdat_cli_print_target_meaning(target);
+        secdat_cli_print_support_routes();
         secdat_cli_print_semantics();
         return;
     }
@@ -561,6 +573,7 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_LS);
         secdat_cli_print_help_routes(program_name, target);
         secdat_cli_print_target_meaning(target);
+        secdat_cli_print_support_routes();
         secdat_cli_print_semantics();
         return;
     }
