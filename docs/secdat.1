@@ -115,8 +115,11 @@ List domain roots around the scoped directory. Use
 .B -l
 or
 .B --long
-to add the same key-source, store-count, visible-key-count, and wrapped-key summary fields used by
+to add the same key-source, effective-state, effective-state-source, store-count, visible-key-count, and wrapped-key summary fields used by
 .B domain status .
+.TP
+.B domain status [\-q|\-\-quiet]
+Report the resolved domain for the current context along with store count, visible key count, key source, wrapped-key presence, and effective access state. Effective access distinguishes environment, local session, inherited session, explicit lock, and blocked-by-explicit-lock outcomes.
 Use
 .B --ancestors
 to keep only the current domain and its ancestor side, and

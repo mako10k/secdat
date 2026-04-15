@@ -304,11 +304,11 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] domain ls --ancestors` limits that listing to the current domain and its ancestor side
 - `secdat [--dir DIR] domain ls --descendants` limits that listing to the current domain and its descendant side
 - combining `--ancestors` and `--descendants` is equivalent to the default `domain ls` behavior
-- `secdat [--dir DIR] domain ls -l` adds the key source, current-domain store count, visible key count, and wrapped-master-key presence for each listed domain
+- `secdat [--dir DIR] domain ls -l` adds the key source, effective state, effective-state source, current-domain store count, visible key count, and wrapped-master-key presence for each listed domain
 - `secdat [--dir DIR] domain status` reports the resolved current domain used by normal store commands
 - `secdat [--domain DIR] ...` uses that exact registered domain root as the current domain context
 - `domain status` reports whether that resolution came from `--dir` or the current working directory
-- `domain status` summarizes the visible key count, current-domain store count, key source, and wrapped-master-key presence for that resolved domain
+- `domain status` summarizes the visible key count, current-domain store count, key source, wrapped-master-key presence, and the effective access state for that resolved domain
 - `secdat [--dir DIR] domain status --quiet` prints only the resolved domain root, or `default` when no registered domain applies
 
 #### FR-11 Domain Resolution
@@ -575,7 +575,7 @@ secdat [--dir DIR] domain status [--quiet]
 - with no `--dir`, the listing behaves the same as `--dir .`
 - with `--dir /a/b`, the listing may contain domains rooted at `/a`, `/a/b`, and `/a/b/...`
 - with `--dir /a/b`, the listing must not include `/a/c` or descendants of `/a/c`
-- `status` reports the resolved current domain for normal store commands and a compact summary of stores, visible keys, and key-source state
+- `status` reports the resolved current domain for normal store commands and a compact summary of stores, visible keys, key-source state, and effective access state
 - `status --quiet` prints only the resolved domain root, or `default` when no registered domain applies
 
 ### 4.10 Domain Resolution Rules
@@ -762,7 +762,8 @@ Responsibilities:
 2. compute the resolved domain root path, or `default` when no registered domain applies
 3. count current-domain stores and currently visible keys for that context
 4. report whether key material currently comes from the environment, a session agent, or neither
-5. in `--quiet` mode, print only the resolved domain root identifier
+5. report whether effective access is unlocked via environment, local session, inherited session, or locked due to default locking, an explicit lock, or an explicit-lock block higher in the domain chain
+6. in `--quiet` mode, print only the resolved domain root identifier
 
 #### `ls`
 

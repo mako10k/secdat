@@ -809,6 +809,20 @@ int secdat_domain_root_path(const char *domain_id, char *buffer, size_t size)
     return 0;
 }
 
+int secdat_domain_data_root(const char *domain_id, char *buffer, size_t size)
+{
+    if (strcmp(domain_id, "default") == 0) {
+        if (size == 0) {
+            fprintf(stderr, _("path is too long\n"));
+            return 1;
+        }
+        buffer[0] = '\0';
+        return 0;
+    }
+
+    return secdat_domain_root_for_id(domain_id, buffer, size);
+}
+
 int secdat_domain_store_root(const char *domain_id, const char *store_name, char *buffer, size_t size)
 {
     char domain_root[PATH_MAX];
@@ -983,8 +997,9 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     struct secdat_domain_status_summary summary;
     const char *pattern = NULL;
     const char *key_source;
-    const char *wrapped_state;
+    const char *state_source;
     char scope_base[PATH_MAX];
+    char state_source_buffer[PATH_MAX];
     size_t index;
     int include_ancestors = 0;
     int include_descendants = 0;
@@ -1038,7 +1053,7 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     }
 
     if (long_format) {
-        printf(_("DOMAIN\tKEY_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n"));
+        printf(_("DOMAIN\tKEY_SOURCE\tEFFECTIVE\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n"));
     }
 
     for (index = 0; index < roots.count; index += 1) {
@@ -1074,13 +1089,40 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
             key_source = _("locked");
             break;
         }
-        wrapped_state = summary.wrapped_master_key_present ? _("present") : _("absent");
-        printf("%s\t%s\t%zu\t%zu\t%s\n",
+        switch (summary.effective_source) {
+        case SECDAT_EFFECTIVE_SOURCE_ENVIRONMENT:
+            state_source = _("environment");
+            break;
+        case SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION:
+            state_source = _("local-session");
+            break;
+        case SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION:
+            snprintf(state_source_buffer, sizeof(state_source_buffer), "inherited:%s", summary.related_domain_root);
+            state_source = state_source_buffer;
+            break;
+        case SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK:
+            state_source = _("explicit-lock");
+            break;
+        case SECDAT_EFFECTIVE_SOURCE_BLOCKED:
+            snprintf(state_source_buffer, sizeof(state_source_buffer), "blocked:%s", summary.related_domain_root);
+            state_source = state_source_buffer;
+            break;
+        default:
+            state_source = _("locked");
+            break;
+        }
+        printf("%s\t%s\t%s\t%s\t%zu\t%zu\t%s\n",
             roots.items[index],
             key_source,
+            summary.effective_source == SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK
+                || summary.effective_source == SECDAT_EFFECTIVE_SOURCE_BLOCKED
+                || summary.effective_source == SECDAT_EFFECTIVE_SOURCE_LOCKED
+                ? _("locked")
+                : _("unlocked"),
+            state_source,
             summary.store_count,
             summary.visible_key_count,
-            wrapped_state);
+            summary.wrapped_master_key_present ? _("present") : _("absent"));
     }
 
     secdat_string_list_free(&roots);
@@ -1139,6 +1181,34 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
         break;
     default:
         puts(_("key source: locked"));
+        break;
+    }
+    switch (summary.effective_source) {
+    case SECDAT_EFFECTIVE_SOURCE_ENVIRONMENT:
+        puts(_("effective state: unlocked"));
+        puts(_("effective source: environment"));
+        break;
+    case SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION:
+        puts(_("effective state: unlocked"));
+        puts(_("effective source: local session"));
+        break;
+    case SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION:
+        puts(_("effective state: unlocked"));
+        puts(_("effective source: inherited session"));
+        printf(_("inherited from: %s\n"), summary.related_domain_root);
+        break;
+    case SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK:
+        puts(_("effective state: locked"));
+        puts(_("effective source: explicit lock"));
+        break;
+    case SECDAT_EFFECTIVE_SOURCE_BLOCKED:
+        puts(_("effective state: locked"));
+        puts(_("effective source: blocked by explicit lock"));
+        printf(_("blocked by: %s\n"), summary.related_domain_root);
+        break;
+    default:
+        puts(_("effective state: locked"));
+        puts(_("effective source: locked"));
         break;
     }
     puts(summary.wrapped_master_key_present ? _("wrapped master key: present") : _("wrapped master key: absent"));

@@ -55,6 +55,8 @@ assert_contains_line "$domain_status_output" 'resolution source: --dir'
 assert_contains_line "$domain_status_output" 'store count: 1'
 assert_contains_line "$domain_status_output" 'visible key count: 5'
 assert_contains_line "$domain_status_output" 'key source: environment'
+assert_contains_line "$domain_status_output" 'effective state: unlocked'
+assert_contains_line "$domain_status_output" 'effective source: environment'
 assert_contains_line "$domain_status_output" 'wrapped master key: absent'
 
 domain_status_quiet="$(LANGUAGE=C "$bin_path" --dir "$child" domain status --quiet)"
@@ -80,10 +82,10 @@ if "$bin_path" --dir "$root" --domain "$child" status --quiet >/tmp/secdat-keyre
 fi
 
 domain_long_output="$(LANGUAGE=C "$bin_path" --dir "$work_root/work" domain ls -l)"
-assert_contains_line "$domain_long_output" $'DOMAIN\tKEY_SOURCE\tSTORES\tVISIBLE\tWRAPPED'
-assert_contains_line "$domain_long_output" "$root"$'\tenvironment\t3\t5\tabsent'
-assert_contains_line "$domain_long_output" "$child"$'\tenvironment\t1\t5\tabsent'
-assert_contains_line "$domain_long_output" "$sibling"$'\tenvironment\t1\t0\tabsent'
+assert_contains_line "$domain_long_output" $'DOMAIN\tKEY_SOURCE\tEFFECTIVE\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED'
+assert_contains_line "$domain_long_output" "$root"$'\tenvironment\tunlocked\tenvironment\t3\t5\tabsent'
+assert_contains_line "$domain_long_output" "$child"$'\tenvironment\tunlocked\tenvironment\t1\t5\tabsent'
+assert_contains_line "$domain_long_output" "$sibling"$'\tenvironment\tunlocked\tenvironment\t1\t0\tabsent'
 
 if ! "$bin_path" --dir "$root" exists prefix_one >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'exists did not report an existing key'

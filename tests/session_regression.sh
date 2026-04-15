@@ -34,6 +34,7 @@ wrapped_path = Path(env["XDG_DATA_HOME"]) / "secdat" / "master-key.bin"
 isolated_root = Path(env["XDG_RUNTIME_DIR"]).parent
 root_domain = isolated_root / "domain-root"
 child_domain = root_domain / "child-domain"
+grandchild_domain = child_domain / "grandchild-domain"
 sibling_domain = isolated_root / "sibling-domain"
 
 def scoped(args, domain=root_domain):
@@ -46,6 +47,10 @@ def socket_path_for(domain):
 def fail(message):
     print(f"FAIL: {message}", file=sys.stderr)
     sys.exit(1)
+
+def assert_contains(output, fragment, context):
+    if fragment not in output:
+        fail(f"{context}: missing fragment {fragment!r} in {output!r}")
 
 def run(args, extra_env=None):
     run_env = env.copy()
@@ -93,7 +98,7 @@ def run_pty(args, prompts, extra_env=None, eof_after_prompts=False):
 
     return os.waitstatus_to_exitcode(status), "".join(chunks)
 
-for domain in (root_domain, child_domain, sibling_domain):
+for domain in (root_domain, child_domain, grandchild_domain, sibling_domain):
     domain.mkdir(parents=True, exist_ok=True)
 
 rc, stdout, stderr = run(scoped(["domain", "create"], root_domain))
@@ -103,6 +108,10 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run(scoped(["domain", "create"], child_domain))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"child domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["domain", "create"], grandchild_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"grandchild domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["domain", "create"], sibling_domain))
 if rc != 0 or stdout != "" or stderr != "":
@@ -295,6 +304,45 @@ rc, stdout, stderr = run(scoped(["lock"], root_domain))
 if rc != 0 or stdout.strip() != "session locked":
     fail(f"lock before reconnect check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+if rc != 0 or stdout.strip() != "session unlocked":
+    fail(f"root unlock before shadow check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"], child_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"child explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status", "-q"], child_domain))
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"child status after explicit lock unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status", "-q"], grandchild_domain))
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"grandchild status after parent explicit lock unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
+if rc != 0 or stderr != "":
+    fail(f"domain status after explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective state: locked\n", "domain status explicit lock")
+assert_contains(stdout, "effective source: explicit lock\n", "domain status explicit lock")
+
+rc, stdout, stderr = run(scoped(["domain", "status"], grandchild_domain))
+if rc != 0 or stderr != "":
+    fail(f"grandchild domain status after parent explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: blocked by explicit lock\n", "grandchild blocked status")
+assert_contains(stdout, f"blocked by: {child_domain}\n", "grandchild blocked status")
+
+rc, stdout, stderr = run(scoped(["domain", "ls", "-l", "--descendants"], root_domain))
+if rc != 0 or stderr != "":
+    fail(f"domain ls -l after explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "domain ls -l header")
+assert_contains(stdout, f"{child_domain}\tlocked\tlocked\texplicit-lock", "domain ls explicit-lock row")
+assert_contains(stdout, f"{grandchild_domain}\tlocked\tlocked\tblocked:{child_domain}", "domain ls blocked row")
+
+rc, stdout, stderr = run(scoped(["get", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain))
+if rc == 0 or "no active secdat session" not in stderr:
+    fail(f"child unexpectedly reused ancestor session after explicit lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
 if rc != 0 or stdout.strip() != "session unlocked":
     fail(f"env passphrase unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -302,6 +350,21 @@ if rc != 0 or stdout.strip() != "session unlocked":
 rc, stdout, stderr = run(scoped(["status", "-q"], child_domain))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"child status after local unlock unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status", "-q"], grandchild_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"grandchild status after child local unlock unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
+if rc != 0 or stderr != "":
+    fail(f"domain status after child local unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: local session\n", "child local unlock status")
+
+rc, stdout, stderr = run(scoped(["domain", "status"], grandchild_domain))
+if rc != 0 or stderr != "":
+    fail(f"grandchild domain status after child local unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: inherited session\n", "grandchild inherited status")
+assert_contains(stdout, f"inherited from: {child_domain}\n", "grandchild inherited status")
 
 rc, stdout, stderr = run(scoped(["status", "-q"], sibling_domain))
 if rc != 1 or stdout != "" or stderr != "":
