@@ -137,7 +137,7 @@ mkdir -p ~/example/project
 ./src/secdat --dir ~/example/project store ls
 ```
 
-`domain ls` is scoped by directory. Without `--dir`, it behaves like `--dir .`, so it lists only ancestor/self/descendant domains around the current working directory. Use `--ancestors` to keep only the current domain and its ancestor side, `--descendants` to keep only the current domain and its descendant side, and a wider base such as `--dir ~` when you want a broader listing.
+`domain ls` is scoped by directory. Without `--dir`, it behaves like `--dir .`, so it lists only ancestor/self/descendant domains around the current working directory. Use `--ancestors` to keep only the current domain and its ancestor side, `--descendants` to keep only the current domain and its descendant side, `-l` or `--long` to add the `domain status` summary columns for each listed domain, and a wider base such as `--dir ~` when you want a broader listing.
 
 `domain status` shows which domain normal commands resolve to for the current context, whether that context came from `--dir` or the working directory, and a compact summary of visible keys, stores, and key source state.
 

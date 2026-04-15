@@ -64,6 +64,12 @@ domain_status_cwd="$(cd "$child" && LANGUAGE=C "$bin_path" domain status)"
 assert_contains_line "$domain_status_cwd" "resolved domain: $child"
 assert_contains_line "$domain_status_cwd" 'resolution source: current working directory'
 
+domain_long_output="$(LANGUAGE=C "$bin_path" --dir "$work_root/work" domain ls -l)"
+assert_contains_line "$domain_long_output" $'DOMAIN\tKEY_SOURCE\tSTORES\tVISIBLE\tWRAPPED'
+assert_contains_line "$domain_long_output" "$root"$'\tenvironment\t3\t5\tabsent'
+assert_contains_line "$domain_long_output" "$child"$'\tenvironment\t1\t5\tabsent'
+assert_contains_line "$domain_long_output" "$sibling"$'\tenvironment\t1\t0\tabsent'
+
 if ! "$bin_path" --dir "$root" exists prefix_one >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'exists did not report an existing key'
 fi

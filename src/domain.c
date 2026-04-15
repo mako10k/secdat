@@ -961,13 +961,21 @@ static int secdat_domain_command_delete(const struct secdat_cli *cli)
 static int secdat_domain_command_ls(const struct secdat_cli *cli)
 {
     struct secdat_string_list roots = {0};
+    struct secdat_domain_status_summary summary;
     const char *pattern = NULL;
+    const char *key_source;
+    const char *wrapped_state;
     char scope_base[PATH_MAX];
     size_t index;
     int include_ancestors = 0;
     int include_descendants = 0;
+    int long_format = 0;
 
     for (index = 0; index < (size_t)cli->argc; index += 1) {
+        if (strcmp(cli->argv[index], "-l") == 0 || strcmp(cli->argv[index], "--long") == 0) {
+            long_format = 1;
+            continue;
+        }
         if (strcmp(cli->argv[index], "--ancestors") == 0) {
             include_ancestors = 1;
             continue;
@@ -1010,6 +1018,10 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
         return 1;
     }
 
+    if (long_format) {
+        printf(_("DOMAIN\tKEY_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n"));
+    }
+
     for (index = 0; index < roots.count; index += 1) {
         int matches_ancestor = secdat_path_is_ancestor_or_same(roots.items[index], scope_base);
         int matches_descendant = secdat_path_is_descendant_or_same(roots.items[index], scope_base);
@@ -1022,7 +1034,34 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
             continue;
         }
 
-        puts(roots.items[index]);
+        if (!long_format) {
+            puts(roots.items[index]);
+            continue;
+        }
+
+        if (secdat_collect_domain_status_summary(roots.items[index], &summary) != 0) {
+            secdat_string_list_free(&roots);
+            return 1;
+        }
+
+        switch (summary.key_source) {
+        case SECDAT_KEY_SOURCE_ENVIRONMENT:
+            key_source = _("environment");
+            break;
+        case SECDAT_KEY_SOURCE_SESSION:
+            key_source = _("session");
+            break;
+        default:
+            key_source = _("locked");
+            break;
+        }
+        wrapped_state = summary.wrapped_master_key_present ? _("present") : _("absent");
+        printf("%s\t%s\t%zu\t%zu\t%s\n",
+            roots.items[index],
+            key_source,
+            summary.store_count,
+            summary.visible_key_count,
+            wrapped_state);
     }
 
     secdat_string_list_free(&roots);

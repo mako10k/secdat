@@ -187,9 +187,9 @@ msgstr "  %s [-d DIR|--dir DIR] domain delete\n"
 #: src/cli.c:207
 #, c-format
 msgid ""
-"  %s [-d DIR|--dir DIR] domain ls [--ancestors] [--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"
+"  %s [-d DIR|--dir DIR] domain ls [-l|--long] [--ancestors] [--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"
 msgstr ""
-"  %s [-d DIR|--dir DIR] domain ls [--ancestors] [--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"
+"  %s [-d DIR|--dir DIR] domain ls [-l|--long] [--ancestors] [--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"
 
 #: src/cli.c:210
 #, c-format
@@ -1135,9 +1135,30 @@ msgstr "key 取得元: セッションエージェント"
 msgid "key source: locked"
 msgstr "key 取得元: ロック中"
 
-#: src/store.c:2424
+#: src/domain.c:1000
+#, c-format
+msgid "DOMAIN\tKEY_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n"
+msgstr "DOMAIN\tKEY_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n"
+
+#: src/domain.c:1032
+msgid "environment"
+msgstr "environment"
+
+#: src/domain.c:1035
+msgid "session"
+msgstr "session"
+
+#: src/domain.c:1038 src/store.c:2424
 msgid "locked"
 msgstr "ロック中"
+
+#: src/domain.c:1041
+msgid "present"
+msgstr "あり"
+
+#: src/domain.c:1041
+msgid "absent"
+msgstr "なし"
 
 #: src/store.c:2441
 #, c-format

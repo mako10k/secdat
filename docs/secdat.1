@@ -106,8 +106,14 @@ Manage store namespaces inside the resolved current domain.
 .B domain create|delete|status
 Manage domain roots and resolution state.
 .TP
-.B domain ls [\-\-ancestors] [\-\-descendants] [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]
+.B domain ls [\-l|\-\-long] [\-\-ancestors] [\-\-descendants] [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]
 List domain roots around the scoped directory. Use
+.B -l
+or
+.B --long
+to add the same key-source, store-count, visible-key-count, and wrapped-key summary fields used by
+.B domain status .
+Use
 .B --ancestors
 to keep only the current domain and its ancestor side, and
 .B --descendants

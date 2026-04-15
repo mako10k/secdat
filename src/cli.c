@@ -204,7 +204,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         printf(_("  %s [-d DIR|--dir DIR] domain delete\n"), program_name);
         break;
     case SECDAT_COMMAND_DOMAIN_LS:
-        printf(_("  %s [-d DIR|--dir DIR] domain ls [--ancestors] [--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] domain ls [-l|--long] [--ancestors] [--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"), program_name);
         break;
     case SECDAT_COMMAND_DOMAIN_STATUS:
         printf(_("  %s [-d DIR|--dir DIR] domain status [-q|--quiet]\n"), program_name);

@@ -56,7 +56,7 @@ secdat [--dir DIR] store ls [GLOBPATTERN]
 
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
-secdat [--dir DIR] domain ls [--ancestors] [--descendants] [GLOBPATTERN]
+secdat [--dir DIR] domain ls [-l|--long] [--ancestors] [--descendants] [GLOBPATTERN]
 secdat [--dir DIR] domain status [--quiet]
 
 secdat [--dir DIR] [--store STORE] save FILE
@@ -304,6 +304,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] domain ls --ancestors` limits that listing to the current domain and its ancestor side
 - `secdat [--dir DIR] domain ls --descendants` limits that listing to the current domain and its descendant side
 - combining `--ancestors` and `--descendants` is equivalent to the default `domain ls` behavior
+- `secdat [--dir DIR] domain ls -l` adds the key source, current-domain store count, visible key count, and wrapped-master-key presence for each listed domain
 - `secdat [--dir DIR] domain status` reports the resolved current domain used by normal store commands
 - `domain status` reports whether that resolution came from `--dir` or the current working directory
 - `domain status` summarizes the visible key count, current-domain store count, key source, and wrapped-master-key presence for that resolved domain
@@ -560,7 +561,7 @@ Examples:
 ```text
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
-secdat [--dir DIR] domain ls [--ancestors] [--descendants] [--pattern GLOBPATTERN]
+secdat [--dir DIR] domain ls [-l|--long] [--ancestors] [--descendants] [--pattern GLOBPATTERN]
 secdat [--dir DIR] domain status [--quiet]
 ```
 
@@ -568,6 +569,7 @@ secdat [--dir DIR] domain status [--quiet]
 - `delete` removes the domain definition for the target directory
 - `ls` without `--dir` uses the current working directory as the listing scope
 - `domain ls --pattern` filters domain roots using a glob pattern
+- `domain ls -l` prints one tab-separated summary row per listed domain using the same effective-state fields as `domain status`
 - output format is one domain root per line
 - with no `--dir`, the listing behaves the same as `--dir .`
 - with `--dir /a/b`, the listing may contain domains rooted at `/a`, `/a/b`, and `/a/b/...`
@@ -746,9 +748,12 @@ Responsibilities:
 #### `domain ls`
 
 1. load the registry
-2. if `--dir` is provided, keep only domains that are ancestors of the base directory, equal to it, or descendants beneath it
-3. if `--pattern` is provided, apply glob filtering
-4. sort lexicographically and print one path per line
+2. keep only domains that are ancestors of the base directory, equal to it, or descendants beneath it
+3. if `--ancestors` is present, drop descendant-only matches
+4. if `--descendants` is present, drop ancestor-only matches
+5. if `--pattern` is provided, apply glob filtering
+6. if `-l` or `--long` is provided, compute the same summary fields used by `domain status` for each listed domain and print one tab-separated row per domain
+7. otherwise, print one path per line
 
 #### `domain status`
 
