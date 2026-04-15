@@ -57,7 +57,7 @@ secdat [--dir DIR] store ls [GLOBPATTERN]
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
 secdat [--dir DIR] domain ls [-l|--long] [--ancestors] [--descendants] [GLOBPATTERN]
-secdat [--dir DIR] domain status [--quiet]
+secdat [--dir DIR|--domain DIR] domain status [--quiet]
 
 secdat [--dir DIR] [--store STORE] save FILE
 secdat [--dir DIR] [--store STORE] load FILE
@@ -126,7 +126,7 @@ To make the requested behavior implementable, the following are treated as norma
 - Key reference (`KEYREF`): `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`
 - the `/ABSOLUTE/DOMAIN/` qualifier is optional, must begin with `/`, and must include the trailing slash before `KEY`
 - the `:STORE` qualifier is optional
-- if the domain qualifier is omitted, the command falls back to `--dir DIR` and then the current working directory
+- if the domain qualifier is omitted, the command falls back to `--domain DIR`, then `--dir DIR`, and then the current working directory
 - if the store qualifier is omitted, the command falls back to `--store STORE` and then the default store
 - Value: secret plaintext
 - Master key: key material used to encrypt and decrypt values
@@ -306,6 +306,7 @@ To make the requested behavior implementable, the following are treated as norma
 - combining `--ancestors` and `--descendants` is equivalent to the default `domain ls` behavior
 - `secdat [--dir DIR] domain ls -l` adds the key source, current-domain store count, visible key count, and wrapped-master-key presence for each listed domain
 - `secdat [--dir DIR] domain status` reports the resolved current domain used by normal store commands
+- `secdat [--domain DIR] ...` uses that exact registered domain root as the current domain context
 - `domain status` reports whether that resolution came from `--dir` or the current working directory
 - `domain status` summarizes the visible key count, current-domain store count, key source, and wrapped-master-key presence for that resolved domain
 - `secdat [--dir DIR] domain status --quiet` prints only the resolved domain root, or `default` when no registered domain applies

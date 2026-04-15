@@ -64,6 +64,21 @@ domain_status_cwd="$(cd "$child" && LANGUAGE=C "$bin_path" domain status)"
 assert_contains_line "$domain_status_cwd" "resolved domain: $child"
 assert_contains_line "$domain_status_cwd" 'resolution source: current working directory'
 
+domain_status_exact="$(LANGUAGE=C "$bin_path" --domain "$root" domain status)"
+assert_contains_line "$domain_status_exact" "resolved domain: $root"
+assert_contains_line "$domain_status_exact" 'resolution source: --domain'
+
+exact_override_value="$(cd "$child" && "$bin_path" --domain "$root" get override_key --stdout)"
+assert_eq "$exact_override_value" 'parent' '--domain exact root get'
+
+if "$bin_path" --domain "$work_root/work" status --quiet >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail '--domain accepted a non-domain root'
+fi
+
+if "$bin_path" --dir "$root" --domain "$child" status --quiet >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail '--dir and --domain were accepted together'
+fi
+
 domain_long_output="$(LANGUAGE=C "$bin_path" --dir "$work_root/work" domain ls -l)"
 assert_contains_line "$domain_long_output" $'DOMAIN\tKEY_SOURCE\tSTORES\tVISIBLE\tWRAPPED'
 assert_contains_line "$domain_long_output" "$root"$'\tenvironment\t3\t5\tabsent'

@@ -3,7 +3,7 @@
 secdat \- minimal local secret store with domain and store scoping
 .SH SYNOPSIS
 .B secdat
-[\-d DIR|\-\-dir DIR] [\-s STORE|\-\-store STORE] command [arguments]
+[\-d DIR|\-\-dir DIR] [\-\-domain DIR] [\-s STORE|\-\-store STORE] command [arguments]
 .SH DESCRIPTION
 .B secdat
 stores encrypted secret values locally and resolves them through directory-scoped domains and optional store namespaces.
@@ -15,6 +15,7 @@ Key arguments use the canonical KEYREF syntax:
 When the domain qualifier is present, the trailing slash before
 .B KEY
 is required. When the qualifiers are omitted,
+.B --domain ,
 .B --dir
 and
 .B --store
@@ -23,6 +24,9 @@ provide the current resolution context.
 .TP
 .B \-d, \-\-dir DIR
 Set the base directory used for domain resolution.
+.TP
+.B \-\-domain DIR
+Require one exact registered domain root instead of normal ancestor-based discovery.
 .TP
 .B \-s, \-\-store STORE
 Select the store namespace inside the resolved domain.

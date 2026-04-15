@@ -498,6 +498,25 @@ static int secdat_lookup_domain_id_for_root(const char *root_path, char *buffer,
     return status == 0 ? 0 : 2;
 }
 
+int secdat_domain_validate_root(const char *domain_root, char *buffer, size_t size)
+{
+    char domain_id[PATH_MAX];
+    int lookup_status;
+
+    if (secdat_canonicalize_directory(domain_root, buffer, size) != 0) {
+        return 1;
+    }
+
+    lookup_status = secdat_lookup_domain_id_for_root(buffer, domain_id, sizeof(domain_id));
+    if (lookup_status == 0) {
+        return 0;
+    }
+    if (lookup_status == 1) {
+        fprintf(stderr, _("domain not found for: %s\n"), buffer);
+    }
+    return 1;
+}
+
 static int secdat_path_is_ancestor_or_same(const char *candidate, const char *base)
 {
     size_t candidate_length;
@@ -858,7 +877,7 @@ static int secdat_domain_command_create(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_canonicalize_directory(cli->dir, root_path, sizeof(root_path)) != 0) {
+    if (secdat_canonicalize_directory(cli->domain != NULL ? cli->domain : cli->dir, root_path, sizeof(root_path)) != 0) {
         return 1;
     }
 
@@ -920,7 +939,7 @@ static int secdat_domain_command_delete(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_canonicalize_directory(cli->dir, root_path, sizeof(root_path)) != 0) {
+    if (secdat_canonicalize_directory(cli->domain != NULL ? cli->domain : cli->dir, root_path, sizeof(root_path)) != 0) {
         return 1;
     }
 
@@ -1009,7 +1028,7 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
         include_descendants = 1;
     }
 
-    if (secdat_canonicalize_directory(cli->dir, scope_base, sizeof(scope_base)) != 0) {
+    if (secdat_canonicalize_directory(cli->domain != NULL ? cli->domain : cli->dir, scope_base, sizeof(scope_base)) != 0) {
         return 1;
     }
 
@@ -1083,7 +1102,7 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+    if (secdat_domain_resolve_chain(cli->domain != NULL ? cli->domain : cli->dir, &chain) != 0) {
         return 1;
     }
     if (chain.count == 0) {
@@ -1097,7 +1116,7 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
     }
     secdat_domain_chain_free(&chain);
 
-    if (secdat_collect_domain_status_summary(cli->dir, &summary) != 0) {
+    if (secdat_collect_domain_status_summary(cli->domain != NULL ? cli->domain : cli->dir, &summary) != 0) {
         return 1;
     }
 
@@ -1107,7 +1126,7 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
     }
 
     printf(_("resolved domain: %s\n"), domain_root[0] != '\0' ? domain_root : "default");
-    printf(_("resolution source: %s\n"), cli->dir != NULL ? "--dir" : "current working directory");
+    printf(_("resolution source: %s\n"), cli->domain != NULL ? "--domain" : (cli->dir != NULL ? "--dir" : "current working directory"));
     printf(_("store count: %zu\n"), summary.store_count);
     printf(_("visible key count: %zu\n"), summary.visible_key_count);
     switch (summary.key_source) {

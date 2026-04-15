@@ -21,6 +21,11 @@ msgstr "--dir に値が必要です\n"
 msgid "missing value for --store\n"
 msgstr "--store に値が必要です\n"
 
+#: src/cli.c:47 src/cli.c:53
+#, c-format
+msgid "missing value for --domain\n"
+msgstr "--domain に値が必要です\n"
+
 #: src/cli.c:51
 #, c-format
 msgid "missing option value\n"
@@ -209,6 +214,11 @@ msgid ""
 msgstr ""
 "\n"
 "オプション:\n"
+
+#: src/cli.c:223
+#, c-format
+msgid "      --domain DIR   require one exact registered domain root instead of discovery\n"
+msgstr "      --domain DIR   ancestor 探索の代わりに登録済みの正確な domain root を必須にします\n"
 
 #: src/cli.c:222
 #, c-format
@@ -813,7 +823,7 @@ msgstr "ファイル記述子のオープンに失敗しました\n"
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid path: %s\n"
-msgstr "%s の引数が不正です\n"
+msgstr "不正なパスです: %s\n"
 
 #: src/store.c:849
 #, fuzzy, c-format
@@ -921,7 +931,7 @@ msgstr "このコマンドにはパスフレーズ入力用の端末が必要で
 msgid "failed to read terminal settings\n"
 msgstr "端末設定の読み取りに失敗しました\n"
 
-#: src/store.c:1356 src/store.c:1372
+#: src/store.c:1356
 #, c-format
 msgid "failed to update terminal settings\n"
 msgstr "端末設定の更新に失敗しました\n"

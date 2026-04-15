@@ -35,6 +35,7 @@ enum secdat_command_type {
 struct secdat_cli {
     const char *program_name;
     const char *dir;
+    const char *domain;
     const char *store;
     const char *help_target;
     enum secdat_command_type command;

@@ -6,10 +6,15 @@
 #include <stdio.h>
 #include <string.h>
 
+enum {
+    SECDAT_OPTION_DOMAIN = 1000,
+};
+
 static int parse_global_options(int argc, char **argv, int *index, struct secdat_cli *cli)
 {
     static const struct option long_options[] = {
         {"dir", required_argument, NULL, 'd'},
+        {"domain", required_argument, NULL, SECDAT_OPTION_DOMAIN},
         {"store", required_argument, NULL, 's'},
         {"help", no_argument, NULL, 'h'},
         {"version", no_argument, NULL, 'V'},
@@ -23,6 +28,9 @@ static int parse_global_options(int argc, char **argv, int *index, struct secdat
         switch (option) {
         case 'd':
             cli->dir = optarg;
+            break;
+        case SECDAT_OPTION_DOMAIN:
+            cli->domain = optarg;
             break;
         case 's':
             cli->store = optarg;
@@ -41,10 +49,14 @@ static int parse_global_options(int argc, char **argv, int *index, struct secdat
         case ':':
             if (optind > 0 && strcmp(argv[optind - 1], "--dir") == 0) {
                 fprintf(stderr, _("missing value for --dir\n"));
+            } else if (optind > 0 && strcmp(argv[optind - 1], "--domain") == 0) {
+                fprintf(stderr, _("missing value for --domain\n"));
             } else if (optind > 0 && strcmp(argv[optind - 1], "--store") == 0) {
                 fprintf(stderr, _("missing value for --store\n"));
             } else if (optopt == 'd') {
                 fprintf(stderr, _("missing value for --dir\n"));
+            } else if (optopt == SECDAT_OPTION_DOMAIN) {
+                fprintf(stderr, _("missing value for --domain\n"));
             } else if (optopt == 's') {
                 fprintf(stderr, _("missing value for --store\n"));
             } else {
@@ -223,6 +235,7 @@ static void secdat_cli_print_common_options(void)
 {
     printf(_("\nOptions:\n"));
     printf(_("  -d, --dir DIR      set the base directory used for domain resolution\n"));
+    printf(_("      --domain DIR   require one exact registered domain root instead of discovery\n"));
     printf(_("  -s, --store STORE  select the store namespace inside the resolved domain\n"));
     printf(_("  -h, --help         show global help, or combine with COMMAND for detailed help\n"));
     printf(_("  -V, --version      print the secdat version\n"));
@@ -413,6 +426,7 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
 
     cli->program_name = argc > 0 ? argv[0] : "secdat";
     cli->dir = NULL;
+    cli->domain = NULL;
     cli->store = NULL;
     cli->help_target = NULL;
     cli->command = SECDAT_COMMAND_HELP;

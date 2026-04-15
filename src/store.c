@@ -230,6 +230,11 @@ static int secdat_canonicalize_directory_path(const char *input, char *buffer, s
     return 0;
 }
 
+static const char *secdat_cli_domain_base(const struct secdat_cli *cli)
+{
+    return cli->domain != NULL ? cli->domain : cli->dir;
+}
+
 static int secdat_parse_key_reference(
     const char *raw,
     const char *fallback_dir,
@@ -1979,7 +1984,7 @@ static int secdat_collect_bundle_payload(const struct secdat_cli *cli, unsigned 
     size_t index;
     int status = 1;
 
-    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
         return 1;
     }
     if (secdat_collect_visible_keys(&chain, cli->store, NULL, NULL, &visible_keys) != 0) {
@@ -2479,7 +2484,7 @@ static int secdat_command_status(const struct secdat_cli *cli)
         return 0;
     }
 
-    if (secdat_domain_resolve_chain(cli->dir, &chain) == 0 && secdat_session_agent_status(&chain, &record) == 0) {
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) == 0 && secdat_session_agent_status(&chain, &record) == 0) {
         if (!quiet) {
             puts(_("unlocked"));
             puts(_("source: session agent"));
@@ -2515,7 +2520,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         secdat_cli_print_try_help(cli, "unlock");
         return 2;
     }
-    if (secdat_domain_resolve_current(cli->dir, current_domain_id, sizeof(current_domain_id)) != 0) {
+    if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
     }
 
@@ -2593,7 +2598,7 @@ static int secdat_command_lock(const struct secdat_cli *cli)
         secdat_cli_print_try_help(cli, "lock");
         return 2;
     }
-    if (secdat_domain_resolve_current(cli->dir, current_domain_id, sizeof(current_domain_id)) != 0) {
+    if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
     }
 
@@ -2611,7 +2616,7 @@ static int secdat_command_passwd(const struct secdat_cli *cli)
     char new_passphrase[512];
     char master_key[512];
 
-    if (cli->argc != 0 || cli->dir != NULL || cli->store != NULL) {
+    if (cli->argc != 0 || cli->dir != NULL || cli->domain != NULL || cli->store != NULL) {
         fprintf(stderr, _("invalid arguments for passwd\n"));
         secdat_cli_print_try_help(cli, "passwd");
         return 2;
@@ -3324,13 +3329,13 @@ static int secdat_command_ls(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
         secdat_key_list_free(&options.include_patterns);
         secdat_key_list_free(&options.exclude_patterns);
         return 1;
     }
 
-    if (secdat_canonicalize_directory_path(cli->dir, canonical_base_dir, sizeof(canonical_base_dir)) != 0) {
+    if (secdat_canonicalize_directory_path(secdat_cli_domain_base(cli), canonical_base_dir, sizeof(canonical_base_dir)) != 0) {
         secdat_key_list_free(&options.include_patterns);
         secdat_key_list_free(&options.exclude_patterns);
         secdat_domain_chain_free(&chain);
@@ -3445,7 +3450,7 @@ static int secdat_command_list(const struct secdat_cli *cli)
     if (status != 0) {
         return status;
     }
-    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
         return 1;
     }
     if (secdat_collect_list_keys(&chain, cli->store, &options, &keys) != 0) {
@@ -3481,7 +3486,7 @@ static int secdat_command_exists(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
+    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
         return 1;
     }
 
@@ -3557,7 +3562,7 @@ static int secdat_command_get(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
+    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
         return 1;
     }
 
@@ -3684,7 +3689,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
+    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
         return 1;
     }
 
@@ -3961,10 +3966,10 @@ static int secdat_command_cp(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &source_reference) != 0) {
+    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &source_reference) != 0) {
         return 1;
     }
-    if (secdat_parse_key_reference(cli->argv[1], cli->dir, cli->store, &destination_reference) != 0) {
+    if (secdat_parse_key_reference(cli->argv[1], secdat_cli_domain_base(cli), cli->store, &destination_reference) != 0) {
         return 1;
     }
 
@@ -4027,10 +4032,10 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &source_reference) != 0) {
+    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &source_reference) != 0) {
         return 1;
     }
-    if (secdat_parse_key_reference(cli->argv[1], cli->dir, cli->store, &destination_reference) != 0) {
+    if (secdat_parse_key_reference(cli->argv[1], secdat_cli_domain_base(cli), cli->store, &destination_reference) != 0) {
         return 1;
     }
 
@@ -4095,7 +4100,7 @@ static int secdat_command_mask(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
+    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
         return 1;
     }
 
@@ -4119,7 +4124,7 @@ static int secdat_command_unmask(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
+    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
         return 1;
     }
 
@@ -4146,7 +4151,7 @@ static int secdat_command_rm(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_parse_key_reference(cli->argv[ignore_missing ? 1 : 0], cli->dir, cli->store, &reference) != 0) {
+    if (secdat_parse_key_reference(cli->argv[ignore_missing ? 1 : 0], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
         return 1;
     }
 
@@ -4210,7 +4215,7 @@ static int secdat_store_command_ls(const struct secdat_cli *cli)
     const char *pattern = NULL;
     size_t index;
 
-    if (cli->store != NULL) {
+    if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         fprintf(stderr, _("--store is not valid with store commands\n"));
         secdat_cli_print_try_help(cli, "store");
         return 2;
@@ -4219,7 +4224,7 @@ static int secdat_store_command_ls(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_domain_resolve_current(cli->dir, current_domain_id, sizeof(current_domain_id)) != 0) {
+    if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
     }
     if (secdat_collect_store_names(current_domain_id, pattern, &stores) != 0) {
@@ -4243,7 +4248,7 @@ static int secdat_store_command_create(const struct secdat_cli *cli)
     char tombstones_dir[PATH_MAX];
     struct stat status;
 
-    if (cli->store != NULL) {
+    if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         fprintf(stderr, _("--store is not valid with store commands\n"));
         secdat_cli_print_try_help(cli, "store");
         return 2;
@@ -4259,7 +4264,7 @@ static int secdat_store_command_create(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_domain_resolve_current(cli->dir, current_domain_id, sizeof(current_domain_id)) != 0) {
+    if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
     }
     if (secdat_store_root(current_domain_id, cli->argv[0], store_root, sizeof(store_root)) != 0) {
@@ -4288,7 +4293,7 @@ static int secdat_store_command_delete(const struct secdat_cli *cli)
     char entries_dir[PATH_MAX];
     char tombstones_dir[PATH_MAX];
 
-    if (cli->store != NULL) {
+    if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         fprintf(stderr, _("--store is not valid with store commands\n"));
         secdat_cli_print_try_help(cli, "store");
         return 2;
@@ -4304,7 +4309,7 @@ static int secdat_store_command_delete(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_domain_resolve_current(cli->dir, current_domain_id, sizeof(current_domain_id)) != 0) {
+    if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
     }
     if (secdat_store_root(current_domain_id, cli->argv[0], store_root, sizeof(store_root)) != 0) {
@@ -4406,10 +4411,10 @@ static int secdat_command_export(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_canonicalize_directory_path(cli->dir, canonical_dir, sizeof(canonical_dir)) != 0) {
+    if (secdat_canonicalize_directory_path(secdat_cli_domain_base(cli), canonical_dir, sizeof(canonical_dir)) != 0) {
         return 1;
     }
-    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
         return 1;
     }
     if (pattern != NULL && secdat_key_list_append(&include_patterns, pattern) != 0) {
@@ -4436,7 +4441,7 @@ static int secdat_command_export(const struct secdat_cli *cli)
         fputs(visible_keys.items[key_index], stdout);
         fputs("=$(", stdout);
         secdat_write_shell_quoted(stdout, cli->program_name == NULL ? "secdat" : cli->program_name);
-        fputs(" --dir ", stdout);
+        fputs(cli->domain != NULL ? " --domain " : " --dir ", stdout);
         secdat_write_shell_quoted(stdout, canonical_dir);
         if (cli->store != NULL) {
             fputs(" --store ", stdout);
@@ -4468,7 +4473,7 @@ static int secdat_command_exec(const struct secdat_cli *cli)
         return status;
     }
 
-    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
         secdat_key_list_free(&options.include_patterns);
         secdat_key_list_free(&options.exclude_patterns);
         return 1;
@@ -4593,7 +4598,7 @@ static int secdat_command_load(const struct secdat_cli *cli)
         secdat_cli_print_try_help(cli, "load");
         return 2;
     }
-    if (secdat_domain_resolve_current(cli->dir, current_domain_id, sizeof(current_domain_id)) != 0) {
+    if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
     }
     if (secdat_read_secret_from_tty(_("Enter secdat bundle passphrase: "), passphrase, sizeof(passphrase)) != 0) {
@@ -4660,7 +4665,16 @@ cleanup:
 
 int secdat_run_command(const struct secdat_cli *cli)
 {
+    char exact_domain_root[PATH_MAX];
     int status;
+
+    if (cli->dir != NULL && cli->domain != NULL) {
+        fprintf(stderr, _("cannot combine --dir and --domain\n"));
+        return 2;
+    }
+    if (cli->domain != NULL && secdat_domain_validate_root(cli->domain, exact_domain_root, sizeof(exact_domain_root)) != 0) {
+        return 1;
+    }
 
     switch (cli->command) {
     case SECDAT_COMMAND_LS:
@@ -4714,6 +4728,9 @@ int secdat_run_command(const struct secdat_cli *cli)
         fprintf(stderr, _("command not implemented yet: %s\n"), secdat_cli_command_name(cli->command));
         if (cli->dir != NULL) {
             fprintf(stderr, _("  dir=%s\n"), cli->dir);
+        }
+        if (cli->domain != NULL) {
+            fprintf(stderr, _("  domain=%s\n"), cli->domain);
         }
         if (cli->store != NULL) {
             fprintf(stderr, _("  store=%s\n"), cli->store);

@@ -125,7 +125,9 @@ Unsafe values may also be entered from or written to a terminal. Safe values kee
 Copying or moving a `--unsafe` key preserves that plaintext-at-rest storage mode.
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
-When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--dir`, `--store`, and then the current defaults are used.
+When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--domain`, then `--dir`, then `--store`, and finally the current defaults are used.
+
+Use `--domain /exact/domain/root` when you want one exact registered domain root instead of normal ancestor-based discovery. Unlike `--dir`, it fails unless the supplied path is itself a registered domain root.
 
 You can also create a domain for a project directory and manage per-domain stores:
 
@@ -143,6 +145,7 @@ mkdir -p ~/example/project
 
 ```sh
 ./src/secdat --dir ~/example/project/child domain status
+./src/secdat --domain ~/example/project domain status
 ./src/secdat domain status --quiet
 ```
 
