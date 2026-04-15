@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-bin_path="${1:-./src/secdat}"
+bin_path="$(realpath "${1:-./src/secdat}")"
 
 fail() {
     printf 'FAIL: %s\n' "$1" >&2
@@ -32,10 +32,13 @@ export SECDAT_MASTER_KEY='test-master-key'
 
 root="$work_root/work/root"
 child="$root/child"
+sibling="$work_root/work/sibling"
 mkdir -p "$root" "$child" "$XDG_DATA_HOME"
+mkdir -p "$sibling"
 
 "$bin_path" --dir "$root" domain create >/dev/null
 "$bin_path" --dir "$child" domain create >/dev/null
+"$bin_path" --dir "$sibling" domain create >/dev/null
 "$bin_path" --dir "$root" store create team >/dev/null
 "$bin_path" --dir "$root" store create temp >/dev/null
 
@@ -143,8 +146,20 @@ store_output="$($bin_path --dir "$root" store ls 'te*')"
 assert_contains_line "$store_output" 'team'
 assert_contains_line "$store_output" 'temp'
 
-domain_output="$($bin_path domain ls "$root*")"
+domain_output="$($bin_path --dir "$work_root/work" domain ls "$root*")"
 assert_contains_line "$domain_output" "$root"
 assert_contains_line "$domain_output" "$child"
+
+domain_default_output="$(cd "$root" && "$bin_path" domain ls)"
+assert_contains_line "$domain_default_output" "$root"
+assert_contains_line "$domain_default_output" "$child"
+if printf '%s\n' "$domain_default_output" | grep -Fx -- "$sibling" >/dev/null; then
+    fail 'domain ls default scope included sibling domain'
+fi
+
+domain_scoped_output="$($bin_path --dir "$work_root/work" domain ls)"
+assert_contains_line "$domain_scoped_output" "$root"
+assert_contains_line "$domain_scoped_output" "$child"
+assert_contains_line "$domain_scoped_output" "$sibling"
 
 printf 'PASS keyref regression\n'

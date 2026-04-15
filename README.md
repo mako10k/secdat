@@ -73,6 +73,8 @@ Then you can store and read values:
 ./src/secdat ls
 ./src/secdat ls 'HO*'
 ./src/secdat ls --pattern 'HO*' --pattern 'API_*' --pattern-exclude 'HOGE'
+./src/secdat ls --unsafe
+./src/secdat ls --safe
 ./src/secdat ls --canonical
 ./src/secdat exists HOGE
 ./src/secdat get HOGE --stdout
@@ -101,6 +103,8 @@ For current-domain state inspection, `list` can show active tombstones, orphaned
 ./src/secdat --dir ~/example/project/child list --masked
 ./src/secdat --dir ~/example/project/child list --orphaned
 ./src/secdat --dir ~/example/project/child list --overridden
+./src/secdat --dir ~/example/project/child list --unsafe
+./src/secdat --dir ~/example/project/child list --safe
 ```
 
 For idempotent cleanup in shell automation, `rm --ignore-missing` treats an absent key as a successful no-op:
@@ -117,6 +121,7 @@ If you explicitly need a value to remain readable while `secdat` is locked, `set
 ```
 
 `--unsafe` is intentionally outside the normal secret workflow. It does not require the master key, remains readable while locked, and should only be used for values you accept storing in plaintext.
+Unsafe values may also be entered from or written to a terminal. Safe values keep the existing terminal I/O refusal.
 Copying or moving a `--unsafe` key preserves that plaintext-at-rest storage mode.
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
@@ -131,6 +136,8 @@ mkdir -p ~/example/project
 ./src/secdat --dir ~/example/project --store app set API_TOKEN --value token-123
 ./src/secdat --dir ~/example/project store ls
 ```
+
+`domain ls` is scoped by directory. Without `--dir`, it behaves like `--dir .`, so it lists only ancestor/self/descendant domains around the current working directory. Use a wider base such as `--dir ~` when you want a broader listing.
 
 To avoid writing secrets to your shell history, prefer stdin for sensitive values:
 

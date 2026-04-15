@@ -961,7 +961,6 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     struct secdat_string_list roots = {0};
     const char *pattern = NULL;
     char scope_base[PATH_MAX];
-    int use_scope = 0;
     size_t index;
 
     if (cli->argc == 2 && strcmp(cli->argv[0], "--pattern") == 0) {
@@ -974,11 +973,8 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (cli->dir != NULL) {
-        if (secdat_canonicalize_directory(cli->dir, scope_base, sizeof(scope_base)) != 0) {
-            return 1;
-        }
-        use_scope = 1;
+    if (secdat_canonicalize_directory(cli->dir, scope_base, sizeof(scope_base)) != 0) {
+        return 1;
     }
 
     if (secdat_collect_registered_roots(&roots) != 0) {
@@ -987,8 +983,7 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     }
 
     for (index = 0; index < roots.count; index += 1) {
-        if (use_scope
-            && !secdat_path_is_ancestor_or_same(roots.items[index], scope_base)
+        if (!secdat_path_is_ancestor_or_same(roots.items[index], scope_base)
             && !secdat_path_is_descendant_or_same(roots.items[index], scope_base)) {
             continue;
         }

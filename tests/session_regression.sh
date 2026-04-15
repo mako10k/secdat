@@ -54,7 +54,7 @@ def run(args, extra_env=None):
     completed = subprocess.run(args, text=True, capture_output=True, env=run_env)
     return completed.returncode, completed.stdout, completed.stderr
 
-def run_pty(args, prompts, extra_env=None):
+def run_pty(args, prompts, extra_env=None, eof_after_prompts=False):
     run_env = env.copy()
     if extra_env:
         run_env.update(extra_env)
@@ -77,6 +77,9 @@ def run_pty(args, prompts, extra_env=None):
             if expected not in collected:
                 fail(f"missing prompt [{expected}] in [{' '.join(chunks)}]")
             os.write(fd, reply.encode() + b"\n")
+
+        if eof_after_prompts:
+            os.write(fd, b"\x04")
 
         while True:
             data = os.read(fd, 4096)
@@ -113,9 +116,41 @@ rc, stdout, stderr = run(scoped(["set", "UNSAFE_VISIBLE_KEY", "--unsafe", "--val
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set --unsafe while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run(scoped(["set", "SAFE_HIDDEN_KEY", "--value", "hidden-while-locked"]))
+if rc == 0 or "no active secdat session" not in stderr:
+    fail(f"safe set while locked unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run(scoped(["get", "UNSAFE_VISIBLE_KEY", "-o"]))
 if rc != 0 or stdout != "visible-while-locked" or stderr != "":
     fail(f"get unsafe key while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["ls", "--unsafe"]))
+if rc != 0 or stdout != "UNSAFE_VISIBLE_KEY\n" or stderr != "":
+    fail(f"ls --unsafe while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["ls", "--safe"]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"ls --safe while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["list", "--unsafe"]))
+if rc != 0 or stdout != "UNSAFE_VISIBLE_KEY\n" or stderr != "":
+    fail(f"list --unsafe while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["list", "--safe"]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"list --safe while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, transcript = run_pty(scoped(["set", "UNSAFE_TTY_KEY", "--unsafe"]), [("", "typed-on-tty")], eof_after_prompts=True)
+if rc != 0 or "refusing to read secret from a terminal" in transcript:
+    fail(f"unsafe tty set failed unexpectedly: rc={rc} transcript={transcript!r}")
+
+rc, stdout, stderr = run(scoped(["get", "UNSAFE_TTY_KEY", "-o"]))
+if rc != 0 or stdout != "typed-on-tty\n" or stderr != "":
+    fail(f"unsafe tty set should store terminal input: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, transcript = run_pty(scoped(["get", "UNSAFE_VISIBLE_KEY", "-o"]), [])
+if rc != 0 or "visible-while-locked" not in transcript or "refusing to write secret to a terminal" in transcript:
+    fail(f"unsafe tty get failed unexpectedly: rc={rc} transcript={transcript!r}")
 
 rc, stdout, stderr = run(scoped(["cp", "UNSAFE_VISIBLE_KEY", "UNSAFE_COPIED_KEY"]))
 if rc != 0 or stdout != "" or stderr != "":
@@ -145,11 +180,11 @@ for args, marker in [
     ([bin_path, "status", "-h"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "help", "unlock"], "[-d DIR|--dir DIR] unlock"),
     ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock"),
-    ([bin_path, "help", "list"], "list [--masked] [--overridden] [--orphaned]"),
+    ([bin_path, "help", "list"], "list [--masked] [--overridden] [--orphaned] [--safe] [--unsafe]"),
     ([bin_path, "help", "mask"], "mask KEYREF"),
     ([bin_path, "help", "unmask"], "unmask KEYREF"),
     ([bin_path, "help", "exists"], "exists KEYREF"),
-    ([bin_path, "help", "ls"], "--pattern-exclude GLOBPATTERN"),
+    ([bin_path, "help", "ls"], "[--safe|--unsafe]"),
     ([bin_path, "help", "exec"], "--pattern-exclude GLOBPATTERN"),
     ([bin_path, "help", "rm"], "rm [--ignore-missing] KEYREF"),
     ([bin_path, "help", "set"], "set KEYREF [--unsafe]"),

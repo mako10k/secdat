@@ -213,9 +213,20 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat exec CMD [ARGS...]` injects the effective visible keys into a child process environment and executes the command
 - repeated `--pattern GLOBPATTERN` options widen the include set for both `ls` and `exec`
 - repeated `--pattern-exclude GLOBPATTERN` options remove matches from the include set for both `ls` and `exec`
+- `secdat ls --safe` lists only effective keys whose resolved entry is stored encrypted at rest
+- `secdat ls --unsafe` lists only effective keys whose resolved entry is stored plaintext at rest
 - `secdat exec --pattern GLOBPATTERN CMD [ARGS...]` injects only matched keys
 - the parent process environment is not modified
 - resolved values are decrypted and passed through an `execve`-style API
+
+#### FR-7e Local State Inspection
+
+- `secdat list --masked` lists current-domain tombstones that still hide a visible parent key
+- `secdat list --orphaned` lists current-domain tombstones whose parent key is no longer visible
+- `secdat list --overridden` lists current-domain concrete entries that override a visible parent key
+- `secdat list --safe` lists current-domain concrete entries stored encrypted at rest
+- `secdat list --unsafe` lists current-domain concrete entries stored plaintext at rest
+- combining multiple `list` filters returns the union of the selected current-domain categories
 
 #### FR-7c Shell Export
 
@@ -242,6 +253,8 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] lock` removes only the current domain's local agent-backed session state
 - the current implementation refreshes the idle timeout when the agent serves the cached key
 - no raw master-key retrieval path is required for normal operation; the generated key remains internal unless a separate future recovery/export flow is introduced
+- safe values still refuse terminal-based stdin/stdout for `set` and `get`
+- plaintext-at-rest values created with `set --unsafe` may be read from or written to a terminal with `get` and `set`
 
 #### FR-7d Wrapped-Key Passphrase Rotation
 
@@ -283,7 +296,7 @@ To make the requested behavior implementable, the following are treated as norma
 - creating a domain for a directory that already has a domain is an error
 - `secdat [--dir DIR] domain delete` deletes the domain definition for the target directory
 - `domain delete` does not modify parent-domain data
-- `secdat domain ls` without `--dir` lists all domains owned by the current OS user
+- `secdat domain ls` without `--dir` uses the current working directory as the listing scope
 - `secdat domain ls PATTERN` and `secdat domain ls --pattern PATTERN` are equivalent
 - `secdat --dir DIR domain ls` restricts the listing scope to ancestor domains of `DIR`, the domain rooted at `DIR` itself, and descendant domains under `DIR`
 - sibling directories of `DIR` and their descendants are excluded from that restricted listing
@@ -298,7 +311,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `set`, `mv`, `cp`, and `rm` apply changes to the current domain only
 - `store create`, `store delete`, and `store ls` apply to the current domain only
 - for `domain create` and `domain delete`, `--dir` identifies the target directory
-- for `domain ls`, `--dir` identifies the directory that constrains the listing scope
+- for `domain ls`, `--dir` identifies the directory that constrains the listing scope; when omitted, that scope starts at the current working directory
 
 #### FR-12 Inheritance and Tombstones
 
@@ -544,9 +557,10 @@ secdat [--dir DIR] domain ls [--pattern GLOBPATTERN]
 
 - `create` registers a domain rooted at the target directory
 - `delete` removes the domain definition for the target directory
-- `ls` without `--dir` lists all domain roots owned by the current OS user
+- `ls` without `--dir` uses the current working directory as the listing scope
 - `domain ls --pattern` filters domain roots using a glob pattern
 - output format is one domain root per line
+- with no `--dir`, the listing behaves the same as `--dir .`
 - with `--dir /a/b`, the listing may contain domains rooted at `/a`, `/a/b`, and `/a/b/...`
 - with `--dir /a/b`, the listing must not include `/a/c` or descendants of `/a/c`
 

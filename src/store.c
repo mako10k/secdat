@@ -64,6 +64,8 @@ struct secdat_ls_options {
     struct secdat_key_list exclude_patterns;
     int canonical_domain;
     int canonical_store;
+    int safe;
+    int unsafe_store;
 };
 
 struct secdat_exec_options {
@@ -76,6 +78,8 @@ struct secdat_list_options {
     int masked;
     int overridden;
     int orphaned;
+    int safe;
+    int unsafe_store;
 };
 
 struct secdat_session_record {
@@ -117,6 +121,7 @@ static int secdat_load_resolved_plaintext(
     size_t *resolved_index,
     int *unsafe_store
 );
+static int secdat_entry_uses_plaintext_storage(const char *path, int *unsafe_store);
 
 static void secdat_secure_clear(void *buffer, size_t length)
 {
@@ -353,6 +358,14 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
             options->canonical_store = 1;
             continue;
         }
+        if (strcmp(cli->argv[index], "--safe") == 0) {
+            options->safe = 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--unsafe") == 0) {
+            options->unsafe_store = 1;
+            continue;
+        }
         if (cli->argv[index][0] == '-') {
             fprintf(stderr, _("invalid arguments for ls\n"));
             secdat_key_list_free(&options->include_patterns);
@@ -438,12 +451,20 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
             options->orphaned = 1;
             continue;
         }
+        if (strcmp(cli->argv[index], "--safe") == 0) {
+            options->safe = 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--unsafe") == 0) {
+            options->unsafe_store = 1;
+            continue;
+        }
         fprintf(stderr, _("invalid arguments for list\n"));
         secdat_cli_print_try_help(cli, "list");
         return 2;
     }
 
-    if (!options->masked && !options->overridden && !options->orphaned) {
+    if (!options->masked && !options->overridden && !options->orphaned && !options->safe && !options->unsafe_store) {
         fprintf(stderr, _("missing state filter for list\n"));
         secdat_cli_print_try_help(cli, "list");
         return 2;
@@ -3077,7 +3098,9 @@ static int secdat_collect_list_keys(
     char tombstones_dir[PATH_MAX];
     struct secdat_key_list local_entries = {0};
     struct secdat_key_list local_tombstones = {0};
+    char entry_path[PATH_MAX];
     size_t index;
+    int entry_is_unsafe;
     int visible_in_parent;
     int status = 1;
 
@@ -3100,6 +3123,25 @@ static int secdat_collect_list_keys(
     }
 
     for (index = 0; index < local_entries.count; index += 1) {
+        if (options->safe || options->unsafe_store) {
+            if (secdat_build_entry_path(chain->ids[0], store_name, local_entries.items[index], entry_path, sizeof(entry_path)) != 0) {
+                goto cleanup;
+            }
+            if (secdat_entry_uses_plaintext_storage(entry_path, &entry_is_unsafe) != 0) {
+                goto cleanup;
+            }
+            if (options->unsafe_store && entry_is_unsafe) {
+                if (secdat_key_list_append(keys, local_entries.items[index]) != 0) {
+                    goto cleanup;
+                }
+            }
+            if (options->safe && !entry_is_unsafe) {
+                if (secdat_key_list_append(keys, local_entries.items[index]) != 0) {
+                    goto cleanup;
+                }
+            }
+        }
+
         visible_in_parent = secdat_parent_has_visible_key(chain, store_name, local_entries.items[index]);
         if (visible_in_parent < 0) {
             goto cleanup;
@@ -3187,6 +3229,37 @@ static int secdat_load_resolved_plaintext(
     return status;
 }
 
+static int secdat_entry_uses_plaintext_storage(const char *path, int *unsafe_store)
+{
+    unsigned char *encrypted = NULL;
+    size_t encrypted_length = 0;
+    int status = 1;
+
+    if (secdat_read_file(path, &encrypted, &encrypted_length) != 0) {
+        return 1;
+    }
+
+    if (encrypted_length < SECDAT_HEADER_LEN) {
+        fprintf(stderr, _("invalid encrypted entry\n"));
+        goto cleanup;
+    }
+    if (memcmp(encrypted, secdat_entry_magic, sizeof(secdat_entry_magic)) != 0 || encrypted[8] != SECDAT_ENTRY_VERSION) {
+        fprintf(stderr, _("unsupported encrypted entry format\n"));
+        goto cleanup;
+    }
+    if (encrypted[9] != SECDAT_ENTRY_ALGORITHM_PLAINTEXT && encrypted[9] != SECDAT_ENTRY_ALGORITHM_AES_256_GCM) {
+        fprintf(stderr, _("unsupported encryption algorithm\n"));
+        goto cleanup;
+    }
+
+    *unsafe_store = encrypted[9] == SECDAT_ENTRY_ALGORITHM_PLAINTEXT;
+    status = 0;
+
+cleanup:
+    free(encrypted);
+    return status;
+}
+
 static int secdat_command_ls(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
@@ -3194,6 +3267,7 @@ static int secdat_command_ls(const struct secdat_cli *cli)
     struct secdat_ls_options options;
     char canonical_base_dir[PATH_MAX];
     size_t index;
+    int filter_by_storage;
 
     if (secdat_parse_ls_options(cli, &options) != 0) {
         return 2;
@@ -3220,10 +3294,34 @@ static int secdat_command_ls(const struct secdat_cli *cli)
         return 1;
     }
 
+    filter_by_storage = options.safe || options.unsafe_store;
+
     for (index = 0; index < visible_keys.count; index += 1) {
         char output[PATH_MAX * 2];
         size_t resolved_index = 0;
         char domain_path[PATH_MAX];
+        char entry_path[PATH_MAX];
+        int entry_is_unsafe;
+
+        if (filter_by_storage) {
+            if (secdat_find_effective_entry(&chain, cli->store, visible_keys.items[index], entry_path, sizeof(entry_path), NULL) != 0) {
+                secdat_key_list_free(&options.include_patterns);
+                secdat_key_list_free(&options.exclude_patterns);
+                secdat_domain_chain_free(&chain);
+                secdat_key_list_free(&visible_keys);
+                return 1;
+            }
+            if (secdat_entry_uses_plaintext_storage(entry_path, &entry_is_unsafe) != 0) {
+                secdat_key_list_free(&options.include_patterns);
+                secdat_key_list_free(&options.exclude_patterns);
+                secdat_domain_chain_free(&chain);
+                secdat_key_list_free(&visible_keys);
+                return 1;
+            }
+            if ((options.safe && entry_is_unsafe) || (options.unsafe_store && !entry_is_unsafe)) {
+                continue;
+            }
+        }
 
         if (!options.canonical_domain && !options.canonical_store) {
             puts(visible_keys.items[index]);
@@ -3382,6 +3480,7 @@ static int secdat_command_get(const struct secdat_cli *cli)
     unsigned char *plaintext = NULL;
     size_t plaintext_length = 0;
     int shellescaped = 0;
+    int unsafe_store = 0;
     ssize_t written;
     size_t offset;
 
@@ -3407,11 +3506,6 @@ static int secdat_command_get(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (isatty(STDOUT_FILENO)) {
-        fprintf(stderr, _("refusing to write secret to a terminal\n"));
-        return 1;
-    }
-
     if (secdat_parse_key_reference(cli->argv[0], cli->dir, cli->store, &reference) != 0) {
         return 1;
     }
@@ -3420,8 +3514,16 @@ static int secdat_command_get(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, NULL) != 0) {
+    if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store) != 0) {
         secdat_domain_chain_free(&chain);
+        return 1;
+    }
+
+    if (isatty(STDOUT_FILENO) && !unsafe_store) {
+        fprintf(stderr, _("refusing to write secret to a terminal\n"));
+        secdat_domain_chain_free(&chain);
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
         return 1;
     }
 
@@ -3601,7 +3703,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
     }
 
     if (read_stdin) {
-        if (isatty(STDIN_FILENO)) {
+        if (isatty(STDIN_FILENO) && !unsafe_store) {
             fprintf(stderr, _("refusing to read secret from a terminal\n"));
             return 1;
         }
