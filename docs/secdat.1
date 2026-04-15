@@ -103,8 +103,15 @@ Report whether secret material is available from the current domain scope.
 .B store create|delete|ls
 Manage store namespaces inside the resolved current domain.
 .TP
-.B domain create|delete|ls|status
-Manage domain roots and domain discovery scope.
+.B domain create|delete|status
+Manage domain roots and resolution state.
+.TP
+.B domain ls [\-\-ancestors] [\-\-descendants] [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]
+List domain roots around the scoped directory. Use
+.B --ancestors
+to keep only the current domain and its ancestor side, and
+.B --descendants
+to keep only the current domain and its descendant side.
 .SH SHELL INTEGRATION
 To load exported values into the current bash shell, use one of:
 

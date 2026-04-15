@@ -964,15 +964,41 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     const char *pattern = NULL;
     char scope_base[PATH_MAX];
     size_t index;
+    int include_ancestors = 0;
+    int include_descendants = 0;
 
-    if (cli->argc == 2 && strcmp(cli->argv[0], "--pattern") == 0) {
-        pattern = cli->argv[1];
-    } else if (cli->argc == 1 && cli->argv[0][0] != '-') {
-        pattern = cli->argv[0];
-    } else if (cli->argc != 0) {
+    for (index = 0; index < (size_t)cli->argc; index += 1) {
+        if (strcmp(cli->argv[index], "--ancestors") == 0) {
+            include_ancestors = 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--descendants") == 0) {
+            include_descendants = 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--pattern") == 0) {
+            if (index + 1 >= (size_t)cli->argc) {
+                fprintf(stderr, _("invalid arguments for domain ls\n"));
+                secdat_cli_print_try_help(cli, "domain");
+                return 2;
+            }
+            pattern = cli->argv[index + 1];
+            index += 1;
+            continue;
+        }
+        if (cli->argv[index][0] != '-' && pattern == NULL) {
+            pattern = cli->argv[index];
+            continue;
+        }
+
         fprintf(stderr, _("invalid arguments for domain ls\n"));
         secdat_cli_print_try_help(cli, "domain");
         return 2;
+    }
+
+    if (!include_ancestors && !include_descendants) {
+        include_ancestors = 1;
+        include_descendants = 1;
     }
 
     if (secdat_canonicalize_directory(cli->dir, scope_base, sizeof(scope_base)) != 0) {
@@ -985,8 +1011,11 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     }
 
     for (index = 0; index < roots.count; index += 1) {
-        if (!secdat_path_is_ancestor_or_same(roots.items[index], scope_base)
-            && !secdat_path_is_descendant_or_same(roots.items[index], scope_base)) {
+        int matches_ancestor = secdat_path_is_ancestor_or_same(roots.items[index], scope_base);
+        int matches_descendant = secdat_path_is_descendant_or_same(roots.items[index], scope_base);
+
+        if ((include_ancestors == 0 || matches_ancestor == 0)
+            && (include_descendants == 0 || matches_descendant == 0)) {
             continue;
         }
         if (pattern != NULL && fnmatch(pattern, roots.items[index], 0) != 0) {

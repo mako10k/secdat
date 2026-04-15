@@ -172,6 +172,20 @@ if printf '%s\n' "$domain_default_output" | grep -Fx -- "$sibling" >/dev/null; t
     fail 'domain ls default scope included sibling domain'
 fi
 
+domain_ancestors_output="$($bin_path --dir "$child" domain ls --ancestors)"
+assert_contains_line "$domain_ancestors_output" "$root"
+assert_contains_line "$domain_ancestors_output" "$child"
+if printf '%s\n' "$domain_ancestors_output" | grep -Fx -- "$sibling" >/dev/null; then
+    fail 'domain ls --ancestors included sibling domain'
+fi
+
+domain_descendants_output="$($bin_path --dir "$root" domain ls --descendants)"
+assert_contains_line "$domain_descendants_output" "$root"
+assert_contains_line "$domain_descendants_output" "$child"
+if printf '%s\n' "$domain_descendants_output" | grep -Fx -- "$sibling" >/dev/null; then
+    fail 'domain ls --descendants included sibling domain'
+fi
+
 domain_scoped_output="$($bin_path --dir "$work_root/work" domain ls)"
 assert_contains_line "$domain_scoped_output" "$root"
 assert_contains_line "$domain_scoped_output" "$child"

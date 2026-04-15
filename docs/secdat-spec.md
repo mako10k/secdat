@@ -56,7 +56,7 @@ secdat [--dir DIR] store ls [GLOBPATTERN]
 
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
-secdat [--dir DIR] domain ls [GLOBPATTERN]
+secdat [--dir DIR] domain ls [--ancestors] [--descendants] [GLOBPATTERN]
 secdat [--dir DIR] domain status [--quiet]
 
 secdat [--dir DIR] [--store STORE] save FILE
@@ -301,6 +301,9 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat domain ls PATTERN` and `secdat domain ls --pattern PATTERN` are equivalent
 - `secdat --dir DIR domain ls` restricts the listing scope to ancestor domains of `DIR`, the domain rooted at `DIR` itself, and descendant domains under `DIR`
 - sibling directories of `DIR` and their descendants are excluded from that restricted listing
+- `secdat [--dir DIR] domain ls --ancestors` limits that listing to the current domain and its ancestor side
+- `secdat [--dir DIR] domain ls --descendants` limits that listing to the current domain and its descendant side
+- combining `--ancestors` and `--descendants` is equivalent to the default `domain ls` behavior
 - `secdat [--dir DIR] domain status` reports the resolved current domain used by normal store commands
 - `domain status` reports whether that resolution came from `--dir` or the current working directory
 - `domain status` summarizes the visible key count, current-domain store count, key source, and wrapped-master-key presence for that resolved domain
@@ -557,7 +560,7 @@ Examples:
 ```text
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
-secdat [--dir DIR] domain ls [--pattern GLOBPATTERN]
+secdat [--dir DIR] domain ls [--ancestors] [--descendants] [--pattern GLOBPATTERN]
 secdat [--dir DIR] domain status [--quiet]
 ```
 
