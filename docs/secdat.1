@@ -103,7 +103,7 @@ Report whether secret material is available from the current domain scope.
 .B store create|delete|ls
 Manage store namespaces inside the resolved current domain.
 .TP
-.B domain create|delete|ls
+.B domain create|delete|ls|status
 Manage domain roots and domain discovery scope.
 .SH SHELL INTEGRATION
 To load exported values into the current bash shell, use one of:
@@ -165,6 +165,7 @@ secdat set API_TOKEN --value token-123
 secdat get API_TOKEN --stdout
 secdat get API_TOKEN --shellescaped
 secdat --dir ~/project domain create
+secdat --dir ~/project/service domain status
 secdat --dir ~/project --store app export
 source <(secdat --dir ~/project --store app export)
 SECDAT_MASTER_KEY_PASSPHRASE=secret secdat unlock

@@ -206,6 +206,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
     case SECDAT_COMMAND_DOMAIN_LS:
         printf(_("  %s [-d DIR|--dir DIR] domain ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"), program_name);
         break;
+    case SECDAT_COMMAND_DOMAIN_STATUS:
+        printf(_("  %s [-d DIR|--dir DIR] domain status [-q|--quiet]\n"), program_name);
+        break;
     default:
         break;
     }
@@ -546,6 +549,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         } else if (strcmp(argv[index], "ls") == 0) {
             cli->command = SECDAT_COMMAND_DOMAIN_LS;
             index += 1;
+        } else if (strcmp(argv[index], "status") == 0) {
+            cli->command = SECDAT_COMMAND_DOMAIN_STATUS;
+            index += 1;
         } else {
             fprintf(stderr, _("unknown domain subcommand: %s\n"), argv[index]);
             secdat_cli_print_try_help(cli, "domain");
@@ -628,6 +634,7 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_CREATE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_DELETE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_LS);
+        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_STATUS);
         secdat_cli_print_help_routes(program_name, target);
         secdat_cli_print_target_meaning(target);
         secdat_cli_print_support_routes();
@@ -707,6 +714,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "domain delete";
     case SECDAT_COMMAND_DOMAIN_LS:
         return "domain ls";
+    case SECDAT_COMMAND_DOMAIN_STATUS:
+        return "domain status";
     default:
         return "unknown";
     }

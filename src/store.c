@@ -122,6 +122,7 @@ static int secdat_load_resolved_plaintext(
     int *unsafe_store
 );
 static int secdat_entry_uses_plaintext_storage(const char *path, int *unsafe_store);
+static int secdat_collect_store_names(const char *domain_id, const char *pattern, struct secdat_key_list *stores);
 
 static void secdat_secure_clear(void *buffer, size_t length)
 {
@@ -2030,6 +2031,56 @@ cleanup:
     }
     secdat_domain_chain_free(&chain);
     secdat_key_list_free(&visible_keys);
+    return status;
+}
+
+int secdat_collect_domain_status_summary(const char *dir_override, struct secdat_domain_status_summary *summary)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_key_list visible_keys = {0};
+    struct secdat_key_list stores = {0};
+    struct secdat_session_record record = {0};
+    int status = 1;
+
+    memset(summary, 0, sizeof(*summary));
+    summary->wrapped_master_key_present = secdat_wrapped_master_key_exists();
+
+    if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
+        summary->key_source = SECDAT_KEY_SOURCE_ENVIRONMENT;
+    }
+
+    if (secdat_domain_resolve_chain(dir_override, &chain) != 0) {
+        return 1;
+    }
+    if (chain.count == 0) {
+        goto cleanup;
+    }
+
+    if (secdat_collect_store_names(chain.ids[0], NULL, &stores) != 0) {
+        goto cleanup;
+    }
+    summary->store_count = stores.count;
+
+    if (secdat_collect_visible_keys(&chain, NULL, NULL, NULL, &visible_keys) != 0) {
+        goto cleanup;
+    }
+    summary->visible_key_count = visible_keys.count;
+
+    if (summary->key_source != SECDAT_KEY_SOURCE_ENVIRONMENT && secdat_session_agent_status(&chain, &record) == 0) {
+        summary->key_source = SECDAT_KEY_SOURCE_SESSION;
+        summary->session_expires_at = record.expires_at;
+        secdat_secure_clear(record.master_key, strlen(record.master_key));
+    }
+
+    status = 0;
+
+cleanup:
+    if (status != 0) {
+        secdat_secure_clear(record.master_key, strlen(record.master_key));
+    }
+    secdat_domain_chain_free(&chain);
+    secdat_key_list_free(&visible_keys);
+    secdat_key_list_free(&stores);
     return status;
 }
 
@@ -4657,6 +4708,7 @@ int secdat_run_command(const struct secdat_cli *cli)
     case SECDAT_COMMAND_DOMAIN_CREATE:
     case SECDAT_COMMAND_DOMAIN_DELETE:
     case SECDAT_COMMAND_DOMAIN_LS:
+    case SECDAT_COMMAND_DOMAIN_STATUS:
         return secdat_handle_domain_command(cli);
     default:
         fprintf(stderr, _("command not implemented yet: %s\n"), secdat_cli_command_name(cli->command));

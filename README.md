@@ -11,7 +11,7 @@ Current status:
 - `ls`, `get`, `set`, `rm`, `mv`, `cp`, and `exec` are implemented with encrypted local storage
 - `export` is implemented for shell-friendly setup without embedding raw secret values
 - `save` and `load` are implemented for passphrase-protected secret bundles scoped to the current view
-- `domain create`, `domain delete`, and `domain ls` are implemented
+- `domain create`, `domain delete`, `domain ls`, and `domain status` are implemented
 - `store create`, `store delete`, and `store ls` are implemented
 - `unlock`, `lock`, and `status` are implemented with domain-scoped session agents and a wrapped persistent master key
 - normal store commands resolve the current domain from `--dir` or the working directory and fall back through parent domains
@@ -138,6 +138,13 @@ mkdir -p ~/example/project
 ```
 
 `domain ls` is scoped by directory. Without `--dir`, it behaves like `--dir .`, so it lists only ancestor/self/descendant domains around the current working directory. Use a wider base such as `--dir ~` when you want a broader listing.
+
+`domain status` shows which domain normal commands resolve to for the current context, whether that context came from `--dir` or the working directory, and a compact summary of visible keys, stores, and key source state.
+
+```sh
+./src/secdat --dir ~/example/project/child domain status
+./src/secdat domain status --quiet
+```
 
 To avoid writing secrets to your shell history, prefer stdin for sensitive values:
 

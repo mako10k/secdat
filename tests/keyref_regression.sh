@@ -49,6 +49,21 @@ mkdir -p "$sibling"
 "$bin_path" --dir "$root" set override_key parent >/dev/null
 "$bin_path" --dir "$child" set override_key child >/dev/null
 
+domain_status_output="$(LANGUAGE=C "$bin_path" --dir "$child" domain status)"
+assert_contains_line "$domain_status_output" "resolved domain: $child"
+assert_contains_line "$domain_status_output" 'resolution source: --dir'
+assert_contains_line "$domain_status_output" 'store count: 1'
+assert_contains_line "$domain_status_output" 'visible key count: 5'
+assert_contains_line "$domain_status_output" 'key source: environment'
+assert_contains_line "$domain_status_output" 'wrapped master key: absent'
+
+domain_status_quiet="$(LANGUAGE=C "$bin_path" --dir "$child" domain status --quiet)"
+assert_eq "$domain_status_quiet" "$child" 'domain status --quiet'
+
+domain_status_cwd="$(cd "$child" && LANGUAGE=C "$bin_path" domain status)"
+assert_contains_line "$domain_status_cwd" "resolved domain: $child"
+assert_contains_line "$domain_status_cwd" 'resolution source: current working directory'
+
 if ! "$bin_path" --dir "$root" exists prefix_one >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'exists did not report an existing key'
 fi

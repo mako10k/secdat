@@ -2,6 +2,8 @@
 
 #include "i18n.h"
 
+#include "store.h"
+
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -998,6 +1000,64 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     return 0;
 }
 
+static int secdat_domain_command_status(const struct secdat_cli *cli)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_domain_status_summary summary;
+    char domain_root[PATH_MAX];
+    int quiet = 0;
+
+    if (cli->argc == 1 && (strcmp(cli->argv[0], "--quiet") == 0 || strcmp(cli->argv[0], "-q") == 0)) {
+        quiet = 1;
+    } else if (cli->argc != 0) {
+        fprintf(stderr, _("invalid arguments for domain status\n"));
+        secdat_cli_print_try_help(cli, "domain");
+        return 2;
+    }
+
+    if (secdat_domain_resolve_chain(cli->dir, &chain) != 0) {
+        return 1;
+    }
+    if (chain.count == 0) {
+        secdat_domain_chain_free(&chain);
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    if (secdat_domain_root_path(chain.ids[0], domain_root, sizeof(domain_root)) != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+    secdat_domain_chain_free(&chain);
+
+    if (secdat_collect_domain_status_summary(cli->dir, &summary) != 0) {
+        return 1;
+    }
+
+    if (quiet) {
+        puts(domain_root[0] != '\0' ? domain_root : "default");
+        return 0;
+    }
+
+    printf(_("resolved domain: %s\n"), domain_root[0] != '\0' ? domain_root : "default");
+    printf(_("resolution source: %s\n"), cli->dir != NULL ? "--dir" : "current working directory");
+    printf(_("store count: %zu\n"), summary.store_count);
+    printf(_("visible key count: %zu\n"), summary.visible_key_count);
+    switch (summary.key_source) {
+    case SECDAT_KEY_SOURCE_ENVIRONMENT:
+        puts(_("key source: environment"));
+        break;
+    case SECDAT_KEY_SOURCE_SESSION:
+        puts(_("key source: session agent"));
+        printf(_("expires in: %lld seconds\n"), (long long)(summary.session_expires_at - time(NULL)));
+        break;
+    default:
+        puts(_("key source: locked"));
+        break;
+    }
+    puts(summary.wrapped_master_key_present ? _("wrapped master key: present") : _("wrapped master key: absent"));
+    return 0;
+}
+
 int secdat_handle_domain_command(const struct secdat_cli *cli)
 {
     switch (cli->command) {
@@ -1007,6 +1067,8 @@ int secdat_handle_domain_command(const struct secdat_cli *cli)
         return secdat_domain_command_delete(cli);
     case SECDAT_COMMAND_DOMAIN_LS:
         return secdat_domain_command_ls(cli);
+    case SECDAT_COMMAND_DOMAIN_STATUS:
+        return secdat_domain_command_status(cli);
     default:
         fprintf(stderr, _("command not implemented yet: %s\n"), secdat_cli_command_name(cli->command));
         return 1;

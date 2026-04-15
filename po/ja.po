@@ -193,6 +193,11 @@ msgstr ""
 "  %s [-d DIR|--dir DIR] domain ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern "
 "GLOBPATTERN]\n"
 
+#: src/cli.c:210
+#, c-format
+msgid "  %s [-d DIR|--dir DIR] domain status [-q|--quiet]\n"
+msgstr "  %s [-d DIR|--dir DIR] domain status [-q|--quiet]\n"
+
 #: src/cli.c:216
 #, c-format
 msgid "  %s [options] subcommand ...\n"
@@ -1094,6 +1099,43 @@ msgstr "取得元: セッションエージェント"
 #, c-format
 msgid "expires in: %lld seconds\n"
 msgstr "残り %lld 秒\n"
+
+#: src/domain.c:1013
+#, c-format
+msgid "invalid arguments for domain status\n"
+msgstr "domain status の引数が不正です\n"
+
+#: src/domain.c:1041
+#, c-format
+msgid "resolved domain: %s\n"
+msgstr "解決された domain: %s\n"
+
+#: src/domain.c:1042
+#, c-format
+msgid "resolution source: %s\n"
+msgstr "解決元: %s\n"
+
+#: src/domain.c:1043
+#, c-format
+msgid "store count: %zu\n"
+msgstr "store 数: %zu\n"
+
+#: src/domain.c:1044
+#, c-format
+msgid "visible key count: %zu\n"
+msgstr "可視 key 数: %zu\n"
+
+#: src/domain.c:1047
+msgid "key source: environment"
+msgstr "key 取得元: 環境変数"
+
+#: src/domain.c:1050
+msgid "key source: session agent"
+msgstr "key 取得元: セッションエージェント"
+
+#: src/domain.c:1054
+msgid "key source: locked"
+msgstr "key 取得元: ロック中"
 
 #: src/store.c:2424
 msgid "locked"

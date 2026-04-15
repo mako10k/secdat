@@ -29,6 +29,7 @@ enum secdat_command_type {
     SECDAT_COMMAND_DOMAIN_CREATE,
     SECDAT_COMMAND_DOMAIN_DELETE,
     SECDAT_COMMAND_DOMAIN_LS,
+    SECDAT_COMMAND_DOMAIN_STATUS,
 };
 
 struct secdat_cli {

@@ -57,6 +57,7 @@ secdat [--dir DIR] store ls [GLOBPATTERN]
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
 secdat [--dir DIR] domain ls [GLOBPATTERN]
+secdat [--dir DIR] domain status [--quiet]
 
 secdat [--dir DIR] [--store STORE] save FILE
 secdat [--dir DIR] [--store STORE] load FILE
@@ -300,6 +301,10 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat domain ls PATTERN` and `secdat domain ls --pattern PATTERN` are equivalent
 - `secdat --dir DIR domain ls` restricts the listing scope to ancestor domains of `DIR`, the domain rooted at `DIR` itself, and descendant domains under `DIR`
 - sibling directories of `DIR` and their descendants are excluded from that restricted listing
+- `secdat [--dir DIR] domain status` reports the resolved current domain used by normal store commands
+- `domain status` reports whether that resolution came from `--dir` or the current working directory
+- `domain status` summarizes the visible key count, current-domain store count, key source, and wrapped-master-key presence for that resolved domain
+- `secdat [--dir DIR] domain status --quiet` prints only the resolved domain root, or `default` when no registered domain applies
 
 #### FR-11 Domain Resolution
 
@@ -553,6 +558,7 @@ Examples:
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
 secdat [--dir DIR] domain ls [--pattern GLOBPATTERN]
+secdat [--dir DIR] domain status [--quiet]
 ```
 
 - `create` registers a domain rooted at the target directory
@@ -563,6 +569,8 @@ secdat [--dir DIR] domain ls [--pattern GLOBPATTERN]
 - with no `--dir`, the listing behaves the same as `--dir .`
 - with `--dir /a/b`, the listing may contain domains rooted at `/a`, `/a/b`, and `/a/b/...`
 - with `--dir /a/b`, the listing must not include `/a/c` or descendants of `/a/c`
+- `status` reports the resolved current domain for normal store commands and a compact summary of stores, visible keys, and key-source state
+- `status --quiet` prints only the resolved domain root, or `default` when no registered domain applies
 
 ### 4.10 Domain Resolution Rules
 
@@ -738,6 +746,14 @@ Responsibilities:
 2. if `--dir` is provided, keep only domains that are ancestors of the base directory, equal to it, or descendants beneath it
 3. if `--pattern` is provided, apply glob filtering
 4. sort lexicographically and print one path per line
+
+#### `domain status`
+
+1. resolve the current domain from `--dir` or the current working directory using the same rule as normal store commands
+2. compute the resolved domain root path, or `default` when no registered domain applies
+3. count current-domain stores and currently visible keys for that context
+4. report whether key material currently comes from the environment, a session agent, or neither
+5. in `--quiet` mode, print only the resolved domain root identifier
 
 #### `ls`
 
