@@ -289,6 +289,7 @@ static void secdat_print_unlock_guidance(const char *current_domain_root)
     struct secdat_domain_status_summary summary;
     const size_t preview_limit = 3;
     const char *first_affected = NULL;
+    size_t descendant_count = 0;
     size_t affected_count = 0;
     size_t preview_count = 0;
     size_t index;
@@ -301,6 +302,7 @@ static void secdat_print_unlock_guidance(const char *current_domain_root)
         if (strcmp(descendants.roots[index], current_domain_root) == 0) {
             continue;
         }
+        descendant_count += 1;
         if (secdat_collect_domain_status_summary(descendants.roots[index], &summary) != 0) {
             continue;
         }
@@ -316,6 +318,9 @@ static void secdat_print_unlock_guidance(const char *current_domain_root)
     }
 
     if (affected_count == 0) {
+        if (descendant_count > 0) {
+            printf(_("note: %zu descendant domains can now reuse this session\n"), descendant_count);
+        }
         secdat_domain_root_list_free(&descendants);
         return;
     }
@@ -2717,6 +2722,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     if (secdat_domain_root_path(current_domain_id, current_domain_root, sizeof(current_domain_root)) != 0) {
         return 1;
     }
+    fprintf(stderr, _("resolved domain: %s\n"), current_domain_root[0] != '\0' ? current_domain_root : "default");
 
     if (!wrapped_present) {
         if (secdat_read_new_master_key_passphrase(passphrase, sizeof(passphrase)) != 0) {

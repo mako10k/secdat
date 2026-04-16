@@ -275,8 +275,10 @@ rc, transcript = run_pty(
     scoped(["unlock"]),
     [("Create secdat passphrase:", passphrase), ("Confirm secdat passphrase:", passphrase)],
 )
-if rc != 0 or "persistent master key initialized; session unlocked" not in transcript:
+if rc != 0 or f"resolved domain: {root_domain}" not in transcript or "persistent master key initialized; session unlocked" not in transcript:
     fail(f"bootstrap unlock failed: rc={rc} transcript={transcript!r}")
+if "note: 2 descendant domains can now reuse this session" not in transcript:
+    fail(f"bootstrap unlock coverage summary missing: transcript={transcript!r}")
 if not wrapped_path.is_file():
     fail("wrapped master key was not created")
 
@@ -305,8 +307,10 @@ if rc != 0 or stdout.strip() != "session locked":
     fail(f"lock before reconnect check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
-if rc != 0 or stdout.strip() != "session unlocked":
+if rc != 0 or stdout.strip() != "session unlocked\nnote: 2 descendant domains can now reuse this session":
     fail(f"root unlock before shadow check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if f"resolved domain: {root_domain}\n" not in stderr:
+    fail(f"root unlock prompt context missing: stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["lock"], child_domain))
 if rc != 0 or stdout.strip() != "session locked":
@@ -347,8 +351,10 @@ assert_contains(stderr, f"inspect current domain: secdat --dir {child_domain} do
 assert_contains(stderr, f"unlock current domain: secdat --dir {child_domain} unlock\n", "locked read unlock guidance")
 
 rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
-if rc != 0 or stdout.strip() != "session unlocked":
+if rc != 0 or stdout.strip() != "session unlocked\nnote: 1 descendant domains can now reuse this session":
     fail(f"env passphrase unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if f"resolved domain: {child_domain}\n" not in stderr:
+    fail(f"child unlock prompt context missing: stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["status", "-q"], child_domain))
 if rc != 0 or stdout != "" or stderr != "":
@@ -387,8 +393,10 @@ if rc != 0 or stdout.strip() != "session locked":
     fail(f"lock after passwd rotation failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": new_passphrase})
-if rc != 0 or "session unlocked\n" not in stdout or stderr != "":
+if rc != 0 or "session unlocked\n" not in stdout:
     fail(f"unlock with rotated env passphrase failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if f"resolved domain: {root_domain}\n" not in stderr:
+    fail(f"rotated unlock prompt context missing: stderr={stderr!r}")
 assert_contains(stdout, f"note: 2 descendant domains remain locked under this branch\n", "guided unlock count")
 assert_contains(stdout, "affected descendants:\n", "guided unlock header")
 assert_contains(stdout, f"  {child_domain}\n", "guided unlock child descendant")
@@ -403,8 +411,10 @@ if socket_path.exists() or socket_path.is_socket():
     socket_path.unlink()
 socket_path.write_text("stale")
 rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY": "session-test-key"})
-if rc != 0 or "session unlocked from environment\n" not in stdout or stderr != "":
+if rc != 0 or "session unlocked from environment\n" not in stdout or f"resolved domain: {root_domain}\n" not in stderr:
     fail(f"stale socket unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if "note: 2 descendant domains can now reuse this session\n" not in stdout:
+    fail(f"stale socket unlock guidance missing: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["status"], root_domain))
 if rc != 0 or "source: session agent" not in stdout or stderr != "":
@@ -419,7 +429,7 @@ if rc != 1 or stdout != "":
     fail(f"status -q after lock unexpected: rc={rc} stdout={stdout!r}")
 
 rc, transcript = run_pty(scoped(["unlock"], root_domain), [("Enter secdat passphrase:", new_passphrase)])
-if rc != 0 or "session unlocked" not in transcript:
+if rc != 0 or f"resolved domain: {root_domain}" not in transcript or "session unlocked" not in transcript:
     fail(f"passphrase unlock failed: rc={rc} transcript={transcript!r}")
 
 rc, stdout, stderr = run(scoped(["set", "SESSION_KEY", "-v", "value"], root_domain))

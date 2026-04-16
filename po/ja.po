@@ -1267,6 +1267,11 @@ msgstr "1 つの descendant を確認: secdat --dir %s domain status\n"
 msgid "unlock one descendant: secdat --dir %s unlock\n"
 msgstr "1 つの descendant を unlock: secdat --dir %s unlock\n"
 
+#: src/store.c:319
+#, c-format
+msgid "note: %zu descendant domains can now reuse this session\n"
+msgstr "補足: %zu 個の descendant domain がこの session を再利用できます\n"
+
 #: src/store.c:361
 msgid "resolved domain: default\n"
 msgstr "解決された domain: default\n"
