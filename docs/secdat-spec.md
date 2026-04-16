@@ -129,6 +129,7 @@ To make the requested behavior implementable, the following are treated as norma
 - the `:STORE` qualifier is optional
 - if the domain qualifier is omitted, the command falls back to `--domain DIR`, then `--dir DIR`, and then the current working directory
 - if the store qualifier is omitted, the command falls back to `--store STORE` and then the default store
+- if a write command would resolve to the implicit user-global default scope instead of a registered domain, it fails
 - Value: secret plaintext
 - Master key: key material used to encrypt and decrypt values
 - Session: a temporary login-scoped cache of the active master key

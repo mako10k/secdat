@@ -1524,6 +1524,11 @@ msgstr "%s の引数が不正です\n"
 msgid "refusing to write secret to a terminal\n"
 msgstr ""
 
+#: src/store.c:4330
+#, c-format
+msgid "writes to the default domain are not supported\n"
+msgstr "default domain への書き込みはサポートされていません\n"
+
 #: src/store.c:3509
 #, fuzzy, c-format
 #| msgid "missing value for --store\n"

@@ -289,6 +289,30 @@ static const char *secdat_cli_domain_base(const struct secdat_cli *cli)
     return cli->domain != NULL ? cli->domain : cli->dir;
 }
 
+static int secdat_default_domain_write_error(void)
+{
+    fprintf(stderr, _("writes to the default domain are not supported\n"));
+    return 1;
+}
+
+static int secdat_require_writable_domain_id(const char *domain_id)
+{
+    if (domain_id != NULL && domain_id[0] != '\0') {
+        return 0;
+    }
+
+    return secdat_default_domain_write_error();
+}
+
+static int secdat_require_writable_domain_chain(const struct secdat_domain_chain *chain)
+{
+    if (chain != NULL && chain->count > 0) {
+        return 0;
+    }
+
+    return secdat_default_domain_write_error();
+}
+
 static int secdat_explicit_lock_marker_path(const char *domain_id, char *buffer, size_t size)
 {
     char domain_root[PATH_MAX];
@@ -4368,6 +4392,10 @@ static int secdat_store_plaintext(
     size_t encrypted_length = 0;
     int status;
 
+    if (secdat_require_writable_domain_id(domain_id) != 0) {
+        return 1;
+    }
+
     status = secdat_ensure_store_dirs(domain_id, store_name);
     if (status != 0) {
         return status;
@@ -4544,7 +4572,10 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
     size_t index;
     int found_inherited = 0;
 
-    if (chain->count == 0 || strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
+    if (secdat_require_writable_domain_chain(chain) != 0) {
+        return 1;
+    }
+    if (strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
         fprintf(stderr, _("path is too long\n"));
         return 1;
     }
@@ -4609,7 +4640,10 @@ static int secdat_mask_key_in_chain(const struct secdat_domain_chain *chain, con
     size_t index;
     int found_inherited = 0;
 
-    if (chain->count == 0 || strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
+    if (secdat_require_writable_domain_chain(chain) != 0) {
+        return 1;
+    }
+    if (strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
         fprintf(stderr, _("path is too long\n"));
         return 1;
     }
@@ -4668,7 +4702,10 @@ static int secdat_unmask_key_in_chain(const struct secdat_domain_chain *chain, c
     char current_domain_id[PATH_MAX];
     char tombstone_path[PATH_MAX];
 
-    if (chain->count == 0 || strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
+    if (secdat_require_writable_domain_chain(chain) != 0) {
+        return 1;
+    }
+    if (strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
         fprintf(stderr, _("path is too long\n"));
         return 1;
     }
@@ -4722,7 +4759,12 @@ static int secdat_command_cp(const struct secdat_cli *cli)
         secdat_domain_chain_free(&source_chain);
         return 1;
     }
-    if (destination_chain.count == 0 || strlen(destination_chain.ids[0]) >= sizeof(destination_domain_id)) {
+    if (secdat_require_writable_domain_chain(&destination_chain) != 0) {
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
+        return 1;
+    }
+    if (strlen(destination_chain.ids[0]) >= sizeof(destination_domain_id)) {
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
         fprintf(stderr, _("path is too long\n"));
@@ -4788,7 +4830,12 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         secdat_domain_chain_free(&source_chain);
         return 1;
     }
-    if (destination_chain.count == 0 || strlen(destination_chain.ids[0]) >= sizeof(destination_domain_id)) {
+    if (secdat_require_writable_domain_chain(&destination_chain) != 0) {
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
+        return 1;
+    }
+    if (strlen(destination_chain.ids[0]) >= sizeof(destination_domain_id)) {
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
         fprintf(stderr, _("path is too long\n"));
@@ -5009,6 +5056,9 @@ static int secdat_store_command_create(const struct secdat_cli *cli)
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
     }
+    if (secdat_require_writable_domain_id(current_domain_id) != 0) {
+        return 1;
+    }
     if (secdat_store_root(current_domain_id, cli->argv[0], store_root, sizeof(store_root)) != 0) {
         return 1;
     }
@@ -5052,6 +5102,9 @@ static int secdat_store_command_delete(const struct secdat_cli *cli)
     }
 
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
+        return 1;
+    }
+    if (secdat_require_writable_domain_id(current_domain_id) != 0) {
         return 1;
     }
     if (secdat_store_root(current_domain_id, cli->argv[0], store_root, sizeof(store_root)) != 0) {

@@ -136,6 +136,7 @@ Copying or moving a `--unsafe` key preserves that plaintext-at-rest storage mode
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
 When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--domain`, then `--dir`, then `--store`, and finally the current defaults are used.
+Write commands must still resolve to a registered domain. If resolution would fall back to the implicit `*default*` scope, the command fails instead of creating unreachable local state there.
 
 Use `--domain /exact/domain/root` when you want one exact registered domain root instead of normal ancestor-based discovery. Unlike `--dir`, it fails unless the supplied path is itself a registered domain root.
 

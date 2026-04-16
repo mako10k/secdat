@@ -33,8 +33,10 @@ export SECDAT_MASTER_KEY='test-master-key'
 root="$work_root/work/root"
 child="$root/child"
 sibling="$work_root/work/sibling"
+unregistered="$work_root/work/unregistered"
 mkdir -p "$root" "$child" "$XDG_DATA_HOME"
 mkdir -p "$sibling"
+mkdir -p "$unregistered"
 
 "$bin_path" --dir "$root" domain create >/dev/null
 "$bin_path" --dir "$child" domain create >/dev/null
@@ -118,6 +120,11 @@ fi
 explicit_value="$($bin_path get "$root"/explicit_key:team --stdout)"
 assert_eq "$explicit_value" 'explicit_value' 'KEYREF set/get'
 
+if "$bin_path" --dir "$unregistered" set stray_key stray >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'set unexpectedly wrote to the default domain'
+fi
+assert_contains_line "$(cat /tmp/secdat-keyref-test.err)" 'writes to the default domain are not supported'
+
 if "$bin_path" get explicit_key/"$root":team --stdout >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'old KEYREF syntax still accepted'
 fi
@@ -125,6 +132,11 @@ fi
 if ! "$bin_path" exists "$root"/explicit_key:team >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'exists KEYREF did not resolve explicit domain/store key'
 fi
+
+if "$bin_path" cp "$root"/explicit_key:team "$unregistered"/default_copy:team >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'cp unexpectedly wrote to the default domain'
+fi
+assert_contains_line "$(cat /tmp/secdat-keyref-test.err)" 'writes to the default domain are not supported'
 
 canonical_output="$($bin_path --dir "$root" ls --canonical)"
 assert_contains_line "$canonical_output" "$root/other_key:default"
@@ -161,6 +173,11 @@ if "$bin_path" --dir "$root" exists prefix_one >/tmp/secdat-keyref-test.out 2>/t
     fail 'rm --ignore-missing did not remove an existing key'
 fi
 
+if "$bin_path" --dir "$unregistered" rm missing_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'rm unexpectedly targeted the default domain'
+fi
+assert_contains_line "$(cat /tmp/secdat-keyref-test.err)" 'writes to the default domain are not supported'
+
 overridden_output="$($bin_path --dir "$child" list --overridden)"
 assert_contains_line "$overridden_output" 'override_key'
 
@@ -189,6 +206,11 @@ fi
 store_output="$($bin_path --dir "$root" store ls 'te*')"
 assert_contains_line "$store_output" 'team'
 assert_contains_line "$store_output" 'temp'
+
+if "$bin_path" --dir "$unregistered" store create scratch >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'store create unexpectedly targeted the default domain'
+fi
+assert_contains_line "$(cat /tmp/secdat-keyref-test.err)" 'writes to the default domain are not supported'
 
 domain_output="$($bin_path --dir "$work_root/work" domain ls "$root*")"
 assert_contains_line "$domain_output" "$root"
