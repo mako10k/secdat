@@ -51,9 +51,11 @@ Initialize `secdat` once directly with a passphrase in the target domain:
 
 The first interactive `unlock` generates a fresh master key, stores a wrapped copy under `XDG_DATA_HOME`, and starts a session agent scoped to the current domain. Descendant domains reuse an unlocked ancestor session automatically, but sibling domains stay locked until they unlock for themselves.
 
+When a branch still contains explicit-lock shadows, `unlock --descendants` performs an explicit subtree unlock: it keeps the explicit-lock markers in place, but creates local descendant sessions so the current domain and blocked descendants become available for the lifetime of those sessions. Because that broadens access beyond the current domain, the command asks for confirmation unless you pass `--yes` for non-interactive use.
+
 Before prompting, `unlock` now prints the resolved domain it is about to unlock so the current scope is visible even when you launched the command from the wrong directory by mistake.
 
-If some descendants under the unlocked branch remain shadowed by explicit locks, `unlock` now says so and prints follow-up commands for `domain ls -l --descendants`, `domain status`, and a descendant-specific `unlock` using the correct `--dir` values.
+If some descendants under the unlocked branch remain shadowed by explicit locks, plain `unlock` now says so and prints follow-up commands for `domain ls -l --descendants`, `domain status`, and a descendant-specific `unlock` using the correct `--dir` values.
 
 If a secret read fails while `secdat` is still locked, the error now reports the resolved domain context and suggests the matching `domain status` and `unlock` command so you do not keep retrying from the wrong directory.
 

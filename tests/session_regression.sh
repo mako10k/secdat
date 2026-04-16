@@ -187,7 +187,7 @@ for args, marker in [
     ([bin_path, "-h", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "--help"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "-h"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
-    ([bin_path, "help", "unlock"], "[-d DIR|--dir DIR] unlock"),
+    ([bin_path, "help", "unlock"], "[-d DIR|--dir DIR] unlock [--descendants] [--yes]"),
     ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock"),
     ([bin_path, "help", "list"], "list [--masked] [--overridden] [--orphaned] [--safe] [--unsafe]"),
     ([bin_path, "help", "mask"], "mask KEYREF"),
@@ -356,24 +356,63 @@ if rc != 0 or stdout.strip() != "session unlocked\nnote: 1 descendant domains ca
 if f"resolved domain: {child_domain}\n" not in stderr:
     fail(f"child unlock prompt context missing: stderr={stderr!r}")
 
-rc, stdout, stderr = run(scoped(["status", "-q"], child_domain))
-if rc != 0 or stdout != "" or stderr != "":
-    fail(f"child status after local unlock unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["lock"], child_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"child relock before descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run(scoped(["status", "-q"], grandchild_domain))
-if rc != 0 or stdout != "" or stderr != "":
-    fail(f"grandchild status after child local unlock unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["unlock", "--descendants"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+if rc == 0 or "unlock --descendants requires confirmation on a terminal or rerun with --yes\n" not in stderr:
+    fail(f"non-interactive descendant unlock without --yes should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, transcript = run_pty(
+    scoped(["unlock", "--descendants"], root_domain),
+    [
+        ("unlock descendant domains in this subtree? explicit lock markers will remain [y/N]: ", "y"),
+        ("Enter secdat passphrase:", passphrase),
+    ],
+)
+if rc != 0 or f"resolved domain: {root_domain}" not in transcript or "this will unlock 2 descendant domains in the current subtree" not in transcript:
+    fail(f"interactive descendant unlock failed: rc={rc} transcript={transcript!r}")
+if "note: unlocked 2 descendant domains in this subtree; explicit lock markers remain" not in transcript:
+    fail(f"interactive descendant unlock summary missing: transcript={transcript!r}")
 
 rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
 if rc != 0 or stderr != "":
-    fail(f"domain status after child local unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: local session\n", "child local unlock status")
+    fail(f"child domain status after descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: local session\n", "child local session after descendant unlock")
 
 rc, stdout, stderr = run(scoped(["domain", "status"], grandchild_domain))
 if rc != 0 or stderr != "":
-    fail(f"grandchild domain status after child local unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: inherited session\n", "grandchild inherited status")
-assert_contains(stdout, f"inherited from: {child_domain}\n", "grandchild inherited status")
+    fail(f"grandchild domain status after descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: local session\n", "grandchild local session after descendant unlock")
+
+rc, stdout, stderr = run(scoped(["lock"], child_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"child relock before --yes descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["unlock", "--descendants", "--yes"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+if rc != 0 or "note: unlocked 1 descendant domains in this subtree; explicit lock markers remain\n" not in stdout:
+    fail(f"descendant unlock with --yes failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if "unlock descendant domains in this subtree? explicit lock markers will remain [y/N]: " in stderr:
+    fail(f"--yes descendant unlock should not prompt: stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status", "-q"], child_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"child status after descendant unlock unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status", "-q"], grandchild_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"grandchild status after descendant unlock unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
+if rc != 0 or stderr != "":
+    fail(f"domain status after descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: local session\n", "child local status after descendant unlock")
+
+rc, stdout, stderr = run(scoped(["domain", "status"], grandchild_domain))
+if rc != 0 or stderr != "":
+    fail(f"grandchild domain status after descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: local session\n", "grandchild local status after descendant unlock")
 
 rc, stdout, stderr = run(scoped(["status", "-q"], sibling_domain))
 if rc != 1 or stdout != "" or stderr != "":
@@ -397,10 +436,9 @@ if rc != 0 or "session unlocked\n" not in stdout:
     fail(f"unlock with rotated env passphrase failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if f"resolved domain: {root_domain}\n" not in stderr:
     fail(f"rotated unlock prompt context missing: stderr={stderr!r}")
-assert_contains(stdout, f"note: 2 descendant domains remain locked under this branch\n", "guided unlock count")
+assert_contains(stdout, f"note: 1 descendant domains remain locked under this branch\n", "guided unlock count")
 assert_contains(stdout, "affected descendants:\n", "guided unlock header")
 assert_contains(stdout, f"  {child_domain}\n", "guided unlock child descendant")
-assert_contains(stdout, f"  {grandchild_domain}\n", "guided unlock grandchild descendant")
 assert_contains(stdout, f"inspect descendants: secdat --dir {root_domain} domain ls -l --descendants\n", "guided unlock descendants command")
 assert_contains(stdout, f"inspect one descendant: secdat --dir {child_domain} domain status\n", "guided unlock status command")
 assert_contains(stdout, f"unlock one descendant: secdat --dir {child_domain} unlock\n", "guided unlock unlock command")

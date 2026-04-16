@@ -189,7 +189,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] load FILE\n"), program_name);
         break;
     case SECDAT_COMMAND_UNLOCK:
-        printf(_("  %s [-d DIR|--dir DIR] unlock\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] unlock [--descendants] [--yes]\n"), program_name);
         break;
     case SECDAT_COMMAND_PASSWD:
         printf(_("  %s passwd\n"), program_name);

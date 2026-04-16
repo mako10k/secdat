@@ -131,8 +131,14 @@ static int secdat_session_agent_status_details(
     size_t *matched_index,
     size_t *blocked_index
 );
+static int secdat_session_agent_set(const char *domain_id, const char *master_key);
 static void secdat_print_unlock_guidance(const char *current_domain_root);
 static void secdat_print_locked_read_guidance(const struct secdat_domain_chain *chain);
+
+struct secdat_unlock_options {
+    int include_descendants;
+    int assume_yes;
+};
 
 static void secdat_secure_clear(void *buffer, size_t length)
 {
@@ -194,6 +200,26 @@ static int secdat_key_list_append(struct secdat_key_list *list, const char *valu
 
     list->items[list->count] = strdup(value);
     if (list->items[list->count] == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+
+    list->count += 1;
+    return 0;
+}
+
+static int secdat_domain_root_list_append(struct secdat_domain_root_list *list, const char *value)
+{
+    char **new_roots;
+
+    new_roots = realloc(list->roots, sizeof(*new_roots) * (list->count + 1));
+    if (new_roots == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    list->roots = new_roots;
+    list->roots[list->count] = strdup(value);
+    if (list->roots[list->count] == NULL) {
         fprintf(stderr, _("out of memory\n"));
         return 1;
     }
@@ -375,6 +401,146 @@ static void secdat_print_locked_read_guidance(const struct secdat_domain_chain *
     fprintf(stderr, _("resolved domain: %s\n"), current_domain_root);
     fprintf(stderr, _("inspect current domain: secdat --dir %s domain status\n"), current_domain_root);
     fprintf(stderr, _("unlock current domain: secdat --dir %s unlock\n"), current_domain_root);
+}
+
+static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secdat_unlock_options *options)
+{
+    size_t index;
+
+    memset(options, 0, sizeof(*options));
+    for (index = 0; index < (size_t)cli->argc; index += 1) {
+        if (strcmp(cli->argv[index], "--descendants") == 0) {
+            options->include_descendants = 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--yes") == 0) {
+            options->assume_yes = 1;
+            continue;
+        }
+
+        fprintf(stderr, _("invalid arguments for unlock\n"));
+        secdat_cli_print_try_help(cli, "unlock");
+        return 2;
+    }
+
+    return 0;
+}
+
+static int secdat_collect_locked_descendant_roots(
+    const char *current_domain_root,
+    struct secdat_domain_root_list *targets,
+    size_t *affected_count
+)
+{
+    struct secdat_domain_root_list descendants = {0};
+    struct secdat_domain_status_summary summary;
+    size_t index;
+
+    targets->roots = NULL;
+    targets->count = 0;
+    *affected_count = 0;
+
+    if (current_domain_root[0] == '\0') {
+        return 0;
+    }
+    if (secdat_collect_descendant_domain_roots(current_domain_root, &descendants) != 0) {
+        return 1;
+    }
+
+    for (index = 0; index < descendants.count; index += 1) {
+        if (strcmp(descendants.roots[index], current_domain_root) == 0) {
+            continue;
+        }
+        if (secdat_collect_domain_status_summary(descendants.roots[index], &summary) != 0) {
+            secdat_domain_root_list_free(&descendants);
+            secdat_domain_root_list_free(targets);
+            return 1;
+        }
+        if (summary.effective_source != SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK
+            && summary.effective_source != SECDAT_EFFECTIVE_SOURCE_BLOCKED) {
+            continue;
+        }
+        if (secdat_domain_root_list_append(targets, descendants.roots[index]) != 0) {
+            secdat_domain_root_list_free(&descendants);
+            secdat_domain_root_list_free(targets);
+            return 1;
+        }
+        *affected_count += 1;
+    }
+
+    secdat_domain_root_list_free(&descendants);
+    return 0;
+}
+
+static int secdat_read_confirmation_from_tty(const char *prompt, char *buffer, size_t size)
+{
+    size_t length;
+
+    if (!isatty(STDIN_FILENO)) {
+        fprintf(stderr, _("unlock --descendants requires confirmation on a terminal or rerun with --yes\n"));
+        return 1;
+    }
+
+    fprintf(stderr, "%s", prompt);
+    fflush(stderr);
+    if (fgets(buffer, (int)size, stdin) == NULL) {
+        fprintf(stderr, _("failed to read confirmation\n"));
+        return 1;
+    }
+
+    length = strlen(buffer);
+    while (length > 0 && (buffer[length - 1] == '\n' || buffer[length - 1] == '\r')) {
+        buffer[length - 1] = '\0';
+        length -= 1;
+    }
+    return 0;
+}
+
+static int secdat_confirm_descendant_unlock(size_t affected_count)
+{
+    char response[32];
+
+    if (affected_count == 0) {
+        return 0;
+    }
+    if (secdat_read_confirmation_from_tty(
+            _("unlock descendant domains in this subtree? explicit lock markers will remain [y/N]: "),
+            response,
+            sizeof(response)
+        ) != 0) {
+        return 1;
+    }
+    if (strcmp(response, "y") == 0 || strcmp(response, "Y") == 0 || strcmp(response, "yes") == 0 || strcmp(response, "YES") == 0) {
+        return 0;
+    }
+
+    fprintf(stderr, _("descendant unlock cancelled\n"));
+    return 1;
+}
+
+static int secdat_unlock_descendant_sessions(const struct secdat_domain_root_list *targets, const char *master_key)
+{
+    char domain_id[PATH_MAX];
+    size_t index;
+
+    for (index = 0; index < targets->count; index += 1) {
+        if (secdat_domain_resolve_current(targets->roots[index], domain_id, sizeof(domain_id)) != 0) {
+            return 1;
+        }
+        if (secdat_session_agent_set(domain_id, master_key) != 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static void secdat_print_descendant_unlock_summary(size_t affected_count)
+{
+    if (affected_count == 0) {
+        return;
+    }
+    printf(_("note: unlocked %zu descendant domains in this subtree; explicit lock markers remain\n"), affected_count);
 }
 
 static int secdat_parse_key_reference(
@@ -2704,17 +2870,25 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
 {
     char current_domain_id[PATH_MAX];
     char current_domain_root[PATH_MAX];
+    struct secdat_unlock_options options;
+    struct secdat_domain_root_list descendant_targets = {0};
     const char *env_master_key = getenv("SECDAT_MASTER_KEY");
+    size_t descendant_unlock_count = 0;
     int wrapped_present = secdat_wrapped_master_key_exists();
     int initialized = 0;
+    int parse_status;
     char passphrase[512];
     const char *session_master_key = env_master_key;
     char secret[512];
 
-    if (cli->argc != 0 || cli->store != NULL) {
+    if (cli->store != NULL) {
         fprintf(stderr, _("invalid arguments for unlock\n"));
         secdat_cli_print_try_help(cli, "unlock");
         return 2;
+    }
+    parse_status = secdat_parse_unlock_options(cli, &options);
+    if (parse_status != 0) {
+        return parse_status;
     }
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
@@ -2723,14 +2897,29 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         return 1;
     }
     fprintf(stderr, _("resolved domain: %s\n"), current_domain_root[0] != '\0' ? current_domain_root : "default");
+    if (options.include_descendants) {
+        if (secdat_collect_locked_descendant_roots(current_domain_root, &descendant_targets, &descendant_unlock_count) != 0) {
+            return 1;
+        }
+        if (descendant_unlock_count > 0) {
+            fprintf(stderr, _("this will unlock %zu descendant domains in the current subtree\n"), descendant_unlock_count);
+            fprintf(stderr, _("explicit lock markers will remain after session expiry or a later lock\n"));
+            if (!options.assume_yes && secdat_confirm_descendant_unlock(descendant_unlock_count) != 0) {
+                secdat_domain_root_list_free(&descendant_targets);
+                return 1;
+            }
+        }
+    }
 
     if (!wrapped_present) {
         if (secdat_read_new_master_key_passphrase(passphrase, sizeof(passphrase)) != 0) {
+            secdat_domain_root_list_free(&descendant_targets);
             return 1;
         }
         if (session_master_key == NULL || session_master_key[0] == '\0') {
             if (secdat_generate_master_key(secret, sizeof(secret)) != 0) {
                 secdat_secure_clear(passphrase, strlen(passphrase));
+                secdat_domain_root_list_free(&descendant_targets);
                 return 1;
             }
             session_master_key = secret;
@@ -2740,6 +2929,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
             if (session_master_key == secret) {
                 secdat_secure_clear(secret, strlen(secret));
             }
+            secdat_domain_root_list_free(&descendant_targets);
             return 1;
         }
         initialized = 1;
@@ -2751,6 +2941,14 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
             if (session_master_key == secret) {
                 secdat_secure_clear(secret, strlen(secret));
             }
+            secdat_domain_root_list_free(&descendant_targets);
+            return 1;
+        }
+        if (options.include_descendants && secdat_unlock_descendant_sessions(&descendant_targets, session_master_key) != 0) {
+            if (session_master_key == secret) {
+                secdat_secure_clear(secret, strlen(secret));
+            }
+            secdat_domain_root_list_free(&descendant_targets);
             return 1;
         }
         if (session_master_key == secret) {
@@ -2763,31 +2961,50 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         } else {
             puts(_("session unlocked from environment"));
         }
-        secdat_print_unlock_guidance(current_domain_root);
+        if (options.include_descendants) {
+            secdat_print_descendant_unlock_summary(descendant_unlock_count);
+        } else {
+            secdat_print_unlock_guidance(current_domain_root);
+        }
+        secdat_domain_root_list_free(&descendant_targets);
         return 0;
     }
 
     if (!wrapped_present) {
         fprintf(stderr, _("no persistent master key is initialized; run secdat unlock once on a terminal to create one\n"));
+        secdat_domain_root_list_free(&descendant_targets);
         return 1;
     }
 
     if (secdat_read_unlock_passphrase(passphrase, sizeof(passphrase)) != 0) {
+        secdat_domain_root_list_free(&descendant_targets);
         return 1;
     }
     if (secdat_unwrap_master_key(passphrase, secret, sizeof(secret)) != 0) {
         secdat_secure_clear(passphrase, strlen(passphrase));
+        secdat_domain_root_list_free(&descendant_targets);
         return 1;
     }
     secdat_secure_clear(passphrase, strlen(passphrase));
     if (secdat_session_agent_set(current_domain_id, secret) != 0) {
         secdat_secure_clear(secret, strlen(secret));
+        secdat_domain_root_list_free(&descendant_targets);
+        return 1;
+    }
+    if (options.include_descendants && secdat_unlock_descendant_sessions(&descendant_targets, secret) != 0) {
+        secdat_secure_clear(secret, strlen(secret));
+        secdat_domain_root_list_free(&descendant_targets);
         return 1;
     }
 
     secdat_secure_clear(secret, strlen(secret));
     puts(_("session unlocked"));
-    secdat_print_unlock_guidance(current_domain_root);
+    if (options.include_descendants) {
+        secdat_print_descendant_unlock_summary(descendant_unlock_count);
+    } else {
+        secdat_print_unlock_guidance(current_domain_root);
+    }
+    secdat_domain_root_list_free(&descendant_targets);
     return 0;
 }
 

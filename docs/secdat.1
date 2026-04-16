@@ -96,8 +96,14 @@ Write the current visible secrets into a passphrase-protected bundle.
 .B load FILE
 Load a passphrase-protected bundle into the current domain/store context.
 .TP
-.B [\-d DIR|\-\-dir DIR] unlock
-Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked. If some descendant domains under the unlocked branch remain shadowed by explicit locks, the command prints follow-up inspection and descendant-specific unlock commands using the correct
+.B [\-d DIR|\-\-dir DIR] unlock [\-\-descendants] [\-\-yes]
+Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked. With
+.B --descendants
+the command performs an explicit subtree unlock for the resolved domain and its registered descendants, creating local descendant sessions where needed while leaving explicit-lock markers intact; broader-scope unlocks require confirmation unless
+.B --yes
+is present. If some descendant domains under the unlocked branch remain shadowed by explicit locks, plain
+.B unlock
+prints follow-up inspection and descendant-specific unlock commands using the correct
 .B --dir
 targets. Before prompting, the command reports the resolved domain it is about to unlock, and when descendants exist under that branch it summarizes whether they can now reuse the session.
 .TP

@@ -142,8 +142,8 @@ msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] load FILE\n"
 
 #: src/cli.c:180
 #, c-format
-msgid "  %s [-d DIR|--dir DIR] unlock\n"
-msgstr "  %s [-d DIR|--dir DIR] unlock\n"
+msgid "  %s [-d DIR|--dir DIR] unlock [--descendants] [--yes]\n"
+msgstr "  %s [-d DIR|--dir DIR] unlock [--descendants] [--yes]\n"
 
 #: src/cli.c:183
 #, c-format
@@ -1302,6 +1302,41 @@ msgstr "実効取得元: locked"
 #, c-format
 msgid "invalid arguments for unlock\n"
 msgstr "unlock の引数が不正です\n"
+
+#: src/store.c:432
+#, c-format
+msgid "unlock --descendants requires confirmation on a terminal or rerun with --yes\n"
+msgstr "unlock --descendants には端末での確認が必要です。非対話では --yes を付けて再実行してください\n"
+
+#: src/store.c:442
+#, c-format
+msgid "failed to read confirmation\n"
+msgstr "確認入力の読み取りに失敗しました\n"
+
+#: src/store.c:463
+#, c-format
+msgid "unlock descendant domains in this subtree? explicit lock markers will remain [y/N]: "
+msgstr "この subtree の descendant domain を unlock しますか? explicit lock marker は残ります [y/N]: "
+
+#: src/store.c:473
+#, c-format
+msgid "descendant unlock cancelled\n"
+msgstr "descendant unlock を中止しました\n"
+
+#: src/store.c:494
+#, c-format
+msgid "note: unlocked %zu descendant domains in this subtree; explicit lock markers remain\n"
+msgstr "注: この subtree で %zu 個の descendant domain を unlock しました。explicit lock marker は残ります\n"
+
+#: src/store.c:2471
+#, c-format
+msgid "this will unlock %zu descendant domains in the current subtree\n"
+msgstr "現在の subtree で %zu 個の descendant domain を unlock します\n"
+
+#: src/store.c:2472
+#, c-format
+msgid "explicit lock markers will remain after session expiry or a later lock\n"
+msgstr "session の期限切れ後や後続の lock 後も explicit lock marker は残ります\n"
 
 #: src/store.c:2483
 msgid "persistent master key initialized; session unlocked from environment"
