@@ -62,7 +62,11 @@ Check whether one resolved key is visible from the current domain view. This com
 .B get KEYREF [\-o|\-\-stdout|\-\-shellescaped]
 Decrypt one resolved key and write it to standard output. Use
 .B --shellescaped
-to emit a single shell-quoted value for bash-oriented loading.
+to emit a single shell-quoted value for bash-oriented loading. When a locked read fails because no active session is available, the error reports the resolved domain context and prints matching
+.B domain status
+and
+.B unlock
+follow-up commands for that domain.
 .TP
 .B set KEYREF [\-\-unsafe] [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
 Store or update one key in the resolved current domain. Use

@@ -132,6 +132,7 @@ static int secdat_session_agent_status_details(
     size_t *blocked_index
 );
 static void secdat_print_unlock_guidance(const char *current_domain_root);
+static void secdat_print_locked_read_guidance(const struct secdat_domain_chain *chain);
 
 static void secdat_secure_clear(void *buffer, size_t length)
 {
@@ -346,6 +347,29 @@ static void secdat_print_unlock_guidance(const char *current_domain_root)
     }
 
     secdat_domain_root_list_free(&descendants);
+}
+
+static void secdat_print_locked_read_guidance(const struct secdat_domain_chain *chain)
+{
+    char current_domain_root[PATH_MAX];
+
+    if (chain == NULL || chain->count == 0) {
+        return;
+    }
+    if (secdat_domain_root_path(chain->ids[0], current_domain_root, sizeof(current_domain_root)) != 0) {
+        return;
+    }
+
+    if (current_domain_root[0] == '\0') {
+        fprintf(stderr, _("resolved domain: default\n"));
+        fprintf(stderr, _("inspect current domain: secdat domain status\n"));
+        fprintf(stderr, _("unlock current domain: secdat unlock\n"));
+        return;
+    }
+
+    fprintf(stderr, _("resolved domain: %s\n"), current_domain_root);
+    fprintf(stderr, _("inspect current domain: secdat --dir %s domain status\n"), current_domain_root);
+    fprintf(stderr, _("unlock current domain: secdat --dir %s unlock\n"), current_domain_root);
 }
 
 static int secdat_parse_key_reference(
@@ -2593,6 +2617,7 @@ static int secdat_derive_key(const struct secdat_domain_chain *chain, unsigned c
                 stderr,
                 _("missing SECDAT_MASTER_KEY and no active secdat session; run secdat unlock or export SECDAT_MASTER_KEY\n")
             );
+            secdat_print_locked_read_guidance(chain);
             return 1;
         }
     }

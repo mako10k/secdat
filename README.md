@@ -53,6 +53,8 @@ The first interactive `unlock` generates a fresh master key, stores a wrapped co
 
 If some descendants under the unlocked branch remain shadowed by explicit locks, `unlock` now says so and prints follow-up commands for `domain ls -l --descendants`, `domain status`, and a descendant-specific `unlock` using the correct `--dir` values.
 
+If a secret read fails while `secdat` is still locked, the error now reports the resolved domain context and suggests the matching `domain status` and `unlock` command so you do not keep retrying from the wrong directory.
+
 For explicit non-interactive use, `SECDAT_MASTER_KEY_PASSPHRASE` can provide the current wrapped-key passphrase to `unlock`. This is an override path rather than the default recommendation, because environment variables are easier to expose than terminal prompts.
 
 If you already have a master key to migrate or explicitly override with, `SECDAT_MASTER_KEY` still works:

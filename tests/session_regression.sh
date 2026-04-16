@@ -342,6 +342,9 @@ assert_contains(stdout, f"{grandchild_domain}\tlocked\tlocked\tblocked:{child_do
 rc, stdout, stderr = run(scoped(["get", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain))
 if rc == 0 or "no active secdat session" not in stderr:
     fail(f"child unexpectedly reused ancestor session after explicit lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stderr, f"resolved domain: {child_domain}\n", "locked read resolved domain guidance")
+assert_contains(stderr, f"inspect current domain: secdat --dir {child_domain} domain status\n", "locked read status guidance")
+assert_contains(stderr, f"unlock current domain: secdat --dir {child_domain} unlock\n", "locked read unlock guidance")
 
 rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
 if rc != 0 or stdout.strip() != "session unlocked":

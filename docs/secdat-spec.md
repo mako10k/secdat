@@ -252,6 +252,7 @@ To make the requested behavior implementable, the following are treated as norma
 - unlocking one domain must not unlock sibling domains
 - descendant domains may reuse an unlocked ancestor session without an extra `unlock`
 - when `unlock` succeeds for one domain while descendant domains remain effectively locked because of explicit-lock shadow state, the command must say so explicitly and print follow-up inspection/unlock commands using the correct `--dir` targets
+- when a secret read fails because no active session is available, the error must report the resolved domain context and print matching `domain status` / `unlock` follow-up commands so users can unlock the correct domain
 - `secdat [--dir DIR] lock` removes only the current domain's local agent-backed session state
 - the current implementation refreshes the idle timeout when the agent serves the cached key
 - no raw master-key retrieval path is required for normal operation; the generated key remains internal unless a separate future recovery/export flow is introduced

@@ -1267,6 +1267,28 @@ msgstr "1 つの descendant を確認: secdat --dir %s domain status\n"
 msgid "unlock one descendant: secdat --dir %s unlock\n"
 msgstr "1 つの descendant を unlock: secdat --dir %s unlock\n"
 
+#: src/store.c:361
+msgid "resolved domain: default\n"
+msgstr "解決された domain: default\n"
+
+#: src/store.c:362
+msgid "inspect current domain: secdat domain status\n"
+msgstr "現在の domain を確認: secdat domain status\n"
+
+#: src/store.c:363
+msgid "unlock current domain: secdat unlock\n"
+msgstr "現在の domain を unlock: secdat unlock\n"
+
+#: src/store.c:367
+#, c-format
+msgid "inspect current domain: secdat --dir %s domain status\n"
+msgstr "現在の domain を確認: secdat --dir %s domain status\n"
+
+#: src/store.c:368
+#, c-format
+msgid "unlock current domain: secdat --dir %s unlock\n"
+msgstr "現在の domain を unlock: secdat --dir %s unlock\n"
+
 #: src/domain.c:1211
 msgid "effective source: locked"
 msgstr "実効取得元: locked"
