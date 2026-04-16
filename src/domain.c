@@ -999,7 +999,7 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     const char *key_source;
     const char *state_source;
     char scope_base[PATH_MAX];
-    char state_source_buffer[PATH_MAX];
+    char *state_source_owned = NULL;
     size_t index;
     int include_ancestors = 0;
     int include_descendants = 0;
@@ -1097,15 +1097,27 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
             state_source = _("local-session");
             break;
         case SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION:
-            snprintf(state_source_buffer, sizeof(state_source_buffer), "inherited:%s", summary.related_domain_root);
-            state_source = state_source_buffer;
+            state_source_owned = malloc(strlen("inherited:") + strlen(summary.related_domain_root) + 1);
+            if (state_source_owned == NULL) {
+                fprintf(stderr, _("out of memory\n"));
+                secdat_string_list_free(&roots);
+                return 1;
+            }
+            sprintf(state_source_owned, "inherited:%s", summary.related_domain_root);
+            state_source = state_source_owned;
             break;
         case SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK:
             state_source = _("explicit-lock");
             break;
         case SECDAT_EFFECTIVE_SOURCE_BLOCKED:
-            snprintf(state_source_buffer, sizeof(state_source_buffer), "blocked:%s", summary.related_domain_root);
-            state_source = state_source_buffer;
+            state_source_owned = malloc(strlen("blocked:") + strlen(summary.related_domain_root) + 1);
+            if (state_source_owned == NULL) {
+                fprintf(stderr, _("out of memory\n"));
+                secdat_string_list_free(&roots);
+                return 1;
+            }
+            sprintf(state_source_owned, "blocked:%s", summary.related_domain_root);
+            state_source = state_source_owned;
             break;
         default:
             state_source = _("locked");
@@ -1123,6 +1135,8 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
             summary.store_count,
             summary.visible_key_count,
             summary.wrapped_master_key_present ? _("present") : _("absent"));
+            free(state_source_owned);
+            state_source_owned = NULL;
     }
 
     secdat_string_list_free(&roots);
