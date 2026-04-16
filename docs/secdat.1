@@ -129,6 +129,7 @@ or
 .B --long
 to add the same key-source, effective-state, effective-state-source, store-count, visible-key-count, and wrapped-key summary fields used by
 .B domain status .
+When long format is written to a terminal, shared parent directories are shown once as a heading and very long domain labels wrap before the metadata columns. Non-terminal long-format output keeps the tab-separated full-path rows.
 .TP
 .B domain status [\-q|\-\-quiet]
 Report the resolved domain for the current context along with store count, visible key count, key source, wrapped-key presence, and effective access state. Effective access distinguishes environment, local session, inherited session, explicit lock, and blocked-by-explicit-lock outcomes.

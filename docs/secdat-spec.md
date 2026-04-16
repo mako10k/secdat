@@ -310,6 +310,8 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] domain ls --ancestors` limits that listing to the current domain and its ancestor side
 - `secdat [--dir DIR] domain ls --descendants` limits that listing to the current domain and its descendant side
 - combining `--ancestors` and `--descendants` is equivalent to the default `domain ls` behavior
+- when `domain ls -l` writes to a terminal, it may render a human-oriented grouped view that lifts the shared parent directory into a heading and wraps long domain labels before the metadata columns
+- non-terminal `domain ls -l` output must keep the tab-separated full-path rows so scripts can continue to consume the current layout
 - `secdat [--dir DIR] domain ls -l` adds the key source, effective state, effective-state source, current-domain store count, visible key count, and wrapped-master-key presence for each listed domain
 - `secdat [--dir DIR] domain status` reports the resolved current domain used by normal store commands
 - `secdat [--domain DIR] ...` uses that exact registered domain root as the current domain context
@@ -786,6 +788,7 @@ Responsibilities:
 2. walk `entries` and `tombstones` in precedence order
 3. build the effective visible key set, favoring nearer domains
 4. apply glob filtering and print lexicographically
+5. when long format is written to a terminal, render the listed rows under their shared parent directory and wrap labels that would make the metadata columns unreadable
 
 #### `get`
 

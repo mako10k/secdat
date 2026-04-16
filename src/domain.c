@@ -16,13 +16,26 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <wchar.h>
 
 #define SECDAT_DOMAIN_ID_LEN 32
+#define SECDAT_DOMAIN_TTY_LABEL_WIDTH 24
 
 struct secdat_string_list {
     char **items;
     size_t count;
     size_t capacity;
+};
+
+struct secdat_domain_ls_row {
+    const char *root;
+    const char *key_source;
+    const char *effective_state;
+    const char *state_source;
+    char *state_source_owned;
+    size_t store_count;
+    size_t visible_key_count;
+    const char *wrapped;
 };
 
 static int secdat_compare_strings(const void *left, const void *right)
@@ -31,6 +44,22 @@ static int secdat_compare_strings(const void *left, const void *right)
     const char *const *right_string = right;
 
     return strcmp(*left_string, *right_string);
+}
+
+static void secdat_domain_ls_row_clear(struct secdat_domain_ls_row *row)
+{
+    free(row->state_source_owned);
+    row->state_source_owned = NULL;
+}
+
+static void secdat_domain_ls_row_list_clear(struct secdat_domain_ls_row *rows, size_t count)
+{
+    size_t index;
+
+    for (index = 0; index < count; index += 1) {
+        secdat_domain_ls_row_clear(&rows[index]);
+    }
+    free(rows);
 }
 
 static void secdat_string_list_free(struct secdat_string_list *list)
@@ -88,6 +117,342 @@ static int secdat_string_list_append(struct secdat_string_list *list, const char
 
     list->count += 1;
     return 0;
+}
+
+static size_t secdat_max_size(size_t left, size_t right)
+{
+    return left > right ? left : right;
+}
+
+static size_t secdat_display_width(const char *text)
+{
+    mbstate_t state;
+    const char *cursor = text;
+    size_t width = 0;
+
+    memset(&state, 0, sizeof(state));
+    while (*cursor != '\0') {
+        wchar_t wide_char;
+        size_t consumed = mbrtowc(&wide_char, cursor, MB_CUR_MAX, &state);
+        int cell_width;
+
+        if (consumed == (size_t)-1 || consumed == (size_t)-2) {
+            memset(&state, 0, sizeof(state));
+            cursor += 1;
+            width += 1;
+            continue;
+        }
+        if (consumed == 0) {
+            break;
+        }
+
+        cell_width = wcwidth(wide_char);
+        width += cell_width > 0 ? (size_t)cell_width : 0;
+        cursor += consumed;
+    }
+
+    return width;
+}
+
+static void secdat_print_left_padded(const char *text, size_t target_width)
+{
+    size_t index;
+    size_t text_width = secdat_display_width(text);
+
+    fputs(text, stdout);
+    for (index = text_width; index < target_width; index += 1) {
+        fputc(' ', stdout);
+    }
+}
+
+static void secdat_print_right_padded(const char *text, size_t target_width)
+{
+    size_t index;
+    size_t text_width = secdat_display_width(text);
+
+    for (index = text_width; index < target_width; index += 1) {
+        fputc(' ', stdout);
+    }
+    fputs(text, stdout);
+}
+
+static int secdat_path_has_directory_prefix(const char *path, const char *prefix)
+{
+    size_t prefix_length;
+
+    if (prefix == NULL || prefix[0] == '\0') {
+        return 1;
+    }
+    if (strcmp(prefix, "/") == 0) {
+        return path[0] == '/';
+    }
+
+    prefix_length = strlen(prefix);
+    return strncmp(path, prefix, prefix_length) == 0 && (path[prefix_length] == '/' || path[prefix_length] == '\0');
+}
+
+static int secdat_common_parent_directory(const struct secdat_string_list *roots, char *buffer, size_t size)
+{
+    char candidate[PATH_MAX];
+    char *slash;
+    size_t index;
+
+    if (roots->count == 0) {
+        if (size == 0) {
+            fprintf(stderr, _("path is too long\n"));
+            return 1;
+        }
+        buffer[0] = '\0';
+        return 0;
+    }
+    if (strlen(roots->items[0]) >= sizeof(candidate)) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    strcpy(candidate, roots->items[0]);
+    slash = strrchr(candidate, '/');
+    if (slash == NULL) {
+        candidate[0] = '\0';
+    } else if (slash == candidate) {
+        candidate[1] = '\0';
+    } else {
+        *slash = '\0';
+    }
+
+    for (index = 1; index < roots->count; index += 1) {
+        while (candidate[0] != '\0' && !secdat_path_has_directory_prefix(roots->items[index], candidate)) {
+            slash = strrchr(candidate, '/');
+            if (slash == NULL) {
+                candidate[0] = '\0';
+                break;
+            }
+            if (slash == candidate) {
+                candidate[1] = '\0';
+                break;
+            }
+            *slash = '\0';
+        }
+    }
+
+    if (strlen(candidate) >= size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    strcpy(buffer, candidate);
+    return 0;
+}
+
+static const char *secdat_relative_root_label(const char *root, const char *common_parent)
+{
+    size_t parent_length;
+
+    if (common_parent == NULL || common_parent[0] == '\0') {
+        return root;
+    }
+    if (strcmp(common_parent, "/") == 0) {
+        return root[0] == '/' ? root + 1 : root;
+    }
+
+    parent_length = strlen(common_parent);
+    if (strncmp(root, common_parent, parent_length) == 0 && root[parent_length] == '/') {
+        return root + parent_length + 1;
+    }
+    return root;
+}
+
+static int secdat_format_state_source(
+    const struct secdat_domain_status_summary *summary,
+    struct secdat_domain_ls_row *row
+)
+{
+    switch (summary->effective_source) {
+    case SECDAT_EFFECTIVE_SOURCE_ENVIRONMENT:
+        row->state_source = _("environment");
+        return 0;
+    case SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION:
+        row->state_source = _("local-session");
+        return 0;
+    case SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION:
+        row->state_source_owned = malloc(strlen("inherited:") + strlen(summary->related_domain_root) + 1);
+        if (row->state_source_owned == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        sprintf(row->state_source_owned, "inherited:%s", summary->related_domain_root);
+        row->state_source = row->state_source_owned;
+        return 0;
+    case SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK:
+        row->state_source = _("explicit-lock");
+        return 0;
+    case SECDAT_EFFECTIVE_SOURCE_BLOCKED:
+        row->state_source_owned = malloc(strlen("blocked:") + strlen(summary->related_domain_root) + 1);
+        if (row->state_source_owned == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        sprintf(row->state_source_owned, "blocked:%s", summary->related_domain_root);
+        row->state_source = row->state_source_owned;
+        return 0;
+    default:
+        row->state_source = _("locked");
+        return 0;
+    }
+}
+
+static int secdat_fill_domain_ls_row(
+    const char *root,
+    const struct secdat_domain_status_summary *summary,
+    struct secdat_domain_ls_row *row
+)
+{
+    memset(row, 0, sizeof(*row));
+    row->root = root;
+    row->store_count = summary->store_count;
+    row->visible_key_count = summary->visible_key_count;
+    row->wrapped = summary->wrapped_master_key_present ? _("present") : _("absent");
+
+    switch (summary->key_source) {
+    case SECDAT_KEY_SOURCE_ENVIRONMENT:
+        row->key_source = _("environment");
+        break;
+    case SECDAT_KEY_SOURCE_SESSION:
+        row->key_source = _("session");
+        break;
+    default:
+        row->key_source = _("locked");
+        break;
+    }
+
+    row->effective_state = summary->effective_source == SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK
+            || summary->effective_source == SECDAT_EFFECTIVE_SOURCE_BLOCKED
+            || summary->effective_source == SECDAT_EFFECTIVE_SOURCE_LOCKED
+        ? _("locked")
+        : _("unlocked");
+
+    return secdat_format_state_source(summary, row);
+}
+
+static void secdat_render_domain_ls_tty_rows(const struct secdat_domain_ls_row *rows, size_t count)
+{
+    char common_parent[PATH_MAX];
+    struct secdat_string_list display_roots = {0};
+    size_t key_width = strlen(_("KEY_SOURCE"));
+    size_t effective_width = strlen(_("EFFECTIVE"));
+    size_t state_width = strlen(_("STATE_SOURCE"));
+    size_t stores_width = strlen(_("STORES"));
+    size_t visible_width = strlen(_("VISIBLE"));
+    size_t wrapped_width = strlen(_("WRAPPED"));
+    size_t domain_width = strlen(_("DOMAIN"));
+    size_t index;
+
+    for (index = 0; index < count; index += 1) {
+        if (secdat_string_list_append(&display_roots, rows[index].root) != 0) {
+            secdat_string_list_free(&display_roots);
+            return;
+        }
+    }
+    if (secdat_common_parent_directory(&display_roots, common_parent, sizeof(common_parent)) != 0) {
+        secdat_string_list_free(&display_roots);
+        return;
+    }
+
+    for (index = 0; index < count; index += 1) {
+        const char *label = secdat_relative_root_label(rows[index].root, common_parent);
+
+        key_width = secdat_max_size(key_width, secdat_display_width(rows[index].key_source));
+        effective_width = secdat_max_size(effective_width, secdat_display_width(rows[index].effective_state));
+        state_width = secdat_max_size(state_width, secdat_display_width(rows[index].state_source));
+        stores_width = secdat_max_size(stores_width, snprintf(NULL, 0, "%zu", rows[index].store_count));
+        visible_width = secdat_max_size(visible_width, snprintf(NULL, 0, "%zu", rows[index].visible_key_count));
+        wrapped_width = secdat_max_size(wrapped_width, secdat_display_width(rows[index].wrapped));
+        if (secdat_display_width(label) <= SECDAT_DOMAIN_TTY_LABEL_WIDTH) {
+            domain_width = secdat_max_size(domain_width, secdat_display_width(label) + 2);
+        }
+    }
+
+    domain_width = secdat_max_size(domain_width, (size_t)(SECDAT_DOMAIN_TTY_LABEL_WIDTH + 2));
+    secdat_print_left_padded(_("DOMAIN"), domain_width);
+    fputs("  ", stdout);
+    secdat_print_left_padded(_("KEY_SOURCE"), key_width);
+    fputs("  ", stdout);
+    secdat_print_left_padded(_("EFFECTIVE"), effective_width);
+    fputs("  ", stdout);
+    secdat_print_left_padded(_("STATE_SOURCE"), state_width);
+    fputs("  ", stdout);
+    secdat_print_right_padded(_("STORES"), stores_width);
+    fputs("  ", stdout);
+    secdat_print_right_padded(_("VISIBLE"), visible_width);
+    fputs("  ", stdout);
+    secdat_print_left_padded(_("WRAPPED"), wrapped_width);
+    fputc('\n', stdout);
+    if (common_parent[0] != '\0') {
+        printf("%s%s\n", common_parent, strcmp(common_parent, "/") == 0 ? "" : "/");
+    }
+
+    for (index = 0; index < count; index += 1) {
+        const char *label = secdat_relative_root_label(rows[index].root, common_parent);
+        char indented_label[PATH_MAX];
+        char stores_text[32];
+        char visible_text[32];
+
+        snprintf(stores_text, sizeof(stores_text), "%zu", rows[index].store_count);
+        snprintf(visible_text, sizeof(visible_text), "%zu", rows[index].visible_key_count);
+
+        if (secdat_display_width(label) > SECDAT_DOMAIN_TTY_LABEL_WIDTH) {
+            printf("  %s\n", label);
+            secdat_print_left_padded("", domain_width);
+            fputs("  ", stdout);
+            secdat_print_left_padded(rows[index].key_source, key_width);
+            fputs("  ", stdout);
+            secdat_print_left_padded(rows[index].effective_state, effective_width);
+            fputs("  ", stdout);
+            secdat_print_left_padded(rows[index].state_source, state_width);
+            fputs("  ", stdout);
+            secdat_print_right_padded(stores_text, stores_width);
+            fputs("  ", stdout);
+            secdat_print_right_padded(visible_text, visible_width);
+            fputs("  ", stdout);
+            secdat_print_left_padded(rows[index].wrapped, wrapped_width);
+            fputc('\n', stdout);
+            continue;
+        }
+
+        if (snprintf(indented_label, sizeof(indented_label), "  %s", label) >= (int)sizeof(indented_label)) {
+            printf("  %s\n", label);
+            secdat_print_left_padded("", domain_width);
+            fputs("  ", stdout);
+            secdat_print_left_padded(rows[index].key_source, key_width);
+            fputs("  ", stdout);
+            secdat_print_left_padded(rows[index].effective_state, effective_width);
+            fputs("  ", stdout);
+            secdat_print_left_padded(rows[index].state_source, state_width);
+            fputs("  ", stdout);
+            secdat_print_right_padded(stores_text, stores_width);
+            fputs("  ", stdout);
+            secdat_print_right_padded(visible_text, visible_width);
+            fputs("  ", stdout);
+            secdat_print_left_padded(rows[index].wrapped, wrapped_width);
+            fputc('\n', stdout);
+            continue;
+        }
+
+        secdat_print_left_padded(indented_label, domain_width);
+        fputs("  ", stdout);
+        secdat_print_left_padded(rows[index].key_source, key_width);
+        fputs("  ", stdout);
+        secdat_print_left_padded(rows[index].effective_state, effective_width);
+        fputs("  ", stdout);
+        secdat_print_left_padded(rows[index].state_source, state_width);
+        fputs("  ", stdout);
+        secdat_print_right_padded(stores_text, stores_width);
+        fputs("  ", stdout);
+        secdat_print_right_padded(visible_text, visible_width);
+        fputs("  ", stdout);
+        secdat_print_left_padded(rows[index].wrapped, wrapped_width);
+        fputc('\n', stdout);
+    }
+
+    secdat_string_list_free(&display_roots);
 }
 
 static int secdat_is_unreserved(unsigned char character)
@@ -1044,17 +1409,17 @@ static int secdat_domain_command_delete(const struct secdat_cli *cli)
 
 static int secdat_domain_command_ls(const struct secdat_cli *cli)
 {
+    struct secdat_domain_ls_row *rows = NULL;
     struct secdat_string_list roots = {0};
     struct secdat_domain_status_summary summary;
     const char *pattern = NULL;
-    const char *key_source;
-    const char *state_source;
     char scope_base[PATH_MAX];
-    char *state_source_owned = NULL;
+    size_t row_count = 0;
     size_t index;
     int include_ancestors = 0;
     int include_descendants = 0;
     int long_format = 0;
+    int tty_long_format = 0;
 
     for (index = 0; index < (size_t)cli->argc; index += 1) {
         if (strcmp(cli->argv[index], "-l") == 0 || strcmp(cli->argv[index], "--long") == 0) {
@@ -1103,7 +1468,9 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (long_format) {
+    tty_long_format = long_format && isatty(STDOUT_FILENO);
+
+    if (long_format && !tty_long_format) {
         printf(_("DOMAIN\tKEY_SOURCE\tEFFECTIVE\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n"));
     }
 
@@ -1126,71 +1493,55 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
 
         if (secdat_collect_domain_status_summary(roots.items[index], &summary) != 0) {
             secdat_string_list_free(&roots);
+            secdat_domain_ls_row_list_clear(rows, row_count);
             return 1;
         }
 
-        switch (summary.key_source) {
-        case SECDAT_KEY_SOURCE_ENVIRONMENT:
-            key_source = _("environment");
-            break;
-        case SECDAT_KEY_SOURCE_SESSION:
-            key_source = _("session");
-            break;
-        default:
-            key_source = _("locked");
-            break;
-        }
-        switch (summary.effective_source) {
-        case SECDAT_EFFECTIVE_SOURCE_ENVIRONMENT:
-            state_source = _("environment");
-            break;
-        case SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION:
-            state_source = _("local-session");
-            break;
-        case SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION:
-            state_source_owned = malloc(strlen("inherited:") + strlen(summary.related_domain_root) + 1);
-            if (state_source_owned == NULL) {
+        if (tty_long_format) {
+            struct secdat_domain_ls_row *new_rows = realloc(rows, sizeof(*new_rows) * (row_count + 1));
+
+            if (new_rows == NULL) {
                 fprintf(stderr, _("out of memory\n"));
                 secdat_string_list_free(&roots);
+                secdat_domain_ls_row_list_clear(rows, row_count);
                 return 1;
             }
-            sprintf(state_source_owned, "inherited:%s", summary.related_domain_root);
-            state_source = state_source_owned;
-            break;
-        case SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK:
-            state_source = _("explicit-lock");
-            break;
-        case SECDAT_EFFECTIVE_SOURCE_BLOCKED:
-            state_source_owned = malloc(strlen("blocked:") + strlen(summary.related_domain_root) + 1);
-            if (state_source_owned == NULL) {
-                fprintf(stderr, _("out of memory\n"));
+            rows = new_rows;
+            if (secdat_fill_domain_ls_row(roots.items[index], &summary, &rows[row_count]) != 0) {
                 secdat_string_list_free(&roots);
+                secdat_domain_ls_row_list_clear(rows, row_count + 1);
                 return 1;
             }
-            sprintf(state_source_owned, "blocked:%s", summary.related_domain_root);
-            state_source = state_source_owned;
-            break;
-        default:
-            state_source = _("locked");
-            break;
+            row_count += 1;
+            continue;
         }
-        printf("%s\t%s\t%s\t%s\t%zu\t%zu\t%s\n",
-            roots.items[index],
-            key_source,
-            summary.effective_source == SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK
-                || summary.effective_source == SECDAT_EFFECTIVE_SOURCE_BLOCKED
-                || summary.effective_source == SECDAT_EFFECTIVE_SOURCE_LOCKED
-                ? _("locked")
-                : _("unlocked"),
-            state_source,
-            summary.store_count,
-            summary.visible_key_count,
-            summary.wrapped_master_key_present ? _("present") : _("absent"));
-            free(state_source_owned);
-            state_source_owned = NULL;
+
+        {
+            struct secdat_domain_ls_row row;
+
+            if (secdat_fill_domain_ls_row(roots.items[index], &summary, &row) != 0) {
+                secdat_string_list_free(&roots);
+                secdat_domain_ls_row_list_clear(rows, row_count);
+                return 1;
+            }
+            printf("%s\t%s\t%s\t%s\t%zu\t%zu\t%s\n",
+                row.root,
+                row.key_source,
+                row.effective_state,
+                row.state_source,
+                row.store_count,
+                row.visible_key_count,
+                row.wrapped);
+            secdat_domain_ls_row_clear(&row);
+        }
+    }
+
+    if (tty_long_format) {
+        secdat_render_domain_ls_tty_rows(rows, row_count);
     }
 
     secdat_string_list_free(&roots);
+    secdat_domain_ls_row_list_clear(rows, row_count);
     return 0;
 }
 

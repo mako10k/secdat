@@ -18,8 +18,10 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
 python3 - "$bin_path" <<'PY'
 import os
+import pty
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 bin_path = sys.argv[1]
@@ -34,8 +36,9 @@ root_domain = work_root / "root-domain"
 child_domain = root_domain / "child-domain"
 grandchild_domain = child_domain / "grandchild-domain"
 sibling_domain = work_root / "sibling-domain"
+long_named_domain = work_root / "domain-with-an-extremely-long-name-for-terminal-layout-check"
 
-for path in (root_domain, child_domain, grandchild_domain, sibling_domain):
+for path in (root_domain, child_domain, grandchild_domain, sibling_domain, long_named_domain):
     path.mkdir(parents=True, exist_ok=True)
 
 
@@ -47,9 +50,41 @@ def fail(message):
 def run(args, extra_env=None):
     run_env = env.copy()
     if extra_env:
-        run_env.update(extra_env)
+        for key, value in extra_env.items():
+            if value is None:
+                run_env.pop(key, None)
+            else:
+                run_env[key] = value
     completed = subprocess.run(args, text=True, capture_output=True, env=run_env)
     return completed.returncode, completed.stdout, completed.stderr
+
+
+def run_pty(args, extra_env=None):
+    run_env = env.copy()
+    if extra_env:
+        for key, value in extra_env.items():
+            if value is None:
+                run_env.pop(key, None)
+            else:
+                run_env[key] = value
+
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execve(args[0], args, run_env)
+
+    chunks = []
+    try:
+        while True:
+            data = os.read(fd, 4096)
+            if not data:
+                break
+            chunks.append(data.decode(errors="replace"))
+    except OSError:
+        pass
+    finally:
+        _, status = os.waitpid(pid, 0)
+
+    return os.waitstatus_to_exitcode(status), "".join(chunks)
 
 
 def assert_contains(text, fragment, label):
@@ -62,11 +97,27 @@ def assert_eq(actual, expected, label):
         fail(f"{label}: expected {expected!r}, got {actual!r}")
 
 
+def display_width(text):
+    width = 0
+    for character in text:
+        if character in "\r\n":
+            continue
+        width += 2 if unicodedata.east_asian_width(character) in ("F", "W") else 1
+    return width
+
+
+def display_index(text, needle):
+    byte_index = text.find(needle)
+    if byte_index < 0:
+        fail(f"display_index missing {needle!r} in {text!r}")
+    return display_width(text[:byte_index])
+
+
 def scoped(args, domain=root_domain):
     return [bin_path, "--dir", str(domain), *args]
 
 
-for domain in (root_domain, child_domain, grandchild_domain, sibling_domain):
+for domain in (root_domain, child_domain, grandchild_domain, sibling_domain, long_named_domain):
     rc, stdout, stderr = run(scoped(["domain", "create"], domain))
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"domain create failed for {domain}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -78,6 +129,37 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run(scoped(["unlock"], root_domain))
 if rc != 0 or "session unlocked from environment\n" not in stdout:
     fail(f"root unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(work_root), "domain", "ls", "-l"])
+if rc != 0 or stderr != "":
+    fail(f"non-tty domain ls -l failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "non-tty domain ls header")
+assert_contains(stdout, f"{long_named_domain}\t", "non-tty domain retains full path")
+
+rc, transcript = run_pty([bin_path, "--dir", str(work_root), "domain", "ls", "-l"])
+if rc != 0:
+    fail(f"tty domain ls -l failed: rc={rc} transcript={transcript!r}")
+assert_contains(transcript, f"{work_root}/\r\n", "tty grouped parent heading")
+assert_contains(transcript, "  sibling-domain", "tty relative sibling label")
+assert_contains(transcript, f"  {long_named_domain.name}\r\n", "tty wrapped long domain label")
+assert_contains(transcript, "environment  unlocked", "tty metadata line present")
+
+rc, transcript = run_pty(
+    [bin_path, "--dir", str(work_root), "domain", "ls", "-l"],
+    {"LC_ALL": None, "LANGUAGE": "ja"},
+)
+if rc != 0:
+    fail(f"localized tty domain ls -l failed: rc={rc} transcript={transcript!r}")
+assert_contains(transcript, "アンロック済み", "localized effective label present")
+assert_contains(transcript, "あり", "localized wrapped label present")
+
+localized_lines = transcript.splitlines()
+header_line = next((line for line in localized_lines if "KEY_SOURCE" in line and "EFFECTIVE" in line), None)
+row_line = next((line for line in localized_lines if "  root-domain" in line and "environment" in line), None)
+if header_line is None or row_line is None:
+    fail(f"localized tty lines missing: header={header_line!r} row={row_line!r} transcript={transcript!r}")
+assert_eq(display_index(row_line, "environment"), display_index(header_line, "KEY_SOURCE"), "localized key-source column alignment")
+assert_eq(display_index(row_line, "アンロック済み"), display_index(header_line, "EFFECTIVE"), "localized effective column alignment")
 
 env.pop("SECDAT_MASTER_KEY", None)
 

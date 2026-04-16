@@ -149,6 +149,8 @@ mkdir -p ~/example/project
 
 `domain ls` is scoped by directory. Without `--dir`, it behaves like `--dir .`, so it lists only ancestor/self/descendant domains around the current working directory. Use `--ancestors` to keep only the current domain and its ancestor side, `--descendants` to keep only the current domain and its descendant side, `-l` or `--long` to add the `domain status` summary columns for each listed domain, and a wider base such as `--dir ~` when you want a broader listing. The long format now includes `EFFECTIVE` and `STATE_SOURCE` so shadowed descendants can be distinguished from locally unlocked or inherited session state.
 
+When `domain ls -l` writes to a terminal, it now groups rows under their shared parent directory and wraps very long domain labels onto a separate line before the status columns. Non-terminal output keeps the existing tab-separated full-path layout.
+
 `domain status` shows which domain normal commands resolve to for the current context, whether that context came from `--dir` or the working directory, and a compact summary of visible keys, stores, key source state, and the effective access state (`environment`, `local session`, `inherited session`, `explicit lock`, or `blocked by explicit lock`).
 
 ```sh
