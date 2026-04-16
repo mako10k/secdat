@@ -131,6 +131,7 @@ static int secdat_session_agent_status_details(
     size_t *matched_index,
     size_t *blocked_index
 );
+static void secdat_print_unlock_guidance(const char *current_domain_root);
 
 static void secdat_secure_clear(void *buffer, size_t length)
 {
@@ -279,6 +280,72 @@ static int secdat_domain_set_explicit_lock(const char *domain_id)
         return 0;
     }
     return secdat_atomic_write_file(marker_path, marker_contents, sizeof(marker_contents) - 1);
+}
+
+static void secdat_print_unlock_guidance(const char *current_domain_root)
+{
+    struct secdat_domain_root_list descendants = {0};
+    struct secdat_domain_status_summary summary;
+    const size_t preview_limit = 3;
+    const char *first_affected = NULL;
+    size_t affected_count = 0;
+    size_t preview_count = 0;
+    size_t index;
+
+    if (secdat_collect_descendant_domain_roots(current_domain_root, &descendants) != 0) {
+        return;
+    }
+
+    for (index = 0; index < descendants.count; index += 1) {
+        if (strcmp(descendants.roots[index], current_domain_root) == 0) {
+            continue;
+        }
+        if (secdat_collect_domain_status_summary(descendants.roots[index], &summary) != 0) {
+            continue;
+        }
+        if (summary.effective_source != SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK
+            && summary.effective_source != SECDAT_EFFECTIVE_SOURCE_BLOCKED) {
+            continue;
+        }
+
+        if (first_affected == NULL) {
+            first_affected = descendants.roots[index];
+        }
+        affected_count += 1;
+    }
+
+    if (affected_count == 0) {
+        secdat_domain_root_list_free(&descendants);
+        return;
+    }
+
+    printf(_("note: %zu descendant domains remain locked under this branch\n"), affected_count);
+    puts(_("affected descendants:"));
+    for (index = 0; index < descendants.count && preview_count < preview_limit; index += 1) {
+        if (strcmp(descendants.roots[index], current_domain_root) == 0) {
+            continue;
+        }
+        if (secdat_collect_domain_status_summary(descendants.roots[index], &summary) != 0) {
+            continue;
+        }
+        if (summary.effective_source != SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK
+            && summary.effective_source != SECDAT_EFFECTIVE_SOURCE_BLOCKED) {
+            continue;
+        }
+        printf(_("  %s\n"), descendants.roots[index]);
+        preview_count += 1;
+    }
+    if (affected_count > preview_limit) {
+        printf(_("  ... and %zu more\n"), affected_count - preview_limit);
+    }
+
+    printf(_("inspect descendants: secdat --dir %s domain ls -l --descendants\n"), current_domain_root);
+    if (first_affected != NULL) {
+        printf(_("inspect one descendant: secdat --dir %s domain status\n"), first_affected);
+        printf(_("unlock one descendant: secdat --dir %s unlock\n"), first_affected);
+    }
+
+    secdat_domain_root_list_free(&descendants);
 }
 
 static int secdat_parse_key_reference(
@@ -2606,6 +2673,7 @@ static int secdat_command_status(const struct secdat_cli *cli)
 static int secdat_command_unlock(const struct secdat_cli *cli)
 {
     char current_domain_id[PATH_MAX];
+    char current_domain_root[PATH_MAX];
     const char *env_master_key = getenv("SECDAT_MASTER_KEY");
     int wrapped_present = secdat_wrapped_master_key_exists();
     int initialized = 0;
@@ -2619,6 +2687,9 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         return 2;
     }
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
+        return 1;
+    }
+    if (secdat_domain_root_path(current_domain_id, current_domain_root, sizeof(current_domain_root)) != 0) {
         return 1;
     }
 
@@ -2661,6 +2732,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         } else {
             puts(_("session unlocked from environment"));
         }
+        secdat_print_unlock_guidance(current_domain_root);
         return 0;
     }
 
@@ -2684,6 +2756,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
 
     secdat_secure_clear(secret, strlen(secret));
     puts(_("session unlocked"));
+    secdat_print_unlock_guidance(current_domain_root);
     return 0;
 }
 

@@ -384,8 +384,15 @@ if rc != 0 or stdout.strip() != "session locked":
     fail(f"lock after passwd rotation failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": new_passphrase})
-if rc != 0 or stdout.strip() != "session unlocked":
+if rc != 0 or "session unlocked\n" not in stdout or stderr != "":
     fail(f"unlock with rotated env passphrase failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, f"note: 2 descendant domains remain locked under this branch\n", "guided unlock count")
+assert_contains(stdout, "affected descendants:\n", "guided unlock header")
+assert_contains(stdout, f"  {child_domain}\n", "guided unlock child descendant")
+assert_contains(stdout, f"  {grandchild_domain}\n", "guided unlock grandchild descendant")
+assert_contains(stdout, f"inspect descendants: secdat --dir {root_domain} domain ls -l --descendants\n", "guided unlock descendants command")
+assert_contains(stdout, f"inspect one descendant: secdat --dir {child_domain} domain status\n", "guided unlock status command")
+assert_contains(stdout, f"unlock one descendant: secdat --dir {child_domain} unlock\n", "guided unlock unlock command")
 
 socket_path = socket_path_for(root_domain)
 socket_path.parent.mkdir(parents=True, exist_ok=True)
@@ -393,7 +400,7 @@ if socket_path.exists() or socket_path.is_socket():
     socket_path.unlink()
 socket_path.write_text("stale")
 rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY": "session-test-key"})
-if rc != 0 or stdout.strip() != "session unlocked from environment":
+if rc != 0 or "session unlocked from environment\n" not in stdout or stderr != "":
     fail(f"stale socket unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["status"], root_domain))

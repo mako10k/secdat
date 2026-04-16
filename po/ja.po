@@ -1233,6 +1233,40 @@ msgstr "実効取得元: explicit lock により遮断"
 msgid "blocked by: %s\n"
 msgstr "遮断元: %s\n"
 
+#: src/store.c:322
+#, c-format
+msgid "note: %zu descendant domains remain locked under this branch\n"
+msgstr "補足: この branch 配下では %zu 個の descendant domain がまだ locked のままです\n"
+
+#: src/store.c:323
+msgid "affected descendants:"
+msgstr "影響を受ける descendant:"
+
+#: src/store.c:336
+#, c-format
+msgid "  %s\n"
+msgstr "  %s\n"
+
+#: src/store.c:339
+#, c-format
+msgid "  ... and %zu more\n"
+msgstr "  ... さらに %zu 個\n"
+
+#: src/store.c:342
+#, c-format
+msgid "inspect descendants: secdat --dir %s domain ls -l --descendants\n"
+msgstr "descendant を確認: secdat --dir %s domain ls -l --descendants\n"
+
+#: src/store.c:344
+#, c-format
+msgid "inspect one descendant: secdat --dir %s domain status\n"
+msgstr "1 つの descendant を確認: secdat --dir %s domain status\n"
+
+#: src/store.c:345
+#, c-format
+msgid "unlock one descendant: secdat --dir %s unlock\n"
+msgstr "1 つの descendant を unlock: secdat --dir %s unlock\n"
+
 #: src/domain.c:1211
 msgid "effective source: locked"
 msgstr "実効取得元: locked"

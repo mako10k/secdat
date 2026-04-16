@@ -251,6 +251,7 @@ To make the requested behavior implementable, the following are treated as norma
 - otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent
 - unlocking one domain must not unlock sibling domains
 - descendant domains may reuse an unlocked ancestor session without an extra `unlock`
+- when `unlock` succeeds for one domain while descendant domains remain effectively locked because of explicit-lock shadow state, the command must say so explicitly and print follow-up inspection/unlock commands using the correct `--dir` targets
 - `secdat [--dir DIR] lock` removes only the current domain's local agent-backed session state
 - the current implementation refreshes the idle timeout when the agent serves the cached key
 - no raw master-key retrieval path is required for normal operation; the generated key remains internal unless a separate future recovery/export flow is introduced
@@ -764,6 +765,12 @@ Responsibilities:
 4. report whether key material currently comes from the environment, a session agent, or neither
 5. report whether effective access is unlocked via environment, local session, inherited session, or locked due to default locking, an explicit lock, or an explicit-lock block higher in the domain chain
 6. in `--quiet` mode, print only the resolved domain root identifier
+
+#### `unlock`
+
+1. resolve the current domain from `--dir` or the current working directory
+2. initialize or refresh the local session for that resolved domain
+3. if descendant domains under the unlocked domain remain effectively locked because they are explicit-lock roots or blocked below one, print a short summary and next-step commands for descendant inspection and descendant-specific unlocks
 
 #### `ls`
 

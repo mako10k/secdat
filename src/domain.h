@@ -10,10 +10,17 @@ struct secdat_domain_chain {
     size_t count;
 };
 
+struct secdat_domain_root_list {
+    char **roots;
+    size_t count;
+};
+
 void secdat_domain_chain_free(struct secdat_domain_chain *chain);
+void secdat_domain_root_list_free(struct secdat_domain_root_list *list);
 int secdat_domain_validate_root(const char *domain_root, char *buffer, size_t size);
 int secdat_domain_resolve_current(const char *dir_override, char *buffer, size_t size);
 int secdat_domain_resolve_chain(const char *dir_override, struct secdat_domain_chain *chain);
+int secdat_collect_descendant_domain_roots(const char *root_path, struct secdat_domain_root_list *list);
 int secdat_domain_data_root(const char *domain_id, char *buffer, size_t size);
 int secdat_domain_root_path(const char *domain_id, char *buffer, size_t size);
 int secdat_domain_store_root(const char *domain_id, const char *store_name, char *buffer, size_t size);

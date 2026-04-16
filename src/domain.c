@@ -710,6 +710,22 @@ void secdat_domain_chain_free(struct secdat_domain_chain *chain)
     chain->count = 0;
 }
 
+void secdat_domain_root_list_free(struct secdat_domain_root_list *list)
+{
+    size_t index;
+
+    if (list == NULL) {
+        return;
+    }
+
+    for (index = 0; index < list->count; index += 1) {
+        free(list->roots[index]);
+    }
+    free(list->roots);
+    list->roots = NULL;
+    list->count = 0;
+}
+
 int secdat_domain_resolve_current(const char *dir_override, char *buffer, size_t size)
 {
     struct secdat_domain_chain chain = {0};
@@ -806,6 +822,41 @@ int secdat_domain_root_path(const char *domain_id, char *buffer, size_t size)
         return 1;
     }
 
+    return 0;
+}
+
+int secdat_collect_descendant_domain_roots(const char *root_path, struct secdat_domain_root_list *list)
+{
+    struct secdat_string_list roots = {0};
+    struct secdat_string_list descendants = {0};
+    char canonical_root[PATH_MAX];
+    size_t index;
+
+    list->roots = NULL;
+    list->count = 0;
+
+    if (secdat_canonicalize_directory(root_path, canonical_root, sizeof(canonical_root)) != 0) {
+        return 1;
+    }
+    if (secdat_collect_registered_roots(&roots) != 0) {
+        secdat_string_list_free(&roots);
+        return 1;
+    }
+
+    for (index = 0; index < roots.count; index += 1) {
+        if (!secdat_path_is_descendant_or_same(roots.items[index], canonical_root)) {
+            continue;
+        }
+        if (secdat_string_list_append(&descendants, roots.items[index]) != 0) {
+            secdat_string_list_free(&roots);
+            secdat_string_list_free(&descendants);
+            return 1;
+        }
+    }
+
+    secdat_string_list_free(&roots);
+    list->roots = descendants.items;
+    list->count = descendants.count;
     return 0;
 }
 

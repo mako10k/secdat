@@ -93,7 +93,9 @@ Write the current visible secrets into a passphrase-protected bundle.
 Load a passphrase-protected bundle into the current domain/store context.
 .TP
 .B [\-d DIR|\-\-dir DIR] unlock
-Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked.
+Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked. If some descendant domains under the unlocked branch remain shadowed by explicit locks, the command prints follow-up inspection and descendant-specific unlock commands using the correct
+.B --dir
+targets.
 .TP
 .B passwd
 Change the passphrase used to wrap the persistent master key.

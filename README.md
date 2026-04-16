@@ -51,6 +51,8 @@ Initialize `secdat` once directly with a passphrase in the target domain:
 
 The first interactive `unlock` generates a fresh master key, stores a wrapped copy under `XDG_DATA_HOME`, and starts a session agent scoped to the current domain. Descendant domains reuse an unlocked ancestor session automatically, but sibling domains stay locked until they unlock for themselves.
 
+If some descendants under the unlocked branch remain shadowed by explicit locks, `unlock` now says so and prints follow-up commands for `domain ls -l --descendants`, `domain status`, and a descendant-specific `unlock` using the correct `--dir` values.
+
 For explicit non-interactive use, `SECDAT_MASTER_KEY_PASSPHRASE` can provide the current wrapped-key passphrase to `unlock`. This is an override path rather than the default recommendation, because environment variables are easier to expose than terminal prompts.
 
 If you already have a master key to migrate or explicitly override with, `SECDAT_MASTER_KEY` still works:
