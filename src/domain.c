@@ -18,8 +18,12 @@
 #include <unistd.h>
 #include <wchar.h>
 
+int wcwidth(wchar_t wide_char);
+
 #define SECDAT_DOMAIN_ID_LEN 32
 #define SECDAT_DOMAIN_TTY_LABEL_WIDTH 24
+
+static const char secdat_user_global_domain_label[] = "*default*";
 
 struct secdat_string_list {
     char **items;
@@ -1073,6 +1077,7 @@ void secdat_domain_chain_free(struct secdat_domain_chain *chain)
     free(chain->ids);
     chain->ids = NULL;
     chain->count = 0;
+    chain->current_path[0] = '\0';
 }
 
 void secdat_domain_root_list_free(struct secdat_domain_root_list *list)
@@ -1101,7 +1106,16 @@ int secdat_domain_resolve_current(const char *dir_override, char *buffer, size_t
         return status;
     }
 
-    if (chain.count == 0 || strlen(chain.ids[0]) >= size) {
+    if (chain.count == 0) {
+        secdat_domain_chain_free(&chain);
+        if (size == 0) {
+            fprintf(stderr, _("path is too long\n"));
+            return 1;
+        }
+        buffer[0] = '\0';
+        return 0;
+    }
+    if (strlen(chain.ids[0]) >= size) {
         secdat_domain_chain_free(&chain);
         fprintf(stderr, _("path is too long\n"));
         return 1;
@@ -1121,10 +1135,12 @@ int secdat_domain_resolve_chain(const char *dir_override, struct secdat_domain_c
 
     chain->ids = NULL;
     chain->count = 0;
+    chain->current_path[0] = '\0';
 
     if (secdat_canonicalize_directory(dir_override, current_path, sizeof(current_path)) != 0) {
         return 1;
     }
+    strcpy(chain->current_path, current_path);
 
     for (;;) {
         lookup_status = secdat_lookup_domain_id_for_root(current_path, domain_id, sizeof(domain_id));
@@ -1144,11 +1160,6 @@ int secdat_domain_resolve_chain(const char *dir_override, struct secdat_domain_c
         secdat_parent_path(current_path);
     }
 
-    if (secdat_string_list_append(&ids, "default") != 0) {
-        secdat_string_list_free(&ids);
-        return 1;
-    }
-
     chain->ids = ids.items;
     chain->count = ids.count;
     return 0;
@@ -1160,15 +1171,6 @@ int secdat_domain_root_path(const char *domain_id, char *buffer, size_t size)
     char meta_dir[PATH_MAX];
     char root_file[PATH_MAX];
     int status;
-
-    if (strcmp(domain_id, "default") == 0) {
-        if (size == 0) {
-            fprintf(stderr, _("path is too long\n"));
-            return 1;
-        }
-        buffer[0] = '\0';
-        return 0;
-    }
 
     status = secdat_domain_root_for_id(domain_id, domain_root, sizeof(domain_root));
     if (status != 0) {
@@ -1188,6 +1190,26 @@ int secdat_domain_root_path(const char *domain_id, char *buffer, size_t size)
     }
 
     return 0;
+}
+
+int secdat_domain_display_label(const char *domain_id, char *buffer, size_t size)
+{
+    if (domain_id == NULL || domain_id[0] == '\0') {
+        if (strlen(secdat_user_global_domain_label) >= size) {
+            fprintf(stderr, _("path is too long\n"));
+            return 1;
+        }
+        strcpy(buffer, secdat_user_global_domain_label);
+        return 0;
+    }
+
+    return secdat_domain_root_path(domain_id, buffer, size);
+}
+
+int secdat_domain_display_path(const char *dir_override, const char *domain_id, char *buffer, size_t size)
+{
+    (void)dir_override;
+    return secdat_domain_display_label(domain_id, buffer, size);
 }
 
 int secdat_collect_descendant_domain_roots(const char *root_path, struct secdat_domain_root_list *list)
@@ -1227,15 +1249,6 @@ int secdat_collect_descendant_domain_roots(const char *root_path, struct secdat_
 
 int secdat_domain_data_root(const char *domain_id, char *buffer, size_t size)
 {
-    if (strcmp(domain_id, "default") == 0) {
-        if (size == 0) {
-            fprintf(stderr, _("path is too long\n"));
-            return 1;
-        }
-        buffer[0] = '\0';
-        return 0;
-    }
-
     return secdat_domain_root_for_id(domain_id, buffer, size);
 }
 
@@ -1549,7 +1562,7 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
     struct secdat_domain_status_summary summary;
-    char domain_root[PATH_MAX];
+    char domain_label[PATH_MAX];
     int quiet = 0;
 
     if (cli->argc == 1 && (strcmp(cli->argv[0], "--quiet") == 0 || strcmp(cli->argv[0], "-q") == 0)) {
@@ -1563,12 +1576,7 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
     if (secdat_domain_resolve_chain(cli->domain != NULL ? cli->domain : cli->dir, &chain) != 0) {
         return 1;
     }
-    if (chain.count == 0) {
-        secdat_domain_chain_free(&chain);
-        fprintf(stderr, _("path is too long\n"));
-        return 1;
-    }
-    if (secdat_domain_root_path(chain.ids[0], domain_root, sizeof(domain_root)) != 0) {
+    if (secdat_domain_display_label(chain.count == 0 ? "" : chain.ids[0], domain_label, sizeof(domain_label)) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;
     }
@@ -1579,11 +1587,11 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
     }
 
     if (quiet) {
-        puts(domain_root[0] != '\0' ? domain_root : "default");
+        puts(domain_label);
         return 0;
     }
 
-    printf(_("resolved domain: %s\n"), domain_root[0] != '\0' ? domain_root : "default");
+    printf(_("resolved domain: %s\n"), domain_label);
     printf(_("resolution source: %s\n"), cli->domain != NULL ? "--domain" : (cli->dir != NULL ? "--dir" : "current working directory"));
     printf(_("store count: %zu\n"), summary.store_count);
     printf(_("visible key count: %zu\n"), summary.visible_key_count);

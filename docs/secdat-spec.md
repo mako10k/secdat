@@ -317,14 +317,14 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--domain DIR] ...` uses that exact registered domain root as the current domain context
 - `domain status` reports whether that resolution came from `--dir` or the current working directory
 - `domain status` summarizes the visible key count, current-domain store count, key source, wrapped-master-key presence, and the effective access state for that resolved domain
-- `secdat [--dir DIR] domain status --quiet` prints only the resolved domain root, or `default` when no registered domain applies
+- `secdat [--dir DIR] domain status --quiet` prints only the resolved domain root, or an emphasized fallback label such as `*default*` when no registered domain applies; that label means no registered domain resolved and the top-level inherited fallback scope is active
 
 #### FR-11 Domain Resolution
 
 - all commands accept `--dir` as a global option
 - for normal store commands and `store` management commands, the current domain is resolved from the nearest ancestor domain of the base directory
 - the base directory is `DIR` when `--dir DIR` is provided, otherwise it is the current working directory
-- if no ancestor domain exists, the per-user default domain is used
+- if no ancestor domain exists, commands that need fallback session context use an explicit per-user global scope instead of a domain string sentinel
 - `get`, `ls`, and `exec` resolve values from the current domain and then fall back through parent domains
 - `set`, `mv`, `cp`, and `rm` apply changes to the current domain only
 - `store create`, `store delete`, and `store ls` apply to the current domain only
@@ -584,7 +584,7 @@ secdat [--dir DIR] domain status [--quiet]
 - with `--dir /a/b`, the listing may contain domains rooted at `/a`, `/a/b`, and `/a/b/...`
 - with `--dir /a/b`, the listing must not include `/a/c` or descendants of `/a/c`
 - `status` reports the resolved current domain for normal store commands and a compact summary of stores, visible keys, key-source state, and effective access state
-- `status --quiet` prints only the resolved domain root, or `default` when no registered domain applies
+- `status --quiet` prints only the resolved domain root, or an emphasized fallback label such as `*default*` when no registered domain applies; that label means no registered domain resolved and the top-level inherited fallback scope is active
 
 ### 4.10 Domain Resolution Rules
 
@@ -767,7 +767,7 @@ Responsibilities:
 #### `domain status`
 
 1. resolve the current domain from `--dir` or the current working directory using the same rule as normal store commands
-2. compute the resolved domain root path, or `default` when no registered domain applies
+2. compute the resolved domain root path, or an emphasized fallback label such as `*default*` when no registered domain applies; that label means no registered domain resolved and the top-level inherited fallback scope is active
 3. count current-domain stores and currently visible keys for that context
 4. report whether key material currently comes from the environment, a session agent, or neither
 5. report whether effective access is unlocked via environment, local session, inherited session, or locked due to default locking, an explicit lock, or an explicit-lock block higher in the domain chain
@@ -779,7 +779,7 @@ Responsibilities:
 2. print the resolved domain before any terminal prompt so the user sees the target scope
 3. initialize or refresh the local session for that resolved domain
 4. when `--descendants` is present, compute the affected registered descendant subtree, require confirmation for any broader-scope unlock unless `--yes` is present, and create or refresh local descendant sessions without removing explicit-lock markers
-5. if `--descendants` was not requested and descendant domains under the unlocked domain remain effectively locked because they are explicit-lock roots or blocked below one, print a short summary and next-step commands for descendant inspection and descendant-specific unlocks
+5. if `--descendants` was not requested and descendant domains under the unlocked domain remain effectively locked because they are explicit-lock roots or blocked below one, print a short summary and next-step commands for descendant inspection and descendant-specific unlocks; descendants that can already reuse the unlocked session may be summarized count-only, while descendants that remain locked are the ones listed explicitly
 6. otherwise, if descendant domains exist under that branch, summarize that they can now reuse the refreshed session
 
 #### `ls`

@@ -53,9 +53,9 @@ The first interactive `unlock` generates a fresh master key, stores a wrapped co
 
 When a branch still contains explicit-lock shadows, `unlock --descendants` performs an explicit subtree unlock: it keeps the explicit-lock markers in place, but creates local descendant sessions so the current domain and blocked descendants become available for the lifetime of those sessions. Because that broadens access beyond the current domain, the command asks for confirmation unless you pass `--yes` for non-interactive use.
 
-Before prompting, `unlock` now prints the resolved domain it is about to unlock so the current scope is visible even when you launched the command from the wrong directory by mistake.
+Before prompting, `unlock` now prints the resolved domain it is about to unlock so the current scope is visible even when you launched the command from the wrong directory by mistake. When no registered domain applies, that output uses the presentation label `*default*` to mean "no registered domain resolved; the top-level inherited fallback scope is active".
 
-If some descendants under the unlocked branch remain shadowed by explicit locks, plain `unlock` now says so and prints follow-up commands for `domain ls -l --descendants`, `domain status`, and a descendant-specific `unlock` using the correct `--dir` values.
+If some descendants under the unlocked branch remain shadowed by explicit locks, plain `unlock` now says so and prints follow-up commands for `domain ls -l --descendants`, `domain status`, and a descendant-specific `unlock` using the correct `--dir` values. Descendants that can already reuse the unlocked session are summarized count-only; only descendants that remain locked are listed explicitly.
 
 If a secret read fails while `secdat` is still locked, the error now reports the resolved domain context and suggests the matching `domain status` and `unlock` command so you do not keep retrying from the wrong directory.
 
@@ -152,6 +152,8 @@ mkdir -p ~/example/project
 When `domain ls -l` writes to a terminal, it now groups rows under their shared parent directory and wraps very long domain labels onto a separate line before the status columns. Non-terminal output keeps the existing tab-separated full-path layout.
 
 `domain status` shows which domain normal commands resolve to for the current context, whether that context came from `--dir` or the working directory, and a compact summary of visible keys, stores, key source state, and the effective access state (`environment`, `local session`, `inherited session`, `explicit lock`, or `blocked by explicit lock`).
+
+When no registered domain applies, user-facing `unlock` and `domain status` output show an emphasized `*default*` label for the user-global fallback scope. In other words, no registered domain resolved and commands are operating against the top-level inherited fallback scope. That label is presentation only; the implementation no longer stores or resolves that case through a domain string sentinel.
 
 ```sh
 ./src/secdat --dir ~/example/project/child domain status

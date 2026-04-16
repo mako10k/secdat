@@ -534,6 +534,36 @@ if rc != 0 or "persistent master key initialized; session unlocked from environm
     fail(f"environment migration bootstrap failed: rc={rc} transcript={transcript!r}")
 if not fresh_wrapped.is_file():
     fail("environment migration bootstrap did not create wrapped master key")
+
+default_runtime = isolated_root / "runtime-default"
+default_data = isolated_root / "data-default"
+default_scope = isolated_root / "default-scope"
+default_runtime.mkdir(parents=True, exist_ok=True)
+default_data.mkdir(parents=True, exist_ok=True)
+default_scope.mkdir(parents=True, exist_ok=True)
+
+rc, transcript = run_pty(
+    [bin_path, "--dir", str(default_scope), "unlock"],
+    [("Create secdat passphrase:", passphrase), ("Confirm secdat passphrase:", passphrase)],
+    {
+        "XDG_RUNTIME_DIR": str(default_runtime),
+        "XDG_DATA_HOME": str(default_data),
+    },
+)
+if rc != 0 or "resolved domain: *default*" not in transcript or "persistent master key initialized; session unlocked" not in transcript:
+    fail(f"default-domain bootstrap unlock failed: rc={rc} transcript={transcript!r}")
+if "failed to resolve directory:" in transcript:
+    fail(f"default-domain unlock emitted spurious guidance error: transcript={transcript!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(default_scope), "domain", "status"], {
+    "XDG_RUNTIME_DIR": str(default_runtime),
+    "XDG_DATA_HOME": str(default_data),
+})
+if rc != 0 or stderr != "":
+    fail(f"default-scope domain status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "resolved domain: *default*\n", "default-scope domain status label")
+assert_contains(stdout, "key source: session agent\n", "default-scope domain status key source")
+assert_contains(stdout, "effective source: local session\n", "default-scope domain status local session")
 PY
 
 printf 'PASS session regression\n'
