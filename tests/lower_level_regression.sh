@@ -190,6 +190,11 @@ rc, stdout, stderr = run(scoped(["status", "-q"], sibling_domain))
 if rc != 1 or stdout != "" or stderr != "":
     fail(f"sibling unexpectedly inherited root session: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(work_root), "domain", "ls", "-l", "--descendants"])
+if rc != 0 or stderr != "":
+    fail(f"domain ls -l plain locked state failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, f"{sibling_domain}\tlocked\tlocked\tno-session", "domain ls plain locked row")
+
 rc, stdout, stderr = run(scoped(["lock"], child_domain))
 if rc != 0 or stdout.strip() != "session locked":
     fail(f"child lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

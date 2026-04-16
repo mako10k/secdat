@@ -20,6 +20,7 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 python3 - "$bin_path" "$work_root" <<'PY'
 import os
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -61,6 +62,10 @@ def assert_contains(text, expected, label):
         fail(f"{label}: missing [{expected}] in [{text}]")
 
 
+def normalize_spaces(text):
+    return re.sub(r"[ \t]+", " ", text)
+
+
 for args, marker in [
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN]"),
     ([bin_path, "export", "--help"], "emit shell-ready export lines"),
@@ -68,7 +73,7 @@ for args, marker in [
 ]:
     rc, stdout, stderr = run(args)
     output = stdout + stderr
-    if rc != 0 or marker not in output:
+    if rc != 0 or marker not in normalize_spaces(output):
         fail(f"export help check failed for {args}: rc={rc} output={output!r}")
 
 for path in [root_dir, child_dir, invalid_dir]:

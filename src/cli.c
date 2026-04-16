@@ -10,6 +10,41 @@ enum {
     SECDAT_OPTION_DOMAIN = 1000,
 };
 
+#define SECDAT_CLI_USAGE_OPTIONS_WIDTH (sizeof("[-d DIR|--dir DIR] [-s STORE|--store STORE]") - 1)
+#define SECDAT_CLI_USAGE_COMMAND_WIDTH (sizeof("domain status") - 1)
+
+static void secdat_cli_print_usage_columns(
+    const char *program_name,
+    const char *options,
+    const char *command,
+    const char *arguments
+)
+{
+    size_t index;
+    size_t options_width = options != NULL ? strlen(options) : 0;
+    size_t command_width = strlen(command);
+
+    printf("  %s ", program_name);
+    if (options != NULL) {
+        fputs(options, stdout);
+    }
+    for (index = options_width; index < SECDAT_CLI_USAGE_OPTIONS_WIDTH; index += 1) {
+        fputc(' ', stdout);
+    }
+
+    fputc(' ', stdout);
+    fputs(command, stdout);
+    for (index = command_width; index < SECDAT_CLI_USAGE_COMMAND_WIDTH; index += 1) {
+        fputc(' ', stdout);
+    }
+
+    if (arguments != NULL && arguments[0] != '\0') {
+        fputc(' ', stdout);
+        fputs(arguments, stdout);
+    }
+    fputc('\n', stdout);
+}
+
 static int parse_global_options(int argc, char **argv, int *index, struct secdat_cli *cli)
 {
     static const struct option long_options[] = {
@@ -150,82 +185,82 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
 {
     switch (command) {
     case SECDAT_COMMAND_LS:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [--safe|--unsafe] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [--safe|--unsafe] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]");
         break;
     case SECDAT_COMMAND_LIST:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] list [--masked] [--overridden] [--orphaned] [--safe] [--unsafe]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "list", "[--masked] [--overridden] [--orphaned] [--safe] [--unsafe]");
         break;
     case SECDAT_COMMAND_MASK:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mask KEYREF\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mask", "KEYREF");
         break;
     case SECDAT_COMMAND_UNMASK:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] unmask KEYREF\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "unmask", "KEYREF");
         break;
     case SECDAT_COMMAND_EXISTS:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exists KEYREF\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exists", "KEYREF");
         break;
     case SECDAT_COMMAND_GET:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get KEYREF [-o|--stdout|--shellescaped]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "get", "KEYREF [-o|--stdout|--shellescaped]");
         break;
     case SECDAT_COMMAND_SET:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] set KEYREF [--unsafe] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "KEYREF [--unsafe] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
         break;
     case SECDAT_COMMAND_RM:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm [--ignore-missing] KEYREF\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "rm", "[--ignore-missing] KEYREF");
         break;
     case SECDAT_COMMAND_MV:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mv SRC_KEYREF DST_KEYREF\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mv", "SRC_KEYREF DST_KEYREF");
         break;
     case SECDAT_COMMAND_CP:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] cp SRC_KEYREF DST_KEYREF\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "cp", "SRC_KEYREF DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] CMD [ARGS...]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] CMD [ARGS...]");
         break;
     case SECDAT_COMMAND_EXPORT:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] export [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "export", "[-p GLOBPATTERN|--pattern GLOBPATTERN]");
         break;
     case SECDAT_COMMAND_SAVE:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] save FILE\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "save", "FILE");
         break;
     case SECDAT_COMMAND_LOAD:
-        printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] load FILE\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "load", "FILE");
         break;
     case SECDAT_COMMAND_UNLOCK:
-        printf(_("  %s [-d DIR|--dir DIR] unlock [--inherit] [--descendants] [--yes]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[--inherit] [--descendants] [--yes]");
         break;
     case SECDAT_COMMAND_INHERIT:
-        printf(_("  %s [-d DIR|--dir DIR] inherit\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "inherit", "");
         break;
     case SECDAT_COMMAND_PASSWD:
-        printf(_("  %s passwd\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "", "passwd", "");
         break;
     case SECDAT_COMMAND_LOCK:
-        printf(_("  %s [-d DIR|--dir DIR] lock [--inherit]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "lock", "[--inherit]");
         break;
     case SECDAT_COMMAND_STATUS:
-        printf(_("  %s [-d DIR|--dir DIR] status [-q|--quiet]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "status", "[-q|--quiet]");
         break;
     case SECDAT_COMMAND_STORE_CREATE:
-        printf(_("  %s [-d DIR|--dir DIR] store create STORE\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store create", "STORE");
         break;
     case SECDAT_COMMAND_STORE_DELETE:
-        printf(_("  %s [-d DIR|--dir DIR] store delete STORE\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store delete", "STORE");
         break;
     case SECDAT_COMMAND_STORE_LS:
-        printf(_("  %s [-d DIR|--dir DIR] store ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]");
         break;
     case SECDAT_COMMAND_DOMAIN_CREATE:
-        printf(_("  %s [-d DIR|--dir DIR] domain create\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain create", "");
         break;
     case SECDAT_COMMAND_DOMAIN_DELETE:
-        printf(_("  %s [-d DIR|--dir DIR] domain delete\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain delete", "");
         break;
     case SECDAT_COMMAND_DOMAIN_LS:
-        printf(_("  %s [-d DIR|--dir DIR] domain ls [-l|--long] [-a|--inherited] [--ancestors] [--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain ls", "[-l|--long] [-a|--inherited] [--ancestors] [--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]");
         break;
     case SECDAT_COMMAND_DOMAIN_STATUS:
-        printf(_("  %s [-d DIR|--dir DIR] domain status [-q|--quiet]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain status", "[-q|--quiet]");
         break;
     default:
         break;
@@ -250,11 +285,11 @@ static void secdat_cli_print_common_options(void)
 static void secdat_cli_print_meta_usage_line(const char *program_name, const char *target)
 {
     if (target != NULL && strcmp(target, "help") == 0) {
-        printf(_("  %s help [COMMAND]\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "", "help", "[COMMAND]");
         return;
     }
     if (target != NULL && strcmp(target, "version") == 0) {
-        printf(_("  %s version\n"), program_name);
+        secdat_cli_print_usage_columns(program_name, "", "version", "");
     }
 }
 
@@ -316,7 +351,7 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
     printf(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
     printf(_("  load: import a passphrase-protected bundle into the current domain view\n"));
-    printf(_("  unlock: start or refresh an authenticated secret session for the current domain\n"));
+    printf(_("  unlock: start or refresh an authenticated secret session for the current domain; --inherit removes only a local explicit-lock marker\n"));
     printf(_("  inherit: remove the current domain's local explicit-lock marker without checking the resulting state\n"));
     printf(_("  passwd: change the wrapped-master-key passphrase\n"));
     printf(_("  lock: clear the current domain's local secret session\n"));
@@ -388,7 +423,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "unlock") == 0) {
-        printf(_("  start or refresh an authenticated secret session for the current domain\n"));
+        printf(_("  start or refresh an authenticated secret session for the current domain; --inherit removes only a local explicit-lock marker\n"));
         return;
     }
     if (target != NULL && strcmp(target, "inherit") == 0) {

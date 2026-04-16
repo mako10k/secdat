@@ -299,7 +299,7 @@ static int secdat_format_state_source(
         row->state_source = row->state_source_owned;
         return 0;
     default:
-        row->state_source = _("locked");
+        row->state_source = _("no-session");
         return 0;
     }
 }

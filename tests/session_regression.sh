@@ -19,6 +19,7 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 python3 - "$bin_path" <<'PY'
 import os
 import pty
+import re
 import subprocess
 import sys
 import time
@@ -51,6 +52,9 @@ def fail(message):
 def assert_contains(output, fragment, context):
     if fragment not in output:
         fail(f"{context}: missing fragment {fragment!r} in {output!r}")
+
+def normalize_spaces(text):
+    return re.sub(r"[ \t]+", " ", text)
 
 def run(args, extra_env=None):
     run_env = env.copy()
@@ -206,9 +210,10 @@ for args, marker in [
 ]:
     rc, stdout, stderr = run(args)
     output = stdout + stderr
+    normalized_output = normalize_spaces(output)
     if (
         rc != 0
-        or marker not in output
+        or marker not in normalized_output
         or "Help:" not in output
         or "Support:" not in output
         or "issues: https://github.com/mako10k/secdat/issues" not in output

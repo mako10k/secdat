@@ -20,6 +20,7 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 python3 - "$bin_path" "$work_root" <<'PY'
 import os
 import pty
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -100,13 +101,17 @@ def assert_contains(output, expected, label):
         fail(f"{label}: missing [{expected}] in [{output}]")
 
 
+def normalize_spaces(text):
+    return re.sub(r"[ \t]+", " ", text)
+
+
 for args, marker in [
     ([bin_path, "help", "save"], "save FILE"),
     ([bin_path, "load", "--help"], "load FILE"),
 ]:
     rc, stdout, stderr = run(args)
     output = stdout + stderr
-    if rc != 0 or marker not in output or "passphrase-protected bundle" not in output:
+    if rc != 0 or marker not in normalize_spaces(output) or "passphrase-protected bundle" not in output:
         fail(f"save/load help check failed for {args}: rc={rc} output={output!r}")
 
 for path in [root_dir, child_dir, restore_dir]:
