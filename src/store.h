@@ -34,5 +34,6 @@ struct secdat_domain_status_summary {
 
 int secdat_run_command(const struct secdat_cli *cli);
 int secdat_collect_domain_status_summary(const char *dir_override, struct secdat_domain_status_summary *summary);
+int secdat_collect_user_global_status_summary(struct secdat_domain_status_summary *summary);
 
 #endif

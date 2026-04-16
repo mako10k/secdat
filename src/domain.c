@@ -4,6 +4,7 @@
 
 #include "store.h"
 
+#include <getopt.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -350,6 +351,9 @@ static void secdat_render_domain_ls_tty_rows(const struct secdat_domain_ls_row *
     size_t index;
 
     for (index = 0; index < count; index += 1) {
+        if (rows[index].root[0] != '/') {
+            continue;
+        }
         if (secdat_string_list_append(&display_roots, rows[index].root) != 0) {
             secdat_string_list_free(&display_roots);
             return;
@@ -1420,45 +1424,142 @@ static int secdat_domain_command_delete(const struct secdat_cli *cli)
     return secdat_remove_tree(domain_root);
 }
 
+static int secdat_collect_inherited_domain_roots(
+    const struct secdat_domain_chain *chain,
+    struct secdat_string_list *roots
+)
+{
+    size_t index;
+    char root_path[PATH_MAX];
+
+    for (index = 0; index < chain->count; index += 1) {
+        if (secdat_domain_root_path(chain->ids[index], root_path, sizeof(root_path)) != 0) {
+            return 1;
+        }
+        if (secdat_string_list_append(roots, root_path) != 0) {
+            return 1;
+        }
+    }
+
+    return secdat_string_list_append(roots, secdat_user_global_domain_label);
+}
+
+static int secdat_domain_ls_emit_row(
+    const char *root,
+    const struct secdat_domain_status_summary *summary,
+    int long_format,
+    int tty_long_format,
+    struct secdat_domain_ls_row **rows,
+    size_t *row_count
+)
+{
+    if (!long_format) {
+        puts(root);
+        return 0;
+    }
+
+    if (tty_long_format) {
+        struct secdat_domain_ls_row *new_rows = realloc(*rows, sizeof(**rows) * (*row_count + 1));
+
+        if (new_rows == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        *rows = new_rows;
+        if (secdat_fill_domain_ls_row(root, summary, &(*rows)[*row_count]) != 0) {
+            return 1;
+        }
+        *row_count += 1;
+        return 0;
+    }
+
+    {
+        struct secdat_domain_ls_row row;
+
+        if (secdat_fill_domain_ls_row(root, summary, &row) != 0) {
+            return 1;
+        }
+        printf("%s\t%s\t%s\t%s\t%zu\t%zu\t%s\n",
+            row.root,
+            row.key_source,
+            row.effective_state,
+            row.state_source,
+            row.store_count,
+            row.visible_key_count,
+            row.wrapped);
+        secdat_domain_ls_row_clear(&row);
+    }
+
+    return 0;
+}
+
 static int secdat_domain_command_ls(const struct secdat_cli *cli)
 {
+    enum {
+        SECDAT_DOMAIN_LS_OPTION_ANCESTORS = 2000,
+        SECDAT_DOMAIN_LS_OPTION_DESCENDANTS,
+    };
     struct secdat_domain_ls_row *rows = NULL;
     struct secdat_string_list roots = {0};
+    struct secdat_string_list inherited_roots = {0};
+    struct secdat_domain_chain current_chain = {0};
     struct secdat_domain_status_summary summary;
     const char *pattern = NULL;
+    static const struct option long_options[] = {
+        {"long", no_argument, NULL, 'l'},
+        {"inherited", no_argument, NULL, 'a'},
+        {"ancestors", no_argument, NULL, SECDAT_DOMAIN_LS_OPTION_ANCESTORS},
+        {"descendants", no_argument, NULL, SECDAT_DOMAIN_LS_OPTION_DESCENDANTS},
+        {"pattern", required_argument, NULL, 'p'},
+        {NULL, 0, NULL, 0},
+    };
     char scope_base[PATH_MAX];
+    char *argv[cli->argc + 2];
+    int argc = cli->argc + 1;
+    int option;
     size_t row_count = 0;
     size_t index;
     int include_ancestors = 0;
     int include_descendants = 0;
+    int include_inherited = 0;
     int long_format = 0;
     int tty_long_format = 0;
 
+    argv[0] = "domain ls";
     for (index = 0; index < (size_t)cli->argc; index += 1) {
-        if (strcmp(cli->argv[index], "-l") == 0 || strcmp(cli->argv[index], "--long") == 0) {
+        argv[index + 1] = cli->argv[index];
+    }
+    argv[argc] = NULL;
+
+    opterr = 0;
+    optind = 1;
+    while ((option = getopt_long(argc, argv, "+alp:", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'l':
             long_format = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--ancestors") == 0) {
+            break;
+        case 'a':
+            include_inherited = 1;
+            break;
+        case 'p':
+            pattern = optarg;
+            break;
+        case SECDAT_DOMAIN_LS_OPTION_ANCESTORS:
             include_ancestors = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--descendants") == 0) {
+            break;
+        case SECDAT_DOMAIN_LS_OPTION_DESCENDANTS:
             include_descendants = 1;
-            continue;
+            break;
+        default:
+            fprintf(stderr, _("invalid arguments for domain ls\n"));
+            secdat_cli_print_try_help(cli, "domain");
+            return 2;
         }
-        if (strcmp(cli->argv[index], "--pattern") == 0) {
-            if (index + 1 >= (size_t)cli->argc) {
-                fprintf(stderr, _("invalid arguments for domain ls\n"));
-                secdat_cli_print_try_help(cli, "domain");
-                return 2;
-            }
-            pattern = cli->argv[index + 1];
-            index += 1;
-            continue;
-        }
-        if (cli->argv[index][0] != '-' && pattern == NULL) {
-            pattern = cli->argv[index];
+    }
+
+    for (index = (size_t)optind; index < (size_t)argc; index += 1) {
+        if (pattern == NULL && argv[index][0] != '-') {
+            pattern = argv[index];
             continue;
         }
 
@@ -1480,6 +1581,18 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
         secdat_string_list_free(&roots);
         return 1;
     }
+    if (include_inherited) {
+        if (secdat_domain_resolve_chain(cli->domain != NULL ? cli->domain : cli->dir, &current_chain) != 0) {
+            secdat_string_list_free(&roots);
+            return 1;
+        }
+        if (secdat_collect_inherited_domain_roots(&current_chain, &inherited_roots) != 0) {
+            secdat_domain_chain_free(&current_chain);
+            secdat_string_list_free(&roots);
+            secdat_string_list_free(&inherited_roots);
+            return 1;
+        }
+    }
 
     tty_long_format = long_format && isatty(STDOUT_FILENO);
 
@@ -1490,8 +1603,10 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     for (index = 0; index < roots.count; index += 1) {
         int matches_ancestor = secdat_path_is_ancestor_or_same(roots.items[index], scope_base);
         int matches_descendant = secdat_path_is_descendant_or_same(roots.items[index], scope_base);
+        int matches_inherited = include_inherited && secdat_string_list_contains(&inherited_roots, roots.items[index]);
 
-        if ((include_ancestors == 0 || matches_ancestor == 0)
+        if (!matches_inherited
+            && (include_ancestors == 0 || matches_ancestor == 0)
             && (include_descendants == 0 || matches_descendant == 0)) {
             continue;
         }
@@ -1499,53 +1614,39 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
             continue;
         }
 
-        if (!long_format) {
-            puts(roots.items[index]);
-            continue;
-        }
-
         if (secdat_collect_domain_status_summary(roots.items[index], &summary) != 0) {
+            secdat_domain_chain_free(&current_chain);
+            secdat_string_list_free(&inherited_roots);
             secdat_string_list_free(&roots);
             secdat_domain_ls_row_list_clear(rows, row_count);
             return 1;
         }
 
-        if (tty_long_format) {
-            struct secdat_domain_ls_row *new_rows = realloc(rows, sizeof(*new_rows) * (row_count + 1));
-
-            if (new_rows == NULL) {
-                fprintf(stderr, _("out of memory\n"));
-                secdat_string_list_free(&roots);
-                secdat_domain_ls_row_list_clear(rows, row_count);
-                return 1;
-            }
-            rows = new_rows;
-            if (secdat_fill_domain_ls_row(roots.items[index], &summary, &rows[row_count]) != 0) {
-                secdat_string_list_free(&roots);
-                secdat_domain_ls_row_list_clear(rows, row_count + 1);
-                return 1;
-            }
-            row_count += 1;
-            continue;
+        if (secdat_domain_ls_emit_row(roots.items[index], &summary, long_format, tty_long_format, &rows, &row_count) != 0) {
+            secdat_domain_chain_free(&current_chain);
+            secdat_string_list_free(&inherited_roots);
+            secdat_string_list_free(&roots);
+            secdat_domain_ls_row_list_clear(rows, row_count + (tty_long_format ? 1 : 0));
+            return 1;
         }
+    }
 
-        {
-            struct secdat_domain_ls_row row;
-
-            if (secdat_fill_domain_ls_row(roots.items[index], &summary, &row) != 0) {
-                secdat_string_list_free(&roots);
-                secdat_domain_ls_row_list_clear(rows, row_count);
-                return 1;
-            }
-            printf("%s\t%s\t%s\t%s\t%zu\t%zu\t%s\n",
-                row.root,
-                row.key_source,
-                row.effective_state,
-                row.state_source,
-                row.store_count,
-                row.visible_key_count,
-                row.wrapped);
-            secdat_domain_ls_row_clear(&row);
+    if (include_inherited
+        && secdat_string_list_contains(&inherited_roots, secdat_user_global_domain_label)
+        && (pattern == NULL || fnmatch(pattern, secdat_user_global_domain_label, 0) == 0)) {
+        if (secdat_collect_user_global_status_summary(&summary) != 0) {
+            secdat_domain_chain_free(&current_chain);
+            secdat_string_list_free(&inherited_roots);
+            secdat_string_list_free(&roots);
+            secdat_domain_ls_row_list_clear(rows, row_count);
+            return 1;
+        }
+        if (secdat_domain_ls_emit_row(secdat_user_global_domain_label, &summary, long_format, tty_long_format, &rows, &row_count) != 0) {
+            secdat_domain_chain_free(&current_chain);
+            secdat_string_list_free(&inherited_roots);
+            secdat_string_list_free(&roots);
+            secdat_domain_ls_row_list_clear(rows, row_count + (tty_long_format ? 1 : 0));
+            return 1;
         }
     }
 
@@ -1553,6 +1654,8 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
         secdat_render_domain_ls_tty_rows(rows, row_count);
     }
 
+    secdat_domain_chain_free(&current_chain);
+    secdat_string_list_free(&inherited_roots);
     secdat_string_list_free(&roots);
     secdat_domain_ls_row_list_clear(rows, row_count);
     return 0;

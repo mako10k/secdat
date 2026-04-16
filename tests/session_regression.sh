@@ -199,6 +199,7 @@ for args, marker in [
     ([bin_path, "help", "set"], "set KEYREF [--unsafe]"),
     ([bin_path, "help", "export"], "bash load current shell vars: source <("),
     ([bin_path, "help", "passwd"], "passwd"),
+    ([bin_path, "help", "domain"], "domain ls [-l|--long] [-a|--inherited]"),
     ([bin_path, "store", "--help"], "store create STORE"),
     ([bin_path, "store", "-h"], "store create STORE"),
 ]:
@@ -564,6 +565,15 @@ if rc != 0 or stderr != "":
 assert_contains(stdout, "resolved domain: *default*\n", "default-scope domain status label")
 assert_contains(stdout, "key source: session agent\n", "default-scope domain status key source")
 assert_contains(stdout, "effective source: local session\n", "default-scope domain status local session")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(default_scope), "domain", "ls", "-la"], {
+    "XDG_RUNTIME_DIR": str(default_runtime),
+    "XDG_DATA_HOME": str(default_data),
+})
+if rc != 0 or stderr != "":
+    fail(f"default-scope domain ls -la failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "default-scope domain ls -la header")
+assert_contains(stdout, "*default*\tsession\tunlocked\tlocal-session\t0\t0\tpresent\n", "default-scope domain ls -la fallback row")
 PY
 
 printf 'PASS session regression\n'

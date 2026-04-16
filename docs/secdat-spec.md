@@ -56,7 +56,7 @@ secdat [--dir DIR] store ls [GLOBPATTERN]
 
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
-secdat [--dir DIR] domain ls [-l|--long] [--ancestors] [--descendants] [GLOBPATTERN]
+secdat [--dir DIR] domain ls [-l|--long] [-a|--inherited] [--ancestors] [--descendants] [GLOBPATTERN]
 secdat [--dir DIR|--domain DIR] domain status [--quiet]
 
 secdat [--dir DIR] [--store STORE] save FILE
@@ -309,6 +309,7 @@ To make the requested behavior implementable, the following are treated as norma
 - sibling directories of `DIR` and their descendants are excluded from that restricted listing
 - `secdat [--dir DIR] domain ls --ancestors` limits that listing to the current domain and its ancestor side
 - `secdat [--dir DIR] domain ls --descendants` limits that listing to the current domain and its descendant side
+- `secdat [--dir DIR] domain ls -a` / `--inherited` augments that listing with the effective inherited parent chain for the current scope, including an emphasized fallback row such as `*default*` when the chain reaches the user-global fallback scope
 - combining `--ancestors` and `--descendants` is equivalent to the default `domain ls` behavior
 - when `domain ls -l` writes to a terminal, it may render a human-oriented grouped view that lifts the shared parent directory into a heading and wraps long domain labels before the metadata columns
 - non-terminal `domain ls -l` output must keep the tab-separated full-path rows so scripts can continue to consume the current layout
@@ -570,7 +571,7 @@ Examples:
 ```text
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
-secdat [--dir DIR] domain ls [-l|--long] [--ancestors] [--descendants] [--pattern GLOBPATTERN]
+secdat [--dir DIR] domain ls [-l|--long] [-a|--inherited] [--ancestors] [--descendants] [--pattern GLOBPATTERN]
 secdat [--dir DIR] domain status [--quiet]
 ```
 
@@ -578,6 +579,7 @@ secdat [--dir DIR] domain status [--quiet]
 - `delete` removes the domain definition for the target directory
 - `ls` without `--dir` uses the current working directory as the listing scope
 - `domain ls --pattern` filters domain roots using a glob pattern
+- `domain ls -a` / `--inherited` adds the inherited parent chain for the current scope and may include a `*default*` fallback row when the user-global fallback scope participates in that chain
 - `domain ls -l` prints one tab-separated summary row per listed domain using the same effective-state fields as `domain status`
 - output format is one domain root per line
 - with no `--dir`, the listing behaves the same as `--dir .`
@@ -760,9 +762,10 @@ Responsibilities:
 2. keep only domains that are ancestors of the base directory, equal to it, or descendants beneath it
 3. if `--ancestors` is present, drop descendant-only matches
 4. if `--descendants` is present, drop ancestor-only matches
-5. if `--pattern` is provided, apply glob filtering
-6. if `-l` or `--long` is provided, compute the same summary fields used by `domain status` for each listed domain and print one tab-separated row per domain
-7. otherwise, print one path per line
+5. if `-a` or `--inherited` is present, union in the inherited parent chain for the current scope and append an emphasized fallback row such as `*default*` when that chain reaches the user-global fallback scope
+6. if `--pattern` is provided, apply glob filtering
+7. if `-l` or `--long` is provided, compute the same summary fields used by `domain status` for each listed domain and print one tab-separated row per domain
+8. otherwise, print one path per line
 
 #### `domain status`
 

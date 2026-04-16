@@ -192,11 +192,11 @@ msgstr "  %s [-d DIR|--dir DIR] domain delete\n"
 #: src/cli.c:207
 #, c-format
 msgid ""
-"  %s [-d DIR|--dir DIR] domain ls [-l|--long] [--ancestors] [--descendants] "
-"[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"
+"  %s [-d DIR|--dir DIR] domain ls [-l|--long] [-a|--inherited] [--ancestors] "
+"[--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"
 msgstr ""
-"  %s [-d DIR|--dir DIR] domain ls [-l|--long] [--ancestors] [--descendants] "
-"[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"
+"  %s [-d DIR|--dir DIR] domain ls [-l|--long] [-a|--inherited] [--ancestors] "
+"[--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]\n"
 
 #: src/cli.c:210
 #, c-format

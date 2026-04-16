@@ -2409,12 +2409,16 @@ cleanup:
     return status;
 }
 
-int secdat_collect_domain_status_summary(const char *dir_override, struct secdat_domain_status_summary *summary)
+static int secdat_collect_domain_status_summary_for_chain(
+    const struct secdat_domain_chain *chain,
+    struct secdat_domain_status_summary *summary
+)
 {
-    struct secdat_domain_chain chain = {0};
+    struct secdat_domain_chain empty_chain = {0};
     struct secdat_key_list visible_keys = {0};
     struct secdat_key_list stores = {0};
     struct secdat_session_record record = {0};
+    const struct secdat_domain_chain *resolved_chain = chain != NULL ? chain : &empty_chain;
     size_t matched_index = SIZE_MAX;
     size_t blocked_index = SIZE_MAX;
     int status = 1;
@@ -2427,34 +2431,31 @@ int secdat_collect_domain_status_summary(const char *dir_override, struct secdat
         summary->effective_source = SECDAT_EFFECTIVE_SOURCE_ENVIRONMENT;
     }
 
-    if (secdat_domain_resolve_chain(dir_override, &chain) != 0) {
-        return 1;
-    }
-    if (chain.count > 0) {
-        if (secdat_collect_store_names(chain.ids[0], NULL, &stores) != 0) {
+    if (resolved_chain->count > 0) {
+        if (secdat_collect_store_names(resolved_chain->ids[0], NULL, &stores) != 0) {
             goto cleanup;
         }
         summary->store_count = stores.count;
 
-        if (secdat_collect_visible_keys(&chain, NULL, NULL, NULL, &visible_keys) != 0) {
+        if (secdat_collect_visible_keys(resolved_chain, NULL, NULL, NULL, &visible_keys) != 0) {
             goto cleanup;
         }
         summary->visible_key_count = visible_keys.count;
     }
 
     if (summary->key_source != SECDAT_KEY_SOURCE_ENVIRONMENT
-        && secdat_session_agent_status_details(&chain, &record, &matched_index, &blocked_index) == 0) {
+        && secdat_session_agent_status_details(resolved_chain, &record, &matched_index, &blocked_index) == 0) {
         summary->key_source = SECDAT_KEY_SOURCE_SESSION;
         summary->session_expires_at = record.expires_at;
         summary->effective_source = matched_index == 0
             ? SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION
             : SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION;
         if (matched_index != SIZE_MAX && matched_index > 0) {
-            if (matched_index == chain.count) {
+            if (matched_index == resolved_chain->count) {
                 if (secdat_domain_display_label("", summary->related_domain_root, sizeof(summary->related_domain_root)) != 0) {
                     goto cleanup;
                 }
-            } else if (secdat_domain_root_path(chain.ids[matched_index], summary->related_domain_root, sizeof(summary->related_domain_root)) != 0) {
+            } else if (secdat_domain_root_path(resolved_chain->ids[matched_index], summary->related_domain_root, sizeof(summary->related_domain_root)) != 0) {
                 goto cleanup;
             }
         }
@@ -2462,9 +2463,9 @@ int secdat_collect_domain_status_summary(const char *dir_override, struct secdat
     } else if (summary->key_source != SECDAT_KEY_SOURCE_ENVIRONMENT) {
         if (blocked_index == 0) {
             summary->effective_source = SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK;
-        } else if (blocked_index != SIZE_MAX) {
+        } else if (blocked_index != SIZE_MAX && blocked_index < resolved_chain->count) {
             summary->effective_source = SECDAT_EFFECTIVE_SOURCE_BLOCKED;
-            if (secdat_domain_root_path(chain.ids[blocked_index], summary->related_domain_root, sizeof(summary->related_domain_root)) != 0) {
+            if (secdat_domain_root_path(resolved_chain->ids[blocked_index], summary->related_domain_root, sizeof(summary->related_domain_root)) != 0) {
                 goto cleanup;
             }
         }
@@ -2476,10 +2477,30 @@ cleanup:
     if (status != 0) {
         secdat_secure_clear(record.master_key, strlen(record.master_key));
     }
-    secdat_domain_chain_free(&chain);
     secdat_key_list_free(&visible_keys);
     secdat_key_list_free(&stores);
     return status;
+}
+
+int secdat_collect_domain_status_summary(const char *dir_override, struct secdat_domain_status_summary *summary)
+{
+    struct secdat_domain_chain chain = {0};
+    int status;
+
+    if (secdat_domain_resolve_chain(dir_override, &chain) != 0) {
+        return 1;
+    }
+
+    status = secdat_collect_domain_status_summary_for_chain(&chain, summary);
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
+int secdat_collect_user_global_status_summary(struct secdat_domain_status_summary *summary)
+{
+    struct secdat_domain_chain chain = {0};
+
+    return secdat_collect_domain_status_summary_for_chain(&chain, summary);
 }
 
 static int secdat_write_secret_bundle_file(
