@@ -3,7 +3,7 @@ dist_doc_DATA = README.md docs/secdat-spec.md
 man1_MANS = docs/secdat.1
 dist_noinst_DATA = completions/secdat.bash
 bashcompletiondir = $(datadir)/bash-completion/completions
-EXTRA_DIST = completions/secdat.bash tests/keyref_regression.sh tests/session_regression.sh tests/e2e_regression.sh tests/save_load_regression.sh tests/export_regression.sh
+EXTRA_DIST = completions/secdat.bash tests/keyref_regression.sh tests/session_regression.sh tests/e2e_regression.sh tests/save_load_regression.sh tests/export_regression.sh tests/lower_level_regression.sh
 
 install-data-local:
 	$(MKDIR_P) "$(DESTDIR)$(bashcompletiondir)"
@@ -32,6 +32,7 @@ all-local:
 	done
 
 check-local:
+	bash $(srcdir)/tests/lower_level_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/keyref_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/session_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/e2e_regression.sh "$(abs_top_builddir)/src/secdat"
