@@ -125,6 +125,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     if (strcmp(name, "unlock") == 0) {
         return SECDAT_COMMAND_UNLOCK;
     }
+    if (strcmp(name, "inherit") == 0) {
+        return SECDAT_COMMAND_INHERIT;
+    }
     if (strcmp(name, "passwd") == 0) {
         return SECDAT_COMMAND_PASSWD;
     }
@@ -189,13 +192,16 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         printf(_("  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] load FILE\n"), program_name);
         break;
     case SECDAT_COMMAND_UNLOCK:
-        printf(_("  %s [-d DIR|--dir DIR] unlock [--descendants] [--yes]\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] unlock [--inherit] [--descendants] [--yes]\n"), program_name);
+        break;
+    case SECDAT_COMMAND_INHERIT:
+        printf(_("  %s [-d DIR|--dir DIR] inherit\n"), program_name);
         break;
     case SECDAT_COMMAND_PASSWD:
         printf(_("  %s passwd\n"), program_name);
         break;
     case SECDAT_COMMAND_LOCK:
-        printf(_("  %s [-d DIR|--dir DIR] lock\n"), program_name);
+        printf(_("  %s [-d DIR|--dir DIR] lock [--inherit]\n"), program_name);
         break;
     case SECDAT_COMMAND_STATUS:
         printf(_("  %s [-d DIR|--dir DIR] status [-q|--quiet]\n"), program_name);
@@ -311,6 +317,7 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
     printf(_("  load: import a passphrase-protected bundle into the current domain view\n"));
     printf(_("  unlock: start or refresh an authenticated secret session for the current domain\n"));
+    printf(_("  inherit: remove the current domain's local explicit-lock marker without checking the resulting state\n"));
     printf(_("  passwd: change the wrapped-master-key passphrase\n"));
     printf(_("  lock: clear the current domain's local secret session\n"));
     printf(_("  status: report whether secret material is available from the current domain scope\n"));
@@ -382,6 +389,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "unlock") == 0) {
         printf(_("  start or refresh an authenticated secret session for the current domain\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "inherit") == 0) {
+        printf(_("  remove the current domain's local explicit-lock marker without checking the resulting state\n"));
         return;
     }
     if (target != NULL && strcmp(target, "passwd") == 0) {
@@ -502,6 +513,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         index += 1;
     } else if (strcmp(argv[index], "unlock") == 0) {
         cli->command = SECDAT_COMMAND_UNLOCK;
+        index += 1;
+    } else if (strcmp(argv[index], "inherit") == 0) {
+        cli->command = SECDAT_COMMAND_INHERIT;
         index += 1;
     } else if (strcmp(argv[index], "passwd") == 0) {
         cli->command = SECDAT_COMMAND_PASSWD;
@@ -710,6 +724,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "load";
     case SECDAT_COMMAND_UNLOCK:
         return "unlock";
+    case SECDAT_COMMAND_INHERIT:
+        return "inherit";
     case SECDAT_COMMAND_PASSWD:
         return "passwd";
     case SECDAT_COMMAND_LOCK:

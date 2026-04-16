@@ -45,9 +45,10 @@ secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... CMD [ARGS...]
 
-secdat [--dir DIR] unlock
+secdat [--dir DIR] unlock [--inherit]
+secdat [--dir DIR] inherit
 secdat passwd
-secdat [--dir DIR] lock
+secdat [--dir DIR] lock [--inherit]
 secdat [--dir DIR] status [--quiet]
 
 secdat [--dir DIR] store create STORE
@@ -244,7 +245,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat status` returns non-zero and reports `locked` when no active master-key source exists
 - `secdat [--dir DIR] status --quiet` suppresses output and reports state only through the exit code
 - `status` without `--quiet` reports the active source and whether a wrapped persistent master key is present
-- `secdat [--dir DIR] unlock [--descendants] [--yes]` creates or refreshes a domain-scoped cache of the current master key
+- `secdat [--dir DIR] unlock [--inherit] [--descendants] [--yes]` creates or refreshes a domain-scoped cache of the current master key
 - if no wrapped persistent master key exists, `unlock` prompts twice on a terminal, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
 - if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `unlock`
@@ -252,12 +253,18 @@ To make the requested behavior implementable, the following are treated as norma
 - before prompting, `unlock` reports the resolved domain it is about to unlock
 - unlocking one domain must not unlock sibling domains
 - descendant domains may reuse an unlocked ancestor session without an extra `unlock`
+- `unlock --inherit` must not create a local session; it removes only the current domain's local explicit-lock marker and succeeds only when the resulting effective state would become unlocked
+- `unlock --inherit` is an error when no current-domain explicit-lock marker exists or when the checked result would remain locked
 - `unlock --descendants` applies only to the resolved target domain plus registered descendants rooted beneath it; it must never affect ancestors, siblings, or unregistered directories
 - `unlock --descendants` must keep explicit-lock markers intact and instead create or refresh local descendant sessions where needed so blocked descendants become effectively unlocked for the current session lifetime
 - when `unlock --descendants` would broaden access beyond the current domain, it must print the affected descendant count, warn that explicit-lock markers remain in force, and require confirmation unless `--yes` is present
 - when `unlock` succeeds for one domain while descendant domains remain effectively locked because of explicit-lock shadow state, the command must say so explicitly and print follow-up inspection/unlock commands using the correct `--dir` targets
 - when a secret read fails because no active session is available, the error must report the resolved domain context and print matching `domain status` / `unlock` follow-up commands so users can unlock the correct domain
-- `secdat [--dir DIR] lock` removes only the current domain's local agent-backed session state
+- `secdat [--dir DIR] lock [--inherit]` clears the current domain's local agent-backed session state
+- when the resolved domain has a registered parent and `--inherit` is not present, `lock` must persist a local explicit-lock marker after clearing the local session
+- `lock --inherit` must not clear or create sessions; it removes only the current domain's local explicit-lock marker and succeeds only when the resulting effective state would remain locked
+- `lock --inherit` is an error when no current-domain explicit-lock marker exists or when the checked result would become unlocked
+- `secdat [--dir DIR] inherit` removes only the current domain's local explicit-lock marker without checking the resulting effective state
 - the current implementation refreshes the idle timeout when the agent serves the cached key
 - no raw master-key retrieval path is required for normal operation; the generated key remains internal unless a separate future recovery/export flow is introduced
 - safe values still refuse terminal-based stdin/stdout for `set` and `get`
@@ -780,10 +787,24 @@ Responsibilities:
 
 1. resolve the current domain from `--dir` or the current working directory
 2. print the resolved domain before any terminal prompt so the user sees the target scope
-3. initialize or refresh the local session for that resolved domain
-4. when `--descendants` is present, compute the affected registered descendant subtree, require confirmation for any broader-scope unlock unless `--yes` is present, and create or refresh local descendant sessions without removing explicit-lock markers
-5. if `--descendants` was not requested and descendant domains under the unlocked domain remain effectively locked because they are explicit-lock roots or blocked below one, print a short summary and next-step commands for descendant inspection and descendant-specific unlocks; descendants that can already reuse the unlocked session may be summarized count-only, while descendants that remain locked are the ones listed explicitly
-6. otherwise, if descendant domains exist under that branch, summarize that they can now reuse the refreshed session
+3. if `--inherit` is present, verify that removing the current domain's local explicit-lock marker would make the resulting effective state unlocked, then remove only that marker without creating a local session
+4. otherwise, initialize or refresh the local session for that resolved domain
+5. when `--descendants` is present, compute the affected registered descendant subtree, require confirmation for any broader-scope unlock unless `--yes` is present, and create or refresh local descendant sessions without removing explicit-lock markers
+6. if `--descendants` was not requested and descendant domains under the unlocked domain remain effectively locked because they are explicit-lock roots or blocked below one, print a short summary and next-step commands for descendant inspection and descendant-specific unlocks; descendants that can already reuse the unlocked session may be summarized count-only, while descendants that remain locked are the ones listed explicitly
+7. otherwise, if descendant domains exist under that branch, summarize that they can now reuse the refreshed session
+
+#### `lock`
+
+1. resolve the current domain from `--dir` or the current working directory
+2. if `--inherit` is present, verify that removing the current domain's local explicit-lock marker would leave the resulting effective state locked, then remove only that marker without clearing a session
+3. otherwise, clear the current domain's local session state
+4. if the resolved domain has a registered parent and `--inherit` was not requested, persist a local explicit-lock marker
+
+#### `inherit`
+
+1. resolve the current domain from `--dir` or the current working directory
+2. require that the resolved domain has a current-domain explicit-lock marker
+3. remove only that local explicit-lock marker without checking the resulting effective state
 
 #### `ls`
 

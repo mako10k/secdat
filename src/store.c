@@ -140,7 +140,22 @@ static void secdat_print_locked_read_guidance(const struct secdat_domain_chain *
 
 struct secdat_unlock_options {
     int include_descendants;
+    int inherit_mode;
     int assume_yes;
+};
+
+struct secdat_lock_options {
+    int inherit_mode;
+};
+
+struct secdat_session_lookup_options {
+    int ignore_current_explicit_lock;
+};
+
+enum secdat_inherit_expectation {
+    SECDAT_INHERIT_EXPECT_ANY = 0,
+    SECDAT_INHERIT_EXPECT_UNLOCKED,
+    SECDAT_INHERIT_EXPECT_LOCKED,
 };
 
 static void secdat_secure_clear(void *buffer, size_t length)
@@ -309,6 +324,30 @@ static int secdat_domain_set_explicit_lock(const char *domain_id)
     return secdat_atomic_write_file(marker_path, marker_contents, sizeof(marker_contents) - 1);
 }
 
+static int secdat_domain_clear_explicit_lock(const char *domain_id, int *removed)
+{
+    char marker_path[PATH_MAX];
+
+    if (removed != NULL) {
+        *removed = 0;
+    }
+    if (secdat_explicit_lock_marker_path(domain_id, marker_path, sizeof(marker_path)) != 0) {
+        return 0;
+    }
+    if (unlink(marker_path) == 0) {
+        if (removed != NULL) {
+            *removed = 1;
+        }
+        return 0;
+    }
+    if (errno == ENOENT) {
+        return 0;
+    }
+
+    fprintf(stderr, _("failed to remove file: %s\n"), marker_path);
+    return 1;
+}
+
 static void secdat_print_unlock_guidance(const char *current_domain_root)
 {
     struct secdat_domain_root_list descendants = {0};
@@ -432,6 +471,10 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
 
     memset(options, 0, sizeof(*options));
     for (index = 0; index < (size_t)cli->argc; index += 1) {
+        if (strcmp(cli->argv[index], "--inherit") == 0) {
+            options->inherit_mode = 1;
+            continue;
+        }
         if (strcmp(cli->argv[index], "--descendants") == 0) {
             options->include_descendants = 1;
             continue;
@@ -443,6 +486,31 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
 
         fprintf(stderr, _("invalid arguments for unlock\n"));
         secdat_cli_print_try_help(cli, "unlock");
+        return 2;
+    }
+
+    if (options->inherit_mode && (options->include_descendants || options->assume_yes)) {
+        fprintf(stderr, _("invalid arguments for unlock\n"));
+        secdat_cli_print_try_help(cli, "unlock");
+        return 2;
+    }
+
+    return 0;
+}
+
+static int secdat_parse_lock_options(const struct secdat_cli *cli, struct secdat_lock_options *options)
+{
+    size_t index;
+
+    memset(options, 0, sizeof(*options));
+    for (index = 0; index < (size_t)cli->argc; index += 1) {
+        if (strcmp(cli->argv[index], "--inherit") == 0) {
+            options->inherit_mode = 1;
+            continue;
+        }
+
+        fprintf(stderr, _("invalid arguments for lock\n"));
+        secdat_cli_print_try_help(cli, "lock");
         return 2;
     }
 
@@ -1895,10 +1963,16 @@ static int secdat_session_agent_connect_chain(const struct secdat_domain_chain *
     return secdat_session_agent_connect_chain_details(chain, NULL, NULL);
 }
 
-static int secdat_session_agent_connect_chain_details(const struct secdat_domain_chain *chain, size_t *matched_index, size_t *blocked_index)
+static int secdat_session_agent_connect_chain_details_with_options(
+    const struct secdat_domain_chain *chain,
+    size_t *matched_index,
+    size_t *blocked_index,
+    const struct secdat_session_lookup_options *options
+)
 {
     size_t index;
     int fd;
+    int ignore_current_explicit_lock = options != NULL && options->ignore_current_explicit_lock;
 
     if (matched_index != NULL) {
         *matched_index = SIZE_MAX;
@@ -1914,6 +1988,9 @@ static int secdat_session_agent_connect_chain_details(const struct secdat_domain
                 *matched_index = index;
             }
             return fd;
+        }
+        if (ignore_current_explicit_lock && index == 0) {
+            continue;
         }
         if (secdat_domain_has_explicit_lock(chain->ids[index])) {
             if (blocked_index != NULL) {
@@ -1932,6 +2009,11 @@ static int secdat_session_agent_connect_chain_details(const struct secdat_domain
     }
 
     return -1;
+}
+
+static int secdat_session_agent_connect_chain_details(const struct secdat_domain_chain *chain, size_t *matched_index, size_t *blocked_index)
+{
+    return secdat_session_agent_connect_chain_details_with_options(chain, matched_index, blocked_index, NULL);
 }
 
 static int secdat_session_agent_status(const struct secdat_domain_chain *chain, struct secdat_session_record *record)
@@ -2858,6 +2940,117 @@ static int secdat_derive_key(const struct secdat_domain_chain *chain, unsigned c
     return 0;
 }
 
+static int secdat_effective_unlock_state_without_current_explicit_lock(
+    const struct secdat_domain_chain *chain,
+    int *would_unlock,
+    size_t *matched_index,
+    size_t *blocked_index
+)
+{
+    FILE *stream;
+    struct secdat_session_record record = {0};
+    struct secdat_session_lookup_options options = {0};
+    char response[64];
+    int fd;
+
+    *would_unlock = 0;
+    if (matched_index != NULL) {
+        *matched_index = SIZE_MAX;
+    }
+    if (blocked_index != NULL) {
+        *blocked_index = SIZE_MAX;
+    }
+    if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
+        *would_unlock = 1;
+        return 0;
+    }
+
+    options.ignore_current_explicit_lock = 1;
+    fd = secdat_session_agent_connect_chain_details_with_options(chain, matched_index, blocked_index, &options);
+    if (fd < 0) {
+        return 0;
+    }
+
+    memset(&record, 0, sizeof(record));
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+
+    fprintf(stream, "STATUS\n");
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fclose(stream);
+
+    if (strncmp(response, "OK ", 3) != 0) {
+        return 1;
+    }
+    if (secdat_parse_i64(response + 3, &record.expires_at) != 0) {
+        return 1;
+    }
+
+    *would_unlock = 1;
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    return 0;
+}
+
+static int secdat_remove_local_explicit_lock(
+    const struct secdat_domain_chain *chain,
+    const char *current_domain_label,
+    enum secdat_inherit_expectation expectation
+)
+{
+    size_t blocked_index = SIZE_MAX;
+    size_t matched_index = SIZE_MAX;
+    int removed = 0;
+    int would_unlock = 0;
+
+    if (chain->count == 0) {
+        fprintf(stderr, _("no local explicit lock marker for: %s\n"), current_domain_label);
+        return 1;
+    }
+    if (!secdat_domain_has_explicit_lock(chain->ids[0])) {
+        fprintf(stderr, _("no local explicit lock marker for: %s\n"), current_domain_label);
+        return 1;
+    }
+
+    if (expectation != SECDAT_INHERIT_EXPECT_ANY) {
+        if (secdat_effective_unlock_state_without_current_explicit_lock(chain, &would_unlock, &matched_index, &blocked_index) != 0) {
+            return 1;
+        }
+        if ((expectation == SECDAT_INHERIT_EXPECT_UNLOCKED && !would_unlock)
+            || (expectation == SECDAT_INHERIT_EXPECT_LOCKED && would_unlock)) {
+            fprintf(stderr, _("refusing to remove local explicit lock for: %s\n"), current_domain_label);
+            fprintf(stderr, _("expected resulting state: %s\n"),
+                expectation == SECDAT_INHERIT_EXPECT_UNLOCKED ? "unlocked" : "locked");
+            fprintf(stderr, _("actual resulting state after removing local explicit lock: %s\n"),
+                would_unlock ? "unlocked" : "locked");
+            return 1;
+        }
+    }
+
+    if (secdat_domain_clear_explicit_lock(chain->ids[0], &removed) != 0) {
+        return 1;
+    }
+    if (!removed) {
+        fprintf(stderr, _("no local explicit lock marker for: %s\n"), current_domain_label);
+        return 1;
+    }
+
+    if (expectation == SECDAT_INHERIT_EXPECT_UNLOCKED) {
+        puts(_("local explicit lock removed; resulting state: unlocked"));
+    } else if (expectation == SECDAT_INHERIT_EXPECT_LOCKED) {
+        puts(_("local explicit lock removed; resulting state: locked"));
+    } else {
+        puts(_("local explicit lock removed"));
+    }
+    return 0;
+}
+
 static int secdat_domain_chain_from_id(const char *domain_id, struct secdat_domain_chain *chain)
 {
     char domain_root[PATH_MAX];
@@ -2953,6 +3146,11 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         return 1;
     }
     fprintf(stderr, _("resolved domain: %s\n"), current_domain_label);
+    if (options.inherit_mode) {
+        parse_status = secdat_remove_local_explicit_lock(&current_chain, current_domain_label, SECDAT_INHERIT_EXPECT_UNLOCKED);
+        secdat_domain_chain_free(&current_chain);
+        return parse_status;
+    }
     if (current_chain.count == 0) {
         current_domain_root[0] = '\0';
     } else if (secdat_domain_root_path(current_chain.ids[0], current_domain_root, sizeof(current_domain_root)) != 0) {
@@ -3087,15 +3285,31 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
 static int secdat_command_lock(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
+    struct secdat_lock_options options;
+    char current_domain_label[PATH_MAX];
+    int parse_status;
     int should_persist_lock = 0;
 
-    if (cli->argc != 0 || cli->store != NULL) {
+    if (cli->store != NULL) {
         fprintf(stderr, _("invalid arguments for lock\n"));
         secdat_cli_print_try_help(cli, "lock");
         return 2;
     }
+    parse_status = secdat_parse_lock_options(cli, &options);
+    if (parse_status != 0) {
+        return parse_status;
+    }
     if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
         return 1;
+    }
+    if (secdat_domain_display_label(chain.count == 0 ? "" : chain.ids[0], current_domain_label, sizeof(current_domain_label)) != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+    if (options.inherit_mode) {
+        parse_status = secdat_remove_local_explicit_lock(&chain, current_domain_label, SECDAT_INHERIT_EXPECT_LOCKED);
+        secdat_domain_chain_free(&chain);
+        return parse_status;
     }
     should_persist_lock = chain.count > 1;
 
@@ -3112,6 +3326,30 @@ static int secdat_command_lock(const struct secdat_cli *cli)
 
     puts(_("session locked"));
     return 0;
+}
+
+static int secdat_command_inherit(const struct secdat_cli *cli)
+{
+    struct secdat_domain_chain chain = {0};
+    char current_domain_label[PATH_MAX];
+    int status;
+
+    if (cli->argc != 0 || cli->store != NULL) {
+        fprintf(stderr, _("invalid arguments for inherit\n"));
+        secdat_cli_print_try_help(cli, "inherit");
+        return 2;
+    }
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
+        return 1;
+    }
+    if (secdat_domain_display_label(chain.count == 0 ? "" : chain.ids[0], current_domain_label, sizeof(current_domain_label)) != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+
+    status = secdat_remove_local_explicit_lock(&chain, current_domain_label, SECDAT_INHERIT_EXPECT_ANY);
+    secdat_domain_chain_free(&chain);
+    return status;
 }
 
 static int secdat_command_passwd(const struct secdat_cli *cli)
@@ -5211,6 +5449,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_load(cli);
     case SECDAT_COMMAND_UNLOCK:
         return secdat_command_unlock(cli);
+    case SECDAT_COMMAND_INHERIT:
+        return secdat_command_inherit(cli);
     case SECDAT_COMMAND_PASSWD:
         return secdat_command_passwd(cli);
     case SECDAT_COMMAND_LOCK:

@@ -51,6 +51,8 @@ Initialize `secdat` once directly with a passphrase in the target domain:
 
 The first interactive `unlock` generates a fresh master key, stores a wrapped copy under `XDG_DATA_HOME`, and starts a session agent scoped to the current domain. Descendant domains reuse an unlocked ancestor session automatically, but sibling domains stay locked until they unlock for themselves.
 
+When a domain is shadowed by a local explicit-lock marker, `unlock --inherit` removes only that local marker after checking that the resulting effective state would become unlocked. Symmetrically, `lock --inherit` removes only the local marker after checking that the resulting effective state would stay locked. If you need to remove the local explicit-lock marker without that safety check, use `inherit`.
+
 When a branch still contains explicit-lock shadows, `unlock --descendants` performs an explicit subtree unlock: it keeps the explicit-lock markers in place, but creates local descendant sessions so the current domain and blocked descendants become available for the lifetime of those sessions. Because that broadens access beyond the current domain, the command asks for confirmation unless you pass `--yes` for non-interactive use.
 
 Before prompting, `unlock` now prints the resolved domain it is about to unlock so the current scope is visible even when you launched the command from the wrong directory by mistake. When no registered domain applies, that output uses the presentation label `*default*` to mean "no registered domain resolved; the top-level inherited fallback scope is active".
@@ -211,6 +213,8 @@ You can keep the active master key in a domain-scoped session agent and avoid ex
 ./src/secdat status
 ./src/secdat status --quiet
 ./src/secdat --dir ~/example/project unlock
+./src/secdat --dir ~/example/project unlock --inherit
+./src/secdat --dir ~/example/project inherit
 ./src/secdat lock
 ```
 

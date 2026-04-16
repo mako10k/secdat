@@ -211,6 +211,57 @@ if rc == 0 or "missing SECDAT_MASTER_KEY and no active secdat session" not in st
 assert_contains(stderr, f"resolved domain: {child_domain}\n", "blocked read resolved domain")
 assert_contains(stderr, f"unlock current domain: secdat --dir {child_domain} unlock\n", "blocked read unlock guidance")
 
+rc, stdout, stderr = run(scoped(["lock", "--inherit"], child_domain))
+if rc == 0:
+    fail(f"lock --inherit unexpectedly succeeded while parent session would unlock child: stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stderr, f"refusing to remove local explicit lock for: {child_domain}\n", "lock --inherit refusal")
+assert_contains(stderr, "expected resulting state: locked\n", "lock --inherit expected state")
+assert_contains(stderr, "actual resulting state after removing local explicit lock: unlocked\n", "lock --inherit actual state")
+
+rc, stdout, stderr = run(scoped(["unlock", "--inherit"], child_domain))
+if rc != 0 or stdout.strip() != "local explicit lock removed; resulting state: unlocked":
+    fail(f"unlock --inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stderr, f"resolved domain: {child_domain}\n", "unlock --inherit resolved domain")
+
+rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
+if rc != 0 or stderr != "":
+    fail(f"child domain status after unlock --inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: inherited session\n", "child inherited status after unlock --inherit")
+assert_contains(stdout, f"inherited from: {root_domain}\n", "child inherited source after unlock --inherit")
+
+rc, stdout, stderr = run(scoped(["lock"], child_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"child relock before failed checked inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"], root_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"root lock before failed checked inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["unlock", "--inherit"], child_domain))
+if rc == 0:
+    fail(f"unlock --inherit unexpectedly succeeded without an inherited unlock source: stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stderr, f"resolved domain: {child_domain}\n", "failed unlock --inherit resolved domain")
+assert_contains(stderr, f"refusing to remove local explicit lock for: {child_domain}\n", "unlock --inherit refusal")
+assert_contains(stderr, "expected resulting state: unlocked\n", "unlock --inherit expected state")
+assert_contains(stderr, "actual resulting state after removing local explicit lock: locked\n", "unlock --inherit actual state")
+
+rc, stdout, stderr = run(scoped(["inherit"], child_domain))
+if rc != 0 or stdout.strip() != "local explicit lock removed":
+    fail(f"unchecked inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
+if rc != 0 or stderr != "":
+    fail(f"child domain status after unchecked inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: locked\n", "child locked status after unchecked inherit")
+
+rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": env["SECDAT_MASTER_KEY_PASSPHRASE"]})
+if rc != 0 or stdout.strip() != "session unlocked\nnote: 2 descendant domains can now reuse this session":
+    fail(f"root unlock after unchecked inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"], child_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"child relock after unchecked inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run(scoped(["unlock"], child_domain))
 if rc != 0 or stdout.strip() != "session unlocked\nnote: 1 descendant domains can now reuse this session":
     fail(f"child unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
