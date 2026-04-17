@@ -63,6 +63,12 @@ If a secret read fails while `secdat` is still locked, the error now reports the
 
 For explicit non-interactive use, `SECDAT_MASTER_KEY_PASSPHRASE` can provide the current wrapped-key passphrase to `unlock`. This is an override path rather than the default recommendation, because environment variables are easier to expose than terminal prompts.
 
+For a non-mutating session, `unlock --volatile` keeps subsequent `set`, `rm`, `mask`, `unmask`, `cp`, `mv`, `load`, and read-side resolution changes in the session agent's memory instead of writing through to the real store files. `lock` clears that overlay, and `lock --save` first writes the local volatile overlay into the real store files before locking. This is intended for dry-run validation and read-only filesystems.
+
+When no wrapped master key exists yet, `unlock --volatile` can still start by generating an ephemeral in-memory master key without writing the wrapped-key file. Current volatile sessions can remove only tombstones created in the same volatile overlay; persisted tombstones still require a normal writable session.
+
+For a read-only session with the real persisted data, `unlock --readonly` reuses an existing master key but rejects mutating commands such as `set`, `rm`, `mask`, `unmask`, `cp`, `mv`, `load`, `store create`, `store delete`, and domain create/delete. `--readonly` and `--volatile` are mutually exclusive.
+
 If you already have a master key to migrate or explicitly override with, `SECDAT_MASTER_KEY` still works:
 
 ```sh

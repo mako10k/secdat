@@ -57,6 +57,14 @@ _secdat_complete()
             COMPREPLY=( $(compgen -W "${commands[*]}" -- "$cur") )
             return 0
             ;;
+        unlock)
+            COMPREPLY=( $(compgen -W "--inherit --volatile --readonly --descendants --yes" -- "$cur") )
+            return 0
+            ;;
+        lock)
+            COMPREPLY=( $(compgen -W "--inherit --save" -- "$cur") )
+            return 0
+            ;;
         store)
             if [[ -z "$subcmd" && $COMP_CWORD -le $((index + 1)) ]]; then
                 COMPREPLY=( $(compgen -W "${store_subcommands[*]}" -- "$cur") )

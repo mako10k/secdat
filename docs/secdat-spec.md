@@ -45,10 +45,10 @@ secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... CMD [ARGS...]
 
-secdat [--dir DIR] unlock [--inherit]
+secdat [--dir DIR] unlock [--inherit] [--volatile|--readonly]
 secdat [--dir DIR] inherit
 secdat passwd
-secdat [--dir DIR] lock [--inherit]
+secdat [--dir DIR] lock [--inherit] [--save]
 secdat [--dir DIR] status [--quiet]
 
 secdat [--dir DIR] store create STORE
@@ -246,8 +246,15 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat status` returns non-zero and reports `locked` when no active master-key source exists
 - `secdat [--dir DIR] status --quiet` suppresses output and reports state only through the exit code
 - `status` without `--quiet` reports the active source and whether a wrapped persistent master key is present
-- `secdat [--dir DIR] unlock [--inherit] [--descendants] [--yes]` creates or refreshes a domain-scoped cache of the current master key
+- `secdat [--dir DIR] unlock [--inherit] [--volatile|--readonly] [--descendants] [--yes]` creates or refreshes a domain-scoped cache of the current master key
 - if no wrapped persistent master key exists, `unlock` prompts twice on a terminal, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
+- `unlock --volatile` redirects subsequent secret writes, deletes, and tombstone changes to a session-agent memory overlay that is cleared by `lock`
+- `lock --save` persists the local volatile overlay into the real store files before clearing that local session; it must fail for non-volatile sessions
+- reads, listing, export-like operations, and bundle save/load must prefer the active volatile overlay before consulting persisted store files
+- when no wrapped persistent master key exists, `unlock --volatile` may generate an ephemeral in-memory master key without writing the wrapped-key file
+- the current implementation removes only tombstones created in the active volatile overlay; removing persisted tombstones still requires a normal writable session
+- `unlock --readonly` reuses an existing master key but must reject mutating commands while keeping reads, listing, export-like operations, and status available
+- `--readonly` and `--volatile` are mutually exclusive, and neither may be combined with `unlock --inherit`
 - if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `unlock`
 - otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent

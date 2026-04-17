@@ -84,9 +84,50 @@ struct secdat_list_options {
     int unsafe_store;
 };
 
+enum secdat_overlay_item_kind {
+    SECDAT_OVERLAY_ITEM_ENTRY = 1,
+    SECDAT_OVERLAY_ITEM_TOMBSTONE,
+};
+
+struct secdat_overlay_item {
+    char *domain_id;
+    char *store_name;
+    char *key;
+    unsigned char *plaintext;
+    size_t plaintext_length;
+    int unsafe_store;
+    enum secdat_overlay_item_kind kind;
+};
+
+struct secdat_overlay_list {
+    struct secdat_overlay_item *items;
+    size_t count;
+    size_t capacity;
+};
+
+struct secdat_effective_entry {
+    int found;
+    int tombstone;
+    int from_overlay;
+    int unsafe_store;
+    size_t resolved_index;
+    char path[PATH_MAX];
+    unsigned char *plaintext;
+    size_t plaintext_length;
+};
+
+enum secdat_session_access_mode {
+    SECDAT_SESSION_ACCESS_PERSISTENT = 0,
+    SECDAT_SESSION_ACCESS_VOLATILE,
+    SECDAT_SESSION_ACCESS_READONLY,
+};
+
 struct secdat_session_record {
     char master_key[512];
     time_t expires_at;
+    int volatile_mode;
+    int readonly_mode;
+    struct secdat_overlay_list overlay;
 };
 
 struct secdat_wrapped_master_key {
@@ -123,6 +164,15 @@ static int secdat_load_resolved_plaintext(
     size_t *resolved_index,
     int *unsafe_store
 );
+static int secdat_store_plaintext(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store
+);
+static int secdat_write_empty_file(const char *path);
 static int secdat_entry_uses_plaintext_storage(const char *path, int *unsafe_store);
 static int secdat_collect_store_names(const char *domain_id, const char *pattern, struct secdat_key_list *stores);
 static int secdat_atomic_write_file(const char *path, const unsigned char *data, size_t length);
@@ -133,7 +183,7 @@ static int secdat_session_agent_status_details(
     size_t *matched_index,
     size_t *blocked_index
 );
-static int secdat_session_agent_set(const char *domain_id, const char *master_key);
+static int secdat_session_agent_set(const char *domain_id, const char *master_key, enum secdat_session_access_mode access_mode);
 static int secdat_session_agent_clear(const char *domain_id);
 static void secdat_print_unlock_guidance(const char *current_domain_root);
 static void secdat_print_locked_read_guidance(const struct secdat_domain_chain *chain);
@@ -142,14 +192,25 @@ struct secdat_unlock_options {
     int include_descendants;
     int inherit_mode;
     int assume_yes;
+    int volatile_mode;
+    int readonly_mode;
 };
 
 struct secdat_lock_options {
     int inherit_mode;
+    int save_mode;
 };
 
 struct secdat_session_lookup_options {
     int ignore_current_explicit_lock;
+};
+
+struct secdat_overlay_lookup_result {
+    int found;
+    int tombstone;
+    int unsafe_store;
+    unsigned char *plaintext;
+    size_t plaintext_length;
 };
 
 enum secdat_inherit_expectation {
@@ -181,6 +242,244 @@ static void secdat_key_list_free(struct secdat_key_list *list)
     list->items = NULL;
     list->count = 0;
     list->capacity = 0;
+}
+
+static int secdat_duplicate_bytes(const unsigned char *input, size_t length, unsigned char **output)
+{
+    unsigned char *copy;
+
+    copy = malloc(length == 0 ? 1 : length);
+    if (copy == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    if (length > 0) {
+        memcpy(copy, input, length);
+    }
+    *output = copy;
+    return 0;
+}
+
+static int secdat_overlay_store_name_copy(const char *store_name, char **buffer)
+{
+    const char *effective_store = store_name != NULL ? store_name : "";
+
+    *buffer = strdup(effective_store);
+    if (*buffer == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static void secdat_overlay_item_free(struct secdat_overlay_item *item)
+{
+    if (item == NULL) {
+        return;
+    }
+
+    free(item->domain_id);
+    free(item->store_name);
+    free(item->key);
+    if (item->plaintext != NULL) {
+        secdat_secure_clear(item->plaintext, item->plaintext_length);
+        free(item->plaintext);
+    }
+    memset(item, 0, sizeof(*item));
+}
+
+static void secdat_overlay_list_clear(struct secdat_overlay_list *list)
+{
+    size_t index;
+
+    if (list == NULL) {
+        return;
+    }
+    for (index = 0; index < list->count; index += 1) {
+        secdat_overlay_item_free(&list->items[index]);
+    }
+    free(list->items);
+    list->items = NULL;
+    list->count = 0;
+    list->capacity = 0;
+}
+
+static int secdat_overlay_list_find(
+    const struct secdat_overlay_list *list,
+    const char *domain_id,
+    const char *store_name,
+    const char *key
+)
+{
+    const char *effective_store = store_name != NULL ? store_name : "";
+    size_t index;
+
+    for (index = 0; index < list->count; index += 1) {
+        if (strcmp(list->items[index].domain_id, domain_id) == 0
+            && strcmp(list->items[index].store_name, effective_store) == 0
+            && strcmp(list->items[index].key, key) == 0) {
+            return (int)index;
+        }
+    }
+
+    return -1;
+}
+
+static int secdat_overlay_list_ensure_capacity(struct secdat_overlay_list *list)
+{
+    struct secdat_overlay_item *new_items;
+    size_t new_capacity;
+
+    if (list->count < list->capacity) {
+        return 0;
+    }
+
+    new_capacity = list->capacity == 0 ? 8 : list->capacity * 2;
+    new_items = realloc(list->items, sizeof(*new_items) * new_capacity);
+    if (new_items == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    list->items = new_items;
+    list->capacity = new_capacity;
+    return 0;
+}
+
+static int secdat_overlay_list_set_entry(
+    struct secdat_overlay_list *list,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    const unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store
+)
+{
+    struct secdat_overlay_item item;
+    int existing_index;
+
+    memset(&item, 0, sizeof(item));
+    existing_index = secdat_overlay_list_find(list, domain_id, store_name, key);
+    if (existing_index >= 0) {
+        secdat_overlay_item_free(&list->items[existing_index]);
+        memset(&list->items[existing_index], 0, sizeof(list->items[existing_index]));
+    } else if (secdat_overlay_list_ensure_capacity(list) != 0) {
+        return 1;
+    }
+
+    item.domain_id = strdup(domain_id);
+    item.key = strdup(key);
+    if (item.domain_id == NULL || item.key == NULL || secdat_overlay_store_name_copy(store_name, &item.store_name) != 0) {
+        free(item.domain_id);
+        free(item.key);
+        free(item.store_name);
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    if (secdat_duplicate_bytes(plaintext, plaintext_length, &item.plaintext) != 0) {
+        secdat_overlay_item_free(&item);
+        return 1;
+    }
+    item.plaintext_length = plaintext_length;
+    item.unsafe_store = unsafe_store;
+    item.kind = SECDAT_OVERLAY_ITEM_ENTRY;
+
+    if (existing_index >= 0) {
+        list->items[existing_index] = item;
+    } else {
+        list->items[list->count] = item;
+        list->count += 1;
+    }
+    return 0;
+}
+
+static int secdat_overlay_list_set_tombstone(
+    struct secdat_overlay_list *list,
+    const char *domain_id,
+    const char *store_name,
+    const char *key
+)
+{
+    struct secdat_overlay_item item;
+    int existing_index;
+
+    memset(&item, 0, sizeof(item));
+    existing_index = secdat_overlay_list_find(list, domain_id, store_name, key);
+    if (existing_index >= 0) {
+        secdat_overlay_item_free(&list->items[existing_index]);
+        memset(&list->items[existing_index], 0, sizeof(list->items[existing_index]));
+    } else if (secdat_overlay_list_ensure_capacity(list) != 0) {
+        return 1;
+    }
+
+    item.domain_id = strdup(domain_id);
+    item.key = strdup(key);
+    if (item.domain_id == NULL || item.key == NULL || secdat_overlay_store_name_copy(store_name, &item.store_name) != 0) {
+        free(item.domain_id);
+        free(item.key);
+        free(item.store_name);
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    item.kind = SECDAT_OVERLAY_ITEM_TOMBSTONE;
+
+    if (existing_index >= 0) {
+        list->items[existing_index] = item;
+    } else {
+        list->items[list->count] = item;
+        list->count += 1;
+    }
+    return 0;
+}
+
+static void secdat_overlay_list_remove(
+    struct secdat_overlay_list *list,
+    const char *domain_id,
+    const char *store_name,
+    const char *key
+)
+{
+    int index;
+
+    index = secdat_overlay_list_find(list, domain_id, store_name, key);
+    if (index < 0) {
+        return;
+    }
+
+    secdat_overlay_item_free(&list->items[index]);
+    if ((size_t)index + 1 < list->count) {
+        memmove(&list->items[index], &list->items[index + 1], sizeof(*list->items) * (list->count - (size_t)index - 1));
+    }
+    list->count -= 1;
+    memset(&list->items[list->count], 0, sizeof(list->items[list->count]));
+}
+
+static const struct secdat_overlay_item *secdat_overlay_list_lookup(
+    const struct secdat_overlay_list *list,
+    const char *domain_id,
+    const char *store_name,
+    const char *key
+)
+{
+    int index;
+
+    index = secdat_overlay_list_find(list, domain_id, store_name, key);
+    if (index < 0) {
+        return NULL;
+    }
+    return &list->items[index];
+}
+
+static void secdat_effective_entry_reset(struct secdat_effective_entry *entry)
+{
+    if (entry == NULL) {
+        return;
+    }
+    if (entry->plaintext != NULL) {
+        secdat_secure_clear(entry->plaintext, entry->plaintext_length);
+        free(entry->plaintext);
+    }
+    memset(entry, 0, sizeof(*entry));
 }
 
 static int secdat_key_list_contains(const struct secdat_key_list *list, const char *value)
@@ -481,7 +780,7 @@ static const char *secdat_session_scope_id(const struct secdat_domain_chain *cha
 
 static int secdat_session_agent_set_current_scope(const struct secdat_domain_chain *chain, const char *master_key)
 {
-    return secdat_session_agent_set(secdat_session_scope_id(chain), master_key);
+    return secdat_session_agent_set(secdat_session_scope_id(chain), master_key, SECDAT_SESSION_ACCESS_PERSISTENT);
 }
 
 static int secdat_session_agent_clear_current_scope(const struct secdat_domain_chain *chain)
@@ -499,6 +798,14 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
             options->inherit_mode = 1;
             continue;
         }
+        if (strcmp(cli->argv[index], "--volatile") == 0) {
+            options->volatile_mode = 1;
+            continue;
+        }
+        if (strcmp(cli->argv[index], "--readonly") == 0) {
+            options->readonly_mode = 1;
+            continue;
+        }
         if (strcmp(cli->argv[index], "--descendants") == 0) {
             options->include_descendants = 1;
             continue;
@@ -513,7 +820,17 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
         return 2;
     }
 
-    if (options->inherit_mode && (options->include_descendants || options->assume_yes)) {
+    if (options->inherit_mode && (options->include_descendants || options->assume_yes || options->volatile_mode || options->readonly_mode)) {
+        fprintf(stderr, _("invalid arguments for unlock\n"));
+        secdat_cli_print_try_help(cli, "unlock");
+        return 2;
+    }
+    if (options->volatile_mode && options->readonly_mode) {
+        fprintf(stderr, _("invalid arguments for unlock\n"));
+        secdat_cli_print_try_help(cli, "unlock");
+        return 2;
+    }
+    if (options->volatile_mode && (options->include_descendants || options->assume_yes)) {
         fprintf(stderr, _("invalid arguments for unlock\n"));
         secdat_cli_print_try_help(cli, "unlock");
         return 2;
@@ -532,7 +849,17 @@ static int secdat_parse_lock_options(const struct secdat_cli *cli, struct secdat
             options->inherit_mode = 1;
             continue;
         }
+        if (strcmp(cli->argv[index], "--save") == 0) {
+            options->save_mode = 1;
+            continue;
+        }
 
+        fprintf(stderr, _("invalid arguments for lock\n"));
+        secdat_cli_print_try_help(cli, "lock");
+        return 2;
+    }
+
+    if (options->inherit_mode && options->save_mode) {
         fprintf(stderr, _("invalid arguments for lock\n"));
         secdat_cli_print_try_help(cli, "lock");
         return 2;
@@ -633,7 +960,11 @@ static int secdat_confirm_descendant_unlock(size_t affected_count)
     return 1;
 }
 
-static int secdat_unlock_descendant_sessions(const struct secdat_domain_root_list *targets, const char *master_key)
+static int secdat_unlock_descendant_sessions(
+    const struct secdat_domain_root_list *targets,
+    const char *master_key,
+    enum secdat_session_access_mode access_mode
+)
 {
     char domain_id[PATH_MAX];
     size_t index;
@@ -642,7 +973,7 @@ static int secdat_unlock_descendant_sessions(const struct secdat_domain_root_lis
         if (secdat_domain_resolve_current(targets->roots[index], domain_id, sizeof(domain_id)) != 0) {
             return 1;
         }
-        if (secdat_session_agent_set(domain_id, master_key) != 0) {
+        if (secdat_session_agent_set(domain_id, master_key, access_mode) != 0) {
             return 1;
         }
     }
@@ -1011,6 +1342,59 @@ static int secdat_hex_value(char character)
     return -1;
 }
 
+static int secdat_hex_encode_bytes(const unsigned char *input, size_t length, char **output)
+{
+    static const char hex_digits[] = "0123456789abcdef";
+    char *buffer;
+    size_t index;
+
+    buffer = malloc(length * 2 + 1);
+    if (buffer == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    for (index = 0; index < length; index += 1) {
+        buffer[index * 2] = hex_digits[input[index] >> 4];
+        buffer[index * 2 + 1] = hex_digits[input[index] & 0x0f];
+    }
+    buffer[length * 2] = '\0';
+    *output = buffer;
+    return 0;
+}
+
+static int secdat_hex_decode_bytes(const char *input, unsigned char **output, size_t *length)
+{
+    unsigned char *buffer;
+    size_t input_length;
+    size_t index;
+    int high;
+    int low;
+
+    input_length = strlen(input);
+    if (input_length % 2 != 0) {
+        fprintf(stderr, _("invalid overlay payload\n"));
+        return 1;
+    }
+    buffer = malloc(input_length == 0 ? 1 : input_length / 2);
+    if (buffer == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    for (index = 0; index < input_length; index += 2) {
+        high = secdat_hex_value(input[index]);
+        low = secdat_hex_value(input[index + 1]);
+        if (high < 0 || low < 0) {
+            free(buffer);
+            fprintf(stderr, _("invalid overlay payload\n"));
+            return 1;
+        }
+        buffer[index / 2] = (unsigned char)((high << 4) | low);
+    }
+    *output = buffer;
+    *length = input_length / 2;
+    return 0;
+}
+
 static int secdat_unescape_component(const char *input, char **output)
 {
     size_t length = strlen(input);
@@ -1045,6 +1429,24 @@ static int secdat_unescape_component(const char *input, char **output)
     result[write_index] = '\0';
     *output = result;
     return 0;
+}
+
+static const char *secdat_overlay_dump_encode_component(const char *input)
+{
+    return input != NULL && input[0] != '\0' ? input : "%";
+}
+
+static int secdat_overlay_dump_unescape_component(const char *input, char **output)
+{
+    if (strcmp(input, "%") == 0) {
+        *output = strdup("");
+        if (*output == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        return 0;
+    }
+    return secdat_unescape_component(input, output);
 }
 
 static int secdat_join_path(char *buffer, size_t size, const char *left, const char *right)
@@ -1547,6 +1949,9 @@ static void secdat_session_record_reset(struct secdat_session_record *record)
     secdat_secure_clear(record->master_key, sizeof(record->master_key));
     record->master_key[0] = '\0';
     record->expires_at = 0;
+    record->volatile_mode = 0;
+    record->readonly_mode = 0;
+    secdat_overlay_list_clear(&record->overlay);
 }
 
 static void secdat_session_record_expire_if_needed(struct secdat_session_record *record)
@@ -1573,6 +1978,20 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
     FILE *stream;
     char command[64];
     char payload[sizeof(record->master_key)];
+    char line_domain[PATH_MAX * 3];
+    char line_store[PATH_MAX * 3];
+    char line_key[PATH_MAX * 3];
+    char line_mode[32];
+    char line_value[8192];
+    char *domain_id = NULL;
+    char *store_name = NULL;
+    char *key = NULL;
+    char *hex_value = NULL;
+    unsigned char *decoded_value = NULL;
+    size_t decoded_length = 0;
+    const struct secdat_overlay_item *overlay_item;
+    char *encoded_key = NULL;
+    size_t index;
 
     *should_exit = 0;
     secdat_session_record_expire_if_needed(record);
@@ -1592,7 +2011,12 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         if (record->master_key[0] == '\0') {
             fprintf(stream, "ERR locked\n");
         } else {
-            fprintf(stream, "OK %lld\n", (long long)record->expires_at);
+            fprintf(
+                stream,
+                "OK %lld %s\n",
+                (long long)record->expires_at,
+                record->volatile_mode ? "volatile" : (record->readonly_mode ? "readonly" : "persistent")
+            );
         }
         fflush(stream);
         fclose(stream);
@@ -1623,6 +2047,317 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         }
         record->expires_at = time(NULL) + secdat_session_idle_seconds();
         fprintf(stream, "OK %lld\n", (long long)record->expires_at);
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "SETVOLATILE") == 0) {
+        if (secdat_read_line(stream, payload, sizeof(payload)) != 0) {
+            fclose(stream);
+            return 1;
+        }
+        secdat_session_record_reset(record);
+        if (secdat_copy_string(record->master_key, sizeof(record->master_key), payload) != 0) {
+            fclose(stream);
+            return 1;
+        }
+        record->volatile_mode = 1;
+        record->expires_at = time(NULL) + secdat_session_idle_seconds();
+        fprintf(stream, "OK %lld\n", (long long)record->expires_at);
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "SETREADONLY") == 0) {
+        if (secdat_read_line(stream, payload, sizeof(payload)) != 0) {
+            fclose(stream);
+            return 1;
+        }
+        secdat_session_record_reset(record);
+        if (secdat_copy_string(record->master_key, sizeof(record->master_key), payload) != 0) {
+            fclose(stream);
+            return 1;
+        }
+        record->readonly_mode = 1;
+        record->expires_at = time(NULL) + secdat_session_idle_seconds();
+        fprintf(stream, "OK %lld\n", (long long)record->expires_at);
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "OVLOOKUP") == 0) {
+        if (record->master_key[0] == '\0' || !record->volatile_mode) {
+            fprintf(stream, "ERR missing\n");
+            fflush(stream);
+            fclose(stream);
+            return 0;
+        }
+        if (secdat_read_line(stream, line_domain, sizeof(line_domain)) != 0
+            || secdat_read_line(stream, line_store, sizeof(line_store)) != 0
+            || secdat_read_line(stream, line_key, sizeof(line_key)) != 0
+            || secdat_unescape_component(line_domain, &domain_id) != 0
+            || secdat_unescape_component(line_store, &store_name) != 0
+            || secdat_unescape_component(line_key, &key) != 0) {
+            free(domain_id);
+            free(store_name);
+            free(key);
+            fclose(stream);
+            return 1;
+        }
+        overlay_item = secdat_overlay_list_lookup(&record->overlay, domain_id, store_name, key);
+        if (overlay_item == NULL) {
+            fprintf(stream, "ERR missing\n");
+        } else if (overlay_item->kind == SECDAT_OVERLAY_ITEM_TOMBSTONE) {
+            fprintf(stream, "OK tomb\n");
+        } else if (secdat_hex_encode_bytes(overlay_item->plaintext, overlay_item->plaintext_length, &hex_value) != 0) {
+            free(domain_id);
+            free(store_name);
+            free(key);
+            fclose(stream);
+            return 1;
+        } else {
+            fprintf(stream, "OK entry %d\n%s\n", overlay_item->unsafe_store, hex_value);
+        }
+        free(hex_value);
+        free(domain_id);
+        free(store_name);
+        free(key);
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "OVPUT") == 0) {
+        if (record->master_key[0] == '\0' || !record->volatile_mode) {
+            fprintf(stream, "ERR locked\n");
+            fflush(stream);
+            fclose(stream);
+            return 0;
+        }
+        if (secdat_read_line(stream, line_domain, sizeof(line_domain)) != 0
+            || secdat_read_line(stream, line_store, sizeof(line_store)) != 0
+            || secdat_read_line(stream, line_key, sizeof(line_key)) != 0
+            || secdat_read_line(stream, line_mode, sizeof(line_mode)) != 0
+            || secdat_read_line(stream, line_value, sizeof(line_value)) != 0
+            || secdat_unescape_component(line_domain, &domain_id) != 0
+            || secdat_unescape_component(line_store, &store_name) != 0
+            || secdat_unescape_component(line_key, &key) != 0
+            || secdat_hex_decode_bytes(line_value, &decoded_value, &decoded_length) != 0) {
+            free(domain_id);
+            free(store_name);
+            free(key);
+            if (decoded_value != NULL) {
+                secdat_secure_clear(decoded_value, decoded_length);
+                free(decoded_value);
+            }
+            fclose(stream);
+            return 1;
+        }
+        if (secdat_overlay_list_set_entry(&record->overlay, domain_id, store_name, key, decoded_value, decoded_length, strcmp(line_mode, "1") == 0) != 0) {
+            free(domain_id);
+            free(store_name);
+            free(key);
+            secdat_secure_clear(decoded_value, decoded_length);
+            free(decoded_value);
+            fclose(stream);
+            return 1;
+        }
+        secdat_secure_clear(decoded_value, decoded_length);
+        free(decoded_value);
+        free(domain_id);
+        free(store_name);
+        free(key);
+        record->expires_at = time(NULL) + secdat_session_idle_seconds();
+        fprintf(stream, "OK %lld\n", (long long)record->expires_at);
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "OVTOMB") == 0) {
+        if (record->master_key[0] == '\0' || !record->volatile_mode) {
+            fprintf(stream, "ERR locked\n");
+            fflush(stream);
+            fclose(stream);
+            return 0;
+        }
+        if (secdat_read_line(stream, line_domain, sizeof(line_domain)) != 0
+            || secdat_read_line(stream, line_store, sizeof(line_store)) != 0
+            || secdat_read_line(stream, line_key, sizeof(line_key)) != 0
+            || secdat_unescape_component(line_domain, &domain_id) != 0
+            || secdat_unescape_component(line_store, &store_name) != 0
+            || secdat_unescape_component(line_key, &key) != 0) {
+            free(domain_id);
+            free(store_name);
+            free(key);
+            fclose(stream);
+            return 1;
+        }
+        if (secdat_overlay_list_set_tombstone(&record->overlay, domain_id, store_name, key) != 0) {
+            free(domain_id);
+            free(store_name);
+            free(key);
+            fclose(stream);
+            return 1;
+        }
+        free(domain_id);
+        free(store_name);
+        free(key);
+        record->expires_at = time(NULL) + secdat_session_idle_seconds();
+        fprintf(stream, "OK %lld\n", (long long)record->expires_at);
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "OVDROP") == 0) {
+        if (record->master_key[0] == '\0' || !record->volatile_mode) {
+            fprintf(stream, "ERR locked\n");
+            fflush(stream);
+            fclose(stream);
+            return 0;
+        }
+        if (secdat_read_line(stream, line_domain, sizeof(line_domain)) != 0
+            || secdat_read_line(stream, line_store, sizeof(line_store)) != 0
+            || secdat_read_line(stream, line_key, sizeof(line_key)) != 0
+            || secdat_unescape_component(line_domain, &domain_id) != 0
+            || secdat_unescape_component(line_store, &store_name) != 0
+            || secdat_unescape_component(line_key, &key) != 0) {
+            free(domain_id);
+            free(store_name);
+            free(key);
+            fclose(stream);
+            return 1;
+        }
+        secdat_overlay_list_remove(&record->overlay, domain_id, store_name, key);
+        free(domain_id);
+        free(store_name);
+        free(key);
+        record->expires_at = time(NULL) + secdat_session_idle_seconds();
+        fprintf(stream, "OK %lld\n", (long long)record->expires_at);
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "OVLIST") == 0) {
+        if (record->master_key[0] == '\0' || !record->volatile_mode) {
+            fprintf(stream, "OK 0\n");
+            fflush(stream);
+            fclose(stream);
+            return 0;
+        }
+        if (secdat_read_line(stream, line_domain, sizeof(line_domain)) != 0
+            || secdat_read_line(stream, line_store, sizeof(line_store)) != 0
+            || secdat_unescape_component(line_domain, &domain_id) != 0
+            || secdat_unescape_component(line_store, &store_name) != 0) {
+            free(domain_id);
+            free(store_name);
+            fclose(stream);
+            return 1;
+        }
+        fprintf(stream, "OK ");
+        for (index = 0; index < record->overlay.count; index += 1) {
+            if (strcmp(record->overlay.items[index].domain_id, domain_id) == 0
+                && strcmp(record->overlay.items[index].store_name, store_name) == 0) {
+                fprintf(stream, "1");
+                break;
+            }
+        }
+        if (index == record->overlay.count) {
+            fprintf(stream, "0\n");
+            free(domain_id);
+            free(store_name);
+            fflush(stream);
+            fclose(stream);
+            return 0;
+        }
+        fprintf(stream, "\n");
+        for (index = 0; index < record->overlay.count; index += 1) {
+            if (strcmp(record->overlay.items[index].domain_id, domain_id) != 0
+                || strcmp(record->overlay.items[index].store_name, store_name) != 0) {
+                continue;
+            }
+            if (secdat_escape_component(record->overlay.items[index].key, &encoded_key) != 0) {
+                free(domain_id);
+                free(store_name);
+                fclose(stream);
+                return 1;
+            }
+            fprintf(
+                stream,
+                "%s %d %s\n",
+                record->overlay.items[index].kind == SECDAT_OVERLAY_ITEM_TOMBSTONE ? "tomb" : "entry",
+                record->overlay.items[index].unsafe_store,
+                encoded_key
+            );
+            free(encoded_key);
+            encoded_key = NULL;
+        }
+        free(domain_id);
+        free(store_name);
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "OVDUMP") == 0) {
+        if (record->master_key[0] == '\0' || !record->volatile_mode) {
+            fprintf(stream, "ERR mode\n");
+            fflush(stream);
+            fclose(stream);
+            return 0;
+        }
+        fprintf(stream, "OK %zu\n", record->overlay.count);
+        for (index = 0; index < record->overlay.count; index += 1) {
+            char *escaped_domain = NULL;
+            char *escaped_store = NULL;
+            char *escaped_key = NULL;
+
+            if (secdat_escape_component(record->overlay.items[index].domain_id, &escaped_domain) != 0
+                || secdat_escape_component(record->overlay.items[index].store_name, &escaped_store) != 0
+                || secdat_escape_component(record->overlay.items[index].key, &escaped_key) != 0) {
+                free(escaped_domain);
+                free(escaped_store);
+                free(escaped_key);
+                fclose(stream);
+                return 1;
+            }
+            if (record->overlay.items[index].kind == SECDAT_OVERLAY_ITEM_TOMBSTONE) {
+                fprintf(
+                    stream,
+                    "tomb %d %s %s %s -\n",
+                    record->overlay.items[index].unsafe_store,
+                    escaped_domain,
+                    secdat_overlay_dump_encode_component(escaped_store),
+                    escaped_key
+                );
+            } else if (secdat_hex_encode_bytes(record->overlay.items[index].plaintext, record->overlay.items[index].plaintext_length, &hex_value) != 0) {
+                free(escaped_domain);
+                free(escaped_store);
+                free(escaped_key);
+                fclose(stream);
+                return 1;
+            } else {
+                fprintf(
+                    stream,
+                    "entry %d %s %s %s %s\n",
+                    record->overlay.items[index].unsafe_store,
+                    escaped_domain,
+                    secdat_overlay_dump_encode_component(escaped_store),
+                    escaped_key,
+                    hex_value
+                );
+            }
+            free(hex_value);
+            hex_value = NULL;
+            free(escaped_domain);
+            free(escaped_store);
+            free(escaped_key);
+        }
         fflush(stream);
         fclose(stream);
         return 0;
@@ -2055,6 +2790,8 @@ static int secdat_session_agent_status_details(
     FILE *stream;
     int fd;
     char response[64];
+    char expires_text[32];
+    char mode[16];
 
     memset(record, 0, sizeof(*record));
     fd = secdat_session_agent_connect_chain_details(chain, matched_index, blocked_index);
@@ -2079,8 +2816,17 @@ static int secdat_session_agent_status_details(
     if (strncmp(response, "OK ", 3) != 0) {
         return 1;
     }
-    if (secdat_parse_i64(response + 3, &record->expires_at) != 0) {
+    mode[0] = '\0';
+    if (sscanf(response, "OK %31s %15s", expires_text, mode) < 1) {
         return 1;
+    }
+    if (secdat_parse_i64(expires_text, &record->expires_at) != 0) {
+        return 1;
+    }
+    if (strcmp(mode, "volatile") == 0) {
+        record->volatile_mode = 1;
+    } else if (strcmp(mode, "readonly") == 0) {
+        record->readonly_mode = 1;
     }
     return 0;
 }
@@ -2123,7 +2869,7 @@ static int secdat_session_agent_get(const struct secdat_domain_chain *chain, str
     return secdat_copy_string(record->master_key, sizeof(record->master_key), secret);
 }
 
-static int secdat_session_agent_set(const char *domain_id, const char *master_key)
+static int secdat_session_agent_set(const char *domain_id, const char *master_key, enum secdat_session_access_mode access_mode)
 {
     FILE *stream;
     int fd;
@@ -2140,7 +2886,13 @@ static int secdat_session_agent_set(const char *domain_id, const char *master_ke
         return 1;
     }
 
-    fprintf(stream, "SET\n%s\n", master_key);
+    fprintf(
+        stream,
+        "%s\n%s\n",
+        access_mode == SECDAT_SESSION_ACCESS_VOLATILE ? "SETVOLATILE"
+            : (access_mode == SECDAT_SESSION_ACCESS_READONLY ? "SETREADONLY" : "SET"),
+        master_key
+    );
     fflush(stream);
     if (secdat_read_line(stream, response, sizeof(response)) != 0) {
         fclose(stream);
@@ -2148,6 +2900,714 @@ static int secdat_session_agent_set(const char *domain_id, const char *master_ke
     }
     fclose(stream);
     return strncmp(response, "OK ", 3) == 0 ? 0 : 1;
+}
+
+static int secdat_session_agent_status_scope(const char *domain_id, struct secdat_session_record *record)
+{
+    FILE *stream;
+    int fd;
+    char response[64];
+    char expires_text[32];
+    char mode[16];
+
+    memset(record, 0, sizeof(*record));
+    fd = secdat_session_agent_connect_domain(domain_id, 0);
+    if (fd < 0) {
+        return 1;
+    }
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+    fprintf(stream, "STATUS\n");
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fclose(stream);
+    if (strncmp(response, "OK ", 3) != 0) {
+        return 1;
+    }
+    mode[0] = '\0';
+    if (sscanf(response, "OK %31s %15s", expires_text, mode) < 1 || secdat_parse_i64(expires_text, &record->expires_at) != 0) {
+        return 1;
+    }
+    if (strcmp(mode, "volatile") == 0) {
+        record->volatile_mode = 1;
+    } else if (strcmp(mode, "readonly") == 0) {
+        record->readonly_mode = 1;
+    }
+    return 0;
+}
+
+static int secdat_session_agent_effective_overlay_fd(
+    const struct secdat_domain_chain *chain,
+    struct secdat_session_record *record,
+    size_t *matched_index
+)
+{
+    int fd;
+
+    memset(record, 0, sizeof(*record));
+    if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
+        return -1;
+    }
+    if (secdat_session_agent_status_details(chain, record, matched_index, NULL) != 0 || !record->volatile_mode) {
+        secdat_secure_clear(record->master_key, strlen(record->master_key));
+        return -1;
+    }
+    fd = secdat_session_agent_connect_chain_details(chain, matched_index, NULL);
+    if (fd < 0) {
+        secdat_secure_clear(record->master_key, strlen(record->master_key));
+        return -1;
+    }
+    return fd;
+}
+
+static int secdat_overlay_write_triplet(FILE *stream, const char *domain_id, const char *store_name, const char *key)
+{
+    char *escaped_domain = NULL;
+    char *escaped_store = NULL;
+    char *escaped_key = NULL;
+    int status = 1;
+
+    if (secdat_escape_component(domain_id, &escaped_domain) != 0
+        || secdat_escape_component(store_name != NULL ? store_name : "", &escaped_store) != 0
+        || secdat_escape_component(key, &escaped_key) != 0) {
+        goto cleanup;
+    }
+    fprintf(stream, "%s\n%s\n%s\n", escaped_domain, escaped_store, escaped_key);
+    status = 0;
+
+cleanup:
+    free(escaped_domain);
+    free(escaped_store);
+    free(escaped_key);
+    return status;
+}
+
+static int secdat_overlay_write_pair(FILE *stream, const char *domain_id, const char *store_name)
+{
+    char *escaped_domain = NULL;
+    char *escaped_store = NULL;
+    int status = 1;
+
+    if (secdat_escape_component(domain_id, &escaped_domain) != 0
+        || secdat_escape_component(store_name != NULL ? store_name : "", &escaped_store) != 0) {
+        goto cleanup;
+    }
+    fprintf(stream, "%s\n%s\n", escaped_domain, escaped_store);
+    status = 0;
+
+cleanup:
+    free(escaped_domain);
+    free(escaped_store);
+    return status;
+}
+
+static int secdat_session_agent_overlay_lookup(
+    int fd,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    struct secdat_overlay_lookup_result *result
+)
+{
+    FILE *stream;
+    char response[64];
+    char payload[8192];
+
+    memset(result, 0, sizeof(*result));
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+    fprintf(stream, "OVLOOKUP\n");
+    if (secdat_overlay_write_triplet(stream, domain_id, store_name, key) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    if (strcmp(response, "ERR missing") == 0) {
+        fclose(stream);
+        return 0;
+    }
+    if (strcmp(response, "OK tomb") == 0) {
+        result->found = 1;
+        result->tombstone = 1;
+        fclose(stream);
+        return 0;
+    }
+    if (strncmp(response, "OK entry ", 9) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    result->unsafe_store = strcmp(response + 9, "1") == 0;
+    if (secdat_read_line(stream, payload, sizeof(payload)) != 0
+        || secdat_hex_decode_bytes(payload, &result->plaintext, &result->plaintext_length) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    result->found = 1;
+    fclose(stream);
+    return 0;
+}
+
+static int secdat_session_agent_overlay_store_plaintext(
+    int fd,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    const unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store
+)
+{
+    FILE *stream;
+    char response[64];
+    char *encoded = NULL;
+    int status = 1;
+
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+    if (secdat_hex_encode_bytes(plaintext, plaintext_length, &encoded) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fprintf(stream, "OVPUT\n");
+    if (secdat_overlay_write_triplet(stream, domain_id, store_name, key) != 0) {
+        goto cleanup;
+    }
+    fprintf(stream, "%d\n%s\n", unsafe_store, encoded);
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        goto cleanup;
+    }
+    status = strncmp(response, "OK ", 3) == 0 ? 0 : 1;
+
+cleanup:
+    free(encoded);
+    fclose(stream);
+    return status;
+}
+
+static int secdat_session_agent_overlay_set_tombstone(
+    int fd,
+    const char *domain_id,
+    const char *store_name,
+    const char *key
+)
+{
+    FILE *stream;
+    char response[64];
+
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+    fprintf(stream, "OVTOMB\n");
+    if (secdat_overlay_write_triplet(stream, domain_id, store_name, key) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fclose(stream);
+    return strncmp(response, "OK ", 3) == 0 ? 0 : 1;
+}
+
+static int secdat_session_agent_overlay_drop(
+    int fd,
+    const char *domain_id,
+    const char *store_name,
+    const char *key
+)
+{
+    FILE *stream;
+    char response[64];
+
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+    fprintf(stream, "OVDROP\n");
+    if (secdat_overlay_write_triplet(stream, domain_id, store_name, key) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fclose(stream);
+    return strncmp(response, "OK ", 3) == 0 ? 0 : 1;
+}
+
+static int secdat_session_agent_overlay_collect_keys(
+    int fd,
+    const char *domain_id,
+    const char *store_name,
+    struct secdat_key_list *entries,
+    struct secdat_key_list *tombstones
+)
+{
+    FILE *stream;
+    char response[64];
+    char row[PATH_MAX * 3];
+    char kind[16];
+    char escaped_key[PATH_MAX * 3];
+    int unsafe_store;
+    char *decoded_key = NULL;
+    int status = 1;
+
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+    fprintf(stream, "OVLIST\n");
+    if (secdat_overlay_write_pair(stream, domain_id, store_name) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    if (strcmp(response, "OK 0") == 0) {
+        fclose(stream);
+        return 0;
+    }
+    if (strcmp(response, "OK 1") != 0) {
+        fclose(stream);
+        return 1;
+    }
+    while (secdat_read_line(stream, row, sizeof(row)) == 0) {
+        if (sscanf(row, "%15s %d %4095s", kind, &unsafe_store, escaped_key) != 3) {
+            break;
+        }
+        if (secdat_unescape_component(escaped_key, &decoded_key) != 0) {
+            goto cleanup;
+        }
+        if (strcmp(kind, "tomb") == 0) {
+            if (secdat_key_list_append(tombstones, decoded_key) != 0) {
+                free(decoded_key);
+                goto cleanup;
+            }
+        } else if (secdat_key_list_append(entries, decoded_key) != 0) {
+            free(decoded_key);
+            goto cleanup;
+        }
+        free(decoded_key);
+        decoded_key = NULL;
+    }
+    status = 0;
+
+cleanup:
+    free(decoded_key);
+    fclose(stream);
+    return status;
+}
+
+static int secdat_overlay_list_append_dump_item(
+    struct secdat_overlay_list *list,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    enum secdat_overlay_item_kind kind,
+    int unsafe_store,
+    const unsigned char *plaintext,
+    size_t plaintext_length
+)
+{
+    struct secdat_overlay_item item;
+
+    memset(&item, 0, sizeof(item));
+    if (secdat_overlay_list_ensure_capacity(list) != 0) {
+        return 1;
+    }
+    item.domain_id = strdup(domain_id);
+    item.key = strdup(key);
+    if (item.domain_id == NULL || item.key == NULL || secdat_overlay_store_name_copy(store_name, &item.store_name) != 0) {
+        free(item.domain_id);
+        free(item.key);
+        free(item.store_name);
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    item.kind = kind;
+    item.unsafe_store = unsafe_store;
+    if (kind == SECDAT_OVERLAY_ITEM_ENTRY && secdat_duplicate_bytes(plaintext, plaintext_length, &item.plaintext) != 0) {
+        secdat_overlay_item_free(&item);
+        return 1;
+    }
+    item.plaintext_length = plaintext_length;
+    list->items[list->count] = item;
+    list->count += 1;
+    return 0;
+}
+
+static int secdat_session_agent_overlay_dump(int fd, struct secdat_overlay_list *overlay)
+{
+    FILE *stream;
+    char response[64];
+    char row[16384];
+    char kind[16];
+    int unsafe_store;
+    char escaped_domain[4096];
+    char escaped_store[4096];
+    char escaped_key[4096];
+    char payload[8192];
+    char *domain_id = NULL;
+    char *store_name = NULL;
+    char *key = NULL;
+    unsigned char *plaintext = NULL;
+    size_t plaintext_length = 0;
+    size_t count;
+    size_t index;
+    int status = 1;
+
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+    fprintf(stream, "OVDUMP\n");
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    if (sscanf(response, "OK %zu", &count) != 1) {
+        fclose(stream);
+        return 1;
+    }
+    for (index = 0; index < count; index += 1) {
+        if (secdat_read_line(stream, row, sizeof(row)) != 0) {
+            goto cleanup;
+        }
+        if (sscanf(row, "%15s %d %4095s %4095s %4095s %8191s", kind, &unsafe_store, escaped_domain, escaped_store, escaped_key, payload) != 6) {
+            goto cleanup;
+        }
+        if (secdat_unescape_component(escaped_domain, &domain_id) != 0
+            || secdat_overlay_dump_unescape_component(escaped_store, &store_name) != 0
+            || secdat_unescape_component(escaped_key, &key) != 0) {
+            goto cleanup;
+        }
+        if (strcmp(kind, "entry") == 0) {
+            if (secdat_hex_decode_bytes(payload, &plaintext, &plaintext_length) != 0
+                || secdat_overlay_list_append_dump_item(overlay, domain_id, store_name, key, SECDAT_OVERLAY_ITEM_ENTRY, unsafe_store, plaintext, plaintext_length) != 0) {
+                goto cleanup;
+            }
+        } else if (strcmp(kind, "tomb") == 0) {
+            if (secdat_overlay_list_append_dump_item(overlay, domain_id, store_name, key, SECDAT_OVERLAY_ITEM_TOMBSTONE, unsafe_store, NULL, 0) != 0) {
+                goto cleanup;
+            }
+        } else {
+            goto cleanup;
+        }
+        free(domain_id);
+        free(store_name);
+        free(key);
+        domain_id = NULL;
+        store_name = NULL;
+        key = NULL;
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
+        plaintext = NULL;
+        plaintext_length = 0;
+    }
+    status = 0;
+
+cleanup:
+    free(domain_id);
+    free(store_name);
+    free(key);
+    secdat_secure_clear(plaintext, plaintext_length);
+    free(plaintext);
+    fclose(stream);
+    return status;
+}
+
+static int secdat_active_overlay_lookup(
+    const struct secdat_domain_chain *chain,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    struct secdat_overlay_lookup_result *result
+)
+{
+    struct secdat_session_record record = {0};
+    size_t matched_index = SIZE_MAX;
+    int fd;
+    int status;
+
+    fd = secdat_session_agent_effective_overlay_fd(chain, &record, &matched_index);
+    if (fd < 0) {
+        memset(result, 0, sizeof(*result));
+        return 0;
+    }
+    status = secdat_session_agent_overlay_lookup(fd, domain_id, store_name, key, result);
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    return status;
+}
+
+static int secdat_active_overlay_collect_keys(
+    const struct secdat_domain_chain *chain,
+    const char *domain_id,
+    const char *store_name,
+    struct secdat_key_list *entries,
+    struct secdat_key_list *tombstones
+)
+{
+    struct secdat_session_record record = {0};
+    size_t matched_index = SIZE_MAX;
+    int fd;
+    int status;
+
+    fd = secdat_session_agent_effective_overlay_fd(chain, &record, &matched_index);
+    if (fd < 0) {
+        return 0;
+    }
+    status = secdat_session_agent_overlay_collect_keys(fd, domain_id, store_name, entries, tombstones);
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    return status;
+}
+
+static int secdat_active_overlay_store_plaintext(
+    const struct secdat_domain_chain *chain,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    const unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store
+)
+{
+    struct secdat_session_record record = {0};
+    size_t matched_index = SIZE_MAX;
+    int fd;
+    int status;
+
+    fd = secdat_session_agent_effective_overlay_fd(chain, &record, &matched_index);
+    if (fd < 0) {
+        return 1;
+    }
+    status = secdat_session_agent_overlay_store_plaintext(fd, domain_id, store_name, key, plaintext, plaintext_length, unsafe_store);
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    return status;
+}
+
+static int secdat_active_overlay_set_tombstone(
+    const struct secdat_domain_chain *chain,
+    const char *domain_id,
+    const char *store_name,
+    const char *key
+)
+{
+    struct secdat_session_record record = {0};
+    size_t matched_index = SIZE_MAX;
+    int fd;
+    int status;
+
+    fd = secdat_session_agent_effective_overlay_fd(chain, &record, &matched_index);
+    if (fd < 0) {
+        return 1;
+    }
+    status = secdat_session_agent_overlay_set_tombstone(fd, domain_id, store_name, key);
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    return status;
+}
+
+static int secdat_active_overlay_drop(
+    const struct secdat_domain_chain *chain,
+    const char *domain_id,
+    const char *store_name,
+    const char *key
+)
+{
+    struct secdat_session_record record = {0};
+    size_t matched_index = SIZE_MAX;
+    int fd;
+    int status;
+
+    fd = secdat_session_agent_effective_overlay_fd(chain, &record, &matched_index);
+    if (fd < 0) {
+        return 1;
+    }
+    status = secdat_session_agent_overlay_drop(fd, domain_id, store_name, key);
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    return status;
+}
+
+static int secdat_active_overlay_enabled(const struct secdat_domain_chain *chain)
+{
+    struct secdat_session_record record = {0};
+    size_t matched_index = SIZE_MAX;
+    int fd;
+
+    fd = secdat_session_agent_effective_overlay_fd(chain, &record, &matched_index);
+    if (fd < 0) {
+        return 0;
+    }
+    close(fd);
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    return 1;
+}
+
+static int secdat_effective_session_is_readonly(const struct secdat_domain_chain *chain)
+{
+    struct secdat_session_record record = {0};
+
+    if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
+        return 0;
+    }
+    if (secdat_session_agent_status_details(chain, &record, NULL, NULL) != 0) {
+        return 0;
+    }
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    return record.readonly_mode;
+}
+
+static void secdat_print_readonly_write_guidance(const struct secdat_domain_chain *chain)
+{
+    char current_domain_label[PATH_MAX];
+
+    if (chain == NULL || secdat_domain_display_label(chain->count == 0 ? "" : chain->ids[0], current_domain_label, sizeof(current_domain_label)) != 0) {
+        return;
+    }
+    fprintf(stderr, _("resolved domain: %s\n"), current_domain_label);
+    if (chain->count == 0) {
+        fprintf(stderr, _("unlock writable session: secdat unlock\n"));
+    } else {
+        fprintf(stderr, _("unlock writable session: secdat --dir %s unlock\n"), current_domain_label);
+    }
+}
+
+static int secdat_require_mutable_session_chain(const struct secdat_domain_chain *chain, const char *command_name)
+{
+    if (!secdat_effective_session_is_readonly(chain)) {
+        return 0;
+    }
+    fprintf(stderr, _("current session is readonly and cannot run %s\n"), command_name);
+    secdat_print_readonly_write_guidance(chain);
+    return 1;
+}
+
+int secdat_require_writable_session_access(const char *dir_override, const char *command_name)
+{
+    struct secdat_domain_chain chain = {0};
+    int status;
+
+    if (secdat_domain_resolve_chain(dir_override, &chain) != 0) {
+        return 1;
+    }
+    status = secdat_require_mutable_session_chain(&chain, command_name);
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
+static const char *secdat_overlay_effective_store_name(const char *store_name)
+{
+    return store_name != NULL && store_name[0] != '\0' ? store_name : NULL;
+}
+
+static int secdat_persist_overlay_tombstone(const char *domain_id, const char *store_name, const char *key)
+{
+    char store_root[PATH_MAX];
+    char entries_dir[PATH_MAX];
+    char tombstone_path[PATH_MAX];
+    char entry_path[PATH_MAX];
+
+    if (secdat_require_writable_domain_id(domain_id) != 0) {
+        return 1;
+    }
+    if (secdat_domain_store_root(domain_id, secdat_overlay_effective_store_name(store_name), store_root, sizeof(store_root)) != 0) {
+        return 1;
+    }
+    if (secdat_join_path(entries_dir, sizeof(entries_dir), store_root, "entries") != 0) {
+        return 1;
+    }
+    if (secdat_ensure_directory(entries_dir, 0700) != 0) {
+        return 1;
+    }
+    if (secdat_build_entry_path(domain_id, secdat_overlay_effective_store_name(store_name), key, entry_path, sizeof(entry_path)) != 0) {
+        return 1;
+    }
+    if (secdat_build_tombstone_path(domain_id, secdat_overlay_effective_store_name(store_name), key, tombstone_path, sizeof(tombstone_path)) != 0) {
+        return 1;
+    }
+    if (secdat_file_exists(entry_path) && unlink(entry_path) != 0) {
+        fprintf(stderr, _("failed to remove key: %s\n"), key);
+        return 1;
+    }
+    return secdat_write_empty_file(tombstone_path);
+}
+
+static int secdat_save_local_volatile_session_overlay(const struct secdat_domain_chain *chain)
+{
+    struct secdat_session_record record = {0};
+    struct secdat_overlay_list overlay = {0};
+    const char *scope_id = secdat_session_scope_id(chain);
+    size_t index;
+    int fd;
+    int status = 1;
+
+    if (secdat_session_agent_status_scope(scope_id, &record) != 0 || !record.volatile_mode) {
+        fprintf(stderr, _("lock --save requires a local volatile session\n"));
+        return 1;
+    }
+    fd = secdat_session_agent_connect_domain(scope_id, 0);
+    if (fd < 0) {
+        fprintf(stderr, _("lock --save requires a local volatile session\n"));
+        return 1;
+    }
+    if (secdat_session_agent_overlay_dump(fd, &overlay) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < overlay.count; index += 1) {
+        if (overlay.items[index].kind == SECDAT_OVERLAY_ITEM_ENTRY) {
+            if (secdat_store_plaintext(
+                    overlay.items[index].domain_id,
+                    secdat_overlay_effective_store_name(overlay.items[index].store_name),
+                    overlay.items[index].key,
+                    overlay.items[index].plaintext,
+                    overlay.items[index].plaintext_length,
+                    overlay.items[index].unsafe_store
+                ) != 0) {
+                goto cleanup;
+            }
+        } else if (secdat_persist_overlay_tombstone(
+                       overlay.items[index].domain_id,
+                       secdat_overlay_effective_store_name(overlay.items[index].store_name),
+                       overlay.items[index].key
+                   ) != 0) {
+            goto cleanup;
+        }
+    }
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    secdat_overlay_list_clear(&overlay);
+    return status;
 }
 
 static int secdat_session_agent_clear(const char *domain_id)
@@ -3013,8 +4473,12 @@ static int secdat_effective_unlock_state_without_current_explicit_lock(
     if (strncmp(response, "OK ", 3) != 0) {
         return 1;
     }
-    if (secdat_parse_i64(response + 3, &record.expires_at) != 0) {
-        return 1;
+    {
+        char expires_text[32];
+
+        if (sscanf(response, "OK %31s", expires_text) != 1 || secdat_parse_i64(expires_text, &record.expires_at) != 0) {
+            return 1;
+        }
     }
 
     *would_unlock = 1;
@@ -3120,6 +4584,12 @@ static int secdat_command_status(const struct secdat_cli *cli)
         if (!quiet) {
             puts(_("unlocked"));
             puts(_("source: session agent"));
+            if (record.volatile_mode) {
+                puts(_("overlay: volatile"));
+            }
+            if (record.readonly_mode) {
+                puts(_("access: readonly"));
+            }
             printf(_("expires in: %lld seconds\n"), (long long)(record.expires_at - time(NULL)));
             puts(wrapped_present ? _("wrapped master key: present") : _("wrapped master key: absent"));
         }
@@ -3197,7 +4667,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         }
     }
 
-    if (!wrapped_present) {
+    if (!wrapped_present && !options.volatile_mode && !options.readonly_mode) {
         if (secdat_read_new_master_key_passphrase(passphrase, sizeof(passphrase)) != 0) {
             secdat_domain_root_list_free(&descendant_targets);
             secdat_domain_chain_free(&current_chain);
@@ -3226,7 +4696,11 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     }
 
     if (session_master_key != NULL && session_master_key[0] != '\0') {
-        if (secdat_session_agent_set_current_scope(&current_chain, session_master_key) != 0) {
+        if (secdat_session_agent_set(
+                secdat_session_scope_id(&current_chain),
+                session_master_key,
+                options.volatile_mode ? SECDAT_SESSION_ACCESS_VOLATILE : (options.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT)
+            ) != 0) {
             if (session_master_key == secret) {
                 secdat_secure_clear(secret, strlen(secret));
             }
@@ -3234,7 +4708,11 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
             secdat_domain_chain_free(&current_chain);
             return 1;
         }
-        if (options.include_descendants && secdat_unlock_descendant_sessions(&descendant_targets, session_master_key) != 0) {
+        if (options.include_descendants && secdat_unlock_descendant_sessions(
+                &descendant_targets,
+                session_master_key,
+                options.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT
+            ) != 0) {
             if (session_master_key == secret) {
                 secdat_secure_clear(secret, strlen(secret));
             }
@@ -3245,7 +4723,17 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         if (session_master_key == secret) {
             secdat_secure_clear(secret, strlen(secret));
         }
-        if (initialized) {
+        if (options.readonly_mode) {
+            puts(env_master_key != NULL && env_master_key[0] != '\0'
+                     ? _("readonly session unlocked from environment")
+                     : _("readonly session unlocked"));
+        } else if (options.volatile_mode && initialized) {
+            puts(_("volatile session unlocked with an ephemeral master key"));
+        } else if (options.volatile_mode) {
+            puts(env_master_key != NULL && env_master_key[0] != '\0'
+                     ? _("volatile session unlocked from environment")
+                     : _("volatile session unlocked"));
+        } else if (initialized) {
             puts(env_master_key != NULL && env_master_key[0] != '\0'
                      ? _("persistent master key initialized; session unlocked from environment")
                      : _("persistent master key initialized; session unlocked"));
@@ -3263,6 +4751,31 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     }
 
     if (!wrapped_present) {
+        if (options.volatile_mode) {
+            if (secdat_generate_master_key(secret, sizeof(secret)) != 0) {
+                secdat_domain_root_list_free(&descendant_targets);
+                secdat_domain_chain_free(&current_chain);
+                return 1;
+            }
+            if (secdat_session_agent_set(secdat_session_scope_id(&current_chain), secret, SECDAT_SESSION_ACCESS_VOLATILE) != 0) {
+                secdat_secure_clear(secret, strlen(secret));
+                secdat_domain_root_list_free(&descendant_targets);
+                secdat_domain_chain_free(&current_chain);
+                return 1;
+            }
+            secdat_secure_clear(secret, strlen(secret));
+            puts(_("volatile session unlocked with an ephemeral master key"));
+            secdat_print_unlock_guidance(current_domain_root);
+            secdat_domain_root_list_free(&descendant_targets);
+            secdat_domain_chain_free(&current_chain);
+            return 0;
+        }
+        if (options.readonly_mode) {
+            fprintf(stderr, _("no persistent master key is initialized; readonly unlock requires an existing master key\n"));
+            secdat_domain_root_list_free(&descendant_targets);
+            secdat_domain_chain_free(&current_chain);
+            return 1;
+        }
         fprintf(stderr, _("no persistent master key is initialized; run secdat unlock once on a terminal to create one\n"));
         secdat_domain_root_list_free(&descendant_targets);
         secdat_domain_chain_free(&current_chain);
@@ -3281,13 +4794,21 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         return 1;
     }
     secdat_secure_clear(passphrase, strlen(passphrase));
-    if (secdat_session_agent_set_current_scope(&current_chain, secret) != 0) {
+    if (secdat_session_agent_set(
+            secdat_session_scope_id(&current_chain),
+            secret,
+            options.volatile_mode ? SECDAT_SESSION_ACCESS_VOLATILE : (options.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT)
+        ) != 0) {
         secdat_secure_clear(secret, strlen(secret));
         secdat_domain_root_list_free(&descendant_targets);
         secdat_domain_chain_free(&current_chain);
         return 1;
     }
-    if (options.include_descendants && secdat_unlock_descendant_sessions(&descendant_targets, secret) != 0) {
+    if (options.include_descendants && secdat_unlock_descendant_sessions(
+            &descendant_targets,
+            secret,
+            options.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT
+        ) != 0) {
         secdat_secure_clear(secret, strlen(secret));
         secdat_domain_root_list_free(&descendant_targets);
         secdat_domain_chain_free(&current_chain);
@@ -3295,7 +4816,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     }
 
     secdat_secure_clear(secret, strlen(secret));
-    puts(_("session unlocked"));
+    puts(options.volatile_mode ? _("volatile session unlocked") : (options.readonly_mode ? _("readonly session unlocked") : _("session unlocked")));
     if (options.include_descendants) {
         secdat_print_descendant_unlock_summary(descendant_unlock_count);
     } else {
@@ -3337,6 +4858,11 @@ static int secdat_command_lock(const struct secdat_cli *cli)
     }
     should_persist_lock = chain.count > 1;
 
+    if (options.save_mode && secdat_save_local_volatile_session_overlay(&chain) != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+
     if (secdat_session_agent_clear_current_scope(&chain) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;
@@ -3348,7 +4874,7 @@ static int secdat_command_lock(const struct secdat_cli *cli)
 
     secdat_domain_chain_free(&chain);
 
-    puts(_("session locked"));
+    puts(options.save_mode ? _("volatile session saved and locked") : _("session locked"));
     return 0;
 }
 
@@ -3773,11 +5299,25 @@ static int secdat_collect_visible_keys(
     char tombstones_dir[PATH_MAX];
     struct secdat_key_list hidden_keys = {0};
     struct secdat_key_list domain_keys = {0};
+    struct secdat_key_list overlay_entries = {0};
+    struct secdat_key_list overlay_tombstones = {0};
     size_t chain_index;
     size_t key_index;
     int status;
 
     for (chain_index = 0; chain_index < chain->count; chain_index += 1) {
+        status = secdat_active_overlay_collect_keys(chain, chain->ids[chain_index], store_name, &overlay_entries, &overlay_tombstones);
+        if (status != 0) {
+            goto cleanup;
+        }
+        for (key_index = 0; key_index < overlay_tombstones.count; key_index += 1) {
+            if (secdat_key_list_append(&hidden_keys, overlay_tombstones.items[key_index]) != 0) {
+                status = 1;
+                goto cleanup;
+            }
+        }
+        secdat_key_list_free(&overlay_tombstones);
+
         status = secdat_store_tombstones_dir(chain->ids[chain_index], store_name, tombstones_dir, sizeof(tombstones_dir));
         if (status != 0) {
             goto cleanup;
@@ -3802,6 +5342,26 @@ static int secdat_collect_visible_keys(
         if (status != 0) {
             goto cleanup;
         }
+
+        for (key_index = 0; key_index < overlay_entries.count; key_index += 1) {
+            if (secdat_key_list_contains(&hidden_keys, overlay_entries.items[key_index])) {
+                continue;
+            }
+            if (secdat_key_list_contains(visible_keys, overlay_entries.items[key_index])) {
+                continue;
+            }
+            if (include_patterns != NULL && include_patterns->count > 0 && !secdat_pattern_list_matches(include_patterns, overlay_entries.items[key_index])) {
+                continue;
+            }
+            if (exclude_patterns != NULL && exclude_patterns->count > 0 && secdat_pattern_list_matches(exclude_patterns, overlay_entries.items[key_index])) {
+                continue;
+            }
+            if (secdat_key_list_append(visible_keys, overlay_entries.items[key_index]) != 0) {
+                status = 1;
+                goto cleanup;
+            }
+        }
+        secdat_key_list_free(&overlay_entries);
 
         for (key_index = 0; key_index < domain_keys.count; key_index += 1) {
             if (secdat_key_list_contains(&hidden_keys, domain_keys.items[key_index])) {
@@ -3830,35 +5390,63 @@ static int secdat_collect_visible_keys(
 cleanup:
     secdat_key_list_free(&domain_keys);
     secdat_key_list_free(&hidden_keys);
+    secdat_key_list_free(&overlay_entries);
+    secdat_key_list_free(&overlay_tombstones);
     return status;
 }
 
-static int secdat_find_effective_entry(
+static int secdat_resolve_effective_entry(
     const struct secdat_domain_chain *chain,
     const char *store_name,
     const char *key,
-    char *buffer,
-    size_t size,
-    size_t *resolved_index
+    int load_plaintext,
+    struct secdat_effective_entry *entry
 )
 {
     char entry_path[PATH_MAX];
     char tombstone_path[PATH_MAX];
+    struct secdat_overlay_lookup_result overlay = {0};
     size_t index;
 
+    secdat_effective_entry_reset(entry);
     for (index = 0; index < chain->count; index += 1) {
+        if (secdat_active_overlay_lookup(chain, chain->ids[index], store_name, key, &overlay) != 0) {
+            secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+            free(overlay.plaintext);
+            return 1;
+        }
+        if (overlay.found) {
+            if (overlay.tombstone) {
+                entry->tombstone = 1;
+                return 1;
+            }
+            entry->found = 1;
+            entry->from_overlay = 1;
+            entry->unsafe_store = overlay.unsafe_store;
+            entry->resolved_index = index;
+            if (load_plaintext) {
+                entry->plaintext = overlay.plaintext;
+                entry->plaintext_length = overlay.plaintext_length;
+                overlay.plaintext = NULL;
+                overlay.plaintext_length = 0;
+            } else {
+                secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+                free(overlay.plaintext);
+            }
+            return 0;
+        }
+
         if (secdat_build_entry_path(chain->ids[index], store_name, key, entry_path, sizeof(entry_path)) != 0) {
             return 1;
         }
         if (secdat_file_exists(entry_path)) {
-            if (resolved_index != NULL) {
-                *resolved_index = index;
-            }
-            if (strlen(entry_path) >= size) {
+            entry->found = 1;
+            entry->resolved_index = index;
+            if (strlen(entry_path) >= sizeof(entry->path)) {
                 fprintf(stderr, _("path is too long\n"));
                 return 1;
             }
-            strcpy(buffer, entry_path);
+            strcpy(entry->path, entry_path);
             return 0;
         }
 
@@ -3866,6 +5454,7 @@ static int secdat_find_effective_entry(
             return 1;
         }
         if (secdat_file_exists(tombstone_path)) {
+            entry->tombstone = 1;
             break;
         }
     }
@@ -3881,32 +5470,39 @@ static int secdat_resolve_entry_path(
     size_t size
 )
 {
-    return secdat_find_effective_entry(chain, store_name, key, buffer, size, NULL);
+    struct secdat_effective_entry entry = {0};
+    int status;
+
+    status = secdat_resolve_effective_entry(chain, store_name, key, 0, &entry);
+    if (status == 0 && !entry.from_overlay) {
+        if (strlen(entry.path) >= size) {
+            secdat_effective_entry_reset(&entry);
+            fprintf(stderr, _("path is too long\n"));
+            return 1;
+        }
+        strcpy(buffer, entry.path);
+    } else if (status == 0 && size > 0) {
+        buffer[0] = '\0';
+    }
+    secdat_effective_entry_reset(&entry);
+    return status;
 }
 
 static int secdat_parent_has_visible_key(const struct secdat_domain_chain *chain, const char *store_name, const char *key)
 {
-    char entry_path[PATH_MAX];
-    char tombstone_path[PATH_MAX];
-    size_t index;
+    struct secdat_domain_chain parent_chain;
+    struct secdat_effective_entry entry = {0};
+    int status;
 
-    for (index = 1; index < chain->count; index += 1) {
-        if (secdat_build_entry_path(chain->ids[index], store_name, key, entry_path, sizeof(entry_path)) != 0) {
-            return -1;
-        }
-        if (secdat_file_exists(entry_path)) {
-            return 1;
-        }
-
-        if (secdat_build_tombstone_path(chain->ids[index], store_name, key, tombstone_path, sizeof(tombstone_path)) != 0) {
-            return -1;
-        }
-        if (secdat_file_exists(tombstone_path)) {
-            return 0;
-        }
+    if (chain->count <= 1) {
+        return 0;
     }
 
-    return 0;
+    parent_chain.ids = chain->ids + 1;
+    parent_chain.count = chain->count - 1;
+    status = secdat_resolve_effective_entry(&parent_chain, store_name, key, 0, &entry);
+    secdat_effective_entry_reset(&entry);
+    return status == 0 ? 1 : 0;
 }
 
 static int secdat_collect_list_keys(
@@ -3920,6 +5516,9 @@ static int secdat_collect_list_keys(
     char tombstones_dir[PATH_MAX];
     struct secdat_key_list local_entries = {0};
     struct secdat_key_list local_tombstones = {0};
+    struct secdat_key_list overlay_entries = {0};
+    struct secdat_key_list overlay_tombstones = {0};
+    struct secdat_overlay_lookup_result overlay = {0};
     char entry_path[PATH_MAX];
     size_t index;
     int entry_is_unsafe;
@@ -3937,6 +5536,9 @@ static int secdat_collect_list_keys(
     if (secdat_store_tombstones_dir(chain->ids[0], store_name, tombstones_dir, sizeof(tombstones_dir)) != 0) {
         return 1;
     }
+    if (secdat_active_overlay_collect_keys(chain, chain->ids[0], store_name, &overlay_entries, &overlay_tombstones) != 0) {
+        goto cleanup;
+    }
     if (secdat_collect_directory_keys(entries_dir, ".sec", &local_entries) != 0) {
         goto cleanup;
     }
@@ -3944,13 +5546,35 @@ static int secdat_collect_list_keys(
         goto cleanup;
     }
 
+    for (index = 0; index < overlay_entries.count; index += 1) {
+        if (secdat_key_list_append(&local_entries, overlay_entries.items[index]) != 0) {
+            goto cleanup;
+        }
+    }
+    for (index = 0; index < overlay_tombstones.count; index += 1) {
+        if (secdat_key_list_append(&local_tombstones, overlay_tombstones.items[index]) != 0) {
+            goto cleanup;
+        }
+    }
+
     for (index = 0; index < local_entries.count; index += 1) {
         if (options->safe || options->unsafe_store) {
-            if (secdat_build_entry_path(chain->ids[0], store_name, local_entries.items[index], entry_path, sizeof(entry_path)) != 0) {
+            if (secdat_active_overlay_lookup(chain, chain->ids[0], store_name, local_entries.items[index], &overlay) != 0) {
                 goto cleanup;
             }
-            if (secdat_entry_uses_plaintext_storage(entry_path, &entry_is_unsafe) != 0) {
-                goto cleanup;
+            if (overlay.found && !overlay.tombstone) {
+                entry_is_unsafe = overlay.unsafe_store;
+                secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+                free(overlay.plaintext);
+                overlay.plaintext = NULL;
+                overlay.plaintext_length = 0;
+            } else {
+                if (secdat_build_entry_path(chain->ids[0], store_name, local_entries.items[index], entry_path, sizeof(entry_path)) != 0) {
+                    goto cleanup;
+                }
+                if (secdat_entry_uses_plaintext_storage(entry_path, &entry_is_unsafe) != 0) {
+                    goto cleanup;
+                }
             }
             if (options->unsafe_store && entry_is_unsafe) {
                 if (secdat_key_list_append(keys, local_entries.items[index]) != 0) {
@@ -3998,6 +5622,10 @@ static int secdat_collect_list_keys(
 cleanup:
     secdat_key_list_free(&local_entries);
     secdat_key_list_free(&local_tombstones);
+    secdat_key_list_free(&overlay_entries);
+    secdat_key_list_free(&overlay_tombstones);
+    secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+    free(overlay.plaintext);
     return status;
 }
 
@@ -4011,19 +5639,35 @@ static int secdat_load_resolved_plaintext(
     int *unsafe_store
 )
 {
-    char entry_path[PATH_MAX];
+    struct secdat_effective_entry entry = {0};
     unsigned char *encrypted = NULL;
     size_t encrypted_length = 0;
     int status;
 
-    status = secdat_find_effective_entry(chain, store_name, key, entry_path, sizeof(entry_path), resolved_index);
+    status = secdat_resolve_effective_entry(chain, store_name, key, 1, &entry);
     if (status != 0) {
         fprintf(stderr, _("key not found: %s\n"), key);
         fprintf(stderr, _("Hint: check secdat status, --dir, and --store to confirm the lookup context\n"));
         return 1;
     }
 
-    if (secdat_read_file(entry_path, &encrypted, &encrypted_length) != 0) {
+    if (resolved_index != NULL) {
+        *resolved_index = entry.resolved_index;
+    }
+    if (entry.from_overlay) {
+        *plaintext = entry.plaintext;
+        *plaintext_length = entry.plaintext_length;
+        if (unsafe_store != NULL) {
+            *unsafe_store = entry.unsafe_store;
+        }
+        entry.plaintext = NULL;
+        entry.plaintext_length = 0;
+        secdat_effective_entry_reset(&entry);
+        return 0;
+    }
+
+    if (secdat_read_file(entry.path, &encrypted, &encrypted_length) != 0) {
+        secdat_effective_entry_reset(&entry);
         return 1;
     }
 
@@ -4048,6 +5692,7 @@ static int secdat_load_resolved_plaintext(
 
     status = secdat_decrypt_value(chain, encrypted, encrypted_length, plaintext, plaintext_length);
     free(encrypted);
+    secdat_effective_entry_reset(&entry);
     return status;
 }
 
@@ -4120,37 +5765,11 @@ static int secdat_command_ls(const struct secdat_cli *cli)
 
     for (index = 0; index < visible_keys.count; index += 1) {
         char output[PATH_MAX * 2];
-        size_t resolved_index = 0;
+        struct secdat_effective_entry entry = {0};
         char domain_path[PATH_MAX];
-        char entry_path[PATH_MAX];
         int entry_is_unsafe;
 
-        if (filter_by_storage) {
-            if (secdat_find_effective_entry(&chain, cli->store, visible_keys.items[index], entry_path, sizeof(entry_path), NULL) != 0) {
-                secdat_key_list_free(&options.include_patterns);
-                secdat_key_list_free(&options.exclude_patterns);
-                secdat_domain_chain_free(&chain);
-                secdat_key_list_free(&visible_keys);
-                return 1;
-            }
-            if (secdat_entry_uses_plaintext_storage(entry_path, &entry_is_unsafe) != 0) {
-                secdat_key_list_free(&options.include_patterns);
-                secdat_key_list_free(&options.exclude_patterns);
-                secdat_domain_chain_free(&chain);
-                secdat_key_list_free(&visible_keys);
-                return 1;
-            }
-            if ((options.safe && entry_is_unsafe) || (options.unsafe_store && !entry_is_unsafe)) {
-                continue;
-            }
-        }
-
-        if (!options.canonical_domain && !options.canonical_store) {
-            puts(visible_keys.items[index]);
-            continue;
-        }
-
-        if (secdat_find_effective_entry(&chain, cli->store, visible_keys.items[index], output, sizeof(output), &resolved_index) != 0) {
+        if (secdat_resolve_effective_entry(&chain, cli->store, visible_keys.items[index], 0, &entry) != 0) {
             secdat_key_list_free(&options.include_patterns);
             secdat_key_list_free(&options.exclude_patterns);
             secdat_domain_chain_free(&chain);
@@ -4158,8 +5777,32 @@ static int secdat_command_ls(const struct secdat_cli *cli)
             return 1;
         }
 
+        if (filter_by_storage) {
+            if (entry.from_overlay) {
+                entry_is_unsafe = entry.unsafe_store;
+            } else if (secdat_entry_uses_plaintext_storage(entry.path, &entry_is_unsafe) != 0) {
+                secdat_effective_entry_reset(&entry);
+                secdat_key_list_free(&options.include_patterns);
+                secdat_key_list_free(&options.exclude_patterns);
+                secdat_domain_chain_free(&chain);
+                secdat_key_list_free(&visible_keys);
+                return 1;
+            }
+            if ((options.safe && entry_is_unsafe) || (options.unsafe_store && !entry_is_unsafe)) {
+                secdat_effective_entry_reset(&entry);
+                continue;
+            }
+        }
+
+        if (!options.canonical_domain && !options.canonical_store) {
+            puts(visible_keys.items[index]);
+            secdat_effective_entry_reset(&entry);
+            continue;
+        }
+
         if (options.canonical_domain) {
-            if (secdat_domain_root_path(chain.ids[resolved_index], domain_path, sizeof(domain_path)) != 0) {
+            if (secdat_domain_root_path(chain.ids[entry.resolved_index], domain_path, sizeof(domain_path)) != 0) {
+                secdat_effective_entry_reset(&entry);
                 secdat_key_list_free(&options.include_patterns);
                 secdat_key_list_free(&options.exclude_patterns);
                 secdat_domain_chain_free(&chain);
@@ -4168,6 +5811,7 @@ static int secdat_command_ls(const struct secdat_cli *cli)
             }
             if (domain_path[0] == '\0') {
                 if (secdat_copy_string(domain_path, sizeof(domain_path), canonical_base_dir) != 0) {
+                    secdat_effective_entry_reset(&entry);
                     secdat_key_list_free(&options.include_patterns);
                     secdat_key_list_free(&options.exclude_patterns);
                     secdat_domain_chain_free(&chain);
@@ -4187,6 +5831,7 @@ static int secdat_command_ls(const struct secdat_cli *cli)
                 secdat_effective_store_name(cli->store),
                 options.canonical_domain,
                 options.canonical_store) != 0) {
+            secdat_effective_entry_reset(&entry);
             secdat_key_list_free(&options.include_patterns);
             secdat_key_list_free(&options.exclude_patterns);
             secdat_domain_chain_free(&chain);
@@ -4195,6 +5840,7 @@ static int secdat_command_ls(const struct secdat_cli *cli)
         }
 
         puts(output);
+        secdat_effective_entry_reset(&entry);
     }
 
     secdat_key_list_free(&options.include_patterns);
@@ -4439,9 +6085,26 @@ static int secdat_store_plaintext(
     return status;
 }
 
+static int secdat_store_plaintext_for_chain(
+    const struct secdat_domain_chain *chain,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store
+)
+{
+    if (secdat_active_overlay_enabled(chain)) {
+        return secdat_active_overlay_store_plaintext(chain, domain_id, store_name, key, plaintext, plaintext_length, unsafe_store);
+    }
+    return secdat_store_plaintext(domain_id, store_name, key, plaintext, plaintext_length, unsafe_store);
+}
+
 static int secdat_command_set(const struct secdat_cli *cli)
 {
     struct secdat_key_reference reference;
+    struct secdat_domain_chain chain = {0};
     char current_domain_id[PATH_MAX];
     const char *key;
     unsigned char *plaintext = NULL;
@@ -4553,7 +6216,20 @@ static int secdat_command_set(const struct secdat_cli *cli)
         return 1;
     }
 
-    status = secdat_store_plaintext(current_domain_id, reference.store_value, key, plaintext, plaintext_length, unsafe_store);
+    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
+        return 1;
+    }
+    if (secdat_require_mutable_session_chain(&chain, "set") != 0) {
+        secdat_domain_chain_free(&chain);
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
+        return 1;
+    }
+
+    status = secdat_store_plaintext_for_chain(&chain, current_domain_id, reference.store_value, key, plaintext, plaintext_length, unsafe_store);
+    secdat_domain_chain_free(&chain);
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
     return status;
@@ -4569,17 +6245,66 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
     char current_domain_id[PATH_MAX];
     char entry_path[PATH_MAX];
     char tombstone_path[PATH_MAX];
+    struct secdat_overlay_lookup_result overlay = {0};
     size_t index;
     int found_inherited = 0;
+    int local_file_exists = 0;
+
+    if (secdat_require_mutable_session_chain(chain, "rm") != 0) {
+        return 1;
+    }
+
+    if (chain->count == 0) {
+        current_domain_id[0] = '\0';
+    } else if (strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    } else {
+        strcpy(current_domain_id, chain->ids[0]);
+    }
+
+    if (secdat_active_overlay_enabled(chain)) {
+        if (secdat_active_overlay_lookup(chain, current_domain_id, store_name, key, &overlay) != 0) {
+            goto overlay_cleanup_error;
+        }
+        if (current_domain_id[0] != '\0' && secdat_build_entry_path(current_domain_id, store_name, key, entry_path, sizeof(entry_path)) == 0) {
+            local_file_exists = secdat_file_exists(entry_path);
+        }
+        found_inherited = secdat_parent_has_visible_key(chain, store_name, key);
+        if (found_inherited < 0) {
+            goto overlay_cleanup_error;
+        }
+        if (overlay.found && overlay.tombstone) {
+            secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+            free(overlay.plaintext);
+            return (local_file_exists || found_inherited || ignore_missing) ? 0 : (fprintf(stderr, _("key not found: %s\n"), key), 1);
+        }
+        if (overlay.found && !overlay.tombstone) {
+            if (secdat_active_overlay_drop(chain, current_domain_id, store_name, key) != 0) {
+                goto overlay_cleanup_error;
+            }
+            secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+            free(overlay.plaintext);
+            if (local_file_exists || found_inherited) {
+                return secdat_active_overlay_set_tombstone(chain, current_domain_id, store_name, key);
+            }
+            return 0;
+        }
+        secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+        free(overlay.plaintext);
+        if (local_file_exists || found_inherited) {
+            return secdat_active_overlay_set_tombstone(chain, current_domain_id, store_name, key);
+        }
+        if (ignore_missing) {
+            return 0;
+        }
+        fprintf(stderr, _("key not found: %s\n"), key);
+        return 1;
+    }
 
     if (secdat_require_writable_domain_chain(chain) != 0) {
         return 1;
     }
-    if (strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
-        fprintf(stderr, _("path is too long\n"));
-        return 1;
-    }
-    strcpy(current_domain_id, chain->ids[0]);
 
     if (secdat_build_entry_path(current_domain_id, store_name, key, entry_path, sizeof(entry_path)) != 0) {
         return 1;
@@ -4630,6 +6355,11 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
     }
 
     return secdat_write_empty_file(tombstone_path);
+
+overlay_cleanup_error:
+    secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+    free(overlay.plaintext);
+    return 1;
 }
 
 static int secdat_mask_key_in_chain(const struct secdat_domain_chain *chain, const char *store_name, const char *key)
@@ -4637,17 +6367,58 @@ static int secdat_mask_key_in_chain(const struct secdat_domain_chain *chain, con
     char current_domain_id[PATH_MAX];
     char entry_path[PATH_MAX];
     char tombstone_path[PATH_MAX];
+    struct secdat_overlay_lookup_result overlay = {0};
     size_t index;
     int found_inherited = 0;
+    int local_file_exists = 0;
+
+    if (secdat_require_mutable_session_chain(chain, "mask") != 0) {
+        return 1;
+    }
+
+    if (chain->count == 0) {
+        current_domain_id[0] = '\0';
+    } else if (strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    } else {
+        strcpy(current_domain_id, chain->ids[0]);
+    }
+
+    if (secdat_active_overlay_enabled(chain)) {
+        if (secdat_active_overlay_lookup(chain, current_domain_id, store_name, key, &overlay) != 0) {
+            goto overlay_cleanup_error;
+        }
+        if (overlay.found && overlay.tombstone) {
+            secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+            free(overlay.plaintext);
+            return 0;
+        }
+        if (current_domain_id[0] != '\0' && secdat_build_entry_path(current_domain_id, store_name, key, entry_path, sizeof(entry_path)) == 0) {
+            local_file_exists = secdat_file_exists(entry_path);
+        }
+        if ((overlay.found && !overlay.tombstone) || local_file_exists) {
+            secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+            free(overlay.plaintext);
+            fprintf(stderr, _("key exists locally and cannot be masked: %s\n"), key);
+            return 1;
+        }
+        found_inherited = secdat_parent_has_visible_key(chain, store_name, key);
+        secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+        free(overlay.plaintext);
+        if (found_inherited < 0) {
+            return 1;
+        }
+        if (!found_inherited) {
+            fprintf(stderr, _("key not found: %s\n"), key);
+            return 1;
+        }
+        return secdat_active_overlay_set_tombstone(chain, current_domain_id, store_name, key);
+    }
 
     if (secdat_require_writable_domain_chain(chain) != 0) {
         return 1;
     }
-    if (strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
-        fprintf(stderr, _("path is too long\n"));
-        return 1;
-    }
-    strcpy(current_domain_id, chain->ids[0]);
 
     if (secdat_build_entry_path(current_domain_id, store_name, key, entry_path, sizeof(entry_path)) != 0) {
         return 1;
@@ -4695,6 +6466,11 @@ static int secdat_mask_key_in_chain(const struct secdat_domain_chain *chain, con
     }
 
     return secdat_write_empty_file(tombstone_path);
+
+overlay_cleanup_error:
+    secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+    free(overlay.plaintext);
+    return 1;
 }
 
 static int secdat_unmask_key_in_chain(const struct secdat_domain_chain *chain, const char *store_name, const char *key)
@@ -4702,14 +6478,43 @@ static int secdat_unmask_key_in_chain(const struct secdat_domain_chain *chain, c
     char current_domain_id[PATH_MAX];
     char tombstone_path[PATH_MAX];
 
+    if (secdat_require_mutable_session_chain(chain, "unmask") != 0) {
+        return 1;
+    }
+
+    if (chain->count == 0) {
+        current_domain_id[0] = '\0';
+    } else if (strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    } else {
+        strcpy(current_domain_id, chain->ids[0]);
+    }
+
+    if (secdat_active_overlay_enabled(chain)) {
+        struct secdat_overlay_lookup_result overlay = {0};
+
+        if (secdat_active_overlay_lookup(chain, current_domain_id, store_name, key, &overlay) != 0) {
+            return 1;
+        }
+        if (overlay.found && overlay.tombstone) {
+            secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+            free(overlay.plaintext);
+            return secdat_active_overlay_drop(chain, current_domain_id, store_name, key);
+        }
+        secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
+        free(overlay.plaintext);
+        if (current_domain_id[0] != '\0' && secdat_build_tombstone_path(current_domain_id, store_name, key, tombstone_path, sizeof(tombstone_path)) == 0 && secdat_file_exists(tombstone_path)) {
+            fprintf(stderr, _("cannot unmask a persisted tombstone while volatile session overlay is active: %s\n"), key);
+            return 1;
+        }
+        fprintf(stderr, _("key is not masked in current domain: %s\n"), key);
+        return 1;
+    }
+
     if (secdat_require_writable_domain_chain(chain) != 0) {
         return 1;
     }
-    if (strlen(chain->ids[0]) >= sizeof(current_domain_id)) {
-        fprintf(stderr, _("path is too long\n"));
-        return 1;
-    }
-    strcpy(current_domain_id, chain->ids[0]);
 
     if (secdat_build_tombstone_path(current_domain_id, store_name, key, tombstone_path, sizeof(tombstone_path)) != 0) {
         return 1;
@@ -4759,18 +6564,21 @@ static int secdat_command_cp(const struct secdat_cli *cli)
         secdat_domain_chain_free(&source_chain);
         return 1;
     }
-    if (secdat_require_writable_domain_chain(&destination_chain) != 0) {
+    if (secdat_require_mutable_session_chain(&destination_chain, "cp") != 0) {
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
         return 1;
     }
-    if (strlen(destination_chain.ids[0]) >= sizeof(destination_domain_id)) {
+    if (!secdat_active_overlay_enabled(&destination_chain) && secdat_require_writable_domain_chain(&destination_chain) != 0) {
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
-        fprintf(stderr, _("path is too long\n"));
         return 1;
     }
-    strcpy(destination_domain_id, destination_chain.ids[0]);
+    if (secdat_domain_resolve_current(destination_reference.domain_value, destination_domain_id, sizeof(destination_domain_id)) != 0) {
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
+        return 1;
+    }
 
     if (secdat_resolve_entry_path(&destination_chain, destination_reference.store_value, destination_reference.key, destination_path, sizeof(destination_path)) == 0) {
         secdat_domain_chain_free(&source_chain);
@@ -4785,7 +6593,7 @@ static int secdat_command_cp(const struct secdat_cli *cli)
         return 1;
     }
 
-    status = secdat_store_plaintext(destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, unsafe_store);
+    status = secdat_store_plaintext_for_chain(&destination_chain, destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, unsafe_store);
     secdat_domain_chain_free(&source_chain);
     secdat_domain_chain_free(&destination_chain);
     secdat_secure_clear(plaintext, plaintext_length);
@@ -4830,18 +6638,22 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         secdat_domain_chain_free(&source_chain);
         return 1;
     }
-    if (secdat_require_writable_domain_chain(&destination_chain) != 0) {
+    if (secdat_require_mutable_session_chain(&source_chain, "mv") != 0
+        || secdat_require_mutable_session_chain(&destination_chain, "mv") != 0) {
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
         return 1;
     }
-    if (strlen(destination_chain.ids[0]) >= sizeof(destination_domain_id)) {
+    if (!secdat_active_overlay_enabled(&destination_chain) && secdat_require_writable_domain_chain(&destination_chain) != 0) {
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
-        fprintf(stderr, _("path is too long\n"));
         return 1;
     }
-    strcpy(destination_domain_id, destination_chain.ids[0]);
+    if (secdat_domain_resolve_current(destination_reference.domain_value, destination_domain_id, sizeof(destination_domain_id)) != 0) {
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
+        return 1;
+    }
 
     if (secdat_resolve_entry_path(&destination_chain, destination_reference.store_value, destination_reference.key, destination_path, sizeof(destination_path)) == 0) {
         secdat_domain_chain_free(&source_chain);
@@ -4856,7 +6668,7 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         return 1;
     }
 
-    status = secdat_store_plaintext(destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, unsafe_store);
+    status = secdat_store_plaintext_for_chain(&destination_chain, destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, unsafe_store);
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
     if (status != 0) {
@@ -5032,6 +6844,7 @@ static int secdat_store_command_ls(const struct secdat_cli *cli)
 static int secdat_store_command_create(const struct secdat_cli *cli)
 {
     char current_domain_id[PATH_MAX];
+    struct secdat_domain_chain chain = {0};
     char store_root[PATH_MAX];
     char entries_dir[PATH_MAX];
     char tombstones_dir[PATH_MAX];
@@ -5056,31 +6869,46 @@ static int secdat_store_command_create(const struct secdat_cli *cli)
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
     }
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
+        return 1;
+    }
+    if (secdat_require_mutable_session_chain(&chain, "store create") != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
     if (secdat_require_writable_domain_id(current_domain_id) != 0) {
+        secdat_domain_chain_free(&chain);
         return 1;
     }
     if (secdat_store_root(current_domain_id, cli->argv[0], store_root, sizeof(store_root)) != 0) {
+        secdat_domain_chain_free(&chain);
         return 1;
     }
     if (stat(store_root, &status) == 0) {
+        secdat_domain_chain_free(&chain);
         fprintf(stderr, _("store already exists: %s\n"), cli->argv[0]);
         return 1;
     }
     if (secdat_join_path(entries_dir, sizeof(entries_dir), store_root, "entries") != 0) {
+        secdat_domain_chain_free(&chain);
         return 1;
     }
     if (secdat_join_path(tombstones_dir, sizeof(tombstones_dir), store_root, "tombstones") != 0) {
+        secdat_domain_chain_free(&chain);
         return 1;
     }
     if (secdat_ensure_directory(entries_dir, 0700) != 0) {
+        secdat_domain_chain_free(&chain);
         return 1;
     }
+    secdat_domain_chain_free(&chain);
     return secdat_ensure_directory(tombstones_dir, 0700);
 }
 
 static int secdat_store_command_delete(const struct secdat_cli *cli)
 {
     char current_domain_id[PATH_MAX];
+    struct secdat_domain_chain chain = {0};
     char store_root[PATH_MAX];
     char entries_dir[PATH_MAX];
     char tombstones_dir[PATH_MAX];
@@ -5104,27 +6932,41 @@ static int secdat_store_command_delete(const struct secdat_cli *cli)
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
     }
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
+        return 1;
+    }
+    if (secdat_require_mutable_session_chain(&chain, "store delete") != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
     if (secdat_require_writable_domain_id(current_domain_id) != 0) {
+        secdat_domain_chain_free(&chain);
         return 1;
     }
     if (secdat_store_root(current_domain_id, cli->argv[0], store_root, sizeof(store_root)) != 0) {
+        secdat_domain_chain_free(&chain);
         return 1;
     }
     if (secdat_join_path(entries_dir, sizeof(entries_dir), store_root, "entries") != 0) {
+        secdat_domain_chain_free(&chain);
         return 1;
     }
     if (secdat_join_path(tombstones_dir, sizeof(tombstones_dir), store_root, "tombstones") != 0) {
+        secdat_domain_chain_free(&chain);
         return 1;
     }
     if (!secdat_directory_is_empty(entries_dir) || !secdat_directory_is_empty(tombstones_dir)) {
+        secdat_domain_chain_free(&chain);
         fprintf(stderr, _("store is not empty: %s\n"), cli->argv[0]);
         return 1;
     }
     if (rmdir(entries_dir) != 0 || rmdir(tombstones_dir) != 0 || rmdir(store_root) != 0) {
+        secdat_domain_chain_free(&chain);
         fprintf(stderr, _("failed to remove directory: %s\n"), store_root);
         return 1;
     }
 
+    secdat_domain_chain_free(&chain);
     return 0;
 }
 
@@ -5379,6 +7221,7 @@ static int secdat_command_save(const struct secdat_cli *cli)
 
 static int secdat_command_load(const struct secdat_cli *cli)
 {
+    struct secdat_domain_chain chain = {0};
     char current_domain_id[PATH_MAX];
     unsigned char *payload = NULL;
     size_t payload_length = 0;
@@ -5396,11 +7239,20 @@ static int secdat_command_load(const struct secdat_cli *cli)
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
     }
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
+        return 1;
+    }
+    if (secdat_require_mutable_session_chain(&chain, "load") != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
     if (secdat_read_secret_from_tty(_("Enter secdat bundle passphrase: "), passphrase, sizeof(passphrase)) != 0) {
+        secdat_domain_chain_free(&chain);
         return 1;
     }
     if (secdat_decrypt_secret_bundle(cli->argv[0], passphrase, &payload, &payload_length) != 0) {
         secdat_secure_clear(passphrase, strlen(passphrase));
+        secdat_domain_chain_free(&chain);
         return 1;
     }
     secdat_secure_clear(passphrase, strlen(passphrase));
@@ -5435,7 +7287,7 @@ static int secdat_command_load(const struct secdat_cli *cli)
         key[key_length] = '\0';
         offset += key_length;
 
-        if (secdat_store_plaintext(current_domain_id, cli->store, key, payload + offset, value_length, 0) != 0) {
+        if (secdat_store_plaintext_for_chain(&chain, current_domain_id, cli->store, key, payload + offset, value_length, 0) != 0) {
             secdat_secure_clear(key, (size_t)key_length + 1);
             free(key);
             goto cleanup;
@@ -5451,6 +7303,7 @@ static int secdat_command_load(const struct secdat_cli *cli)
     status = 0;
 
 cleanup:
+    secdat_domain_chain_free(&chain);
     if (payload != NULL) {
         secdat_secure_clear(payload, payload_length);
         free(payload);

@@ -185,15 +185,131 @@ rc, stdout, stderr = run(scoped(["get", "UNSAFE_COPIED_KEY", "-o"]))
 if rc == 0 or "key not found: UNSAFE_COPIED_KEY" not in stderr:
     fail(f"moved unsafe source still visible while locked: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run(scoped(["set", "VOLATILE_TOMBSTONE_KEY", "--unsafe", "--value", "persistent-value"]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"persistent unsafe seed for volatile rm failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+volatile_env = {"SECDAT_MASTER_KEY": "volatile-master-key-for-tests"}
+
+rc, stdout, stderr = run(scoped(["unlock", "--volatile"]), extra_env=volatile_env)
+if rc != 0 or "volatile session unlocked from environment" not in stdout or "resolved domain:" not in stderr:
+    fail(f"volatile unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status"]))
+if rc != 0 or "overlay: volatile\n" not in stdout or stderr != "":
+    fail(f"volatile status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["set", "VOLATILE_ONLY_KEY", "--value", "volatile-value"]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"volatile set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "VOLATILE_ONLY_KEY", "-o"]))
+if rc != 0 or stdout != "volatile-value" or stderr != "":
+    fail(f"volatile get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["rm", "VOLATILE_TOMBSTONE_KEY"]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"volatile rm failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "VOLATILE_TOMBSTONE_KEY", "-o"]))
+if rc == 0 or "key not found: VOLATILE_TOMBSTONE_KEY" not in stderr:
+    fail(f"volatile tombstone should hide persistent key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["unlock", "--volatile"], domain=child_domain), extra_env=volatile_env)
+if rc != 0 or "volatile session unlocked from environment" not in stdout:
+    fail(f"child volatile unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["mask", "UNSAFE_VISIBLE_KEY"], domain=child_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"volatile mask failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "UNSAFE_VISIBLE_KEY", "-o"], domain=child_domain))
+if rc == 0 or "key not found: UNSAFE_VISIBLE_KEY" not in stderr:
+    fail(f"volatile mask should hide inherited key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["unmask", "UNSAFE_VISIBLE_KEY"], domain=child_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"volatile unmask failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "UNSAFE_VISIBLE_KEY", "-o"], domain=child_domain))
+if rc != 0 or stdout != "visible-while-locked" or stderr != "":
+    fail(f"volatile unmask should restore inherited key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"]))
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"lock after volatile root session failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["exists", "VOLATILE_ONLY_KEY"]))
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"volatile-only key leaked after lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "VOLATILE_TOMBSTONE_KEY", "-o"]))
+if rc != 0 or stdout != "persistent-value" or stderr != "":
+    fail(f"persistent key should reappear after volatile lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"], domain=child_domain))
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"child lock after volatile session failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "UNSAFE_VISIBLE_KEY", "-o"], domain=child_domain))
+if rc != 0 or stdout != "visible-while-locked" or stderr != "":
+    fail(f"inherited key should remain visible after child volatile lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+readonly_env = {"SECDAT_MASTER_KEY": "readonly-master-key-for-tests"}
+
+rc, stdout, stderr = run(scoped(["unlock", "--readonly"]), extra_env=readonly_env)
+if rc != 0 or "readonly session unlocked from environment" not in stdout or "resolved domain:" not in stderr:
+    fail(f"readonly unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status"]))
+if rc != 0 or "access: readonly\n" not in stdout or stderr != "":
+    fail(f"readonly status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["set", "READONLY_BLOCKED_KEY", "--value", "blocked"]))
+if rc == 0 or "current session is readonly and cannot run set" not in stderr or f"unlock writable session: secdat --dir {root_domain} unlock" not in stderr:
+    fail(f"readonly set should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock", "--save"]))
+if rc == 0 or "lock --save requires a local volatile session" not in stderr:
+    fail(f"lock --save should reject readonly session: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"]))
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"lock after readonly session failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["unlock", "--volatile"]), extra_env=volatile_env)
+if rc != 0 or "volatile session unlocked from environment" not in stdout or "resolved domain:" not in stderr:
+    fail(f"volatile unlock for save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["set", "SAVE_PERSISTED_KEY", "--unsafe", "--value", "persisted-after-save"]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"volatile unsafe set for save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["rm", "VOLATILE_TOMBSTONE_KEY"]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"volatile rm for save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock", "--save"]))
+if rc != 0 or stdout != "volatile session saved and locked\n" or stderr != "":
+    fail(f"lock --save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "SAVE_PERSISTED_KEY", "-o"]))
+if rc != 0 or stdout != "persisted-after-save" or stderr != "":
+    fail(f"saved volatile key should persist after lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "VOLATILE_TOMBSTONE_KEY", "-o"]))
+if rc == 0 or "key not found: VOLATILE_TOMBSTONE_KEY" not in stderr:
+    fail(f"saved volatile tombstone should persist after lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 for args, marker in [
     ([bin_path, "help", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "--help", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "-h", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "--help"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "-h"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
-    ([bin_path, "help", "unlock"], "[-d DIR|--dir DIR] unlock [--inherit] [--descendants] [--yes]"),
+    ([bin_path, "help", "unlock"], "[-d DIR|--dir DIR] unlock [--inherit] [--volatile|--readonly] [--descendants] [--yes]"),
     ([bin_path, "help", "inherit"], "[-d DIR|--dir DIR] inherit"),
-    ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [--inherit]"),
+    ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [--inherit] [--save]"),
     ([bin_path, "help", "list"], "list [--masked] [--overridden] [--orphaned] [--safe] [--unsafe]"),
     ([bin_path, "help", "mask"], "mask KEYREF"),
     ([bin_path, "help", "unmask"], "unmask KEYREF"),
@@ -234,6 +350,7 @@ if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in outp
 
 for args, expected in [
     ([bin_path, "unlock", "--bad"], f"Try: {bin_path} help unlock"),
+    ([bin_path, "unlock", "--volatile", "--readonly"], f"Try: {bin_path} help unlock"),
     ([bin_path, "--store", "default", "status"], f"Try: {bin_path} help status"),
     ([bin_path, "store", "create"], f"Try: {bin_path} help store"),
     ([bin_path, "get", "KEY", "--bad"], f"Try: {bin_path} help get"),
@@ -284,7 +401,7 @@ rc, transcript = run_pty(
 )
 if rc != 0 or f"resolved domain: {root_domain}" not in transcript or "persistent master key initialized; session unlocked" not in transcript:
     fail(f"bootstrap unlock failed: rc={rc} transcript={transcript!r}")
-if "note: 2 descendant domains can now reuse this session" not in transcript:
+if "note: 2 descendant domains remain locked under this branch" not in transcript:
     fail(f"bootstrap unlock coverage summary missing: transcript={transcript!r}")
 if not wrapped_path.is_file():
     fail("wrapped master key was not created")
@@ -294,16 +411,8 @@ if rc != 0 or "source: session agent" not in stdout or "wrapped master key: pres
     fail(f"status after bootstrap unexpected: rc={rc} stdout={stdout!r}")
 
 rc, stdout, _ = run(scoped(["status", "-q"], child_domain))
-if rc != 0 or stdout != "":
+if rc != 1 or stdout != "":
     fail(f"status -q in child after parent unlock unexpected: rc={rc} stdout={stdout!r}")
-
-rc, stdout, stderr = run(scoped(["set", "PARENT_UNLOCK_VISIBLE", "-v", "visible-from-child"], child_domain))
-if rc != 0 or stdout != "" or stderr != "":
-    fail(f"child set with inherited unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-
-rc, stdout, stderr = run(scoped(["get", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain))
-if rc != 0 or stdout != "visible-from-child" or stderr != "":
-    fail(f"child get with inherited unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["status", "-q"], sibling_domain))
 if rc != 1 or stdout != "" or stderr != "":
@@ -314,10 +423,14 @@ if rc != 0 or stdout.strip() != "session locked":
     fail(f"lock before reconnect check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
-if rc != 0 or stdout.strip() != "session unlocked\nnote: 2 descendant domains can now reuse this session":
+if rc != 0 or "session unlocked\n" not in stdout or "note: 2 descendant domains remain locked under this branch\n" not in stdout:
     fail(f"root unlock before shadow check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if f"resolved domain: {root_domain}\n" not in stderr:
     fail(f"root unlock prompt context missing: stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["set", "PARENT_UNLOCK_VISIBLE", "-v", "visible-from-parent"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"root set for explicit-lock coverage failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["lock"], child_domain))
 if rc != 0 or stdout.strip() != "session locked":
@@ -358,7 +471,7 @@ assert_contains(stderr, f"inspect current domain: secdat --dir {child_domain} do
 assert_contains(stderr, f"unlock current domain: secdat --dir {child_domain} unlock\n", "locked read unlock guidance")
 
 rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
-if rc != 0 or stdout.strip() != "session unlocked\nnote: 1 descendant domains can now reuse this session":
+if rc != 0 or "session unlocked\n" not in stdout or "note: 1 descendant domains can now reuse this session\n" not in stdout:
     fail(f"env passphrase unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if f"resolved domain: {child_domain}\n" not in stderr:
     fail(f"child unlock prompt context missing: stderr={stderr!r}")

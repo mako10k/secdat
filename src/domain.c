@@ -1324,6 +1324,10 @@ static int secdat_domain_command_create(const struct secdat_cli *cli)
         return 2;
     }
 
+    if (secdat_require_writable_session_access(cli->domain != NULL ? cli->domain : cli->dir, "domain create") != 0) {
+        return 1;
+    }
+
     if (secdat_canonicalize_directory(cli->domain != NULL ? cli->domain : cli->dir, root_path, sizeof(root_path)) != 0) {
         return 1;
     }
@@ -1384,6 +1388,10 @@ static int secdat_domain_command_delete(const struct secdat_cli *cli)
         fprintf(stderr, _("invalid arguments for domain delete\n"));
         secdat_cli_print_try_help(cli, "domain");
         return 2;
+    }
+
+    if (secdat_require_writable_session_access(cli->domain != NULL ? cli->domain : cli->dir, "domain delete") != 0) {
+        return 1;
     }
 
     if (secdat_canonicalize_directory(cli->domain != NULL ? cli->domain : cli->dir, root_path, sizeof(root_path)) != 0) {

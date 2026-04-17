@@ -142,8 +142,8 @@ msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] load FILE\n"
 
 #: src/cli.c:180
 #, c-format
-msgid "  %s [-d DIR|--dir DIR] unlock [--inherit] [--descendants] [--yes]\n"
-msgstr "  %s [-d DIR|--dir DIR] unlock [--inherit] [--descendants] [--yes]\n"
+msgid "  %s [-d DIR|--dir DIR] unlock [--inherit] [--volatile|--readonly] [--descendants] [--yes]\n"
+msgstr "  %s [-d DIR|--dir DIR] unlock [--inherit] [--volatile|--readonly] [--descendants] [--yes]\n"
 
 #: src/cli.c:183
 #, c-format
@@ -157,8 +157,8 @@ msgstr "  %s passwd\n"
 
 #: src/cli.c:189
 #, c-format
-msgid "  %s [-d DIR|--dir DIR] lock [--inherit]\n"
-msgstr "  %s [-d DIR|--dir DIR] lock [--inherit]\n"
+msgid "  %s [-d DIR|--dir DIR] lock [--inherit] [--save]\n"
+msgstr "  %s [-d DIR|--dir DIR] lock [--inherit] [--save]\n"
 
 #: src/cli.c:189
 #, c-format
@@ -1374,6 +1374,34 @@ msgstr "永続 master key を初期化し、セッションをアンロックし
 msgid "session unlocked from environment"
 msgstr "環境変数からセッションをアンロックしました"
 
+#: src/store.c
+msgid "overlay: volatile"
+msgstr "overlay: volatile"
+
+#: src/store.c
+msgid "access: readonly"
+msgstr "access: readonly"
+
+#: src/store.c
+msgid "volatile session unlocked with an ephemeral master key"
+msgstr "揮発セッションを一時 master key でアンロックしました"
+
+#: src/store.c
+msgid "readonly session unlocked from environment"
+msgstr "環境変数から読み取り専用セッションをアンロックしました"
+
+#: src/store.c
+msgid "readonly session unlocked"
+msgstr "読み取り専用セッションをアンロックしました"
+
+#: src/store.c
+msgid "volatile session unlocked from environment"
+msgstr "環境変数から揮発セッションをアンロックしました"
+
+#: src/store.c
+msgid "volatile session unlocked"
+msgstr "揮発セッションをアンロックしました"
+
 #: src/store.c:2492 src/store.c:2547
 #, c-format
 msgid ""
@@ -1386,6 +1414,43 @@ msgstr ""
 #: src/store.c:2510
 msgid "session unlocked"
 msgstr "セッションをアンロックしました"
+
+#: src/store.c
+#, c-format
+msgid "current session is readonly and cannot run %s\n"
+msgstr "現在のセッションは読み取り専用のため %s を実行できません\n"
+
+#: src/store.c
+#, c-format
+msgid "unlock writable session: secdat unlock\n"
+msgstr "書き込み可能セッションを開始: secdat unlock\n"
+
+#: src/store.c
+#, c-format
+msgid "unlock writable session: secdat --dir %s unlock\n"
+msgstr "書き込み可能セッションを開始: secdat --dir %s unlock\n"
+
+#: src/store.c
+msgid "no persistent master key is initialized; readonly unlock requires an existing master key\n"
+msgstr "永続 master key が未初期化のため、readonly unlock には既存の master key が必要です\n"
+
+#: src/store.c
+msgid "lock --save requires a local volatile session\n"
+msgstr "lock --save にはローカルの揮発セッションが必要です\n"
+
+#: src/store.c
+msgid "volatile session saved and locked"
+msgstr "揮発セッションを保存してロックしました"
+
+#: src/store.c
+#, c-format
+msgid "cannot unmask a persisted tombstone while volatile session overlay is active: %s\n"
+msgstr "揮発セッション overlay が有効な間は永続 tombstone を unmask できません: %s\n"
+
+#: src/store.c
+#, c-format
+msgid "invalid overlay payload\n"
+msgstr "overlay payload が不正です\n"
 
 #: src/store.c:2519
 #, c-format

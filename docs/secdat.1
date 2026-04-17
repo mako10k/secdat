@@ -97,8 +97,18 @@ Write the current visible secrets into a passphrase-protected bundle.
 .B load FILE
 Load a passphrase-protected bundle into the current domain/store context.
 .TP
-.B [\-d DIR|\-\-dir DIR] unlock [\-\-descendants] [\-\-yes]
+.B [\-d DIR|\-\-dir DIR] unlock [\-\-volatile|\-\-readonly] [\-\-descendants] [\-\-yes]
 Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked. With
+.B --volatile
+the command keeps subsequent secret writes, deletes, tombstones, and read-side resolution changes inside the session agent's memory overlay until
+.B lock
+clears that overlay, so dry runs and read-only filesystems do not touch the persisted store. With
+.B lock --save
+the local volatile overlay is written through to the persisted store before the session is locked. Current volatile sessions remove only overlay-created tombstones; persisted tombstones still require a normal writable session.
+With
+.B --readonly
+the command reuses an existing master key but rejects mutating commands while leaving reads, listing, export-like operations, and status available.
+With
 .B --descendants
 the command performs an explicit subtree unlock for the resolved domain and its registered descendants, creating local descendant sessions where needed while leaving explicit-lock markers intact; broader-scope unlocks require confirmation unless
 .B --yes

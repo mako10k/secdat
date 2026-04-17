@@ -227,7 +227,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "load", "FILE");
         break;
     case SECDAT_COMMAND_UNLOCK:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[--inherit] [--descendants] [--yes]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[--inherit] [--volatile|--readonly] [--descendants] [--yes]");
         break;
     case SECDAT_COMMAND_INHERIT:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "inherit", "");
@@ -236,7 +236,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "", "passwd", "");
         break;
     case SECDAT_COMMAND_LOCK:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "lock", "[--inherit]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "lock", "[--inherit] [--save]");
         break;
     case SECDAT_COMMAND_STATUS:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "status", "[-q|--quiet]");
