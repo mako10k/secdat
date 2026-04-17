@@ -97,8 +97,11 @@ Write the current visible secrets into a passphrase-protected bundle.
 .B load FILE
 Load a passphrase-protected bundle into the current domain/store context.
 .TP
-.B [\-d DIR|\-\-dir DIR] unlock [\-\-volatile|\-\-readonly] [\-\-descendants] [\-\-yes]
+.B [\-d DIR|\-\-dir DIR] unlock [\-\-inherit] [\-\-volatile|\-\-readonly] [\-\-descendants] [\-\-yes]
 Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked. With
+.B --inherit
+the command removes the current domain's local explicit-lock marker when one is present, or clears the current domain's local session when no marker is present, and succeeds only when the resulting effective state would become unlocked; it does not create a new local session.
+With
 .B --volatile
 the command keeps subsequent secret writes, deletes, tombstones, and read-side resolution changes inside the session agent's memory overlay until
 .B lock
@@ -122,6 +125,9 @@ to mean that no registered domain resolved and the top-level inherited fallback 
 .TP
 .B passwd
 Change the passphrase used to wrap the persistent master key.
+.TP
+.B [\-d DIR|\-\-dir DIR] inherit
+Remove the current domain's local explicit-lock marker when one is present, or clear the current domain's local session when no marker is present, without checking the resulting effective state.
 .TP
 .B [\-d DIR|\-\-dir DIR] lock
 Clear the current domain's local secret session.

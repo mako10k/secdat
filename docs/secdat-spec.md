@@ -261,8 +261,8 @@ To make the requested behavior implementable, the following are treated as norma
 - before prompting, `unlock` reports the resolved domain it is about to unlock
 - unlocking one domain must not unlock sibling domains
 - descendant domains may reuse an unlocked ancestor session without an extra `unlock`
-- `unlock --inherit` must not create a local session; it removes only the current domain's local explicit-lock marker and succeeds only when the resulting effective state would become unlocked
-- `unlock --inherit` is an error when no current-domain explicit-lock marker exists or when the checked result would remain locked
+- `unlock --inherit` must not create a local session; it removes the current domain's local explicit-lock marker when present, otherwise it clears the current domain's local session, and succeeds only when the resulting effective state would become unlocked
+- `unlock --inherit` is an error when no current-domain explicit-lock marker or local session exists, or when the checked result would remain locked
 - `unlock --descendants` applies only to the resolved target domain plus registered descendants rooted beneath it; it must never affect ancestors, siblings, or unregistered directories
 - `unlock --descendants` must keep explicit-lock markers intact and instead create or refresh local descendant sessions where needed so blocked descendants become effectively unlocked for the current session lifetime
 - when `unlock --descendants` would broaden access beyond the current domain, it must print the affected descendant count, warn that explicit-lock markers remain in force, and require confirmation unless `--yes` is present
@@ -272,7 +272,7 @@ To make the requested behavior implementable, the following are treated as norma
 - when the resolved domain has a registered parent and `--inherit` is not present, `lock` must persist a local explicit-lock marker after clearing the local session
 - `lock --inherit` must not clear or create sessions; it removes only the current domain's local explicit-lock marker and succeeds only when the resulting effective state would remain locked
 - `lock --inherit` is an error when no current-domain explicit-lock marker exists or when the checked result would become unlocked
-- `secdat [--dir DIR] inherit` removes only the current domain's local explicit-lock marker without checking the resulting effective state
+- `secdat [--dir DIR] inherit` removes the current domain's local explicit-lock marker when present, otherwise clears the current domain's local session, without checking the resulting effective state
 - the current implementation refreshes the idle timeout when the agent serves the cached key
 - no raw master-key retrieval path is required for normal operation; the generated key remains internal unless a separate future recovery/export flow is introduced
 - safe values still refuse terminal-based stdin/stdout for `set` and `get`
@@ -796,7 +796,7 @@ Responsibilities:
 
 1. resolve the current domain from `--dir` or the current working directory
 2. print the resolved domain before any terminal prompt so the user sees the target scope
-3. if `--inherit` is present, verify that removing the current domain's local explicit-lock marker would make the resulting effective state unlocked, then remove only that marker without creating a local session
+3. if `--inherit` is present, verify that removing the current domain's local explicit-lock marker, or clearing the current domain's local session when no marker is present, would make the resulting effective state unlocked, then apply only that local fallback change without creating a local session
 4. otherwise, initialize or refresh the local session for that resolved domain
 5. when `--descendants` is present, compute the affected registered descendant subtree, require confirmation for any broader-scope unlock unless `--yes` is present, and create or refresh local descendant sessions without removing explicit-lock markers
 6. if `--descendants` was not requested and descendant domains under the unlocked domain remain effectively locked because they are explicit-lock roots or blocked below one, print a short summary and next-step commands for descendant inspection and descendant-specific unlocks; descendants that can already reuse the unlocked session may be summarized count-only, while descendants that remain locked are the ones listed explicitly
@@ -812,8 +812,8 @@ Responsibilities:
 #### `inherit`
 
 1. resolve the current domain from `--dir` or the current working directory
-2. require that the resolved domain has a current-domain explicit-lock marker
-3. remove only that local explicit-lock marker without checking the resulting effective state
+2. require that the resolved domain has a current-domain explicit-lock marker or local session
+3. remove the local explicit-lock marker when present; otherwise clear the local session, without checking the resulting effective state
 
 #### `ls`
 

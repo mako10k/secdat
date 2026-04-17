@@ -195,6 +195,41 @@ if rc != 0 or stderr != "":
     fail(f"domain ls -l plain locked state failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, f"{sibling_domain}\tlocked\tlocked\tno-session", "domain ls plain locked row")
 
+rc, stdout, stderr = run(scoped(["unlock"], child_domain))
+if rc != 0 or stdout.strip() != "session unlocked\nnote: 1 descendant domains can now reuse this session":
+    fail(f"child local unlock before inherit checks failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stderr, f"resolved domain: {child_domain}\n", "child local unlock resolved domain")
+
+rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
+if rc != 0 or stderr != "":
+    fail(f"child domain status after local unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: local session\n", "child local status before checked inherit")
+
+rc, stdout, stderr = run(scoped(["unlock", "--inherit"], child_domain))
+if rc != 0 or stdout.strip() != "local session cleared; resulting state: unlocked":
+    fail(f"unlock --inherit from local session failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stderr, f"resolved domain: {child_domain}\n", "unlock --inherit local-session resolved domain")
+
+rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
+if rc != 0 or stderr != "":
+    fail(f"child domain status after local-session unlock --inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: inherited session\n", "child inherited status after local-session unlock --inherit")
+assert_contains(stdout, f"inherited from: {root_domain}\n", "child inherited source after local-session unlock --inherit")
+
+rc, stdout, stderr = run(scoped(["unlock"], child_domain))
+if rc != 0 or stdout.strip() != "session unlocked\nnote: 1 descendant domains can now reuse this session":
+    fail(f"child second local unlock before unchecked inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["inherit"], child_domain))
+if rc != 0 or stdout.strip() != "local session cleared":
+    fail(f"unchecked inherit from local session failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
+if rc != 0 or stderr != "":
+    fail(f"child domain status after local-session inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: inherited session\n", "child inherited status after local-session inherit")
+assert_contains(stdout, f"inherited from: {root_domain}\n", "child inherited source after local-session inherit")
+
 rc, stdout, stderr = run(scoped(["lock"], child_domain))
 if rc != 0 or stdout.strip() != "session locked":
     fail(f"child lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

@@ -307,7 +307,7 @@ for args, marker in [
     ([bin_path, "-h", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "--help"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "-h"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
-    ([bin_path, "help", "unlock"], "[-d DIR|--dir DIR] unlock [--inherit] [--volatile|--readonly] [--descendants] [--yes]"),
+    ([bin_path, "help", "unlock"], "--inherit removes a local explicit-lock marker or clears a local session when no marker is present"),
     ([bin_path, "help", "inherit"], "[-d DIR|--dir DIR] inherit"),
     ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [--inherit] [--save]"),
     ([bin_path, "help", "list"], "list [--masked] [--overridden] [--orphaned] [--safe] [--unsafe]"),

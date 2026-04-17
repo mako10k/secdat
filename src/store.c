@@ -4486,6 +4486,85 @@ static int secdat_effective_unlock_state_without_current_explicit_lock(
     return 0;
 }
 
+static int secdat_current_scope_has_local_session(const struct secdat_domain_chain *chain)
+{
+    struct secdat_session_record record = {0};
+
+    return secdat_session_agent_status_scope(secdat_session_scope_id(chain), &record) == 0;
+}
+
+static int secdat_effective_unlock_state_without_current_local_session(
+    const struct secdat_domain_chain *chain,
+    int *would_unlock,
+    size_t *matched_index,
+    size_t *blocked_index
+)
+{
+    struct secdat_domain_chain parent_chain = {0};
+    FILE *stream;
+    struct secdat_session_record record = {0};
+    char response[64];
+    int fd;
+
+    *would_unlock = 0;
+    if (matched_index != NULL) {
+        *matched_index = SIZE_MAX;
+    }
+    if (blocked_index != NULL) {
+        *blocked_index = SIZE_MAX;
+    }
+    if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
+        *would_unlock = 1;
+        return 0;
+    }
+    if (chain->count == 0) {
+        return 0;
+    }
+
+    parent_chain.ids = chain->ids + 1;
+    parent_chain.count = chain->count - 1;
+    fd = secdat_session_agent_connect_chain_details(&parent_chain, matched_index, blocked_index);
+    if (fd < 0) {
+        return 0;
+    }
+
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+
+    fprintf(stream, "STATUS\n");
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fclose(stream);
+
+    if (strncmp(response, "OK ", 3) != 0) {
+        return 1;
+    }
+    {
+        char expires_text[32];
+
+        if (sscanf(response, "OK %31s", expires_text) != 1 || secdat_parse_i64(expires_text, &record.expires_at) != 0) {
+            return 1;
+        }
+    }
+
+    if (matched_index != NULL && *matched_index != SIZE_MAX) {
+        *matched_index += 1;
+    }
+    if (blocked_index != NULL && *blocked_index != SIZE_MAX) {
+        *blocked_index += 1;
+    }
+
+    *would_unlock = 1;
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    return 0;
+}
+
 static int secdat_remove_local_explicit_lock(
     const struct secdat_domain_chain *chain,
     const char *current_domain_label,
@@ -4537,6 +4616,67 @@ static int secdat_remove_local_explicit_lock(
         puts(_("local explicit lock removed"));
     }
     return 0;
+}
+
+static int secdat_clear_local_session(
+    const struct secdat_domain_chain *chain,
+    const char *current_domain_label,
+    enum secdat_inherit_expectation expectation
+)
+{
+    size_t blocked_index = SIZE_MAX;
+    size_t matched_index = SIZE_MAX;
+    int would_unlock = 0;
+
+    if (!secdat_current_scope_has_local_session(chain)) {
+        fprintf(stderr, _("no local explicit lock marker or local session for: %s\n"), current_domain_label);
+        return 1;
+    }
+
+    if (expectation != SECDAT_INHERIT_EXPECT_ANY) {
+        if (secdat_effective_unlock_state_without_current_local_session(chain, &would_unlock, &matched_index, &blocked_index) != 0) {
+            return 1;
+        }
+        if ((expectation == SECDAT_INHERIT_EXPECT_UNLOCKED && !would_unlock)
+            || (expectation == SECDAT_INHERIT_EXPECT_LOCKED && would_unlock)) {
+            fprintf(stderr, _("refusing to clear local session for: %s\n"), current_domain_label);
+            fprintf(stderr, _("expected resulting state: %s\n"),
+                expectation == SECDAT_INHERIT_EXPECT_UNLOCKED ? "unlocked" : "locked");
+            fprintf(stderr, _("actual resulting state after clearing local session: %s\n"),
+                would_unlock ? "unlocked" : "locked");
+            return 1;
+        }
+    }
+
+    if (secdat_session_agent_clear_current_scope(chain) != 0) {
+        return 1;
+    }
+
+    if (expectation == SECDAT_INHERIT_EXPECT_UNLOCKED) {
+        puts(_("local session cleared; resulting state: unlocked"));
+    } else if (expectation == SECDAT_INHERIT_EXPECT_LOCKED) {
+        puts(_("local session cleared; resulting state: locked"));
+    } else {
+        puts(_("local session cleared"));
+    }
+    return 0;
+}
+
+static int secdat_clear_local_inherit_override(
+    const struct secdat_domain_chain *chain,
+    const char *current_domain_label,
+    enum secdat_inherit_expectation expectation
+)
+{
+    if (chain->count > 0 && secdat_domain_has_explicit_lock(chain->ids[0])) {
+        return secdat_remove_local_explicit_lock(chain, current_domain_label, expectation);
+    }
+    if (secdat_current_scope_has_local_session(chain)) {
+        return secdat_clear_local_session(chain, current_domain_label, expectation);
+    }
+
+    fprintf(stderr, _("no local explicit lock marker or local session for: %s\n"), current_domain_label);
+    return 1;
 }
 
 static int secdat_domain_chain_from_id(const char *domain_id, struct secdat_domain_chain *chain)
@@ -4641,7 +4781,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     }
     fprintf(stderr, _("resolved domain: %s\n"), current_domain_label);
     if (options.inherit_mode) {
-        parse_status = secdat_remove_local_explicit_lock(&current_chain, current_domain_label, SECDAT_INHERIT_EXPECT_UNLOCKED);
+        parse_status = secdat_clear_local_inherit_override(&current_chain, current_domain_label, SECDAT_INHERIT_EXPECT_UNLOCKED);
         secdat_domain_chain_free(&current_chain);
         return parse_status;
     }
@@ -4897,7 +5037,7 @@ static int secdat_command_inherit(const struct secdat_cli *cli)
         return 1;
     }
 
-    status = secdat_remove_local_explicit_lock(&chain, current_domain_label, SECDAT_INHERIT_EXPECT_ANY);
+    status = secdat_clear_local_inherit_override(&chain, current_domain_label, SECDAT_INHERIT_EXPECT_ANY);
     secdat_domain_chain_free(&chain);
     return status;
 }

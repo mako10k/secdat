@@ -351,8 +351,8 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
     printf(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
     printf(_("  load: import a passphrase-protected bundle into the current domain view\n"));
-    printf(_("  unlock: start or refresh an authenticated secret session for the current domain; --inherit removes only a local explicit-lock marker\n"));
-    printf(_("  inherit: remove the current domain's local explicit-lock marker without checking the resulting state\n"));
+    printf(_("  unlock: start or refresh an authenticated secret session for the current domain; --inherit removes a local explicit-lock marker or clears a local session when no marker is present\n"));
+    printf(_("  inherit: remove the current domain's local explicit-lock marker, or clear a local session when no marker is present, without checking the resulting state\n"));
     printf(_("  passwd: change the wrapped-master-key passphrase\n"));
     printf(_("  lock: clear the current domain's local secret session\n"));
     printf(_("  status: report whether secret material is available from the current domain scope\n"));
@@ -423,11 +423,11 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "unlock") == 0) {
-        printf(_("  start or refresh an authenticated secret session for the current domain; --inherit removes only a local explicit-lock marker\n"));
+        printf(_("  start or refresh an authenticated secret session for the current domain; --inherit removes a local explicit-lock marker or clears a local session when no marker is present\n"));
         return;
     }
     if (target != NULL && strcmp(target, "inherit") == 0) {
-        printf(_("  remove the current domain's local explicit-lock marker without checking the resulting state\n"));
+        printf(_("  remove the current domain's local explicit-lock marker, or clear a local session when no marker is present, without checking the resulting state\n"));
         return;
     }
     if (target != NULL && strcmp(target, "passwd") == 0) {
