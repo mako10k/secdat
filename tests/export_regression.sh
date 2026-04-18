@@ -70,11 +70,17 @@ for args, marker in [
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN]"),
     ([bin_path, "export", "--help"], "emit shell-ready export lines"),
     ([bin_path, "help", "get"], "[--on-demand-unlock] [--unlock-timeout SECONDS] KEYREF [-o|--stdout|--shellescaped]"),
+    ([bin_path, "help", "usecases"], "inject secrets into one subprocess only:"),
 ]:
     rc, stdout, stderr = run(args)
     output = stdout + stderr
     if rc != 0 or marker not in normalize_spaces(output):
         fail(f"export help check failed for {args}: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run([bin_path, "help", "export"])
+output = stdout + stderr
+if rc != 0 or "Use cases:" not in output or "load current shell variables without printing raw secrets:" not in output:
+    fail(f"export use cases help check failed: rc={rc} output={output!r}")
 
 for path in [root_dir, child_dir, invalid_dir]:
     rc, stdout, stderr = run([bin_path, "--dir", str(path), "domain", "create"])

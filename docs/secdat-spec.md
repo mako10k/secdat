@@ -86,6 +86,8 @@ To make the requested behavior implementable, the following are treated as norma
 - `set KEYREF --unsafe ...` explicitly opts into plaintext-at-rest storage that remains readable while locked
 - `exec` injects matched keys into the child process environment
 - `secdat --help SUBCOMMAND` and `secdat SUBCOMMAND --help` are equivalent for command-local usage output
+- `secdat help usecases` prints workflow-oriented examples across multiple commands
+- `secdat help concepts` prints detailed explanations of domains, stores, inheritance, explicit locks, sessions, and `KEYREF` resolution
 - `unlock` caches the current master key in a domain-scoped runtime location
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit override for non-interactive `unlock` and `passwd` flows
 - `status` reports whether a master-key session is active for the current domain scope

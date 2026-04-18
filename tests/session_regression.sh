@@ -358,9 +358,24 @@ for args, marker in [
     ):
         fail(f"help check failed for {args}: rc={rc} output={(stdout + stderr)!r}")
 
+rc, stdout, stderr = run([bin_path, "help", "get"])
+output = stdout + stderr
+if rc != 0 or "Use cases:" not in output or "read one value to stdout:" not in output or "wait for another terminal to unlock before reading:" not in output:
+    fail(f"get use cases help check failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run([bin_path, "help", "usecases"])
+output = stdout + stderr
+if rc != 0 or "Meaning:" not in output or "Use cases:" not in output or "bootstrap a new project domain:" not in output or "block automation until a human unlocks the domain elsewhere:" not in output:
+    fail(f"usecases topic help check failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run([bin_path, "--help", "concepts"])
+output = stdout + stderr
+if rc != 0 or "Meaning:" not in output or "Concepts:" not in output or "explicit lock:" not in output or "KEYREF:" not in output:
+    fail(f"concepts topic help check failed: rc={rc} output={output!r}")
+
 rc, stdout, stderr = run([bin_path, "help"])
 output = stdout + stderr
-if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "Commands:" not in output or "Support:" not in output or "issues: https://github.com/mako10k/secdat/issues" not in output or "help: show global help" not in output or "version: print the secdat version" not in output:
+if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "Commands:" not in output or "Topics:" not in output or "Support:" not in output or "issues: https://github.com/mako10k/secdat/issues" not in output or "help: show global help" not in output or "version: print the secdat version" not in output:
     fail(f"help subcommand check failed: rc={rc} output={output!r}")
 
 for args, expected in [
@@ -394,7 +409,7 @@ if rc != 2 or "missing store name for store create" not in output:
 
 rc, stdout, stderr = run([bin_path, "--help"])
 output = stdout + stderr
-if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "-d, --dir DIR" not in output or "Commands:" not in output or "Groups:" not in output or "Support:" not in output or "repository: https://github.com/mako10k/secdat" not in output or "--help COMMAND" not in output or "COMMAND --help" not in output or "--version" not in output:
+if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "-d, --dir DIR" not in output or "Commands:" not in output or "Topics:" not in output or "Groups:" not in output or "Support:" not in output or "repository: https://github.com/mako10k/secdat" not in output or "help usecases" not in output or "help concepts" not in output or "--help COMMAND" not in output or "COMMAND --help" not in output or "--version" not in output:
     fail(f"global help check failed: rc={rc} output={output!r}")
 
 rc, stdout, stderr = run([bin_path, "--version"])
