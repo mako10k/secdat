@@ -100,6 +100,12 @@ struct secdat_get_options {
     struct secdat_key_access_options access;
 };
 
+struct secdat_wait_unlock_options {
+    int quiet;
+    int timeout_configured;
+    time_t timeout_seconds;
+};
+
 enum secdat_overlay_item_kind {
     SECDAT_OVERLAY_ITEM_ENTRY = 1,
     SECDAT_OVERLAY_ITEM_TOMBSTONE,
@@ -208,6 +214,7 @@ static void secdat_session_record_reset(struct secdat_session_record *record);
 static void secdat_print_unlock_guidance(const char *current_domain_root);
 static void secdat_print_locked_read_guidance(const struct secdat_domain_chain *chain);
 static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_get_options *options);
+static int secdat_parse_wait_unlock_options(const struct secdat_cli *cli, struct secdat_wait_unlock_options *options);
 
 struct secdat_unlock_options {
     int include_descendants;
@@ -843,6 +850,18 @@ static int secdat_parse_unlock_timeout_value(const char *value, struct secdat_ke
     return 0;
 }
 
+static int secdat_parse_timeout_seconds(const char *value, time_t *timeout_seconds)
+{
+    time_t parsed = 0;
+
+    if (value == NULL || value[0] == '\0' || secdat_parse_i64(value, &parsed) != 0 || parsed < 0) {
+        return 1;
+    }
+
+    *timeout_seconds = parsed;
+    return 0;
+}
+
 static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_get_options *options)
 {
     size_t index;
@@ -912,6 +931,49 @@ static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_
     return 0;
 }
 
+static int secdat_parse_wait_unlock_options(const struct secdat_cli *cli, struct secdat_wait_unlock_options *options)
+{
+    size_t index;
+
+    memset(options, 0, sizeof(*options));
+
+    for (index = 0; index < (size_t)cli->argc; index += 1) {
+        const char *argument = cli->argv[index];
+
+        if (strcmp(argument, "--quiet") == 0 || strcmp(argument, "-q") == 0) {
+            options->quiet = 1;
+            continue;
+        }
+        if (strcmp(argument, "--timeout") == 0) {
+            if (index + 1 >= (size_t)cli->argc) {
+                fprintf(stderr, _("missing value for --timeout\n"));
+                return 2;
+            }
+            index += 1;
+            if (secdat_parse_timeout_seconds(cli->argv[index], &options->timeout_seconds) != 0) {
+                fprintf(stderr, _("invalid value for --timeout: %s\n"), cli->argv[index]);
+                return 2;
+            }
+            options->timeout_configured = 1;
+            continue;
+        }
+        if (strncmp(argument, "--timeout=", strlen("--timeout=")) == 0) {
+            if (secdat_parse_timeout_seconds(argument + strlen("--timeout="), &options->timeout_seconds) != 0) {
+                fprintf(stderr, _("invalid value for --timeout: %s\n"), argument + strlen("--timeout="));
+                return 2;
+            }
+            options->timeout_configured = 1;
+            continue;
+        }
+
+        fprintf(stderr, _("invalid arguments for wait-unlock\n"));
+        secdat_cli_print_try_help(cli, "wait-unlock");
+        return 2;
+    }
+
+    return 0;
+}
+
 static void secdat_print_on_demand_unlock_guidance(
     const struct secdat_domain_chain *chain,
     const struct secdat_key_access_options *options
@@ -961,6 +1023,63 @@ static int secdat_wait_for_on_demand_unlock(
 
         if (options->timeout_configured && time(NULL) - started_at >= options->timeout_seconds) {
             fprintf(stderr, _("timed out waiting for another terminal to unlock secrets after %lld seconds\n"), (long long)options->timeout_seconds);
+            return 1;
+        }
+
+        usleep(SECDAT_ON_DEMAND_UNLOCK_WAIT_USEC);
+    }
+}
+
+static void secdat_print_wait_unlock_guidance(
+    const struct secdat_domain_chain *chain,
+    const struct secdat_wait_unlock_options *options
+)
+{
+    char current_domain_label[PATH_MAX];
+
+    if (options != NULL && options->quiet) {
+        return;
+    }
+    if (chain == NULL) {
+        return;
+    }
+    if (secdat_domain_display_label(chain->count == 0 ? "" : chain->ids[0], current_domain_label, sizeof(current_domain_label)) != 0) {
+        return;
+    }
+
+    fprintf(stderr, _("waiting for another terminal to unlock resolved domain: %s\n"), current_domain_label);
+    if (chain->count == 0) {
+        fprintf(stderr, _("unlock from another terminal: secdat unlock\n"));
+    } else {
+        fprintf(stderr, _("unlock from another terminal: secdat --dir %s unlock\n"), current_domain_label);
+    }
+    if (options != NULL && options->timeout_configured) {
+        fprintf(stderr, _("wait-unlock timeout: %lld seconds\n"), (long long)options->timeout_seconds);
+    }
+}
+
+static int secdat_wait_for_unlock(
+    const struct secdat_domain_chain *chain,
+    const struct secdat_wait_unlock_options *options
+)
+{
+    time_t started_at;
+    struct secdat_session_record record = {0};
+
+    secdat_print_wait_unlock_guidance(chain, options);
+    started_at = time(NULL);
+
+    for (;;) {
+        if (secdat_session_agent_status(chain, &record) == 0) {
+            secdat_session_record_reset(&record);
+            return 0;
+        }
+        secdat_session_record_reset(&record);
+
+        if (options != NULL && options->timeout_configured && time(NULL) - started_at >= options->timeout_seconds) {
+            if (!options->quiet) {
+                fprintf(stderr, _("timed out waiting for another terminal to unlock resolved domain after %lld seconds\n"), (long long)options->timeout_seconds);
+            }
             return 1;
         }
 
@@ -4955,6 +5074,43 @@ static int secdat_command_status(const struct secdat_cli *cli)
     return 1;
 }
 
+static int secdat_command_wait_unlock(const struct secdat_cli *cli)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_session_record record = {0};
+    struct secdat_wait_unlock_options options;
+    int parse_status;
+
+    if (cli->store != NULL) {
+        fprintf(stderr, _("invalid arguments for wait-unlock\n"));
+        secdat_cli_print_try_help(cli, "wait-unlock");
+        return 2;
+    }
+
+    parse_status = secdat_parse_wait_unlock_options(cli, &options);
+    if (parse_status != 0) {
+        return parse_status;
+    }
+
+    if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
+        return 0;
+    }
+
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
+        return 1;
+    }
+
+    if (secdat_session_agent_status(&chain, &record) == 0) {
+        secdat_session_record_reset(&record);
+        secdat_domain_chain_free(&chain);
+        return 0;
+    }
+
+    parse_status = secdat_wait_for_unlock(&chain, &options);
+    secdat_domain_chain_free(&chain);
+    return parse_status;
+}
+
 static int secdat_command_unlock(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain current_chain = {0};
@@ -7707,6 +7863,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_lock(cli);
     case SECDAT_COMMAND_STATUS:
         return secdat_command_status(cli);
+    case SECDAT_COMMAND_WAIT_UNLOCK:
+        return secdat_command_wait_unlock(cli);
     case SECDAT_COMMAND_STORE_CREATE:
         return secdat_store_command_create(cli);
     case SECDAT_COMMAND_STORE_DELETE:

@@ -172,6 +172,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     if (strcmp(name, "status") == 0) {
         return SECDAT_COMMAND_STATUS;
     }
+    if (strcmp(name, "wait-unlock") == 0) {
+        return SECDAT_COMMAND_WAIT_UNLOCK;
+    }
     if (strcmp(name, "store") == 0) {
         return SECDAT_COMMAND_STORE_LS;
     }
@@ -240,6 +243,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_STATUS:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "status", "[-q|--quiet]");
+        break;
+    case SECDAT_COMMAND_WAIT_UNLOCK:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "wait-unlock", "[--timeout SECONDS] [-q|--quiet]");
         break;
     case SECDAT_COMMAND_STORE_CREATE:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store create", "STORE");
@@ -356,6 +362,7 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("  passwd: change the wrapped-master-key passphrase\n"));
     printf(_("  lock: clear the current domain's local secret session\n"));
     printf(_("  status: report whether secret material is available from the current domain scope\n"));
+    printf(_("  wait-unlock: wait until the current domain scope becomes unlocked, or fail on timeout\n"));
     printf(_("  version: print the secdat version\n"));
 }
 
@@ -440,6 +447,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "status") == 0) {
         printf(_("  report whether secret material is available from the current domain scope\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "wait-unlock") == 0) {
+        printf(_("  wait until the current domain scope becomes unlocked, or fail on timeout\n"));
         return;
     }
     if (target != NULL && strcmp(target, "version") == 0) {
@@ -560,6 +571,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         index += 1;
     } else if (strcmp(argv[index], "status") == 0) {
         cli->command = SECDAT_COMMAND_STATUS;
+        index += 1;
+    } else if (strcmp(argv[index], "wait-unlock") == 0) {
+        cli->command = SECDAT_COMMAND_WAIT_UNLOCK;
         index += 1;
     } else if (strcmp(argv[index], "store") == 0) {
         index += 1;
@@ -767,6 +781,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "lock";
     case SECDAT_COMMAND_STATUS:
         return "status";
+    case SECDAT_COMMAND_WAIT_UNLOCK:
+        return "wait-unlock";
     case SECDAT_COMMAND_STORE_CREATE:
         return "store create";
     case SECDAT_COMMAND_STORE_DELETE:

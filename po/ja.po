@@ -1800,6 +1800,51 @@ msgstr "export の引数が不正です\n"
 msgid "key is not a valid shell identifier: %s\n"
 msgstr "key は有効な shell 識別子ではありません: %s\n"
 
+#: src/cli.c:0
+#, c-format
+msgid "  %s [-d DIR|--dir DIR] wait-unlock [--timeout SECONDS] [-q|--quiet]\n"
+msgstr "  %s [-d DIR|--dir DIR] wait-unlock [--timeout SECONDS] [-q|--quiet]\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  wait-unlock: wait until the current domain scope becomes unlocked, or fail on timeout\n"
+msgstr "  wait-unlock: 現在の domain scope がアンロックされるまで待機し、タイムアウト時は失敗します\n"
+
+#: src/cli.c:0
+#, c-format
+msgid "  wait until the current domain scope becomes unlocked, or fail on timeout\n"
+msgstr "  現在の domain scope がアンロックされるまで待機し、タイムアウト時は失敗します\n"
+
+#: src/store.c:0
+#, c-format
+msgid "missing value for --timeout\n"
+msgstr "--timeout に値が必要です\n"
+
+#: src/store.c:0
+#, c-format
+msgid "invalid value for --timeout: %s\n"
+msgstr "--timeout の値が不正です: %s\n"
+
+#: src/store.c:0
+#, c-format
+msgid "invalid arguments for wait-unlock\n"
+msgstr "wait-unlock の引数が不正です\n"
+
+#: src/store.c:0
+#, c-format
+msgid "waiting for another terminal to unlock resolved domain: %s\n"
+msgstr "別端末で解決済み domain が unlock されるのを待機しています: %s\n"
+
+#: src/store.c:0
+#, c-format
+msgid "wait-unlock timeout: %lld seconds\n"
+msgstr "wait-unlock タイムアウト: %lld 秒\n"
+
+#: src/store.c:0
+#, c-format
+msgid "timed out waiting for another terminal to unlock resolved domain after %lld seconds\n"
+msgstr "別端末での解決済み domain の unlock 待機が %lld 秒でタイムアウトしました\n"
+
 #: src/store.c:4346
 #, fuzzy, c-format
 #| msgid "failed to connect to session agent\n"

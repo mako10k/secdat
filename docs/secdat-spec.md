@@ -51,6 +51,7 @@ secdat [--dir DIR] inherit
 secdat passwd
 secdat [--dir DIR] lock [--inherit] [--save]
 secdat [--dir DIR] status [--quiet]
+secdat [--dir DIR] wait-unlock [--timeout SECONDS] [--quiet]
 
 secdat [--dir DIR] store create STORE
 secdat [--dir DIR] store delete STORE
@@ -89,6 +90,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit override for non-interactive `unlock` and `passwd` flows
 - `status` reports whether a master-key session is active for the current domain scope
 - `lock` clears the current domain's local master-key session
+- `wait-unlock` waits until the current domain scope becomes unlocked without reading any secret value
 - values are modeled as arbitrary byte strings internally
 - domains are resolved from a directory context
 - `--dir` is a global option that overrides the directory context used for domain resolution
@@ -252,6 +254,8 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] status --quiet` suppresses output and reports state only through the exit code
 - `status` without `--quiet` reports the active source and whether a wrapped persistent master key is present
 - `secdat [--dir DIR] unlock [--inherit] [--volatile|--readonly] [--descendants] [--yes]` creates or refreshes a domain-scoped cache of the current master key
+- `secdat [--dir DIR] wait-unlock [--timeout SECONDS] [--quiet]` waits for the current effective domain scope to become unlocked and is intended for scripts that handle external notifications separately
+- `wait-unlock` exits successfully immediately when the scope is already unlocked, returns non-zero on timeout, and prints unlock guidance to standard error unless `--quiet` is used
 - if no wrapped persistent master key exists, `unlock` prompts twice on a terminal, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
 - `unlock --volatile` redirects subsequent secret writes, deletes, and tombstone changes to a session-agent memory overlay that is cleared by `lock`
 - `lock --save` persists the local volatile overlay into the real store files before clearing that local session; it must fail for non-volatile sessions

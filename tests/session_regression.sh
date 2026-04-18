@@ -329,6 +329,7 @@ for args, marker in [
     ([bin_path, "help", "exists"], "exists KEYREF"),
     ([bin_path, "help", "ls"], "[--safe|--unsafe]"),
     ([bin_path, "help", "get"], "[--on-demand-unlock] [--unlock-timeout SECONDS] KEYREF"),
+    ([bin_path, "help", "wait-unlock"], "wait-unlock [--timeout SECONDS] [-q|--quiet]"),
     ([bin_path, "help", "exec"], "--pattern-exclude GLOBPATTERN"),
     ([bin_path, "help", "rm"], "rm [--ignore-missing] KEYREF"),
     ([bin_path, "help", "set"], "set KEYREF [--unsafe]"),
@@ -369,6 +370,7 @@ for args, expected in [
     ([bin_path, "store", "create"], f"Try: {bin_path} help store"),
     ([bin_path, "get", "KEY", "--bad"], f"Try: {bin_path} help get"),
     ([bin_path, "get", "--unlock-timeout", "1", "KEY"], "--unlock-timeout requires --on-demand-unlock or SECDAT_GET_ON_DEMAND_UNLOCK"),
+    ([bin_path, "wait-unlock", "--bad"], f"Try: {bin_path} help wait-unlock"),
     ([bin_path, "set", "KEY", "--bad"], f"Try: {bin_path} help set"),
     ([bin_path, "cp", "ONLY_ONE"], f"Try: {bin_path} help cp"),
     ([bin_path, "mv", "ONLY_ONE"], f"Try: {bin_path} help mv"),
@@ -484,6 +486,44 @@ if rc == 0 or "no active secdat session" not in stderr:
 assert_contains(stderr, f"resolved domain: {child_domain}\n", "locked read resolved domain guidance")
 assert_contains(stderr, f"inspect current domain: secdat --dir {child_domain} domain status\n", "locked read status guidance")
 assert_contains(stderr, f"unlock current domain: secdat --dir {child_domain} unlock\n", "locked read unlock guidance")
+
+pending = run_background(scoped(["wait-unlock", "--timeout", "5"], child_domain))
+time.sleep(0.5)
+if pending.poll() is not None:
+    fail("wait-unlock exited before unlock arrived")
+
+rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+if rc != 0 or "session unlocked\n" not in stdout:
+    fail(f"child unlock for wait-unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+stdout, stderr = pending.communicate(timeout=5)
+if pending.returncode != 0 or stdout != "" or f"waiting for another terminal to unlock resolved domain: {child_domain}\n" not in stderr or f"unlock from another terminal: secdat --dir {child_domain} unlock\n" not in stderr or "wait-unlock timeout: 5 seconds\n" not in stderr:
+    fail(f"wait-unlock failed: rc={pending.returncode} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"], child_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"child relock after wait-unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["wait-unlock", "--timeout", "1"], child_domain))
+if rc == 0 or stdout != "" or f"waiting for another terminal to unlock resolved domain: {child_domain}\n" not in stderr or "timed out waiting for another terminal to unlock resolved domain after 1 seconds\n" not in stderr:
+    fail(f"wait-unlock timeout failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+pending = run_background(scoped(["wait-unlock", "--timeout", "5", "--quiet"], child_domain))
+time.sleep(0.5)
+if pending.poll() is not None:
+    fail("quiet wait-unlock exited before unlock arrived")
+
+rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+if rc != 0 or "session unlocked\n" not in stdout:
+    fail(f"child unlock for quiet wait-unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+stdout, stderr = pending.communicate(timeout=5)
+if pending.returncode != 0 or stdout != "" or stderr != "":
+    fail(f"quiet wait-unlock failed: rc={pending.returncode} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"], child_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"child relock after quiet wait-unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 pending = run_background(scoped(["get", "--on-demand-unlock", "--unlock-timeout", "5", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain))
 time.sleep(0.5)

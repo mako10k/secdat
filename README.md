@@ -63,6 +63,8 @@ If a secret read fails while `secdat` is still locked, the error now reports the
 
 For `get` only, `--on-demand-unlock` can wait for another terminal to unlock the resolved domain instead of failing immediately. The wait notice is written to standard error and includes the matching `unlock` command to run elsewhere. Use `--unlock-timeout SECONDS` to fail after a bounded wait, or set `SECDAT_GET_ON_DEMAND_UNLOCK=1` to make this the default behavior for `get`. `SECDAT_GET_UNLOCK_TIMEOUT_SECONDS` sets the default timeout for that wait path.
 
+For script orchestration that should block before a later secret read or secret-injecting command, `wait-unlock` provides the same wait behavior without reading any secret value itself. `secdat --dir ~/example/project wait-unlock --timeout 900` waits until the resolved domain becomes unlocked, returns success immediately when it is already unlocked, and otherwise fails after the timeout.
+
 If you want that behavior by default in interactive shells without changing the product default for scripts and non-interactive callers, prefer shell startup configuration guarded by an interactive-shell check:
 
 ```sh
@@ -233,6 +235,7 @@ You can keep the active master key in a domain-scoped session agent and avoid ex
 ```sh
 ./src/secdat status
 ./src/secdat status --quiet
+./src/secdat --dir ~/example/project wait-unlock --timeout 900
 ./src/secdat --dir ~/example/project unlock
 ./src/secdat --dir ~/example/project unlock --inherit
 ./src/secdat --dir ~/example/project inherit
