@@ -3,6 +3,7 @@
 #include "i18n.h"
 
 #include <getopt.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -12,6 +13,8 @@ enum {
 
 #define SECDAT_CLI_USAGE_OPTIONS_WIDTH (sizeof("[-d DIR|--dir DIR] [-s STORE|--store STORE]") - 1)
 #define SECDAT_CLI_USAGE_COMMAND_WIDTH (sizeof("domain status") - 1)
+#define SECDAT_CLI_DETAIL_COLUMN 24
+#define SECDAT_CLI_WRAP_WIDTH 96
 
 static void secdat_cli_print_usage_columns(
     const char *program_name,
@@ -43,6 +46,127 @@ static void secdat_cli_print_usage_columns(
         fputs(arguments, stdout);
     }
     fputc('\n', stdout);
+}
+
+static void secdat_cli_print_spaces(size_t count)
+{
+    while (count > 0) {
+        fputc(' ', stdout);
+        count -= 1;
+    }
+}
+
+static void secdat_cli_print_wrapped_text(const char *text, size_t indent)
+{
+    const char *cursor = text;
+    size_t available_width = SECDAT_CLI_WRAP_WIDTH > indent ? SECDAT_CLI_WRAP_WIDTH - indent : 1;
+
+    while (*cursor != '\0') {
+        const char *line_start;
+        const char *line_end;
+        const char *scan;
+        const char *last_space = NULL;
+        size_t width = 0;
+
+        while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+            cursor += 1;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+
+        line_start = cursor;
+        line_end = cursor;
+        scan = cursor;
+        while (*scan != '\0' && width < available_width) {
+            if (isspace((unsigned char)*scan)) {
+                last_space = scan;
+            }
+            line_end = scan + 1;
+            scan += 1;
+            width += 1;
+        }
+
+        if (*scan != '\0' && !isspace((unsigned char)*scan) && last_space != NULL) {
+            line_end = last_space;
+            scan = last_space;
+        }
+
+        fwrite(line_start, 1, (size_t)(line_end - line_start), stdout);
+        while (*scan != '\0' && isspace((unsigned char)*scan)) {
+            scan += 1;
+        }
+        if (*scan == '\0') {
+            break;
+        }
+
+        fputc('\n', stdout);
+        secdat_cli_print_spaces(indent);
+        cursor = scan;
+    }
+    fputc('\n', stdout);
+}
+
+static void secdat_cli_print_detail_line(const char *line)
+{
+    const char *separator = NULL;
+    size_t indent = 0;
+    size_t line_length = strlen(line);
+    size_t label_length;
+    const char *description;
+    const char *cursor;
+
+    while (indent < line_length && line[indent] == ' ') {
+        indent += 1;
+    }
+    while (line_length > 0 && (line[line_length - 1] == '\n' || line[line_length - 1] == '\r')) {
+        line_length -= 1;
+    }
+    if (indent >= line_length) {
+        fputc('\n', stdout);
+        return;
+    }
+
+    cursor = strstr(line + indent, ": ");
+    if (cursor != NULL && (size_t)(cursor - line) < line_length) {
+        separator = cursor;
+        label_length = (size_t)(separator - (line + indent)) + 1;
+        description = separator + 2;
+    } else {
+        size_t index = indent;
+        while (index + 1 < line_length) {
+            if (line[index] == ' ' && line[index + 1] == ' ') {
+                size_t gap_start = index;
+                size_t gap_end = index + 2;
+                while (gap_end < line_length && line[gap_end] == ' ') {
+                    gap_end += 1;
+                }
+                if (gap_end < line_length) {
+                    separator = line + gap_start;
+                    label_length = gap_start - indent;
+                    description = line + gap_end;
+                    break;
+                }
+            }
+            index += 1;
+        }
+    }
+
+    if (separator == NULL) {
+        fwrite(line, 1, line_length, stdout);
+        fputc('\n', stdout);
+        return;
+    }
+
+    secdat_cli_print_spaces(indent);
+    fwrite(line + indent, 1, label_length, stdout);
+    if (indent + label_length + 1 >= SECDAT_CLI_DETAIL_COLUMN) {
+        fputc('\n', stdout);
+        secdat_cli_print_spaces(SECDAT_CLI_DETAIL_COLUMN);
+    } else {
+        secdat_cli_print_spaces(SECDAT_CLI_DETAIL_COLUMN - indent - label_length);
+    }
+    secdat_cli_print_wrapped_text(description, SECDAT_CLI_DETAIL_COLUMN);
 }
 
 static int parse_global_options(int argc, char **argv, int *index, struct secdat_cli *cli)
@@ -281,11 +405,11 @@ static void secdat_cli_print_common_usage(const char *program_name)
 static void secdat_cli_print_common_options(void)
 {
     printf(_("\nOptions:\n"));
-    printf(_("  -d, --dir DIR      set the base directory used for domain resolution\n"));
-    printf(_("      --domain DIR   require one exact registered domain root instead of discovery\n"));
-    printf(_("  -s, --store STORE  select the store namespace inside the resolved domain\n"));
-    printf(_("  -h, --help         show global help, or combine with COMMAND or TOPIC for detailed help\n"));
-    printf(_("  -V, --version      print the secdat version\n"));
+    secdat_cli_print_detail_line(_("  -d, --dir DIR      set the base directory used for domain resolution\n"));
+    secdat_cli_print_detail_line(_("      --domain DIR   require one exact registered domain root instead of discovery\n"));
+    secdat_cli_print_detail_line(_("  -s, --store STORE  select the store namespace inside the resolved domain\n"));
+    secdat_cli_print_detail_line(_("  -h, --help         show global help, or combine with COMMAND or TOPIC for detailed help\n"));
+    secdat_cli_print_detail_line(_("  -V, --version      print the secdat version\n"));
 }
 
 static void secdat_cli_print_meta_usage_line(const char *program_name, const char *target)
@@ -328,166 +452,171 @@ static void secdat_cli_print_help_routes(const char *program_name, const char *t
 static void secdat_cli_print_shell_routes(const char *program_name)
 {
     printf(_("\nShell:\n"));
-    printf(_("  bash load current shell vars: source <(%s export)\n"), program_name);
-    printf(_("  bash alternative: eval \"$(%s export)\"\n"), program_name);
-    printf(_("  bash completion script: completions/secdat.bash\n"));
-    printf(_("  man page source: docs/secdat.1\n"));
+    {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  bash load current shell vars: source <(%s export)\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  bash alternative: eval \"$(%s export)\"\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+    }
+    secdat_cli_print_detail_line(_("  bash completion script: completions/secdat.bash\n"));
+    secdat_cli_print_detail_line(_("  man page source: docs/secdat.1\n"));
 }
 
 static void secdat_cli_print_support_routes(void)
 {
     printf(_("\nSupport:\n"));
-    printf(_("  issues: https://github.com/mako10k/secdat/issues\n"));
-    printf(_("  repository: https://github.com/mako10k/secdat\n"));
-    printf(_("  author: Makoto Katsumata <mako10k@mk10.org>\n"));
+    secdat_cli_print_detail_line(_("  issues: https://github.com/mako10k/secdat/issues\n"));
+    secdat_cli_print_detail_line(_("  repository: https://github.com/mako10k/secdat\n"));
+    secdat_cli_print_detail_line(_("  author: Makoto Katsumata <mako10k@mk10.org>\n"));
 }
 
 static void secdat_cli_print_group_meanings(void)
 {
     printf(_("\nGroups:\n"));
-    printf(_("  store: manage store namespaces inside the resolved current domain\n"));
-    printf(_("  domain: manage domain roots and domain discovery scope\n"));
+    secdat_cli_print_detail_line(_("  store: manage store namespaces inside the resolved current domain\n"));
+    secdat_cli_print_detail_line(_("  domain: manage domain roots and domain discovery scope\n"));
 }
 
 static void secdat_cli_print_command_meanings(void)
 {
     printf(_("\nCommands:\n"));
-    printf(_("  help: show global help or detailed help for one command\n"));
-    printf(_("  ls: list effective keys visible from the current domain view, optionally filtered by safe or unsafe storage\n"));
-    printf(_("  list: inspect current-domain masked, overridden, orphaned, safe, or unsafe local state\n"));
-    printf(_("  mask: create a local tombstone to hide one inherited key\n"));
-    printf(_("  unmask: remove one local tombstone from the current domain\n"));
-    printf(_("  exists: check whether one resolved key is visible from the current domain view\n"));
-    printf(_("  get: decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock\n"));
-    printf(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
-    printf(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success\n"));
-    printf(_("  mv: rename or relocate one key between resolved locations\n"));
-    printf(_("  cp: copy one key into another resolved location\n"));
-    printf(_("  exec: inject resolved keys into a child process environment\n"));
-    printf(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
-    printf(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
-    printf(_("  load: import a passphrase-protected bundle into the current domain view\n"));
-    printf(_("  unlock: start or refresh an authenticated secret session for the current domain; --inherit removes a local explicit-lock marker or clears a local session when no marker is present\n"));
-    printf(_("  inherit: remove the current domain's local explicit-lock marker, or clear a local session when no marker is present, without checking the resulting state\n"));
-    printf(_("  passwd: change the wrapped-master-key passphrase\n"));
-    printf(_("  lock: clear the current domain's local secret session\n"));
-    printf(_("  status: report whether secret material is available from the current domain scope\n"));
-    printf(_("  wait-unlock: wait until the current domain scope becomes unlocked, or fail on timeout\n"));
-    printf(_("  version: print the secdat version\n"));
+    secdat_cli_print_detail_line(_("  help: show global help or detailed help for one command\n"));
+    secdat_cli_print_detail_line(_("  ls: list effective keys visible from the current domain view, optionally filtered by safe or unsafe storage\n"));
+    secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, or unsafe local state\n"));
+    secdat_cli_print_detail_line(_("  mask: create a local tombstone to hide one inherited key\n"));
+    secdat_cli_print_detail_line(_("  unmask: remove one local tombstone from the current domain\n"));
+    secdat_cli_print_detail_line(_("  exists: check whether one resolved key is visible from the current domain view\n"));
+    secdat_cli_print_detail_line(_("  get: decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock\n"));
+    secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
+    secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success\n"));
+    secdat_cli_print_detail_line(_("  mv: rename or relocate one key between resolved locations\n"));
+    secdat_cli_print_detail_line(_("  cp: copy one key into another resolved location\n"));
+    secdat_cli_print_detail_line(_("  exec: inject resolved keys into a child process environment\n"));
+    secdat_cli_print_detail_line(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
+    secdat_cli_print_detail_line(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
+    secdat_cli_print_detail_line(_("  load: import a passphrase-protected bundle into the current domain view\n"));
+    secdat_cli_print_detail_line(_("  unlock: start or refresh an authenticated secret session for the current domain; --inherit removes a local explicit-lock marker or clears a local session when no marker is present\n"));
+    secdat_cli_print_detail_line(_("  inherit: remove the current domain's local explicit-lock marker, or clear a local session when no marker is present, without checking the resulting state\n"));
+    secdat_cli_print_detail_line(_("  passwd: change the wrapped-master-key passphrase\n"));
+    secdat_cli_print_detail_line(_("  lock: clear the current domain's local secret session\n"));
+    secdat_cli_print_detail_line(_("  status: report whether secret material is available from the current domain scope\n"));
+    secdat_cli_print_detail_line(_("  wait-unlock: wait until the current domain scope becomes unlocked, or fail on timeout\n"));
+    secdat_cli_print_detail_line(_("  version: print the secdat version\n"));
 }
 
 static void secdat_cli_print_topic_meanings(void)
 {
     printf(_("\nTopics:\n"));
-    printf(_("  usecases: show example workflows and task-oriented command combinations\n"));
-    printf(_("  concepts: explain domains, stores, inheritance, sessions, and KEYREF resolution\n"));
+    secdat_cli_print_detail_line(_("  usecases: show example workflows and task-oriented command combinations\n"));
+    secdat_cli_print_detail_line(_("  concepts: explain domains, stores, inheritance, sessions, and KEYREF resolution\n"));
 }
 
 static void secdat_cli_print_target_meaning(const char *target)
 {
     printf(_("\nMeaning:\n"));
     if (target != NULL && strcmp(target, "help") == 0) {
-        printf(_("  show global help or detailed help for one command\n"));
+        secdat_cli_print_detail_line(_("  help: show global help or detailed help for one command\n"));
         return;
     }
     if (target != NULL && strcmp(target, "ls") == 0) {
-        printf(_("  list effective keys visible from the current domain view, optionally filtered by safe or unsafe storage\n"));
+        secdat_cli_print_detail_line(_("  ls: list effective keys visible from the current domain view, optionally filtered by safe or unsafe storage\n"));
         return;
     }
     if (target != NULL && strcmp(target, "list") == 0) {
-        printf(_("  inspect current-domain masked, overridden, orphaned, safe, or unsafe local state\n"));
+        secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, or unsafe local state\n"));
         return;
     }
     if (target != NULL && strcmp(target, "mask") == 0) {
-        printf(_("  create a local tombstone to hide one inherited key\n"));
+        secdat_cli_print_detail_line(_("  mask: create a local tombstone to hide one inherited key\n"));
         return;
     }
     if (target != NULL && strcmp(target, "unmask") == 0) {
-        printf(_("  remove one local tombstone from the current domain\n"));
+        secdat_cli_print_detail_line(_("  unmask: remove one local tombstone from the current domain\n"));
         return;
     }
     if (target != NULL && strcmp(target, "exists") == 0) {
-        printf(_("  check whether one resolved key is visible from the current domain view\n"));
+        secdat_cli_print_detail_line(_("  exists: check whether one resolved key is visible from the current domain view\n"));
         return;
     }
     if (target != NULL && strcmp(target, "get") == 0) {
-        printf(_("  decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock\n"));
+        secdat_cli_print_detail_line(_("  get: decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock\n"));
         return;
     }
     if (target != NULL && strcmp(target, "set") == 0) {
-        printf(_("  store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
+        secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
         return;
     }
     if (target != NULL && strcmp(target, "rm") == 0) {
-        printf(_("  remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success\n"));
+        secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success\n"));
         return;
     }
     if (target != NULL && strcmp(target, "mv") == 0) {
-        printf(_("  rename or relocate one key between resolved locations\n"));
+        secdat_cli_print_detail_line(_("  mv: rename or relocate one key between resolved locations\n"));
         return;
     }
     if (target != NULL && strcmp(target, "cp") == 0) {
-        printf(_("  copy one key into another resolved location\n"));
+        secdat_cli_print_detail_line(_("  cp: copy one key into another resolved location\n"));
         return;
     }
     if (target != NULL && strcmp(target, "exec") == 0) {
-        printf(_("  inject resolved keys into a child process environment\n"));
+        secdat_cli_print_detail_line(_("  exec: inject resolved keys into a child process environment\n"));
         return;
     }
     if (target != NULL && strcmp(target, "export") == 0) {
-        printf(_("  emit shell-ready export lines that defer secret reads to secdat get\n"));
+        secdat_cli_print_detail_line(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
         return;
     }
     if (target != NULL && strcmp(target, "save") == 0) {
-        printf(_("  export the current visible secrets into a passphrase-protected bundle\n"));
+        secdat_cli_print_detail_line(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
         return;
     }
     if (target != NULL && strcmp(target, "load") == 0) {
-        printf(_("  import a passphrase-protected bundle into the current domain view\n"));
+        secdat_cli_print_detail_line(_("  load: import a passphrase-protected bundle into the current domain view\n"));
         return;
     }
     if (target != NULL && strcmp(target, "unlock") == 0) {
-        printf(_("  start or refresh an authenticated secret session for the current domain; --inherit removes a local explicit-lock marker or clears a local session when no marker is present\n"));
+        secdat_cli_print_detail_line(_("  unlock: start or refresh an authenticated secret session for the current domain; --inherit removes a local explicit-lock marker or clears a local session when no marker is present\n"));
         return;
     }
     if (target != NULL && strcmp(target, "inherit") == 0) {
-        printf(_("  remove the current domain's local explicit-lock marker, or clear a local session when no marker is present, without checking the resulting state\n"));
+        secdat_cli_print_detail_line(_("  inherit: remove the current domain's local explicit-lock marker, or clear a local session when no marker is present, without checking the resulting state\n"));
         return;
     }
     if (target != NULL && strcmp(target, "passwd") == 0) {
-        printf(_("  change the wrapped-master-key passphrase\n"));
+        secdat_cli_print_detail_line(_("  passwd: change the wrapped-master-key passphrase\n"));
         return;
     }
     if (target != NULL && strcmp(target, "lock") == 0) {
-        printf(_("  clear the current domain's local secret session\n"));
+        secdat_cli_print_detail_line(_("  lock: clear the current domain's local secret session\n"));
         return;
     }
     if (target != NULL && strcmp(target, "status") == 0) {
-        printf(_("  report whether secret material is available from the current domain scope\n"));
+        secdat_cli_print_detail_line(_("  status: report whether secret material is available from the current domain scope\n"));
         return;
     }
     if (target != NULL && strcmp(target, "wait-unlock") == 0) {
-        printf(_("  wait until the current domain scope becomes unlocked, or fail on timeout\n"));
+        secdat_cli_print_detail_line(_("  wait-unlock: wait until the current domain scope becomes unlocked, or fail on timeout\n"));
         return;
     }
     if (target != NULL && strcmp(target, "version") == 0) {
-        printf(_("  print the secdat version\n"));
+        secdat_cli_print_detail_line(_("  version: print the secdat version\n"));
         return;
     }
     if (target != NULL && strcmp(target, "usecases") == 0) {
-        printf(_("  show example workflows and task-oriented command combinations\n"));
+        secdat_cli_print_detail_line(_("  usecases: show example workflows and task-oriented command combinations\n"));
         return;
     }
     if (target != NULL && strcmp(target, "concepts") == 0) {
-        printf(_("  explain domains, stores, inheritance, sessions, and KEYREF resolution\n"));
+        secdat_cli_print_detail_line(_("  concepts: explain domains, stores, inheritance, sessions, and KEYREF resolution\n"));
         return;
     }
     if (target != NULL && strcmp(target, "store") == 0) {
-        printf(_("  manage store namespaces inside the resolved current domain\n"));
+        secdat_cli_print_detail_line(_("  store: manage store namespaces inside the resolved current domain\n"));
         return;
     }
     if (target != NULL && strcmp(target, "domain") == 0) {
-        printf(_("  manage domain roots and domain discovery scope\n"));
+        secdat_cli_print_detail_line(_("  domain: manage domain roots and domain discovery scope\n"));
         return;
     }
 }
@@ -500,88 +629,136 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
 
     printf(_("\nUse cases:\n"));
     if (strcmp(target, "get") == 0) {
-        printf(_("  read one value to stdout: %s get API_TOKEN --stdout\n"), program_name);
-        printf(_("  wait for another terminal to unlock before reading: %s get --on-demand-unlock --unlock-timeout 30 API_TOKEN --stdout\n"), program_name);
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  read one value to stdout: %s get API_TOKEN --stdout\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  wait for another terminal to unlock before reading: %s get --on-demand-unlock --unlock-timeout 30 API_TOKEN --stdout\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
         return;
     }
     if (strcmp(target, "set") == 0) {
-        printf(_("  write one value from an argument: %s set API_TOKEN --value new-token\n"), program_name);
-        printf(_("  read a value from standard input without echoing it in shell history: printf 'token' | %s set API_TOKEN --stdin\n"), program_name);
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  write one value from an argument: %s set API_TOKEN --value new-token\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  read a value from standard input without echoing it in shell history: printf 'token' | %s set API_TOKEN --stdin\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
         return;
     }
     if (strcmp(target, "export") == 0) {
-        printf(_("  load current shell variables without printing raw secrets: source <(%s export)\n"), program_name);
-        printf(_("  export one namespace before running another tool: eval \"$(%s --store app export --pattern 'APP_*')\"\n"), program_name);
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  load current shell variables without printing raw secrets: source <(%s export)\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  export one namespace before running another tool: eval \"$(%s --store app export --pattern 'APP_*')\"\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
         return;
     }
     if (strcmp(target, "exec") == 0) {
-        printf(_("  run one command with matching secrets injected: %s exec --pattern 'APP_*' env\n"), program_name);
-        printf(_("  exclude one inherited key while running a child process: %s exec --pattern 'APP_*' --pattern-exclude 'APP_DEBUG_*' CMD\n"), program_name);
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  run one command with matching secrets injected: %s exec --pattern 'APP_*' env\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  exclude one inherited key while running a child process: %s exec --pattern 'APP_*' --pattern-exclude 'APP_DEBUG_*' CMD\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
         return;
     }
     if (strcmp(target, "unlock") == 0) {
-        printf(_("  start a session for the current project directory: %s unlock\n"), program_name);
-        printf(_("  unlock one specific domain from elsewhere: %s --dir ~/example/project unlock\n"), program_name);
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  start a session for the current project directory: %s unlock\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  unlock one specific domain from elsewhere: %s --dir ~/example/project unlock\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
         return;
     }
     if (strcmp(target, "wait-unlock") == 0) {
-        printf(_("  block a script until another terminal unlocks the same domain: %s --dir ~/example/project wait-unlock --timeout 900\n"), program_name);
-        printf(_("  poll quietly before a later secret read: %s wait-unlock --timeout 30 --quiet\n"), program_name);
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  block a script until another terminal unlocks the same domain: %s --dir ~/example/project wait-unlock --timeout 900\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  poll quietly before a later secret read: %s wait-unlock --timeout 30 --quiet\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
         return;
     }
     if (strcmp(target, "status") == 0) {
-        printf(_("  check whether the current domain can read secrets now: %s status\n"), program_name);
-        printf(_("  use exit status only in scripts: %s status --quiet\n"), program_name);
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  check whether the current domain can read secrets now: %s status\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  use exit status only in scripts: %s status --quiet\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
         return;
     }
     if (strcmp(target, "list") == 0) {
-        printf(_("  inspect local tombstones and overrides before cleanup: %s list --masked\n"), program_name);
-        printf(_("  inspect only plaintext-at-rest entries in the current domain: %s list --unsafe\n"), program_name);
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  inspect local tombstones and overrides before cleanup: %s list --masked\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  inspect only plaintext-at-rest entries in the current domain: %s list --unsafe\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
         return;
     }
     if (strcmp(target, "store") == 0) {
-        printf(_("  create one namespace for app-specific keys: %s store create app\n"), program_name);
-        printf(_("  inspect available namespaces before selecting one with --store: %s store ls\n"), program_name);
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  create one namespace for app-specific keys: %s store create app\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  inspect available namespaces before selecting one with --store: %s store ls\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
         return;
     }
     if (strcmp(target, "domain") == 0) {
-        printf(_("  register the current directory as a domain root: %s domain create\n"), program_name);
-        printf(_("  inspect inherited and blocked descendants: %s domain ls -l --descendants\n"), program_name);
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  register the current directory as a domain root: %s domain create\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  inspect inherited and blocked descendants: %s domain ls -l --descendants\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
         return;
     }
 
-    printf(_("  see %s help usecases for workflow-oriented examples across multiple commands\n"), program_name);
+    {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  see %s help usecases for workflow-oriented examples across multiple commands\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+    }
 }
 
 static void secdat_cli_print_use_cases_overview(const char *program_name)
 {
     printf(_("\nUse cases:\n"));
-    printf(_("  bootstrap a new project domain: %s --dir ~/example/project unlock\n"), program_name);
-    printf(_("  read one secret directly: %s --dir ~/example/project get API_TOKEN --stdout\n"), program_name);
-    printf(_("  load shell variables without exposing raw values in exported text: source <(%s --dir ~/example/project export)\n"), program_name);
-    printf(_("  inject secrets into one subprocess only: %s --dir ~/example/project exec --pattern 'APP_*' CMD\n"), program_name);
-    printf(_("  block automation until a human unlocks the domain elsewhere: %s --dir ~/example/project wait-unlock --timeout 900\n"), program_name);
-    printf(_("  inspect inheritance and explicit locks under one branch: %s --dir ~/example/project domain ls -l --descendants\n"), program_name);
+    {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  bootstrap a new project domain: %s --dir ~/example/project unlock\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  read one secret directly: %s --dir ~/example/project get API_TOKEN --stdout\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  load shell variables without exposing raw values in exported text: source <(%s --dir ~/example/project export)\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  inject secrets into one subprocess only: %s --dir ~/example/project exec --pattern 'APP_*' CMD\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  block automation until a human unlocks the domain elsewhere: %s --dir ~/example/project wait-unlock --timeout 900\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  inspect inheritance and explicit locks under one branch: %s --dir ~/example/project domain ls -l --descendants\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+    }
 }
 
 static void secdat_cli_print_concepts_detail(const char *program_name)
 {
     printf(_("\nConcepts:\n"));
-    printf(_("  domain: a directory-scoped boundary for inheritance, sessions, and tombstones; resolve it with --dir or inspect it with %s domain status\n"), program_name);
-    printf(_("  store: a domain-local namespace selected by --store; use it to separate app, ops, or personal keys inside one domain\n"));
-    printf(_("  inheritance: reads fall back to parent domains until a local value, tombstone, or explicit lock changes the effective view\n"));
-    printf(_("  explicit lock: a local shadow that blocks reuse of an inherited unlocked session until the current domain unlocks or inherits again\n"));
-    printf(_("  session: an authenticated master-key cache scoped to one domain branch; inspect availability with %s status and refresh it with %s unlock\n"), program_name, program_name);
-    printf(_("  KEYREF: the canonical lookup syntax KEY[/ABSOLUTE/DOMAIN][:STORE] expressed in help as [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
+    {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  domain: a directory-scoped boundary for inheritance, sessions, and tombstones; resolve it with --dir or inspect it with %s domain status\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        secdat_cli_print_detail_line(_("  store: a domain-local namespace selected by --store; use it to separate app, ops, or personal keys inside one domain\n"));
+        secdat_cli_print_detail_line(_("  inheritance: reads fall back to parent domains until a local value, tombstone, or explicit lock changes the effective view\n"));
+        secdat_cli_print_detail_line(_("  explicit lock: a local shadow that blocks reuse of an inherited unlocked session until the current domain unlocks or inherits again\n"));
+        snprintf(buffer, sizeof(buffer), _("  session: an authenticated master-key cache scoped to one domain branch; inspect availability with %s status and refresh it with %s unlock\n"), program_name, program_name);
+        secdat_cli_print_detail_line(buffer);
+        secdat_cli_print_detail_line(_("  KEYREF: the canonical lookup syntax KEY[/ABSOLUTE/DOMAIN][:STORE] expressed in help as [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
+    }
 }
 
 static void secdat_cli_print_semantics(void)
 {
     printf(_("\nSemantics:\n"));
-    printf(_("  DIR: base directory used for domain resolution; defaults to the current working directory\n"));
-    printf(_("  DOMAIN: directory-scoped configuration boundary used for inheritance and tombstones\n"));
-    printf(_("  STORE: domain-local namespace selected by --store; defaults to the default store\n"));
-    printf(_("  KEY / KEYREF: logical secret name, optionally qualified as [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
+    secdat_cli_print_detail_line(_("  DIR: base directory used for domain resolution; defaults to the current working directory\n"));
+    secdat_cli_print_detail_line(_("  DOMAIN: directory-scoped configuration boundary used for inheritance and tombstones\n"));
+    secdat_cli_print_detail_line(_("  STORE: domain-local namespace selected by --store; defaults to the default store\n"));
+    secdat_cli_print_detail_line(_("  KEY / KEYREF: logical secret name, optionally qualified as [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
 }
 
 int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
@@ -781,7 +958,7 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
         || command == SECDAT_COMMAND_EXISTS || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
         || command == SECDAT_COMMAND_RM || command == SECDAT_COMMAND_MV || command == SECDAT_COMMAND_CP) {
         printf(_("\n"));
-        printf(_("  KEYREF syntax: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
+        secdat_cli_print_detail_line(_("  KEYREF syntax: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
     }
     secdat_cli_print_help_routes(program_name, target);
     secdat_cli_print_target_meaning(target);

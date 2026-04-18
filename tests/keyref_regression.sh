@@ -29,6 +29,8 @@ trap 'rm -rf "$work_root"' EXIT
 
 export XDG_DATA_HOME="$work_root/xdg"
 export SECDAT_MASTER_KEY='test-master-key'
+export LC_ALL=C
+export LANGUAGE=C
 
 root="$work_root/work/root"
 child="$root/child"

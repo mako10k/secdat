@@ -63,6 +63,17 @@ def assert_contains(output, fragment, context):
 def normalize_spaces(text):
     return re.sub(r"[ \t]+", " ", text)
 
+def description_column(output, label):
+    prefix = f"  {label}"
+    for line in output.splitlines():
+        if line.startswith(prefix):
+            suffix = line[len(prefix):]
+            stripped = suffix.lstrip(" ")
+            if stripped == "":
+                fail(f"missing description after label {label!r} in line {line!r}")
+            return len(line) - len(stripped)
+    fail(f"missing line for label {label!r} in output {output!r}")
+
 def run(args, extra_env=None):
     run_env = env.copy()
     if extra_env:
@@ -320,7 +331,7 @@ for args, marker in [
     ([bin_path, "-h", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "--help"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "-h"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
-    ([bin_path, "help", "unlock"], "--inherit removes a local explicit-lock marker or clears a local session when no marker is present"),
+    ([bin_path, "help", "unlock"], "unlock [--inherit] [--volatile|--readonly] [--descendants] [--yes]"),
     ([bin_path, "help", "inherit"], "[-d DIR|--dir DIR] inherit"),
     ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [--inherit] [--save]"),
     ([bin_path, "help", "list"], "list [--masked] [--overridden] [--orphaned] [--safe] [--unsafe]"),
@@ -333,7 +344,7 @@ for args, marker in [
     ([bin_path, "help", "exec"], "--pattern-exclude GLOBPATTERN"),
     ([bin_path, "help", "rm"], "rm [--ignore-missing] KEYREF"),
     ([bin_path, "help", "set"], "set KEYREF [--unsafe]"),
-    ([bin_path, "help", "export"], "bash load current shell vars: source <("),
+    ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN]"),
     ([bin_path, "help", "passwd"], "passwd"),
     ([bin_path, "help", "domain"], "domain ls [-l|--long] [-a|--inherited]"),
     ([bin_path, "store", "--help"], "store create STORE"),
@@ -347,14 +358,14 @@ for args, marker in [
         or marker not in normalized_output
         or "Help:" not in output
         or "Support:" not in output
-        or "issues: https://github.com/mako10k/secdat/issues" not in output
-        or "author: Makoto Katsumata <mako10k@mk10.org>" not in output
+        or "issues: https://github.com/mako10k/secdat/issues" not in normalized_output
+        or "author: Makoto Katsumata <mako10k@mk10.org>" not in normalized_output
         or "Semantics:" not in output
         or "Meaning:" not in output
-        or "DIR:" not in output
-        or "DOMAIN:" not in output
-        or "STORE:" not in output
-        or "KEY / KEYREF:" not in output
+        or "DIR:" not in normalized_output
+        or "DOMAIN:" not in normalized_output
+        or "STORE:" not in normalized_output
+        or "KEY / KEYREF:" not in normalized_output
     ):
         fail(f"help check failed for {args}: rc={rc} output={(stdout + stderr)!r}")
 
@@ -375,7 +386,8 @@ if rc != 0 or "Meaning:" not in output or "Concepts:" not in output or "explicit
 
 rc, stdout, stderr = run([bin_path, "help"])
 output = stdout + stderr
-if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "Commands:" not in output or "Topics:" not in output or "Support:" not in output or "issues: https://github.com/mako10k/secdat/issues" not in output or "help: show global help" not in output or "version: print the secdat version" not in output:
+normalized_output = normalize_spaces(output)
+if rc != 0 or "[options] subcommand ..." not in normalized_output or "Options:" not in output or "Commands:" not in output or "Topics:" not in output or "Support:" not in output or "issues: https://github.com/mako10k/secdat/issues" not in normalized_output or "help: show global help" not in normalized_output or "version: print the secdat version" not in normalized_output:
     fail(f"help subcommand check failed: rc={rc} output={output!r}")
 
 for args, expected in [
@@ -409,8 +421,25 @@ if rc != 2 or "missing store name for store create" not in output:
 
 rc, stdout, stderr = run([bin_path, "--help"])
 output = stdout + stderr
-if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "-d, --dir DIR" not in output or "Commands:" not in output or "Topics:" not in output or "Groups:" not in output or "Support:" not in output or "repository: https://github.com/mako10k/secdat" not in output or "help usecases" not in output or "help concepts" not in output or "--help COMMAND" not in output or "COMMAND --help" not in output or "--version" not in output:
+normalized_output = normalize_spaces(output)
+if rc != 0 or "[options] subcommand ..." not in normalized_output or "Options:" not in output or "-d, --dir DIR" not in normalized_output or "Commands:" not in output or "Topics:" not in output or "Groups:" not in output or "Support:" not in output or "repository: https://github.com/mako10k/secdat" not in normalized_output or "help usecases" not in normalized_output or "help concepts" not in normalized_output or "--help COMMAND" not in normalized_output or "COMMAND --help" not in normalized_output or "--version" not in normalized_output:
     fail(f"global help check failed: rc={rc} output={output!r}")
+
+help_column = description_column(output, "help:")
+get_column = description_column(output, "get:")
+wait_unlock_column = description_column(output, "wait-unlock:")
+if help_column != get_column or get_column != wait_unlock_column:
+    fail(f"command help alignment mismatch: help={help_column} get={get_column} wait-unlock={wait_unlock_column} output={output!r}")
+
+rc, stdout, stderr = run([bin_path, "--help"], {"LANGUAGE": "ja", "LC_ALL": ""})
+output = stdout + stderr
+if rc != 0 or "トピック:" not in output or "show global help, or combine with COMMAND or TOPIC for detailed help" in output or "decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock" in output or "explain domains, stores, inheritance, sessions, and KEYREF resolution" in output:
+    fail(f"japanese global help translation check failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run([bin_path, "help", "get"], {"LANGUAGE": "ja", "LC_ALL": ""})
+output = stdout + stderr
+if rc != 0 or "利用例:" not in output or "意味:" not in output or "read one value to stdout:" in output or "wait for another terminal to unlock before reading:" in output:
+    fail(f"japanese get help translation check failed: rc={rc} output={output!r}")
 
 rc, stdout, stderr = run([bin_path, "--version"])
 output = stdout + stderr
