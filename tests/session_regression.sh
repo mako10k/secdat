@@ -30,6 +30,13 @@ bin_path = sys.argv[1]
 env = os.environ.copy()
 env["LC_ALL"] = "C"
 env["LANGUAGE"] = "C"
+for variable_name in (
+    "SECDAT_MASTER_KEY",
+    "SECDAT_MASTER_KEY_PASSPHRASE",
+    "SECDAT_GET_ON_DEMAND_UNLOCK",
+    "SECDAT_GET_UNLOCK_TIMEOUT_SECONDS",
+):
+    env.pop(variable_name, None)
 passphrase = "passphrase-for-session-test"
 wrapped_path = Path(env["XDG_DATA_HOME"]) / "secdat" / "master-key.bin"
 isolated_root = Path(env["XDG_RUNTIME_DIR"]).parent
@@ -62,6 +69,12 @@ def run(args, extra_env=None):
         run_env.update(extra_env)
     completed = subprocess.run(args, text=True, capture_output=True, env=run_env)
     return completed.returncode, completed.stdout, completed.stderr
+
+def run_background(args, extra_env=None):
+    run_env = env.copy()
+    if extra_env:
+        run_env.update(extra_env)
+    return subprocess.Popen(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=run_env)
 
 def run_pty(args, prompts, extra_env=None, eof_after_prompts=False):
     run_env = env.copy()
@@ -315,6 +328,7 @@ for args, marker in [
     ([bin_path, "help", "unmask"], "unmask KEYREF"),
     ([bin_path, "help", "exists"], "exists KEYREF"),
     ([bin_path, "help", "ls"], "[--safe|--unsafe]"),
+    ([bin_path, "help", "get"], "[--on-demand-unlock] [--unlock-timeout SECONDS] KEYREF"),
     ([bin_path, "help", "exec"], "--pattern-exclude GLOBPATTERN"),
     ([bin_path, "help", "rm"], "rm [--ignore-missing] KEYREF"),
     ([bin_path, "help", "set"], "set KEYREF [--unsafe]"),
@@ -354,6 +368,7 @@ for args, expected in [
     ([bin_path, "--store", "default", "status"], f"Try: {bin_path} help status"),
     ([bin_path, "store", "create"], f"Try: {bin_path} help store"),
     ([bin_path, "get", "KEY", "--bad"], f"Try: {bin_path} help get"),
+    ([bin_path, "get", "--unlock-timeout", "1", "KEY"], "--unlock-timeout requires --on-demand-unlock or SECDAT_GET_ON_DEMAND_UNLOCK"),
     ([bin_path, "set", "KEY", "--bad"], f"Try: {bin_path} help set"),
     ([bin_path, "cp", "ONLY_ONE"], f"Try: {bin_path} help cp"),
     ([bin_path, "mv", "ONLY_ONE"], f"Try: {bin_path} help mv"),
@@ -469,6 +484,54 @@ if rc == 0 or "no active secdat session" not in stderr:
 assert_contains(stderr, f"resolved domain: {child_domain}\n", "locked read resolved domain guidance")
 assert_contains(stderr, f"inspect current domain: secdat --dir {child_domain} domain status\n", "locked read status guidance")
 assert_contains(stderr, f"unlock current domain: secdat --dir {child_domain} unlock\n", "locked read unlock guidance")
+
+pending = run_background(scoped(["get", "--on-demand-unlock", "--unlock-timeout", "5", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain))
+time.sleep(0.5)
+if pending.poll() is not None:
+    fail("on-demand unlock get exited before unlock arrived")
+
+rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+if rc != 0 or "session unlocked\n" not in stdout:
+    fail(f"child unlock for on-demand get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+stdout, stderr = pending.communicate(timeout=5)
+if pending.returncode != 0 or stdout != "visible-from-parent" or f"waiting for another terminal to unlock secrets for resolved domain: {child_domain}\n" not in stderr or f"unlock from another terminal: secdat --dir {child_domain} unlock\n" not in stderr or "unlock wait timeout: 5 seconds\n" not in stderr:
+    fail(f"on-demand unlock get failed: rc={pending.returncode} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"], child_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"child relock after on-demand get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "--on-demand-unlock", "--unlock-timeout", "1", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain))
+if rc == 0 or stdout != "" or f"waiting for another terminal to unlock secrets for resolved domain: {child_domain}\n" not in stderr or "timed out waiting for another terminal to unlock secrets after 1 seconds\n" not in stderr:
+    fail(f"on-demand timeout get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+pending = run_background(
+    scoped(["get", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain),
+    {"SECDAT_GET_ON_DEMAND_UNLOCK": "1", "SECDAT_GET_UNLOCK_TIMEOUT_SECONDS": "5"},
+)
+time.sleep(0.5)
+if pending.poll() is not None:
+    fail("env-default on-demand get exited before unlock arrived")
+
+rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+if rc != 0 or "session unlocked\n" not in stdout:
+    fail(f"child unlock for env-default on-demand get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+stdout, stderr = pending.communicate(timeout=5)
+if pending.returncode != 0 or stdout != "visible-from-parent" or "unlock wait timeout: 5 seconds\n" not in stderr:
+    fail(f"env-default on-demand get failed: rc={pending.returncode} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"], child_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"child relock after env-default on-demand get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(
+    scoped(["get", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain),
+    {"SECDAT_GET_ON_DEMAND_UNLOCK": "1", "SECDAT_GET_UNLOCK_TIMEOUT_SECONDS": "1"},
+)
+if rc == 0 or stdout != "" or "timed out waiting for another terminal to unlock secrets after 1 seconds\n" not in stderr:
+    fail(f"env-default on-demand timeout get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
 if rc != 0 or "session unlocked\n" not in stdout or "note: 1 descendant domains can now reuse this session\n" not in stdout:

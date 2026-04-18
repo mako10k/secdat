@@ -31,6 +31,7 @@ secdat [--dir DIR] [--store STORE] unmask KEYREF
 secdat [--dir DIR] [--store STORE] get KEYREF
 secdat [--dir DIR] [--store STORE] get KEYREF --stdout
 secdat [--dir DIR] [--store STORE] get KEYREF --shellescaped
+secdat [--dir DIR] [--store STORE] get [--on-demand-unlock] [--unlock-timeout SECONDS] KEYREF [--stdout|--shellescaped]
 
 secdat [--dir DIR] [--store STORE] set KEYREF
 secdat [--dir DIR] [--store STORE] set KEYREF VALUE
@@ -153,6 +154,10 @@ To make the requested behavior implementable, the following are treated as norma
 - the resolved plaintext value is written to standard output unchanged
 - no trailing newline is added automatically
 - it is an error if the key is not found in the effective domain view
+- `get --on-demand-unlock` waits for another terminal to unlock the resolved domain scope before retrying the read
+- `get --unlock-timeout SECONDS` bounds that wait and fails when the timeout expires
+- `SECDAT_GET_ON_DEMAND_UNLOCK` may enable `get --on-demand-unlock` by default for one process environment
+- `SECDAT_GET_UNLOCK_TIMEOUT_SECONDS` may provide the default timeout used by that wait path
 
 #### FR-3 Value Storage
 

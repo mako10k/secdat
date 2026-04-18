@@ -61,6 +61,8 @@ If some descendants under the unlocked branch remain shadowed by explicit locks,
 
 If a secret read fails while `secdat` is still locked, the error now reports the resolved domain context and suggests the matching `domain status` and `unlock` command so you do not keep retrying from the wrong directory.
 
+For `get` only, `--on-demand-unlock` can wait for another terminal to unlock the resolved domain instead of failing immediately. The wait notice is written to standard error and includes the matching `unlock` command to run elsewhere. Use `--unlock-timeout SECONDS` to fail after a bounded wait, or set `SECDAT_GET_ON_DEMAND_UNLOCK=1` to make this the default behavior for `get`. `SECDAT_GET_UNLOCK_TIMEOUT_SECONDS` sets the default timeout for that wait path.
+
 For explicit non-interactive use, `SECDAT_MASTER_KEY_PASSPHRASE` can provide the current wrapped-key passphrase to `unlock`. This is an override path rather than the default recommendation, because environment variables are easier to expose than terminal prompts.
 
 For a non-mutating session, `unlock --volatile` keeps subsequent `set`, `rm`, `mask`, `unmask`, `cp`, `mv`, `load`, and read-side resolution changes in the session agent's memory instead of writing through to the real store files. `lock` clears that overlay, and `lock --save` first writes the local volatile overlay into the real store files before locking. This is intended for dry-run validation and read-only filesystems.
@@ -94,6 +96,7 @@ Then you can store and read values:
 ./src/secdat ls --canonical
 ./src/secdat exists HOGE
 ./src/secdat get HOGE --stdout
+./src/secdat get --on-demand-unlock --unlock-timeout 30 HOGE --stdout
 ```
 
 For shell branching without printing secret material, use `exists` and check the exit status:

@@ -69,7 +69,7 @@ def normalize_spaces(text):
 for args, marker in [
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN]"),
     ([bin_path, "export", "--help"], "emit shell-ready export lines"),
-    ([bin_path, "help", "get"], "get KEYREF [-o|--stdout|--shellescaped]"),
+    ([bin_path, "help", "get"], "[--on-demand-unlock] [--unlock-timeout SECONDS] KEYREF [-o|--stdout|--shellescaped]"),
 ]:
     rc, stdout, stderr = run(args)
     output = stdout + stderr

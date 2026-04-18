@@ -200,7 +200,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exists", "KEYREF");
         break;
     case SECDAT_COMMAND_GET:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "get", "KEYREF [-o|--stdout|--shellescaped]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "get", "[--on-demand-unlock] [--unlock-timeout SECONDS] KEYREF [-o|--stdout|--shellescaped]");
         break;
     case SECDAT_COMMAND_SET:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "KEYREF [--unsafe] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
@@ -342,7 +342,7 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("  mask: create a local tombstone to hide one inherited key\n"));
     printf(_("  unmask: remove one local tombstone from the current domain\n"));
     printf(_("  exists: check whether one resolved key is visible from the current domain view\n"));
-    printf(_("  get: decrypt one resolved key and write it to standard output\n"));
+    printf(_("  get: decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock\n"));
     printf(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
     printf(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success\n"));
     printf(_("  mv: rename or relocate one key between resolved locations\n"));
@@ -387,7 +387,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "get") == 0) {
-        printf(_("  decrypt one resolved key and write it to standard output\n"));
+        printf(_("  decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock\n"));
         return;
     }
     if (target != NULL && strcmp(target, "set") == 0) {

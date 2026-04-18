@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -42,6 +43,9 @@
 #define SECDAT_WRAP_PBKDF2_ITERATIONS 200000
 #define SECDAT_AGENT_CONNECT_RETRIES 50
 #define SECDAT_SESSION_IDLE_ENV "SECDAT_SESSION_IDLE_SECONDS"
+#define SECDAT_GET_ON_DEMAND_UNLOCK_ENV "SECDAT_GET_ON_DEMAND_UNLOCK"
+#define SECDAT_GET_UNLOCK_TIMEOUT_ENV "SECDAT_GET_UNLOCK_TIMEOUT_SECONDS"
+#define SECDAT_ON_DEMAND_UNLOCK_WAIT_USEC 100000
 
 static const unsigned char secdat_entry_magic[8] = {'S', 'E', 'C', 'D', 'A', 'T', '1', '\0'};
 static const unsigned char secdat_wrapped_key_magic[8] = {'S', 'E', 'C', 'D', 'W', 'R', 'P', '\0'};
@@ -82,6 +86,18 @@ struct secdat_list_options {
     int orphaned;
     int safe;
     int unsafe_store;
+};
+
+struct secdat_key_access_options {
+    int allow_on_demand_unlock;
+    int timeout_configured;
+    time_t timeout_seconds;
+};
+
+struct secdat_get_options {
+    const char *keyref;
+    int shellescaped;
+    struct secdat_key_access_options access;
 };
 
 enum secdat_overlay_item_kind {
@@ -162,7 +178,8 @@ static int secdat_load_resolved_plaintext(
     unsigned char **plaintext,
     size_t *plaintext_length,
     size_t *resolved_index,
-    int *unsafe_store
+    int *unsafe_store,
+    const struct secdat_key_access_options *access_options
 );
 static int secdat_store_plaintext(
     const char *domain_id,
@@ -176,7 +193,9 @@ static int secdat_write_empty_file(const char *path);
 static int secdat_entry_uses_plaintext_storage(const char *path, int *unsafe_store);
 static int secdat_collect_store_names(const char *domain_id, const char *pattern, struct secdat_key_list *stores);
 static int secdat_atomic_write_file(const char *path, const unsigned char *data, size_t length);
+static int secdat_parse_i64(const char *value, time_t *result);
 static int secdat_session_agent_connect_chain_details(const struct secdat_domain_chain *chain, size_t *matched_index, size_t *blocked_index);
+static int secdat_session_agent_status(const struct secdat_domain_chain *chain, struct secdat_session_record *record);
 static int secdat_session_agent_status_details(
     const struct secdat_domain_chain *chain,
     struct secdat_session_record *record,
@@ -185,8 +204,10 @@ static int secdat_session_agent_status_details(
 );
 static int secdat_session_agent_set(const char *domain_id, const char *master_key, enum secdat_session_access_mode access_mode);
 static int secdat_session_agent_clear(const char *domain_id);
+static void secdat_session_record_reset(struct secdat_session_record *record);
 static void secdat_print_unlock_guidance(const char *current_domain_root);
 static void secdat_print_locked_read_guidance(const struct secdat_domain_chain *chain);
+static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_get_options *options);
 
 struct secdat_unlock_options {
     int include_descendants;
@@ -767,6 +788,184 @@ static void secdat_print_locked_read_guidance(const struct secdat_domain_chain *
     fprintf(stderr, _("resolved domain: %s\n"), current_domain_label);
     fprintf(stderr, _("inspect current domain: secdat --dir %s domain status\n"), current_domain_label);
     fprintf(stderr, _("unlock current domain: secdat --dir %s unlock\n"), current_domain_label);
+}
+
+static int secdat_parse_boolean_text(const char *value, int *result)
+{
+    if (value == NULL || value[0] == '\0') {
+        return 1;
+    }
+    if (strcmp(value, "1") == 0 || strcasecmp(value, "true") == 0 || strcasecmp(value, "yes") == 0 || strcasecmp(value, "on") == 0) {
+        *result = 1;
+        return 0;
+    }
+    if (strcmp(value, "0") == 0 || strcasecmp(value, "false") == 0 || strcasecmp(value, "no") == 0 || strcasecmp(value, "off") == 0) {
+        *result = 0;
+        return 0;
+    }
+    return 1;
+}
+
+static int secdat_get_default_on_demand_unlock_enabled(void)
+{
+    const char *value = getenv(SECDAT_GET_ON_DEMAND_UNLOCK_ENV);
+    int enabled = 0;
+
+    if (value != NULL && secdat_parse_boolean_text(value, &enabled) == 0) {
+        return enabled;
+    }
+
+    return 0;
+}
+
+static void secdat_get_default_unlock_timeout(struct secdat_key_access_options *options)
+{
+    const char *value = getenv(SECDAT_GET_UNLOCK_TIMEOUT_ENV);
+    time_t parsed = 0;
+
+    if (value != NULL && value[0] != '\0' && secdat_parse_i64(value, &parsed) == 0 && parsed >= 0) {
+        options->timeout_configured = 1;
+        options->timeout_seconds = parsed;
+    }
+}
+
+static int secdat_parse_unlock_timeout_value(const char *value, struct secdat_key_access_options *options)
+{
+    time_t parsed = 0;
+
+    if (value == NULL || value[0] == '\0' || secdat_parse_i64(value, &parsed) != 0 || parsed < 0) {
+        fprintf(stderr, _("invalid value for --unlock-timeout: %s\n"), value != NULL ? value : "");
+        return 2;
+    }
+
+    options->timeout_configured = 1;
+    options->timeout_seconds = parsed;
+    return 0;
+}
+
+static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_get_options *options)
+{
+    size_t index;
+    int parse_status;
+
+    memset(options, 0, sizeof(*options));
+    options->access.allow_on_demand_unlock = secdat_get_default_on_demand_unlock_enabled();
+    secdat_get_default_unlock_timeout(&options->access);
+
+    for (index = 0; index < (size_t)cli->argc; index += 1) {
+        const char *argument = cli->argv[index];
+
+        if (strcmp(argument, "--stdout") == 0 || strcmp(argument, "-o") == 0) {
+            options->shellescaped = 0;
+            continue;
+        }
+        if (strcmp(argument, "--shellescaped") == 0) {
+            options->shellescaped = 1;
+            continue;
+        }
+        if (strcmp(argument, "--on-demand-unlock") == 0) {
+            options->access.allow_on_demand_unlock = 1;
+            continue;
+        }
+        if (strcmp(argument, "--unlock-timeout") == 0) {
+            if (index + 1 >= (size_t)cli->argc) {
+                fprintf(stderr, _("missing value for --unlock-timeout\n"));
+                return 2;
+            }
+            index += 1;
+            parse_status = secdat_parse_unlock_timeout_value(cli->argv[index], &options->access);
+            if (parse_status != 0) {
+                return parse_status;
+            }
+            continue;
+        }
+        if (strncmp(argument, "--unlock-timeout=", strlen("--unlock-timeout=")) == 0) {
+            parse_status = secdat_parse_unlock_timeout_value(argument + strlen("--unlock-timeout="), &options->access);
+            if (parse_status != 0) {
+                return parse_status;
+            }
+            continue;
+        }
+        if (argument[0] == '-') {
+            fprintf(stderr, _("invalid arguments for get\n"));
+            secdat_cli_print_try_help(cli, "get");
+            return 2;
+        }
+        if (options->keyref != NULL) {
+            fprintf(stderr, _("invalid arguments for get\n"));
+            secdat_cli_print_try_help(cli, "get");
+            return 2;
+        }
+        options->keyref = argument;
+    }
+
+    if (options->keyref == NULL) {
+        fprintf(stderr, _("missing key for get\n"));
+        secdat_cli_print_try_help(cli, "get");
+        return 2;
+    }
+    if (options->access.timeout_configured && !options->access.allow_on_demand_unlock) {
+        fprintf(stderr, _("--unlock-timeout requires --on-demand-unlock or %s\n"), SECDAT_GET_ON_DEMAND_UNLOCK_ENV);
+        return 2;
+    }
+
+    return 0;
+}
+
+static void secdat_print_on_demand_unlock_guidance(
+    const struct secdat_domain_chain *chain,
+    const struct secdat_key_access_options *options
+)
+{
+    char current_domain_label[PATH_MAX];
+
+    if (chain == NULL) {
+        return;
+    }
+    if (secdat_domain_display_label(chain->count == 0 ? "" : chain->ids[0], current_domain_label, sizeof(current_domain_label)) != 0) {
+        return;
+    }
+
+    fprintf(stderr, _("waiting for another terminal to unlock secrets for resolved domain: %s\n"), current_domain_label);
+    if (chain->count == 0) {
+        fprintf(stderr, _("unlock from another terminal: secdat unlock\n"));
+    } else {
+        fprintf(stderr, _("unlock from another terminal: secdat --dir %s unlock\n"), current_domain_label);
+    }
+    if (options != NULL && options->timeout_configured) {
+        fprintf(stderr, _("unlock wait timeout: %lld seconds\n"), (long long)options->timeout_seconds);
+    }
+}
+
+static int secdat_wait_for_on_demand_unlock(
+    const struct secdat_domain_chain *chain,
+    const struct secdat_key_access_options *options
+)
+{
+    time_t started_at;
+    struct secdat_session_record record = {0};
+
+    if (options == NULL || !options->allow_on_demand_unlock) {
+        return 1;
+    }
+
+    secdat_print_on_demand_unlock_guidance(chain, options);
+    started_at = time(NULL);
+
+    for (;;) {
+        if (secdat_session_agent_status(chain, &record) == 0) {
+            secdat_session_record_reset(&record);
+            return 0;
+        }
+        secdat_session_record_reset(&record);
+
+        if (options->timeout_configured && time(NULL) - started_at >= options->timeout_seconds) {
+            fprintf(stderr, _("timed out waiting for another terminal to unlock secrets after %lld seconds\n"), (long long)options->timeout_seconds);
+            return 1;
+        }
+
+        usleep(SECDAT_ON_DEMAND_UNLOCK_WAIT_USEC);
+    }
 }
 
 static const char *secdat_session_scope_id(const struct secdat_domain_chain *chain)
@@ -3937,7 +4136,7 @@ static int secdat_collect_bundle_payload(const struct secdat_cli *cli, unsigned 
         size_t plaintext_length = 0;
         uint32_t key_length = (uint32_t)strlen(visible_keys.items[index]);
 
-        if (secdat_load_resolved_plaintext(&chain, cli->store, visible_keys.items[index], &plaintext, &plaintext_length, NULL, NULL) != 0) {
+        if (secdat_load_resolved_plaintext(&chain, cli->store, visible_keys.items[index], &plaintext, &plaintext_length, NULL, NULL, NULL) != 0) {
             goto cleanup;
         }
         if (plaintext_length > UINT32_MAX) {
@@ -4394,7 +4593,11 @@ static uint32_t secdat_read_be32(const unsigned char *buffer)
         | (uint32_t)buffer[3];
 }
 
-static int secdat_derive_key(const struct secdat_domain_chain *chain, unsigned char key[32])
+static int secdat_derive_key(
+    const struct secdat_domain_chain *chain,
+    unsigned char key[32],
+    const struct secdat_key_access_options *access_options
+)
 {
     struct secdat_session_record record = {0};
     const char *master_key = getenv("SECDAT_MASTER_KEY");
@@ -4402,6 +4605,11 @@ static int secdat_derive_key(const struct secdat_domain_chain *chain, unsigned c
 
     if (master_key == NULL || master_key[0] == '\0') {
         if (secdat_session_agent_get(chain, &record) == 0) {
+            master_key = record.master_key;
+        } else if (access_options != NULL && access_options->allow_on_demand_unlock) {
+            if (secdat_wait_for_on_demand_unlock(chain, access_options) != 0 || secdat_session_agent_get(chain, &record) != 0) {
+                return 1;
+            }
             master_key = record.master_key;
         } else {
             fprintf(
@@ -5109,7 +5317,7 @@ static int secdat_encrypt_value(
     if (secdat_domain_chain_from_id(domain_id, &chain) != 0) {
         return 1;
     }
-    if (secdat_derive_key(&chain, key) != 0) {
+    if (secdat_derive_key(&chain, key, NULL) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;
     }
@@ -5192,7 +5400,8 @@ static int secdat_decrypt_value(
     const unsigned char *encrypted,
     size_t encrypted_length,
     unsigned char **plaintext,
-    size_t *plaintext_length
+    size_t *plaintext_length,
+    const struct secdat_key_access_options *access_options
 )
 {
     EVP_CIPHER_CTX *context = NULL;
@@ -5259,7 +5468,7 @@ static int secdat_decrypt_value(
         return 1;
     }
 
-    if (secdat_derive_key(chain, key) != 0) {
+    if (secdat_derive_key(chain, key, access_options) != 0) {
         return 1;
     }
 
@@ -5776,7 +5985,8 @@ static int secdat_load_resolved_plaintext(
     unsigned char **plaintext,
     size_t *plaintext_length,
     size_t *resolved_index,
-    int *unsafe_store
+    int *unsafe_store,
+    const struct secdat_key_access_options *access_options
 )
 {
     struct secdat_effective_entry entry = {0};
@@ -5830,7 +6040,7 @@ static int secdat_load_resolved_plaintext(
         *unsafe_store = encrypted[9] == SECDAT_ENTRY_ALGORITHM_PLAINTEXT;
     }
 
-    status = secdat_decrypt_value(chain, encrypted, encrypted_length, plaintext, plaintext_length);
+    status = secdat_decrypt_value(chain, encrypted, encrypted_length, plaintext, plaintext_length, access_options);
     free(encrypted);
     secdat_effective_entry_reset(&entry);
     return status;
@@ -6083,38 +6293,22 @@ static int secdat_write_shell_quoted_bytes(FILE *stream, const char *key, const 
 
 static int secdat_command_get(const struct secdat_cli *cli)
 {
+    struct secdat_get_options options;
     struct secdat_key_reference reference;
     struct secdat_domain_chain chain = {0};
     unsigned char *plaintext = NULL;
     size_t plaintext_length = 0;
-    int shellescaped = 0;
     int unsafe_store = 0;
     ssize_t written;
     size_t offset;
+    int parse_status;
 
-    if (cli->argc == 0) {
-        fprintf(stderr, _("missing key for get\n"));
-        secdat_cli_print_try_help(cli, "get");
-        return 2;
+    parse_status = secdat_parse_get_options(cli, &options);
+    if (parse_status != 0) {
+        return parse_status;
     }
 
-    if (cli->argc == 2) {
-        if (strcmp(cli->argv[1], "--stdout") == 0 || strcmp(cli->argv[1], "-o") == 0) {
-            shellescaped = 0;
-        } else if (strcmp(cli->argv[1], "--shellescaped") == 0) {
-            shellescaped = 1;
-        } else {
-            fprintf(stderr, _("invalid arguments for get\n"));
-            secdat_cli_print_try_help(cli, "get");
-            return 2;
-        }
-    } else if (cli->argc != 1) {
-        fprintf(stderr, _("invalid arguments for get\n"));
-        secdat_cli_print_try_help(cli, "get");
-        return 2;
-    }
-
-    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
+    if (secdat_parse_key_reference(options.keyref, secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
         return 1;
     }
 
@@ -6122,7 +6316,16 @@ static int secdat_command_get(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store) != 0) {
+    if (secdat_load_resolved_plaintext(
+            &chain,
+            reference.store_value,
+            reference.key,
+            &plaintext,
+            &plaintext_length,
+            NULL,
+            &unsafe_store,
+            &options.access
+        ) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;
     }
@@ -6135,7 +6338,7 @@ static int secdat_command_get(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (shellescaped) {
+    if (options.shellescaped) {
         if (secdat_write_shell_quoted_bytes(stdout, reference.key, plaintext, plaintext_length) != 0) {
             secdat_domain_chain_free(&chain);
             secdat_secure_clear(plaintext, plaintext_length);
@@ -6727,7 +6930,7 @@ static int secdat_command_cp(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store) != 0) {
+    if (secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL) != 0) {
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
         return 1;
@@ -6802,7 +7005,7 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store) != 0) {
+    if (secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL) != 0) {
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
         return 1;
@@ -7274,6 +7477,7 @@ static int secdat_command_exec(const struct secdat_cli *cli)
             visible_keys.items[key_index],
             &plaintext,
             &plaintext_length,
+            NULL,
             NULL,
             NULL
         );

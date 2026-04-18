@@ -310,11 +310,16 @@ static int secdat_fill_domain_ls_row(
     struct secdat_domain_ls_row *row
 )
 {
+    const char *wrapped_label;
+    const char *wrapped_separator;
+
     memset(row, 0, sizeof(*row));
     row->root = root;
     row->store_count = summary->store_count;
     row->visible_key_count = summary->visible_key_count;
-    row->wrapped = summary->wrapped_master_key_present ? _("present") : _("absent");
+    wrapped_label = summary->wrapped_master_key_present ? _("wrapped master key: present") : _("wrapped master key: absent");
+    wrapped_separator = strstr(wrapped_label, ": ");
+    row->wrapped = wrapped_separator != NULL ? wrapped_separator + 2 : wrapped_label;
 
     switch (summary->key_source) {
     case SECDAT_KEY_SOURCE_ENVIRONMENT:
