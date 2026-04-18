@@ -5,7 +5,12 @@
 #include <getopt.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
+#include <wctype.h>
+
+extern int wcwidth(wchar_t character);
 
 enum {
     SECDAT_OPTION_DOMAIN = 1000,
@@ -56,6 +61,71 @@ static void secdat_cli_print_spaces(size_t count)
     }
 }
 
+static size_t secdat_cli_decode_char(const char *text, size_t remaining, wchar_t *character, mbstate_t *state)
+{
+    size_t consumed;
+
+    if (remaining == 0 || *text == '\0') {
+        return 0;
+    }
+
+    consumed = mbrtowc(character, text, remaining, state);
+    if (consumed == (size_t)-1 || consumed == (size_t)-2) {
+        memset(state, 0, sizeof(*state));
+        *character = (wchar_t)(unsigned char)*text;
+        return 1;
+    }
+    if (consumed == 0) {
+        *character = L'\0';
+        return 0;
+    }
+
+    return consumed;
+}
+
+static size_t secdat_cli_display_width(const char *text, size_t length)
+{
+    mbstate_t state;
+    size_t offset = 0;
+    size_t width = 0;
+
+    memset(&state, 0, sizeof(state));
+    while (offset < length) {
+        wchar_t character;
+        size_t consumed = secdat_cli_decode_char(text + offset, length - offset, &character, &state);
+        int character_width;
+
+        if (consumed == 0) {
+            break;
+        }
+
+        character_width = wcwidth(character);
+        if (character_width < 0) {
+            character_width = 1;
+        }
+
+        width += (size_t)character_width;
+        offset += consumed;
+    }
+
+    return width;
+}
+
+static int secdat_cli_is_space_at(const char *text)
+{
+    mbstate_t state;
+    wchar_t character;
+    size_t consumed;
+
+    memset(&state, 0, sizeof(state));
+    consumed = secdat_cli_decode_char(text, strlen(text), &character, &state);
+    if (consumed == 0) {
+        return 0;
+    }
+
+    return iswspace(character) != 0;
+}
+
 static void secdat_cli_print_wrapped_text(const char *text, size_t indent)
 {
     const char *cursor = text;
@@ -67,6 +137,7 @@ static void secdat_cli_print_wrapped_text(const char *text, size_t indent)
         const char *scan;
         const char *last_space = NULL;
         size_t width = 0;
+        mbstate_t state;
 
         while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
             cursor += 1;
@@ -78,16 +149,38 @@ static void secdat_cli_print_wrapped_text(const char *text, size_t indent)
         line_start = cursor;
         line_end = cursor;
         scan = cursor;
-        while (*scan != '\0' && width < available_width) {
-            if (isspace((unsigned char)*scan)) {
+        memset(&state, 0, sizeof(state));
+        while (*scan != '\0') {
+            wchar_t character;
+            size_t consumed = secdat_cli_decode_char(scan, strlen(scan), &character, &state);
+            int character_width;
+
+            if (consumed == 0) {
+                break;
+            }
+
+            character_width = wcwidth(character);
+            if (character_width < 0) {
+                character_width = 1;
+            }
+
+            if (width > 0 && width + (size_t)character_width > available_width) {
+                break;
+            }
+
+            if (iswspace(character)) {
                 last_space = scan;
             }
-            line_end = scan + 1;
-            scan += 1;
-            width += 1;
+            line_end = scan + consumed;
+            scan += consumed;
+            width += (size_t)character_width;
+
+            if (width >= available_width) {
+                break;
+            }
         }
 
-        if (*scan != '\0' && !isspace((unsigned char)*scan) && last_space != NULL) {
+        if (*scan != '\0' && !secdat_cli_is_space_at(scan) && last_space != NULL) {
             line_end = last_space;
             scan = last_space;
         }
@@ -113,6 +206,7 @@ static void secdat_cli_print_detail_line(const char *line)
     size_t indent = 0;
     size_t line_length = strlen(line);
     size_t label_length;
+    size_t label_width;
     const char *description;
     const char *cursor;
 
@@ -160,11 +254,12 @@ static void secdat_cli_print_detail_line(const char *line)
 
     secdat_cli_print_spaces(indent);
     fwrite(line + indent, 1, label_length, stdout);
-    if (indent + label_length + 1 >= SECDAT_CLI_DETAIL_COLUMN) {
+    label_width = secdat_cli_display_width(line + indent, label_length);
+    if (indent + label_width + 1 >= SECDAT_CLI_DETAIL_COLUMN) {
         fputc('\n', stdout);
         secdat_cli_print_spaces(SECDAT_CLI_DETAIL_COLUMN);
     } else {
-        secdat_cli_print_spaces(SECDAT_CLI_DETAIL_COLUMN - indent - label_length);
+        secdat_cli_print_spaces(SECDAT_CLI_DETAIL_COLUMN - indent - label_width);
     }
     secdat_cli_print_wrapped_text(description, SECDAT_CLI_DETAIL_COLUMN);
 }

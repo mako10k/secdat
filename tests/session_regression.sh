@@ -23,6 +23,7 @@ import re
 import subprocess
 import sys
 import time
+import unicodedata
 from pathlib import Path
 import hashlib
 
@@ -63,6 +64,17 @@ def assert_contains(output, fragment, context):
 def normalize_spaces(text):
     return re.sub(r"[ \t]+", " ", text)
 
+def display_width(text):
+    width = 0
+    for char in text:
+        if unicodedata.combining(char):
+            continue
+        if unicodedata.east_asian_width(char) in ("W", "F"):
+            width += 2
+        else:
+            width += 1
+    return width
+
 def description_column(output, label):
     prefix = f"  {label}"
     for line in output.splitlines():
@@ -72,6 +84,17 @@ def description_column(output, label):
             if stripped == "":
                 fail(f"missing description after label {label!r} in line {line!r}")
             return len(line) - len(stripped)
+    fail(f"missing line for label {label!r} in output {output!r}")
+
+def description_display_column(output, label):
+    prefix = f"  {label}"
+    for line in output.splitlines():
+        if line.startswith(prefix):
+            suffix = line[len(prefix):]
+            stripped = suffix.lstrip(" ")
+            if stripped == "":
+                fail(f"missing description after label {label!r} in line {line!r}")
+            return display_width(line[: len(line) - len(stripped)])
     fail(f"missing line for label {label!r} in output {output!r}")
 
 def run(args, extra_env=None):
@@ -435,6 +458,11 @@ rc, stdout, stderr = run([bin_path, "--help"], {"LANGUAGE": "ja", "LC_ALL": ""})
 output = stdout + stderr
 if rc != 0 or "トピック:" not in output or "show global help, or combine with COMMAND or TOPIC for detailed help" in output or "decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock" in output or "explain domains, stores, inheritance, sessions, and KEYREF resolution" in output:
     fail(f"japanese global help translation check failed: rc={rc} output={output!r}")
+
+issues_column = description_display_column(output, "issue 報告先:")
+repository_column = description_display_column(output, "repository:")
+if issues_column != repository_column:
+    fail(f"japanese help alignment mismatch: issues={issues_column} repository={repository_column} output={output!r}")
 
 rc, stdout, stderr = run([bin_path, "help", "get"], {"LANGUAGE": "ja", "LC_ALL": ""})
 output = stdout + stderr
