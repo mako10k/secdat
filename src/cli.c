@@ -407,10 +407,10 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
 {
     switch (command) {
     case SECDAT_COMMAND_LS:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [--safe|--unsafe] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe] [-u|--unsafe] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]");
         break;
     case SECDAT_COMMAND_LIST:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "list", "[--masked] [--overridden] [--orphaned] [--safe] [--unsafe]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "list", "[-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe] [-u|--unsafe]");
         break;
     case SECDAT_COMMAND_MASK:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mask", "KEYREF");
@@ -422,13 +422,13 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exists", "KEYREF");
         break;
     case SECDAT_COMMAND_GET:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "get", "[--on-demand-unlock] [--unlock-timeout SECONDS] KEYREF [-o|--stdout|--shellescaped]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "get", "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [-o|--stdout|-e|--shellescaped]");
         break;
     case SECDAT_COMMAND_SET:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "KEYREF [--unsafe] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "KEYREF [-u|--unsafe] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
         break;
     case SECDAT_COMMAND_RM:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "rm", "[--ignore-missing] KEYREF");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "rm", "[-f|--ignore-missing] KEYREF");
         break;
     case SECDAT_COMMAND_MV:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mv", "SRC_KEYREF DST_KEYREF");
@@ -437,7 +437,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "cp", "SRC_KEYREF DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] CMD [ARGS...]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--] CMD [ARGS...]");
         break;
     case SECDAT_COMMAND_EXPORT:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "export", "[-p GLOBPATTERN|--pattern GLOBPATTERN]");
@@ -449,7 +449,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "load", "FILE");
         break;
     case SECDAT_COMMAND_UNLOCK:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[--inherit] [--volatile|--readonly] [--descendants] [--yes]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]");
         break;
     case SECDAT_COMMAND_INHERIT:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "inherit", "");
@@ -458,13 +458,13 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "", "passwd", "");
         break;
     case SECDAT_COMMAND_LOCK:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "lock", "[--inherit] [--save]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "lock", "[-i|--inherit] [-s|--save]");
         break;
     case SECDAT_COMMAND_STATUS:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "status", "[-q|--quiet]");
         break;
     case SECDAT_COMMAND_WAIT_UNLOCK:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "wait-unlock", "[--timeout SECONDS] [-q|--quiet]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "wait-unlock", "[-t SECONDS|--timeout SECONDS] [-q|--quiet]");
         break;
     case SECDAT_COMMAND_STORE_CREATE:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store create", "STORE");
@@ -482,7 +482,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain delete", "");
         break;
     case SECDAT_COMMAND_DOMAIN_LS:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain ls", "[-l|--long] [-a|--inherited] [--ancestors] [--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain ls", "[-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]");
         break;
     case SECDAT_COMMAND_DOMAIN_STATUS:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain status", "[-q|--quiet]");

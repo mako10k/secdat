@@ -1508,10 +1508,6 @@ static int secdat_domain_ls_emit_row(
 
 static int secdat_domain_command_ls(const struct secdat_cli *cli)
 {
-    enum {
-        SECDAT_DOMAIN_LS_OPTION_ANCESTORS = 2000,
-        SECDAT_DOMAIN_LS_OPTION_DESCENDANTS,
-    };
     struct secdat_domain_ls_row *rows = NULL;
     struct secdat_string_list roots = {0};
     struct secdat_string_list inherited_roots = {0};
@@ -1521,8 +1517,8 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     static const struct option long_options[] = {
         {"long", no_argument, NULL, 'l'},
         {"inherited", no_argument, NULL, 'a'},
-        {"ancestors", no_argument, NULL, SECDAT_DOMAIN_LS_OPTION_ANCESTORS},
-        {"descendants", no_argument, NULL, SECDAT_DOMAIN_LS_OPTION_DESCENDANTS},
+        {"ancestors", no_argument, NULL, 'A'},
+        {"descendants", no_argument, NULL, 'R'},
         {"pattern", required_argument, NULL, 'p'},
         {NULL, 0, NULL, 0},
     };
@@ -1545,8 +1541,8 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     argv[argc] = NULL;
 
     opterr = 0;
-    optind = 1;
-    while ((option = getopt_long(argc, argv, "+alp:", long_options, NULL)) != -1) {
+    optind = 0;
+    while ((option = getopt_long(argc, argv, ":alARp:", long_options, NULL)) != -1) {
         switch (option) {
         case 'l':
             long_format = 1;
@@ -1557,12 +1553,13 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
         case 'p':
             pattern = optarg;
             break;
-        case SECDAT_DOMAIN_LS_OPTION_ANCESTORS:
+        case 'A':
             include_ancestors = 1;
             break;
-        case SECDAT_DOMAIN_LS_OPTION_DESCENDANTS:
+        case 'R':
             include_descendants = 1;
             break;
+        case ':':
         default:
             fprintf(stderr, _("invalid arguments for domain ls\n"));
             secdat_cli_print_try_help(cli, "domain");

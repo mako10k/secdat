@@ -69,7 +69,7 @@ def normalize_spaces(text):
 for args, marker in [
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN]"),
     ([bin_path, "export", "--help"], "emit shell-ready export lines"),
-    ([bin_path, "help", "get"], "[--on-demand-unlock] [--unlock-timeout SECONDS] KEYREF [-o|--stdout|--shellescaped]"),
+    ([bin_path, "help", "get"], "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [-o|--stdout|-e|--shellescaped]"),
     ([bin_path, "help", "usecases"], "inject secrets into one subprocess only:"),
 ]:
     rc, stdout, stderr = run(args)
@@ -222,6 +222,24 @@ if rc != 0 or stderr != "":
     fail(f"multi-pattern exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if json.loads(stdout) != {"CONTROL_TOKEN": control_payload}:
     fail(f"multi-pattern exec payload mismatch: {stdout!r}")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--pattern=CONTROL_*",
+    "-x",
+    "HOSTILE_*",
+    "--",
+    "python3",
+    "-c",
+    "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k in ('HOSTILE_TOKEN', 'CONTROL_TOKEN'))}, sort_keys=True))",
+])
+if rc != 0 or stderr != "":
+    fail(f"compatible exec parsing failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if json.loads(stdout) != {"CONTROL_TOKEN": control_payload}:
+    fail(f"compatible exec payload mismatch: {stdout!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(root_dir), "--store", "app", "export"])
 if rc != 0 or stderr != "":

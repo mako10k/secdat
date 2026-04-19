@@ -116,6 +116,17 @@ Then you can store and read values:
 ./src/secdat get --on-demand-unlock --unlock-timeout 30 HOGE --stdout
 ```
 
+Most command-local long options also accept unique abbreviations and `--option=value` forms.
+For commands with positional operands, command-local options are generally accepted before or after those operands.
+Use `--` to stop command-local option parsing explicitly when you need a literal operand that starts with `-`:
+
+```sh
+./src/secdat get HOGE --std
+./src/secdat --dir ~/example/project rm OLD_API_TOKEN -f
+./src/secdat set DASHED_VALUE -- --starts-with-dash
+./src/secdat exec --pattern 'APP_*' -- python3 -c 'import os; print(os.environ["APP_TOKEN"])'
+```
+
 For shell branching without printing secret material, use `exists` and check the exit status:
 
 ```sh
@@ -208,7 +219,7 @@ source <(./src/secdat --dir ~/example/project --store app export)
 
 The output is shell-ready text such as `eval "export API_TOKEN=$(./src/secdat ... get API_TOKEN --shellescaped)"`; it does not print raw secret values directly. `get --shellescaped` emits a single-quoted shell literal for one secret value, and `export` reuses that path. In bash, you can either `eval "$(...)"` or source it with process substitution as `source <(...)` / `. <(...)`. Plain `. $(...)` is not valid here because `.` expects a file path, not command text. The current implementation is bash-oriented, single-quote escapes command arguments, and rejects keys that are not valid shell identifiers.
 
-For command injection into a child process, `exec` now accepts repeated `--pattern` and `--pattern-exclude` filters. Include patterns are ORed together, and exclude patterns are applied afterward.
+For command injection into a child process, `exec` now accepts repeated `--pattern` and `--pattern-exclude` filters. Include patterns are ORed together, and exclude patterns are applied afterward. Use `--` before `CMD` when the command itself or its first argument starts with `-`.
 
 Bash completion source is in `completions/secdat.bash`, and `make install` installs it for automatic loading as `secdat` under the system bash-completion directory. `make install` also installs the command reference into the system manpath from `docs/secdat.1`.
 

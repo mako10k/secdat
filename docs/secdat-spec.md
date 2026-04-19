@@ -19,9 +19,9 @@ This document consolidates the initial requirements, defines the product and sec
 The intended command set is:
 
 ```text
-secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--canonical|--canonical-domain|--canonical-store]
+secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [-e|--safe] [-u|--unsafe] [--canonical|--canonical-domain|--canonical-store]
 
-secdat [--dir DIR] [--store STORE] list [--masked] [--overridden] [--orphaned]
+secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe] [-u|--unsafe]
 
 secdat [--dir DIR] [--store STORE] exists KEYREF
 
@@ -30,28 +30,29 @@ secdat [--dir DIR] [--store STORE] unmask KEYREF
 
 secdat [--dir DIR] [--store STORE] get KEYREF
 secdat [--dir DIR] [--store STORE] get KEYREF --stdout
-secdat [--dir DIR] [--store STORE] get KEYREF --shellescaped
-secdat [--dir DIR] [--store STORE] get [--on-demand-unlock] [--unlock-timeout SECONDS] KEYREF [--stdout|--shellescaped]
+secdat [--dir DIR] [--store STORE] get KEYREF [--stdout|-o]
+secdat [--dir DIR] [--store STORE] get KEYREF [--shellescaped|-e]
+secdat [--dir DIR] [--store STORE] get [-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [--stdout|-o|--shellescaped|-e]
 
 secdat [--dir DIR] [--store STORE] set KEYREF
 secdat [--dir DIR] [--store STORE] set KEYREF VALUE
-secdat [--dir DIR] [--store STORE] set KEYREF --unsafe VALUE
-secdat [--dir DIR] [--store STORE] set KEYREF --stdin
-secdat [--dir DIR] [--store STORE] set KEYREF --env ENVNAME
-secdat [--dir DIR] [--store STORE] set KEYREF --value VALUE
+secdat [--dir DIR] [--store STORE] set KEYREF [-u|--unsafe] VALUE
+secdat [--dir DIR] [--store STORE] set KEYREF [--stdin|-i]
+secdat [--dir DIR] [--store STORE] set KEYREF [--env|-e] ENVNAME
+secdat [--dir DIR] [--store STORE] set KEYREF [--value|-v] VALUE
 
-secdat [--dir DIR] [--store STORE] rm [--ignore-missing] KEYREF
+secdat [--dir DIR] [--store STORE] rm [-f|--ignore-missing] KEYREF
 secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 
-secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [--] CMD [ARGS...]
 
-secdat [--dir DIR] unlock [--inherit] [--volatile|--readonly]
+secdat [--dir DIR] unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]
 secdat [--dir DIR] inherit
 secdat passwd
-secdat [--dir DIR] lock [--inherit] [--save]
+secdat [--dir DIR] lock [-i|--inherit] [-s|--save]
 secdat [--dir DIR] status [--quiet]
-secdat [--dir DIR] wait-unlock [--timeout SECONDS] [--quiet]
+secdat [--dir DIR] wait-unlock [-t SECONDS|--timeout SECONDS] [-q|--quiet]
 
 secdat [--dir DIR] store create STORE
 secdat [--dir DIR] store delete STORE
@@ -59,7 +60,7 @@ secdat [--dir DIR] store ls [GLOBPATTERN]
 
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
-secdat [--dir DIR] domain ls [-l|--long] [-a|--inherited] [--ancestors] [--descendants] [GLOBPATTERN]
+secdat [--dir DIR] domain ls [-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]
 secdat [--dir DIR|--domain DIR] domain status [--quiet]
 
 secdat [--dir DIR] [--store STORE] save FILE
@@ -86,6 +87,10 @@ To make the requested behavior implementable, the following are treated as norma
 - `set KEYREF --unsafe ...` explicitly opts into plaintext-at-rest storage that remains readable while locked
 - `exec` injects matched keys into the child process environment
 - `secdat --help SUBCOMMAND` and `secdat SUBCOMMAND --help` are equivalent for command-local usage output
+- unique long-option abbreviations are accepted when they resolve unambiguously within the current command
+- required option values accept both `--option VALUE` and `--option=VALUE`
+- `--` stops command-local option parsing and leaves the remaining tokens untouched as operands
+- except for `exec`, command-local options should generally be accepted before or after positional operands
 - `secdat help usecases` prints workflow-oriented examples across multiple commands
 - `secdat help concepts` prints detailed explanations of domains, stores, inheritance, explicit locks, sessions, and `KEYREF` resolution
 - `unlock` caches the current master key in a domain-scoped runtime location
