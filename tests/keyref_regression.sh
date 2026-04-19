@@ -29,6 +29,8 @@ trap 'rm -rf "$work_root"' EXIT
 
 export XDG_DATA_HOME="$work_root/xdg"
 export SECDAT_MASTER_KEY='test-master-key'
+export LC_ALL=C
+export LANGUAGE=C
 
 root="$work_root/work/root"
 child="$root/child"
@@ -116,9 +118,24 @@ if printf '%s\n' "$ls_multi_output" | grep -Fx -- 'prefix_two' >/dev/null; then
     fail 'ls --pattern-exclude still returned excluded key'
 fi
 
+ls_compat_output="$($bin_path --dir "$root" ls 'prefix_*' --pattern='other_*' -x 'prefix_two' -e)"
+assert_contains_line "$ls_compat_output" 'prefix_one'
+assert_contains_line "$ls_compat_output" 'other_key'
+if printf '%s\n' "$ls_compat_output" | grep -Fx -- 'prefix_two' >/dev/null; then
+    fail 'compatible ls parsing still returned excluded key'
+fi
+
 "$bin_path" set "$root"/explicit_key:team explicit_value >/dev/null
 explicit_value="$($bin_path get "$root"/explicit_key:team --stdout)"
 assert_eq "$explicit_value" 'explicit_value' 'KEYREF set/get'
+
+"$bin_path" --dir "$root" set dashed_value_key --value=--dash-prefixed >/dev/null
+dashed_value="$($bin_path --dir "$root" get dashed_value_key --std)"
+assert_eq "$dashed_value" '--dash-prefixed' 'set --value= and abbreviated long get'
+
+"$bin_path" --dir "$root" set dashed_literal_key -- --literal-prefixed >/dev/null
+dashed_literal="$($bin_path --dir "$root" get dashed_literal_key -o)"
+assert_eq "$dashed_literal" '--literal-prefixed' 'set -- terminator for literal value'
 
 if "$bin_path" --dir "$unregistered" set stray_key stray >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'set unexpectedly wrote to the default domain'
@@ -173,6 +190,13 @@ if "$bin_path" --dir "$root" exists prefix_one >/tmp/secdat-keyref-test.out 2>/t
     fail 'rm --ignore-missing did not remove an existing key'
 fi
 
+if ! "$bin_path" --dir "$root" rm prefix_two -f >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'rm -f failed with flexible option position'
+fi
+if "$bin_path" --dir "$root" exists prefix_two >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'rm -f did not remove an existing key'
+fi
+
 if "$bin_path" --dir "$unregistered" rm missing_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'rm unexpectedly targeted the default domain'
 fi
@@ -186,6 +210,8 @@ if ! "$bin_path" --dir "$child" mask shared_key >/tmp/secdat-keyref-test.out 2>/
 fi
 masked_output="$($bin_path --dir "$child" list --masked)"
 assert_contains_line "$masked_output" 'shared_key'
+masked_short_output="$($bin_path --dir "$child" list -m)"
+assert_contains_line "$masked_short_output" 'shared_key'
 if "$bin_path" --dir "$child" exists shared_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'mask did not hide inherited key'
 fi
@@ -236,6 +262,10 @@ assert_contains_line "$domain_descendants_output" "$child"
 if printf '%s\n' "$domain_descendants_output" | grep -Fx -- "$sibling" >/dev/null; then
     fail 'domain ls --descendants included sibling domain'
 fi
+
+domain_descendants_short_output="$($bin_path --dir "$root" domain ls "$root*" -R)"
+assert_contains_line "$domain_descendants_short_output" "$root"
+assert_contains_line "$domain_descendants_short_output" "$child"
 
 domain_scoped_output="$($bin_path --dir "$work_root/work" domain ls)"
 assert_contains_line "$domain_scoped_output" "$root"

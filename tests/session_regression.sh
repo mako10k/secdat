@@ -23,6 +23,7 @@ import re
 import subprocess
 import sys
 import time
+import unicodedata
 from pathlib import Path
 import hashlib
 
@@ -62,6 +63,39 @@ def assert_contains(output, fragment, context):
 
 def normalize_spaces(text):
     return re.sub(r"[ \t]+", " ", text)
+
+def display_width(text):
+    width = 0
+    for char in text:
+        if unicodedata.combining(char):
+            continue
+        if unicodedata.east_asian_width(char) in ("W", "F"):
+            width += 2
+        else:
+            width += 1
+    return width
+
+def description_column(output, label):
+    prefix = f"  {label}"
+    for line in output.splitlines():
+        if line.startswith(prefix):
+            suffix = line[len(prefix):]
+            stripped = suffix.lstrip(" ")
+            if stripped == "":
+                fail(f"missing description after label {label!r} in line {line!r}")
+            return len(line) - len(stripped)
+    fail(f"missing line for label {label!r} in output {output!r}")
+
+def description_display_column(output, label):
+    prefix = f"  {label}"
+    for line in output.splitlines():
+        if line.startswith(prefix):
+            suffix = line[len(prefix):]
+            stripped = suffix.lstrip(" ")
+            if stripped == "":
+                fail(f"missing description after label {label!r} in line {line!r}")
+            return display_width(line[: len(line) - len(stripped)])
+    fail(f"missing line for label {label!r} in output {output!r}")
 
 def run(args, extra_env=None):
     run_env = env.copy()
@@ -320,21 +354,22 @@ for args, marker in [
     ([bin_path, "-h", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "--help"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "-h"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
-    ([bin_path, "help", "unlock"], "--inherit removes a local explicit-lock marker or clears a local session when no marker is present"),
+    ([bin_path, "help", "unlock"], "unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]"),
     ([bin_path, "help", "inherit"], "[-d DIR|--dir DIR] inherit"),
-    ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [--inherit] [--save]"),
-    ([bin_path, "help", "list"], "list [--masked] [--overridden] [--orphaned] [--safe] [--unsafe]"),
+    ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [-i|--inherit] [-s|--save]"),
+    ([bin_path, "help", "list"], "list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe] [-u|--unsafe]"),
     ([bin_path, "help", "mask"], "mask KEYREF"),
     ([bin_path, "help", "unmask"], "unmask KEYREF"),
     ([bin_path, "help", "exists"], "exists KEYREF"),
-    ([bin_path, "help", "ls"], "[--safe|--unsafe]"),
-    ([bin_path, "help", "get"], "[--on-demand-unlock] [--unlock-timeout SECONDS] KEYREF"),
-    ([bin_path, "help", "exec"], "--pattern-exclude GLOBPATTERN"),
-    ([bin_path, "help", "rm"], "rm [--ignore-missing] KEYREF"),
-    ([bin_path, "help", "set"], "set KEYREF [--unsafe]"),
-    ([bin_path, "help", "export"], "bash load current shell vars: source <("),
+    ([bin_path, "help", "ls"], "[-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe] [-u|--unsafe]"),
+    ([bin_path, "help", "get"], "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF"),
+    ([bin_path, "help", "wait-unlock"], "wait-unlock [-t SECONDS|--timeout SECONDS] [-q|--quiet]"),
+    ([bin_path, "help", "exec"], "[-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--] CMD [ARGS...]"),
+    ([bin_path, "help", "rm"], "rm [-f|--ignore-missing] KEYREF"),
+    ([bin_path, "help", "set"], "set KEYREF [-u|--unsafe]"),
+    ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN]"),
     ([bin_path, "help", "passwd"], "passwd"),
-    ([bin_path, "help", "domain"], "domain ls [-l|--long] [-a|--inherited]"),
+    ([bin_path, "help", "domain"], "domain ls [-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants]"),
     ([bin_path, "store", "--help"], "store create STORE"),
     ([bin_path, "store", "-h"], "store create STORE"),
 ]:
@@ -346,20 +381,45 @@ for args, marker in [
         or marker not in normalized_output
         or "Help:" not in output
         or "Support:" not in output
-        or "issues: https://github.com/mako10k/secdat/issues" not in output
-        or "author: Makoto Katsumata <mako10k@mk10.org>" not in output
+        or "issues: https://github.com/mako10k/secdat/issues" not in normalized_output
+        or "author: Makoto Katsumata <mako10k@mk10.org>" not in normalized_output
         or "Semantics:" not in output
         or "Meaning:" not in output
-        or "DIR:" not in output
-        or "DOMAIN:" not in output
-        or "STORE:" not in output
-        or "KEY / KEYREF:" not in output
+        or "DIR:" not in normalized_output
+        or "DOMAIN:" not in normalized_output
+        or "STORE:" not in normalized_output
+        or "KEY / KEYREF:" not in normalized_output
     ):
         fail(f"help check failed for {args}: rc={rc} output={(stdout + stderr)!r}")
 
+rc, stdout, stderr = run([bin_path, "help", "get"])
+output = stdout + stderr
+if rc != 0 or "Use cases:" not in output or "read one value to stdout:" not in output or "wait for another terminal to unlock before reading:" not in output:
+    fail(f"get use cases help check failed: rc={rc} output={output!r}")
+
+for args, marker in [
+    ([bin_path, "get", "KEY", "--help"], " KEYREF "),
+    ([bin_path, "set", "KEY", "--help"], "set KEYREF"),
+    ([bin_path, "domain", "ls", "ROOT", "--help"], "domain ls [-l|--long]"),
+]:
+    rc, stdout, stderr = run(args)
+    if rc != 0 or marker not in normalize_spaces(stdout) or stderr != "":
+        fail(f"explicit help stdout check failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "help", "usecases"])
+output = stdout + stderr
+if rc != 0 or "Meaning:" not in output or "Use cases:" not in output or "bootstrap a new project domain:" not in output or "block automation until a human unlocks the domain elsewhere:" not in output:
+    fail(f"usecases topic help check failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run([bin_path, "--help", "concepts"])
+output = stdout + stderr
+if rc != 0 or "Meaning:" not in output or "Concepts:" not in output or "explicit lock:" not in output or "KEYREF:" not in output:
+    fail(f"concepts topic help check failed: rc={rc} output={output!r}")
+
 rc, stdout, stderr = run([bin_path, "help"])
 output = stdout + stderr
-if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "Commands:" not in output or "Support:" not in output or "issues: https://github.com/mako10k/secdat/issues" not in output or "help: show global help" not in output or "version: print the secdat version" not in output:
+normalized_output = normalize_spaces(output)
+if rc != 0 or "[options] subcommand ..." not in normalized_output or "Options:" not in output or "Commands:" not in output or "Topics:" not in output or "Support:" not in output or "issues: https://github.com/mako10k/secdat/issues" not in normalized_output or "help: show global help" not in normalized_output or "version: print the secdat version" not in normalized_output:
     fail(f"help subcommand check failed: rc={rc} output={output!r}")
 
 for args, expected in [
@@ -369,6 +429,7 @@ for args, expected in [
     ([bin_path, "store", "create"], f"Try: {bin_path} help store"),
     ([bin_path, "get", "KEY", "--bad"], f"Try: {bin_path} help get"),
     ([bin_path, "get", "--unlock-timeout", "1", "KEY"], "--unlock-timeout requires --on-demand-unlock or SECDAT_GET_ON_DEMAND_UNLOCK"),
+    ([bin_path, "wait-unlock", "--bad"], f"Try: {bin_path} help wait-unlock"),
     ([bin_path, "set", "KEY", "--bad"], f"Try: {bin_path} help set"),
     ([bin_path, "cp", "ONLY_ONE"], f"Try: {bin_path} help cp"),
     ([bin_path, "mv", "ONLY_ONE"], f"Try: {bin_path} help mv"),
@@ -392,8 +453,30 @@ if rc != 2 or "missing store name for store create" not in output:
 
 rc, stdout, stderr = run([bin_path, "--help"])
 output = stdout + stderr
-if rc != 0 or "[options] subcommand ..." not in output or "Options:" not in output or "-d, --dir DIR" not in output or "Commands:" not in output or "Groups:" not in output or "Support:" not in output or "repository: https://github.com/mako10k/secdat" not in output or "--help COMMAND" not in output or "COMMAND --help" not in output or "--version" not in output:
+normalized_output = normalize_spaces(output)
+if rc != 0 or "[options] subcommand ..." not in normalized_output or "Options:" not in output or "-d, --dir DIR" not in normalized_output or "Commands:" not in output or "Topics:" not in output or "Groups:" not in output or "Support:" not in output or "repository: https://github.com/mako10k/secdat" not in normalized_output or "help usecases" not in normalized_output or "help concepts" not in normalized_output or "--help COMMAND" not in normalized_output or "COMMAND --help" not in normalized_output or "--version" not in normalized_output:
     fail(f"global help check failed: rc={rc} output={output!r}")
+
+help_column = description_column(output, "help:")
+get_column = description_column(output, "get:")
+wait_unlock_column = description_column(output, "wait-unlock:")
+if help_column != get_column or get_column != wait_unlock_column:
+    fail(f"command help alignment mismatch: help={help_column} get={get_column} wait-unlock={wait_unlock_column} output={output!r}")
+
+rc, stdout, stderr = run([bin_path, "--help"], {"LANGUAGE": "ja", "LC_ALL": ""})
+output = stdout + stderr
+if rc != 0 or "トピック:" not in output or "show global help, or combine with COMMAND or TOPIC for detailed help" in output or "decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock" in output or "explain domains, stores, inheritance, sessions, and KEYREF resolution" in output:
+    fail(f"japanese global help translation check failed: rc={rc} output={output!r}")
+
+issues_column = description_display_column(output, "issue 報告先:")
+repository_column = description_display_column(output, "repository:")
+if issues_column != repository_column:
+    fail(f"japanese help alignment mismatch: issues={issues_column} repository={repository_column} output={output!r}")
+
+rc, stdout, stderr = run([bin_path, "help", "get"], {"LANGUAGE": "ja", "LC_ALL": ""})
+output = stdout + stderr
+if rc != 0 or "利用例:" not in output or "意味:" not in output or "read one value to stdout:" in output or "wait for another terminal to unlock before reading:" in output:
+    fail(f"japanese get help translation check failed: rc={rc} output={output!r}")
 
 rc, stdout, stderr = run([bin_path, "--version"])
 output = stdout + stderr
@@ -484,6 +567,44 @@ if rc == 0 or "no active secdat session" not in stderr:
 assert_contains(stderr, f"resolved domain: {child_domain}\n", "locked read resolved domain guidance")
 assert_contains(stderr, f"inspect current domain: secdat --dir {child_domain} domain status\n", "locked read status guidance")
 assert_contains(stderr, f"unlock current domain: secdat --dir {child_domain} unlock\n", "locked read unlock guidance")
+
+pending = run_background(scoped(["wait-unlock", "--timeout", "5"], child_domain))
+time.sleep(0.5)
+if pending.poll() is not None:
+    fail("wait-unlock exited before unlock arrived")
+
+rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+if rc != 0 or "session unlocked\n" not in stdout:
+    fail(f"child unlock for wait-unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+stdout, stderr = pending.communicate(timeout=5)
+if pending.returncode != 0 or stdout != "" or f"waiting for another terminal to unlock resolved domain: {child_domain}\n" not in stderr or f"unlock from another terminal: secdat --dir {child_domain} unlock\n" not in stderr or "wait-unlock timeout: 5 seconds\n" not in stderr:
+    fail(f"wait-unlock failed: rc={pending.returncode} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"], child_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"child relock after wait-unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["wait-unlock", "--timeout", "1"], child_domain))
+if rc == 0 or stdout != "" or f"waiting for another terminal to unlock resolved domain: {child_domain}\n" not in stderr or "timed out waiting for another terminal to unlock resolved domain after 1 seconds\n" not in stderr:
+    fail(f"wait-unlock timeout failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+pending = run_background(scoped(["wait-unlock", "--timeout", "5", "--quiet"], child_domain))
+time.sleep(0.5)
+if pending.poll() is not None:
+    fail("quiet wait-unlock exited before unlock arrived")
+
+rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+if rc != 0 or "session unlocked\n" not in stdout:
+    fail(f"child unlock for quiet wait-unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+stdout, stderr = pending.communicate(timeout=5)
+if pending.returncode != 0 or stdout != "" or stderr != "":
+    fail(f"quiet wait-unlock failed: rc={pending.returncode} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"], child_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"child relock after quiet wait-unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 pending = run_background(scoped(["get", "--on-demand-unlock", "--unlock-timeout", "5", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain))
 time.sleep(0.5)

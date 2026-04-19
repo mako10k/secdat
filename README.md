@@ -38,8 +38,12 @@ make
 
 ```sh
 ./src/secdat --help
+./src/secdat help usecases
+./src/secdat help concepts
 LANGUAGE=ja ./src/secdat --help
 ```
+
+The CLI help now has two extra documentation-oriented topics. `help usecases` shows short workflow examples such as bootstrapping a domain, exporting shell variables, and waiting for another terminal to unlock. `help concepts` explains the core model behind domains, stores, inheritance, explicit locks, sessions, and `KEYREF` resolution. Individual command help such as `help get` and `help export` also includes a short `Use cases:` section.
 
 ## First use
 
@@ -62,6 +66,19 @@ If some descendants under the unlocked branch remain shadowed by explicit locks,
 If a secret read fails while `secdat` is still locked, the error now reports the resolved domain context and suggests the matching `domain status` and `unlock` command so you do not keep retrying from the wrong directory.
 
 For `get` only, `--on-demand-unlock` can wait for another terminal to unlock the resolved domain instead of failing immediately. The wait notice is written to standard error and includes the matching `unlock` command to run elsewhere. Use `--unlock-timeout SECONDS` to fail after a bounded wait, or set `SECDAT_GET_ON_DEMAND_UNLOCK=1` to make this the default behavior for `get`. `SECDAT_GET_UNLOCK_TIMEOUT_SECONDS` sets the default timeout for that wait path.
+
+For script orchestration that should block before a later secret read or secret-injecting command, `wait-unlock` provides the same wait behavior without reading any secret value itself. `secdat --dir ~/example/project wait-unlock --timeout 900` waits until the resolved domain becomes unlocked, returns success immediately when it is already unlocked, and otherwise fails after the timeout.
+
+If you want that behavior by default in interactive shells without changing the product default for scripts and non-interactive callers, prefer shell startup configuration guarded by an interactive-shell check:
+
+```sh
+if [[ $- == *i* ]]; then
+	export SECDAT_GET_ON_DEMAND_UNLOCK=1
+	export SECDAT_GET_UNLOCK_TIMEOUT_SECONDS=90
+fi
+```
+
+That keeps plain `get` fail-fast in automation while making interactive terminal use wait up to 90 seconds for another terminal to run `secdat unlock`.
 
 For explicit non-interactive use, `SECDAT_MASTER_KEY_PASSPHRASE` can provide the current wrapped-key passphrase to `unlock`. This is an override path rather than the default recommendation, because environment variables are easier to expose than terminal prompts.
 
@@ -97,6 +114,17 @@ Then you can store and read values:
 ./src/secdat exists HOGE
 ./src/secdat get HOGE --stdout
 ./src/secdat get --on-demand-unlock --unlock-timeout 30 HOGE --stdout
+```
+
+Most command-local long options also accept unique abbreviations and `--option=value` forms.
+For commands with positional operands, command-local options are generally accepted before or after those operands.
+Use `--` to stop command-local option parsing explicitly when you need a literal operand that starts with `-`:
+
+```sh
+./src/secdat get HOGE --std
+./src/secdat --dir ~/example/project rm OLD_API_TOKEN -f
+./src/secdat set DASHED_VALUE -- --starts-with-dash
+./src/secdat exec --pattern 'APP_*' -- python3 -c 'import os; print(os.environ["APP_TOKEN"])'
 ```
 
 For shell branching without printing secret material, use `exists` and check the exit status:
@@ -191,7 +219,7 @@ source <(./src/secdat --dir ~/example/project --store app export)
 
 The output is shell-ready text such as `eval "export API_TOKEN=$(./src/secdat ... get API_TOKEN --shellescaped)"`; it does not print raw secret values directly. `get --shellescaped` emits a single-quoted shell literal for one secret value, and `export` reuses that path. In bash, you can either `eval "$(...)"` or source it with process substitution as `source <(...)` / `. <(...)`. Plain `. $(...)` is not valid here because `.` expects a file path, not command text. The current implementation is bash-oriented, single-quote escapes command arguments, and rejects keys that are not valid shell identifiers.
 
-For command injection into a child process, `exec` now accepts repeated `--pattern` and `--pattern-exclude` filters. Include patterns are ORed together, and exclude patterns are applied afterward.
+For command injection into a child process, `exec` now accepts repeated `--pattern` and `--pattern-exclude` filters. Include patterns are ORed together, and exclude patterns are applied afterward. Use `--` before `CMD` when the command itself or its first argument starts with `-`.
 
 Bash completion source is in `completions/secdat.bash`, and `make install` installs it for automatic loading as `secdat` under the system bash-completion directory. `make install` also installs the command reference into the system manpath from `docs/secdat.1`.
 
@@ -222,6 +250,7 @@ You can keep the active master key in a domain-scoped session agent and avoid ex
 ```sh
 ./src/secdat status
 ./src/secdat status --quiet
+./src/secdat --dir ~/example/project wait-unlock --timeout 900
 ./src/secdat --dir ~/example/project unlock
 ./src/secdat --dir ~/example/project unlock --inherit
 ./src/secdat --dir ~/example/project inherit

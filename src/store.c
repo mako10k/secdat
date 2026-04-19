@@ -4,6 +4,7 @@
 
 #include "i18n.h"
 
+#include <getopt.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -100,6 +101,12 @@ struct secdat_get_options {
     struct secdat_key_access_options access;
 };
 
+struct secdat_wait_unlock_options {
+    int quiet;
+    int timeout_configured;
+    time_t timeout_seconds;
+};
+
 enum secdat_overlay_item_kind {
     SECDAT_OVERLAY_ITEM_ENTRY = 1,
     SECDAT_OVERLAY_ITEM_TOMBSTONE,
@@ -131,6 +138,29 @@ struct secdat_effective_entry {
     unsigned char *plaintext;
     size_t plaintext_length;
 };
+
+static void secdat_prepare_option_argv(
+    const struct secdat_cli *cli,
+    const char *command_name,
+    int *argc,
+    char **argv
+)
+{
+    int index;
+
+    argv[0] = (char *)command_name;
+    for (index = 0; index < cli->argc; index += 1) {
+        argv[index + 1] = cli->argv[index];
+    }
+    argv[cli->argc + 1] = NULL;
+    *argc = cli->argc + 1;
+}
+
+static void secdat_reset_getopt_state(void)
+{
+    opterr = 0;
+    optind = 0;
+}
 
 enum secdat_session_access_mode {
     SECDAT_SESSION_ACCESS_PERSISTENT = 0,
@@ -208,6 +238,7 @@ static void secdat_session_record_reset(struct secdat_session_record *record);
 static void secdat_print_unlock_guidance(const char *current_domain_root);
 static void secdat_print_locked_read_guidance(const struct secdat_domain_chain *chain);
 static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_get_options *options);
+static int secdat_parse_wait_unlock_options(const struct secdat_cli *cli, struct secdat_wait_unlock_options *options);
 
 struct secdat_unlock_options {
     int include_descendants;
@@ -843,60 +874,77 @@ static int secdat_parse_unlock_timeout_value(const char *value, struct secdat_ke
     return 0;
 }
 
+static int secdat_parse_timeout_seconds(const char *value, time_t *timeout_seconds)
+{
+    time_t parsed = 0;
+
+    if (value == NULL || value[0] == '\0' || secdat_parse_i64(value, &parsed) != 0 || parsed < 0) {
+        return 1;
+    }
+
+    *timeout_seconds = parsed;
+    return 0;
+}
+
 static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_get_options *options)
 {
-    size_t index;
+    static const struct option long_options[] = {
+        {"stdout", no_argument, NULL, 'o'},
+        {"shellescaped", no_argument, NULL, 'e'},
+        {"on-demand-unlock", no_argument, NULL, 'w'},
+        {"unlock-timeout", required_argument, NULL, 't'},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
     int parse_status;
 
     memset(options, 0, sizeof(*options));
     options->access.allow_on_demand_unlock = secdat_get_default_on_demand_unlock_enabled();
     secdat_get_default_unlock_timeout(&options->access);
 
-    for (index = 0; index < (size_t)cli->argc; index += 1) {
-        const char *argument = cli->argv[index];
-
-        if (strcmp(argument, "--stdout") == 0 || strcmp(argument, "-o") == 0) {
+    secdat_prepare_option_argv(cli, "get", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":oewt:", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'o':
             options->shellescaped = 0;
-            continue;
-        }
-        if (strcmp(argument, "--shellescaped") == 0) {
+            break;
+        case 'e':
             options->shellescaped = 1;
-            continue;
-        }
-        if (strcmp(argument, "--on-demand-unlock") == 0) {
+            break;
+        case 'w':
             options->access.allow_on_demand_unlock = 1;
-            continue;
-        }
-        if (strcmp(argument, "--unlock-timeout") == 0) {
-            if (index + 1 >= (size_t)cli->argc) {
+            break;
+        case 't':
+            parse_status = secdat_parse_unlock_timeout_value(optarg, &options->access);
+            if (parse_status != 0) {
+                return parse_status;
+            }
+            break;
+        case ':':
+            if (optopt == 't') {
                 fprintf(stderr, _("missing value for --unlock-timeout\n"));
-                return 2;
+            } else {
+                fprintf(stderr, _("invalid arguments for get\n"));
+                secdat_cli_print_try_help(cli, "get");
             }
-            index += 1;
-            parse_status = secdat_parse_unlock_timeout_value(cli->argv[index], &options->access);
-            if (parse_status != 0) {
-                return parse_status;
-            }
-            continue;
-        }
-        if (strncmp(argument, "--unlock-timeout=", strlen("--unlock-timeout=")) == 0) {
-            parse_status = secdat_parse_unlock_timeout_value(argument + strlen("--unlock-timeout="), &options->access);
-            if (parse_status != 0) {
-                return parse_status;
-            }
-            continue;
-        }
-        if (argument[0] == '-') {
+            return 2;
+        case '?':
+        default:
             fprintf(stderr, _("invalid arguments for get\n"));
             secdat_cli_print_try_help(cli, "get");
             return 2;
         }
-        if (options->keyref != NULL) {
-            fprintf(stderr, _("invalid arguments for get\n"));
-            secdat_cli_print_try_help(cli, "get");
-            return 2;
-        }
-        options->keyref = argument;
+    }
+
+    if (optind + 1 == argc) {
+        options->keyref = argv[optind];
+    } else if (optind < argc) {
+        fprintf(stderr, _("invalid arguments for get\n"));
+        secdat_cli_print_try_help(cli, "get");
+        return 2;
     }
 
     if (options->keyref == NULL) {
@@ -906,6 +954,59 @@ static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_
     }
     if (options->access.timeout_configured && !options->access.allow_on_demand_unlock) {
         fprintf(stderr, _("--unlock-timeout requires --on-demand-unlock or %s\n"), SECDAT_GET_ON_DEMAND_UNLOCK_ENV);
+        return 2;
+    }
+
+    return 0;
+}
+
+static int secdat_parse_wait_unlock_options(const struct secdat_cli *cli, struct secdat_wait_unlock_options *options)
+{
+    static const struct option long_options[] = {
+        {"quiet", no_argument, NULL, 'q'},
+        {"timeout", required_argument, NULL, 't'},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+
+    memset(options, 0, sizeof(*options));
+
+    secdat_prepare_option_argv(cli, "wait-unlock", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":qt:", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'q':
+            options->quiet = 1;
+            break;
+        case 't':
+            if (secdat_parse_timeout_seconds(optarg, &options->timeout_seconds) != 0) {
+                fprintf(stderr, _("invalid value for --timeout: %s\n"), optarg);
+                return 2;
+            }
+            options->timeout_configured = 1;
+            break;
+        case ':':
+            if (optopt == 't') {
+                fprintf(stderr, _("missing value for --timeout\n"));
+                return 2;
+            }
+            break;
+        case '?':
+        default:
+            break;
+        }
+        if (option == '?' || option == ':') {
+            fprintf(stderr, _("invalid arguments for wait-unlock\n"));
+            secdat_cli_print_try_help(cli, "wait-unlock");
+            return 2;
+        }
+    }
+
+    if (optind != argc) {
+        fprintf(stderr, _("invalid arguments for wait-unlock\n"));
+        secdat_cli_print_try_help(cli, "wait-unlock");
         return 2;
     }
 
@@ -968,6 +1069,63 @@ static int secdat_wait_for_on_demand_unlock(
     }
 }
 
+static void secdat_print_wait_unlock_guidance(
+    const struct secdat_domain_chain *chain,
+    const struct secdat_wait_unlock_options *options
+)
+{
+    char current_domain_label[PATH_MAX];
+
+    if (options != NULL && options->quiet) {
+        return;
+    }
+    if (chain == NULL) {
+        return;
+    }
+    if (secdat_domain_display_label(chain->count == 0 ? "" : chain->ids[0], current_domain_label, sizeof(current_domain_label)) != 0) {
+        return;
+    }
+
+    fprintf(stderr, _("waiting for another terminal to unlock resolved domain: %s\n"), current_domain_label);
+    if (chain->count == 0) {
+        fprintf(stderr, _("unlock from another terminal: secdat unlock\n"));
+    } else {
+        fprintf(stderr, _("unlock from another terminal: secdat --dir %s unlock\n"), current_domain_label);
+    }
+    if (options != NULL && options->timeout_configured) {
+        fprintf(stderr, _("wait-unlock timeout: %lld seconds\n"), (long long)options->timeout_seconds);
+    }
+}
+
+static int secdat_wait_for_unlock(
+    const struct secdat_domain_chain *chain,
+    const struct secdat_wait_unlock_options *options
+)
+{
+    time_t started_at;
+    struct secdat_session_record record = {0};
+
+    secdat_print_wait_unlock_guidance(chain, options);
+    started_at = time(NULL);
+
+    for (;;) {
+        if (secdat_session_agent_status(chain, &record) == 0) {
+            secdat_session_record_reset(&record);
+            return 0;
+        }
+        secdat_session_record_reset(&record);
+
+        if (options != NULL && options->timeout_configured && time(NULL) - started_at >= options->timeout_seconds) {
+            if (!options->quiet) {
+                fprintf(stderr, _("timed out waiting for another terminal to unlock resolved domain after %lld seconds\n"), (long long)options->timeout_seconds);
+            }
+            return 1;
+        }
+
+        usleep(SECDAT_ON_DEMAND_UNLOCK_WAIT_USEC);
+    }
+}
+
 static const char *secdat_session_scope_id(const struct secdat_domain_chain *chain)
 {
     if (chain != NULL && chain->count > 0) {
@@ -989,31 +1147,49 @@ static int secdat_session_agent_clear_current_scope(const struct secdat_domain_c
 
 static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secdat_unlock_options *options)
 {
-    size_t index;
+    static const struct option long_options[] = {
+        {"inherit", no_argument, NULL, 'i'},
+        {"volatile", no_argument, NULL, 'v'},
+        {"readonly", no_argument, NULL, 'r'},
+        {"descendants", no_argument, NULL, 'd'},
+        {"yes", no_argument, NULL, 'y'},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
 
     memset(options, 0, sizeof(*options));
-    for (index = 0; index < (size_t)cli->argc; index += 1) {
-        if (strcmp(cli->argv[index], "--inherit") == 0) {
-            options->inherit_mode = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--volatile") == 0) {
-            options->volatile_mode = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--readonly") == 0) {
-            options->readonly_mode = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--descendants") == 0) {
-            options->include_descendants = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--yes") == 0) {
-            options->assume_yes = 1;
-            continue;
-        }
 
+    secdat_prepare_option_argv(cli, "unlock", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":ivrdy", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'i':
+            options->inherit_mode = 1;
+            break;
+        case 'v':
+            options->volatile_mode = 1;
+            break;
+        case 'r':
+            options->readonly_mode = 1;
+            break;
+        case 'd':
+            options->include_descendants = 1;
+            break;
+        case 'y':
+            options->assume_yes = 1;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for unlock\n"));
+            secdat_cli_print_try_help(cli, "unlock");
+            return 2;
+        }
+    }
+
+    if (optind != argc) {
         fprintf(stderr, _("invalid arguments for unlock\n"));
         secdat_cli_print_try_help(cli, "unlock");
         return 2;
@@ -1040,19 +1216,37 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
 
 static int secdat_parse_lock_options(const struct secdat_cli *cli, struct secdat_lock_options *options)
 {
-    size_t index;
+    static const struct option long_options[] = {
+        {"inherit", no_argument, NULL, 'i'},
+        {"save", no_argument, NULL, 's'},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
 
     memset(options, 0, sizeof(*options));
-    for (index = 0; index < (size_t)cli->argc; index += 1) {
-        if (strcmp(cli->argv[index], "--inherit") == 0) {
-            options->inherit_mode = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--save") == 0) {
-            options->save_mode = 1;
-            continue;
-        }
 
+    secdat_prepare_option_argv(cli, "lock", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":is", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'i':
+            options->inherit_mode = 1;
+            break;
+        case 's':
+            options->save_mode = 1;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for lock\n"));
+            secdat_cli_print_try_help(cli, "lock");
+            return 2;
+        }
+    }
+
+    if (optind != argc) {
         fprintf(stderr, _("invalid arguments for lock\n"));
         secdat_cli_print_try_help(cli, "lock");
         return 2;
@@ -1271,71 +1465,73 @@ static const char *secdat_effective_store_name(const char *store_name)
 
 static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_ls_options *options)
 {
-    int index;
+    static const struct option long_options[] = {
+        {"pattern", required_argument, NULL, 'p'},
+        {"pattern-exclude", required_argument, NULL, 'x'},
+        {"canonical", no_argument, NULL, 'c'},
+        {"canonical-domain", no_argument, NULL, 'D'},
+        {"canonical-store", no_argument, NULL, 'S'},
+        {"safe", no_argument, NULL, 'e'},
+        {"unsafe", no_argument, NULL, 'u'},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
 
     memset(options, 0, sizeof(*options));
 
-    for (index = 0; index < cli->argc; index += 1) {
-        if (strcmp(cli->argv[index], "--pattern") == 0 || strcmp(cli->argv[index], "-p") == 0) {
-            if (index + 1 >= cli->argc) {
-                fprintf(stderr, _("invalid arguments for ls\n"));
-                return 2;
-            }
-            if (secdat_key_list_append(&options->include_patterns, cli->argv[index + 1]) != 0) {
+    secdat_prepare_option_argv(cli, "ls", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":p:x:cDSeu", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'p':
+            if (secdat_key_list_append(&options->include_patterns, optarg) != 0) {
                 secdat_key_list_free(&options->include_patterns);
                 secdat_key_list_free(&options->exclude_patterns);
                 return 1;
             }
-            index += 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--pattern-exclude") == 0) {
-            if (index + 1 >= cli->argc) {
-                fprintf(stderr, _("invalid arguments for ls\n"));
-                secdat_key_list_free(&options->include_patterns);
-                secdat_key_list_free(&options->exclude_patterns);
-                return 2;
-            }
-            if (secdat_key_list_append(&options->exclude_patterns, cli->argv[index + 1]) != 0) {
+            break;
+        case 'x':
+            if (secdat_key_list_append(&options->exclude_patterns, optarg) != 0) {
                 secdat_key_list_free(&options->include_patterns);
                 secdat_key_list_free(&options->exclude_patterns);
                 return 1;
             }
-            index += 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--canonical") == 0 || strcmp(cli->argv[index], "-c") == 0) {
+            break;
+        case 'c':
             options->canonical_domain = 1;
             options->canonical_store = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--canonical-domain") == 0 || strcmp(cli->argv[index], "-D") == 0) {
+            break;
+        case 'D':
             options->canonical_domain = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--canonical-store") == 0 || strcmp(cli->argv[index], "-S") == 0) {
+            break;
+        case 'S':
             options->canonical_store = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--safe") == 0) {
+            break;
+        case 'e':
             options->safe = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--unsafe") == 0) {
+            break;
+        case 'u':
             options->unsafe_store = 1;
-            continue;
-        }
-        if (cli->argv[index][0] == '-') {
+            break;
+        case '?':
+        case ':':
+        default:
             fprintf(stderr, _("invalid arguments for ls\n"));
             secdat_key_list_free(&options->include_patterns);
             secdat_key_list_free(&options->exclude_patterns);
             return 2;
         }
-        if (secdat_key_list_append(&options->include_patterns, cli->argv[index]) != 0) {
+    }
+
+    while (optind < argc) {
+        if (secdat_key_list_append(&options->include_patterns, argv[optind]) != 0) {
             secdat_key_list_free(&options->include_patterns);
             secdat_key_list_free(&options->exclude_patterns);
             return 1;
         }
+        optind += 1;
     }
 
     return 0;
@@ -1343,46 +1539,47 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
 
 static int secdat_parse_exec_options(const struct secdat_cli *cli, struct secdat_exec_options *options)
 {
-    size_t index;
+    static const struct option long_options[] = {
+        {"pattern", required_argument, NULL, 'p'},
+        {"pattern-exclude", required_argument, NULL, 'x'},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
 
     memset(options, 0, sizeof(*options));
 
-    for (index = 0; index < (size_t)cli->argc; ) {
-        if (strcmp(cli->argv[index], "--pattern") == 0 || strcmp(cli->argv[index], "-p") == 0) {
-            if (index + 1 >= (size_t)cli->argc) {
-                fprintf(stderr, _("invalid arguments for exec\n"));
-                secdat_key_list_free(&options->include_patterns);
-                secdat_key_list_free(&options->exclude_patterns);
-                return 2;
-            }
-            if (secdat_key_list_append(&options->include_patterns, cli->argv[index + 1]) != 0) {
+    secdat_prepare_option_argv(cli, "exec", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, "+:p:x:", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'p':
+            if (secdat_key_list_append(&options->include_patterns, optarg) != 0) {
                 secdat_key_list_free(&options->include_patterns);
                 secdat_key_list_free(&options->exclude_patterns);
                 return 1;
             }
-            index += 2;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--pattern-exclude") == 0) {
-            if (index + 1 >= (size_t)cli->argc) {
-                fprintf(stderr, _("invalid arguments for exec\n"));
-                secdat_key_list_free(&options->include_patterns);
-                secdat_key_list_free(&options->exclude_patterns);
-                return 2;
-            }
-            if (secdat_key_list_append(&options->exclude_patterns, cli->argv[index + 1]) != 0) {
+            break;
+        case 'x':
+            if (secdat_key_list_append(&options->exclude_patterns, optarg) != 0) {
                 secdat_key_list_free(&options->include_patterns);
                 secdat_key_list_free(&options->exclude_patterns);
                 return 1;
             }
-            index += 2;
-            continue;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for exec\n"));
+            secdat_key_list_free(&options->include_patterns);
+            secdat_key_list_free(&options->exclude_patterns);
+            return 2;
         }
-        break;
     }
 
-    options->command_index = index;
-    if (options->command_index >= (size_t)cli->argc) {
+    options->command_index = (size_t)(optind - 1);
+    if (optind >= argc) {
         fprintf(stderr, _("invalid arguments for exec\n"));
         secdat_key_list_free(&options->include_patterns);
         secdat_key_list_free(&options->exclude_patterns);
@@ -1394,30 +1591,49 @@ static int secdat_parse_exec_options(const struct secdat_cli *cli, struct secdat
 
 static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat_list_options *options)
 {
-    size_t index;
+    static const struct option long_options[] = {
+        {"masked", no_argument, NULL, 'm'},
+        {"overridden", no_argument, NULL, 'o'},
+        {"orphaned", no_argument, NULL, 'O'},
+        {"safe", no_argument, NULL, 'e'},
+        {"unsafe", no_argument, NULL, 'u'},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
 
     memset(options, 0, sizeof(*options));
-    for (index = 0; index < (size_t)cli->argc; index += 1) {
-        if (strcmp(cli->argv[index], "--masked") == 0) {
+
+    secdat_prepare_option_argv(cli, "list", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":moOeu", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'm':
             options->masked = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--overridden") == 0) {
+            break;
+        case 'o':
             options->overridden = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--orphaned") == 0) {
+            break;
+        case 'O':
             options->orphaned = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--safe") == 0) {
+            break;
+        case 'e':
             options->safe = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--unsafe") == 0) {
+            break;
+        case 'u':
             options->unsafe_store = 1;
-            continue;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for list\n"));
+            secdat_cli_print_try_help(cli, "list");
+            return 2;
         }
+    }
+
+    if (optind != argc) {
         fprintf(stderr, _("invalid arguments for list\n"));
         secdat_cli_print_try_help(cli, "list");
         return 2;
@@ -1434,20 +1650,43 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
 
 static int secdat_parse_simple_ls_pattern(const struct secdat_cli *cli, const char *command_name, const char **pattern)
 {
-    if (cli->argc == 2 && (strcmp(cli->argv[0], "--pattern") == 0 || strcmp(cli->argv[0], "-p") == 0)) {
-        *pattern = cli->argv[1];
+    static const struct option long_options[] = {
+        {"pattern", required_argument, NULL, 'p'},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+
+    *pattern = NULL;
+    secdat_prepare_option_argv(cli, command_name, &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":p:", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'p':
+            if (*pattern != NULL) {
+                fprintf(stderr, _("invalid arguments for %s\n"), command_name);
+                return 2;
+            }
+            *pattern = optarg;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for %s\n"), command_name);
+            return 2;
+        }
+    }
+
+    if (optind + 1 == argc && *pattern == NULL) {
+        *pattern = argv[optind];
         return 0;
     }
-    if (cli->argc == 1 && cli->argv[0][0] != '-') {
-        *pattern = cli->argv[0];
-        return 0;
-    }
-    if (cli->argc != 0) {
+    if (optind != argc) {
         fprintf(stderr, _("invalid arguments for %s\n"), command_name);
         return 2;
     }
 
-    *pattern = NULL;
     return 0;
 }
 
@@ -4900,14 +5139,35 @@ static int secdat_domain_chain_from_id(const char *domain_id, struct secdat_doma
 
 static int secdat_command_status(const struct secdat_cli *cli)
 {
+    static const struct option long_options[] = {
+        {"quiet", no_argument, NULL, 'q'},
+        {NULL, 0, NULL, 0},
+    };
     struct secdat_domain_chain chain = {0};
     struct secdat_session_record record = {0};
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
     int quiet = 0;
     int wrapped_present = secdat_wrapped_master_key_exists();
 
-    if (cli->argc == 1 && (strcmp(cli->argv[0], "--quiet") == 0 || strcmp(cli->argv[0], "-q") == 0)) {
-        quiet = 1;
-    } else if (cli->argc != 0) {
+    secdat_prepare_option_argv(cli, "status", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":q", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'q':
+            quiet = 1;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for status\n"));
+            secdat_cli_print_try_help(cli, "status");
+            return 2;
+        }
+    }
+
+    if (optind != argc) {
         fprintf(stderr, _("invalid arguments for status\n"));
         secdat_cli_print_try_help(cli, "status");
         return 2;
@@ -4953,6 +5213,43 @@ static int secdat_command_status(const struct secdat_cli *cli)
         puts(wrapped_present ? _("wrapped master key: present") : _("wrapped master key: absent"));
     }
     return 1;
+}
+
+static int secdat_command_wait_unlock(const struct secdat_cli *cli)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_session_record record = {0};
+    struct secdat_wait_unlock_options options;
+    int parse_status;
+
+    if (cli->store != NULL) {
+        fprintf(stderr, _("invalid arguments for wait-unlock\n"));
+        secdat_cli_print_try_help(cli, "wait-unlock");
+        return 2;
+    }
+
+    parse_status = secdat_parse_wait_unlock_options(cli, &options);
+    if (parse_status != 0) {
+        return parse_status;
+    }
+
+    if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
+        return 0;
+    }
+
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
+        return 1;
+    }
+
+    if (secdat_session_agent_status(&chain, &record) == 0) {
+        secdat_session_record_reset(&record);
+        secdat_domain_chain_free(&chain);
+        return 0;
+    }
+
+    parse_status = secdat_wait_for_unlock(&chain, &options);
+    secdat_domain_chain_free(&chain);
+    return parse_status;
 }
 
 static int secdat_command_unlock(const struct secdat_cli *cli)
@@ -6446,93 +6743,111 @@ static int secdat_store_plaintext_for_chain(
 
 static int secdat_command_set(const struct secdat_cli *cli)
 {
+    static const struct option long_options[] = {
+        {"unsafe", no_argument, NULL, 'u'},
+        {"stdin", no_argument, NULL, 'i'},
+        {"value", required_argument, NULL, 'v'},
+        {"env", required_argument, NULL, 'e'},
+        {NULL, 0, NULL, 0},
+    };
     struct secdat_key_reference reference;
     struct secdat_domain_chain chain = {0};
     char current_domain_id[PATH_MAX];
+    char *argv[cli->argc + 2];
     const char *key;
     unsigned char *plaintext = NULL;
     size_t plaintext_length = 0;
     const char *environment_name;
     const char *environment_value;
     const char *literal_value = NULL;
+    const char *keyref = NULL;
     int read_stdin = 1;
     int unsafe_store = 0;
-    int index;
+    int argc;
+    int option;
     int status;
 
-    if (cli->argc < 1) {
-        fprintf(stderr, _("missing key for set\n"));
-        return 2;
-    }
-
-    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
-        return 1;
-    }
-
-    key = reference.key;
-    for (index = 1; index < cli->argc; index += 1) {
-        if (strcmp(cli->argv[index], "--unsafe") == 0) {
+    secdat_prepare_option_argv(cli, "set", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":uiv:e:", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'u':
             if (unsafe_store) {
                 fprintf(stderr, _("invalid arguments for set\n"));
                 secdat_cli_print_try_help(cli, "set");
                 return 2;
             }
             unsafe_store = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--stdin") == 0 || strcmp(cli->argv[index], "-i") == 0) {
+            break;
+        case 'i':
             if (!read_stdin || literal_value != NULL) {
                 fprintf(stderr, _("invalid arguments for set\n"));
                 secdat_cli_print_try_help(cli, "set");
                 return 2;
             }
             read_stdin = 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--value") == 0 || strcmp(cli->argv[index], "-v") == 0) {
-            if (!read_stdin || literal_value != NULL || index + 1 >= cli->argc) {
-                fprintf(stderr, _("invalid arguments for set\n"));
-                secdat_cli_print_try_help(cli, "set");
-                return 2;
-            }
-            literal_value = cli->argv[index + 1];
-            read_stdin = 0;
-            index += 1;
-            continue;
-        }
-        if (strcmp(cli->argv[index], "--env") == 0 || strcmp(cli->argv[index], "-e") == 0) {
-            if (!read_stdin || literal_value != NULL || index + 1 >= cli->argc) {
-                fprintf(stderr, _("invalid arguments for set\n"));
-                secdat_cli_print_try_help(cli, "set");
-                return 2;
-            }
-            environment_name = cli->argv[index + 1];
-            environment_value = getenv(environment_name);
-            if (environment_value == NULL) {
-                fprintf(stderr, _("environment variable is not set: %s\n"), environment_name);
-                return 1;
-            }
-
-            literal_value = environment_value;
-            read_stdin = 0;
-            index += 1;
-            continue;
-        }
-        if (cli->argv[index][0] != '-') {
+            break;
+        case 'v':
             if (!read_stdin || literal_value != NULL) {
                 fprintf(stderr, _("invalid arguments for set\n"));
                 secdat_cli_print_try_help(cli, "set");
                 return 2;
             }
-            literal_value = cli->argv[index];
+            literal_value = optarg;
             read_stdin = 0;
-            continue;
+            break;
+        case 'e':
+            if (!read_stdin || literal_value != NULL) {
+                fprintf(stderr, _("invalid arguments for set\n"));
+                secdat_cli_print_try_help(cli, "set");
+                return 2;
+            }
+            environment_name = optarg;
+            environment_value = getenv(environment_name);
+            if (environment_value == NULL) {
+                fprintf(stderr, _("environment variable is not set: %s\n"), environment_name);
+                return 1;
+            }
+            literal_value = environment_value;
+            read_stdin = 0;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for set\n"));
+            secdat_cli_print_try_help(cli, "set");
+            return 2;
         }
+    }
 
+    if (optind >= argc) {
+        fprintf(stderr, _("missing key for set\n"));
+        return 2;
+    }
+
+    keyref = argv[optind];
+    optind += 1;
+    if (optind < argc) {
+        if (!read_stdin || literal_value != NULL || optind + 1 != argc) {
+            fprintf(stderr, _("invalid arguments for set\n"));
+            secdat_cli_print_try_help(cli, "set");
+            return 2;
+        }
+        literal_value = argv[optind];
+        read_stdin = 0;
+        optind += 1;
+    }
+    if (optind != argc) {
         fprintf(stderr, _("invalid arguments for set\n"));
         secdat_cli_print_try_help(cli, "set");
         return 2;
     }
+
+    if (secdat_parse_key_reference(keyref, secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
+        return 1;
+    }
+
+    key = reference.key;
 
     if (read_stdin) {
         if (isatty(STDIN_FILENO) && !unsafe_store) {
@@ -7082,20 +7397,44 @@ static int secdat_command_unmask(const struct secdat_cli *cli)
 
 static int secdat_command_rm(const struct secdat_cli *cli)
 {
+    static const struct option long_options[] = {
+        {"ignore-missing", no_argument, NULL, 'f'},
+        {NULL, 0, NULL, 0},
+    };
     struct secdat_key_reference reference;
     struct secdat_domain_chain chain = {0};
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+    const char *keyref = NULL;
     int ignore_missing = 0;
     int status;
 
-    if (cli->argc == 2 && strcmp(cli->argv[0], "--ignore-missing") == 0) {
-        ignore_missing = 1;
-    } else if (cli->argc != 1) {
+    secdat_prepare_option_argv(cli, "rm", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":f", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'f':
+            ignore_missing = 1;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for rm\n"));
+            secdat_cli_print_try_help(cli, "rm");
+            return 2;
+        }
+    }
+
+    if (optind + 1 != argc) {
         fprintf(stderr, _("invalid arguments for rm\n"));
         secdat_cli_print_try_help(cli, "rm");
         return 2;
     }
 
-    if (secdat_parse_key_reference(cli->argv[ignore_missing ? 1 : 0], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
+    keyref = argv[optind];
+
+    if (secdat_parse_key_reference(keyref, secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
         return 1;
     }
 
@@ -7383,10 +7722,7 @@ static int secdat_command_export(const struct secdat_cli *cli)
     char canonical_dir[PATH_MAX];
     size_t key_index;
 
-    if (cli->argc == 2 && (strcmp(cli->argv[0], "--pattern") == 0 || strcmp(cli->argv[0], "-p") == 0)) {
-        pattern = cli->argv[1];
-    } else if (cli->argc != 0) {
-        fprintf(stderr, _("invalid arguments for export\n"));
+    if (secdat_parse_simple_ls_pattern(cli, "export", &pattern) != 0) {
         secdat_cli_print_try_help(cli, "export");
         return 2;
     }
@@ -7707,6 +8043,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_lock(cli);
     case SECDAT_COMMAND_STATUS:
         return secdat_command_status(cli);
+    case SECDAT_COMMAND_WAIT_UNLOCK:
+        return secdat_command_wait_unlock(cli);
     case SECDAT_COMMAND_STORE_CREATE:
         return secdat_store_command_create(cli);
     case SECDAT_COMMAND_STORE_DELETE:

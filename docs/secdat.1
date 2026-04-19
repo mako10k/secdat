@@ -8,6 +8,14 @@ secdat \- minimal local secret store with domain and store scoping
 .B secdat
 stores encrypted secret values locally and resolves them through directory-scoped domains and optional store namespaces.
 
+Command-local long options accept unique abbreviations, and required option values accept both
+.B --option value
+and
+.B --option=value
+forms. Command-local parsing also honors
+.B --
+as an explicit end-of-options marker.
+
 Key arguments use the canonical KEYREF syntax:
 
 .B [/ABSOLUTE/DOMAIN/]KEY[:STORE]
@@ -39,10 +47,10 @@ Show global help, or combine with a command name for command-local help.
 Print the secdat version.
 .SH COMMANDS
 .TP
-.B ls [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-pattern-exclude GLOBPATTERN]
+.B ls [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-e|\-\-safe] [\-u|\-\-unsafe]
 List effective keys visible from the current domain view. Repeated include patterns widen the match set, and repeated exclude patterns subtract from it.
 .TP
-.B list [\-\-masked] [\-\-overridden] [\-\-orphaned]
+.B list [\-m|\-\-masked] [\-o|\-\-overridden] [\-O|\-\-orphaned] [\-e|\-\-safe] [\-u|\-\-unsafe]
 Inspect current-domain local state. Use
 .B --masked
 for active tombstones,
@@ -60,7 +68,7 @@ Remove one local tombstone from the current domain.
 .B exists KEYREF
 Check whether one resolved key is visible from the current domain view. This command is intended for shell-friendly branching and does not print secret values.
 .TP
-.B get KEYREF [\-o|\-\-stdout|\-\-shellescaped]
+.B get KEYREF [\-o|\-\-stdout|\-e|\-\-shellescaped]
 Decrypt one resolved key and write it to standard output. Use
 .B --shellescaped
 to emit a single shell-quoted value for bash-oriented loading. When a locked read fails because no active session is available, the error reports the resolved domain context and prints matching
@@ -69,12 +77,12 @@ and
 .B unlock
 follow-up commands for that domain.
 .TP
-.B set KEYREF [\-\-unsafe] [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
+.B set KEYREF [\-u|\-\-unsafe] [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
 Store or update one key in the resolved current domain. Use
 .B --unsafe
 to write a plaintext entry that remains readable while locked.
 .TP
-.B rm [\-\-ignore-missing] KEYREF
+.B rm [\-f|\-\-ignore-missing] KEYREF
 Remove one key locally or create a tombstone for an inherited key. With
 .B --ignore-missing,
 an absent key is treated as a successful no-op.
@@ -85,7 +93,7 @@ Rename or relocate one key between resolved locations.
 .B cp SRC_KEYREF DST_KEYREF
 Copy one key into another resolved location.
 .TP
-.B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-pattern-exclude GLOBPATTERN] CMD [ARGS...]
+.B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-\-] CMD [ARGS...]
 Inject resolved keys into a child process environment and execute the command. Repeated include patterns widen the match set, and repeated exclude patterns subtract from it.
 .TP
 .B export [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]
@@ -97,7 +105,7 @@ Write the current visible secrets into a passphrase-protected bundle.
 .B load FILE
 Load a passphrase-protected bundle into the current domain/store context.
 .TP
-.B [\-d DIR|\-\-dir DIR] unlock [\-\-inherit] [\-\-volatile|\-\-readonly] [\-\-descendants] [\-\-yes]
+.B [\-d DIR|\-\-dir DIR] unlock [\-i|\-\-inherit] [\-v|\-\-volatile|\-r|\-\-readonly] [\-d|\-\-descendants] [\-y|\-\-yes]
 Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked. With
 .B --inherit
 the command removes the current domain's local explicit-lock marker when one is present, or clears the current domain's local session when no marker is present, and succeeds only when the resulting effective state would become unlocked; it does not create a new local session.
@@ -141,7 +149,7 @@ Manage store namespaces inside the resolved current domain.
 .B domain create|delete|status
 Manage domain roots and resolution state.
 .TP
-.B domain ls [\-l|\-\-long] [\-a|\-\-inherited] [\-\-ancestors] [\-\-descendants] [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]
+.B domain ls [\-l|\-\-long] [\-a|\-\-inherited] [\-A|\-\-ancestors] [\-R|\-\-descendants] [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]
 List domain roots around the scoped directory. Use
 .B -l
 or
