@@ -329,6 +329,26 @@ static int parse_global_options(int argc, char **argv, int *index, struct secdat
     return 0;
 }
 
+static int secdat_cli_requests_explicit_help(enum secdat_command_type command, int argc, char **argv)
+{
+    int index;
+
+    if (command == SECDAT_COMMAND_EXEC) {
+        return 0;
+    }
+
+    for (index = 0; index < argc; index += 1) {
+        if (strcmp(argv[index], "--") == 0) {
+            break;
+        }
+        if (strcmp(argv[index], "--help") == 0 || strcmp(argv[index], "-h") == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 enum secdat_command_type secdat_cli_parse_command_name(const char *name)
 {
     if (strcmp(name, "ls") == 0) {
@@ -1022,7 +1042,7 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
 
     cli->argc = argc - index;
     cli->argv = &argv[index];
-    if (cli->argc == 1 && (strcmp(cli->argv[0], "--help") == 0 || strcmp(cli->argv[0], "-h") == 0)) {
+    if (secdat_cli_requests_explicit_help(cli->command, cli->argc, cli->argv)) {
         cli->show_help = 1;
         cli->argc = 0;
     }

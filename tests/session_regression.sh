@@ -397,6 +397,15 @@ output = stdout + stderr
 if rc != 0 or "Use cases:" not in output or "read one value to stdout:" not in output or "wait for another terminal to unlock before reading:" not in output:
     fail(f"get use cases help check failed: rc={rc} output={output!r}")
 
+for args, marker in [
+    ([bin_path, "get", "KEY", "--help"], " KEYREF "),
+    ([bin_path, "set", "KEY", "--help"], "set KEYREF"),
+    ([bin_path, "domain", "ls", "ROOT", "--help"], "domain ls [-l|--long]"),
+]:
+    rc, stdout, stderr = run(args)
+    if rc != 0 or marker not in normalize_spaces(stdout) or stderr != "":
+        fail(f"explicit help stdout check failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "help", "usecases"])
 output = stdout + stderr
 if rc != 0 or "Meaning:" not in output or "Use cases:" not in output or "bootstrap a new project domain:" not in output or "block automation until a human unlocks the domain elsewhere:" not in output:
