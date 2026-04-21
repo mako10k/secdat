@@ -16,6 +16,10 @@
 #define SECDAT_ISSUES_URL "https://github.com/mako10k/secdat/issues"
 #define SECDAT_AUTHOR "Makoto Katsumata <mako10k@mk10.org>"
 
+#ifndef SECDAT_BUILD_ID
+#define SECDAT_BUILD_ID ""
+#endif
+
 static void bind_domain_from_candidates(const char *argv0)
 {
     const char *env_locale_dir = getenv("SECDAT_LOCALEDIR");
@@ -61,6 +65,9 @@ void secdat_i18n_init(const char *argv0)
 static void secdat_print_version(void)
 {
     printf("%s %s\n", PACKAGE_NAME, PACKAGE_VERSION);
+    if (SECDAT_BUILD_ID[0] != '\0') {
+        printf(_("Build: %s\n"), SECDAT_BUILD_ID);
+    }
     printf(_("Repository: %s\n"), SECDAT_REPOSITORY_URL);
     printf(_("Issues: %s\n"), SECDAT_ISSUES_URL);
     printf(_("Author: %s\n"), SECDAT_AUTHOR);

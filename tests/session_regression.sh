@@ -484,16 +484,32 @@ rc, stdout, stderr = run([bin_path, "--version"])
 output = stdout + stderr
 if rc != 0 or not output.startswith("secdat ") or "Issues: https://github.com/mako10k/secdat/issues" not in output or "Author: Makoto Katsumata <mako10k@mk10.org>" not in output:
     fail(f"--version failed: rc={rc} output={(stdout + stderr)!r}")
+source_root = Path(bin_path).resolve().parent.parent
+build_line = next((line for line in output.splitlines() if line.startswith("Build: ")), "")
+if build_line and not re.fullmatch(r"Build: [0-9a-f]{7,40}(?:-dirty)?", build_line):
+    fail(f"--version build line format failed: output={output!r}")
+if (source_root / ".git").exists() and build_line == "":
+    fail(f"--version missing build line in git worktree: output={output!r}")
 
 rc, stdout, stderr = run([bin_path, "version"])
 output = stdout + stderr
 if rc != 0 or not output.startswith("secdat ") or "Repository: https://github.com/mako10k/secdat" not in output:
     fail(f"version failed: rc={rc} output={(stdout + stderr)!r}")
+build_line = next((line for line in output.splitlines() if line.startswith("Build: ")), "")
+if build_line and not re.fullmatch(r"Build: [0-9a-f]{7,40}(?:-dirty)?", build_line):
+    fail(f"version build line format failed: output={output!r}")
+if (source_root / ".git").exists() and build_line == "":
+    fail(f"version missing build line in git worktree: output={output!r}")
 
 rc, stdout, stderr = run([bin_path, "-V"])
 output = stdout + stderr
 if rc != 0 or not output.startswith("secdat ") or "Issues: https://github.com/mako10k/secdat/issues" not in output:
     fail(f"-V failed: rc={rc} output={(stdout + stderr)!r}")
+build_line = next((line for line in output.splitlines() if line.startswith("Build: ")), "")
+if build_line and not re.fullmatch(r"Build: [0-9a-f]{7,40}(?:-dirty)?", build_line):
+    fail(f"-V build line format failed: output={output!r}")
+if (source_root / ".git").exists() and build_line == "":
+    fail(f"-V missing build line in git worktree: output={output!r}")
 
 rc, transcript = run_pty(
     scoped(["unlock", "--duration", "2"]),
@@ -879,9 +895,11 @@ if not fresh_wrapped.is_file():
 default_runtime = isolated_root / "runtime-default"
 default_data = isolated_root / "data-default"
 default_scope = isolated_root / "default-scope"
+default_child = isolated_root / "default-child-domain"
 default_runtime.mkdir(parents=True, exist_ok=True)
 default_data.mkdir(parents=True, exist_ok=True)
 default_scope.mkdir(parents=True, exist_ok=True)
+default_child.mkdir(parents=True, exist_ok=True)
 
 rc, transcript = run_pty(
     [bin_path, "--dir", str(default_scope), "unlock"],
@@ -915,6 +933,60 @@ if rc != 0 or stderr != "":
 assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "default-scope domain ls -la header")
 assert_contains(stdout, "*default*\tsession\tunlocked\t", "default-scope domain ls -la fallback row prefix")
 assert_contains(stdout, "\tdirect-session\t0\t0\tpresent\n", "default-scope domain ls -la fallback row suffix")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(default_child), "domain", "create"], {
+    "XDG_RUNTIME_DIR": str(default_runtime),
+    "XDG_DATA_HOME": str(default_data),
+})
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"default-child domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(default_child), "set", "DEFAULT_CHILD_KEY", "-v", "default-child-value"], {
+    "XDG_RUNTIME_DIR": str(default_runtime),
+    "XDG_DATA_HOME": str(default_data),
+    "SECDAT_MASTER_KEY_PASSPHRASE": passphrase,
+})
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"default-child set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(default_child), "unlock"], {
+    "XDG_RUNTIME_DIR": str(default_runtime),
+    "XDG_DATA_HOME": str(default_data),
+    "SECDAT_MASTER_KEY_PASSPHRASE": passphrase,
+})
+if rc != 0 or stdout != "session refreshed\n" or stderr != f"resolved domain: {default_child}\n":
+    fail(f"default-child local unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(default_scope), "unlock"], {
+    "XDG_RUNTIME_DIR": str(default_runtime),
+    "XDG_DATA_HOME": str(default_data),
+    "SECDAT_MASTER_KEY_PASSPHRASE": passphrase,
+})
+if rc != 0 or stdout not in ("session unlocked\n", "session refreshed\n") or stderr != "resolved domain: *default*\n":
+    fail(f"default-scope refresh before inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(default_child), "unlock", "--inherit"], {
+    "XDG_RUNTIME_DIR": str(default_runtime),
+    "XDG_DATA_HOME": str(default_data),
+})
+if rc != 0 or stdout != "local session cleared; resulting state: unlocked\n" or stderr != f"resolved domain: {default_child}\n":
+    fail(f"default-child unlock --inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(default_child), "domain", "status"], {
+    "XDG_RUNTIME_DIR": str(default_runtime),
+    "XDG_DATA_HOME": str(default_data),
+})
+if rc != 0 or stderr != "":
+    fail(f"default-child status after unlock --inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "effective source: inherited session\n", "default-child inherited status after unlock --inherit")
+assert_contains(stdout, "inherited from: *default*\n", "default-child inherited source after unlock --inherit")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(default_child), "get", "DEFAULT_CHILD_KEY", "-o"], {
+    "XDG_RUNTIME_DIR": str(default_runtime),
+    "XDG_DATA_HOME": str(default_data),
+})
+if rc != 0 or stdout != "default-child-value" or stderr != "":
+    fail(f"default-child get after unlock --inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 PY
 
 printf 'PASS session regression\n'

@@ -38,12 +38,15 @@ make
 
 ```sh
 ./src/secdat --help
+./src/secdat --version
 ./src/secdat help usecases
 ./src/secdat help concepts
 LANGUAGE=ja ./src/secdat --help
 ```
 
 The CLI help now has two extra documentation-oriented topics. `help usecases` shows short workflow examples such as bootstrapping a domain, exporting shell variables, and waiting for another terminal to unlock. `help concepts` explains the core model behind domains, stores, inheritance, explicit locks, sessions, and `KEYREF` resolution. Individual command help such as `help get` and `help export` also includes a short `Use cases:` section.
+
+When built from a Git worktree, `--version` also prints a short build identifier derived from the current commit hash and appends `-dirty` when the tree has uncommitted changes. Release or tarball builds keep the plain package version when Git metadata is unavailable.
 
 ## First use
 

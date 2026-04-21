@@ -468,6 +468,7 @@ secdat [--dir DIR] [--store STORE] <command> [options] [args]
 
 - the default store name is `default`
 - `--dir` is a global option for all commands
+- `--version` prints the package version and, when Git metadata is available at build time, a short build identifier with `-dirty` appended for uncommitted worktrees
 - for store commands, `--dir` changes the directory context used for domain resolution
 - for `domain create` and `domain delete`, `--dir` selects the target directory
 - for `domain ls`, `--dir` constrains the visible domain listing to ancestors, self, and descendants of the specified directory

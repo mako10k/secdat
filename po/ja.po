@@ -765,17 +765,22 @@ msgstr "試してください: %s help %s\n"
 msgid "Try: %s help\n"
 msgstr "試してください: %s help\n"
 
-#: src/main.c:64
+#: src/main.c:69
+#, c-format
+msgid "Build: %s\n"
+msgstr "Build: %s\n"
+
+#: src/main.c:71
 #, c-format
 msgid "Repository: %s\n"
 msgstr "Repository: %s\n"
 
-#: src/main.c:65
+#: src/main.c:72
 #, c-format
 msgid "Issues: %s\n"
 msgstr "Issue 報告先: %s\n"
 
-#: src/main.c:66
+#: src/main.c:73
 #, c-format
 msgid "Author: %s\n"
 msgstr "Author: %s\n"
