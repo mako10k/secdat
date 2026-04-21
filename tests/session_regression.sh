@@ -24,6 +24,7 @@ import subprocess
 import sys
 import time
 import unicodedata
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import hashlib
 
@@ -354,7 +355,7 @@ for args, marker in [
     ([bin_path, "-h", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "--help"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "-h"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
-    ([bin_path, "help", "unlock"], "unlock [-t SECONDS|--duration SECONDS] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]"),
+    ([bin_path, "help", "unlock"], "unlock [-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]"),
     ([bin_path, "help", "inherit"], "[-d DIR|--dir DIR] inherit"),
     ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [-i|--inherit] [-s|--save]"),
     ([bin_path, "help", "list"], "list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe] [-u|--unsafe]"),
@@ -425,6 +426,7 @@ if rc != 0 or "[options] subcommand ..." not in normalized_output or "Options:" 
 for args, expected in [
     ([bin_path, "unlock", "--bad"], f"Try: {bin_path} help unlock"),
     ([bin_path, "unlock", "--volatile", "--readonly"], f"Try: {bin_path} help unlock"),
+    ([bin_path, "unlock", "--duration", "15", "--until", "2026-04-21T15:04:05Z"], "--duration and --until cannot be combined"),
     ([bin_path, "--store", "default", "status"], f"Try: {bin_path} help status"),
     ([bin_path, "store", "create"], f"Try: {bin_path} help store"),
     ([bin_path, "get", "KEY", "--bad"], f"Try: {bin_path} help get"),
@@ -494,7 +496,7 @@ if rc != 0 or not output.startswith("secdat ") or "Issues: https://github.com/ma
     fail(f"-V failed: rc={rc} output={(stdout + stderr)!r}")
 
 rc, transcript = run_pty(
-    scoped(["unlock", "--duration", "95"]),
+    scoped(["unlock", "--duration", "2"]),
     [("Create secdat passphrase:", passphrase), ("Confirm secdat passphrase:", passphrase)],
 )
 if rc != 0 or f"resolved domain: {root_domain}" not in transcript or "persistent master key initialized; session unlocked" not in transcript:
@@ -505,10 +507,10 @@ if not wrapped_path.is_file():
     fail("wrapped master key was not created")
 
 rc, stdout, _ = run(scoped(["status"], root_domain))
-if rc != 0 or "source: session agent" not in stdout or "wrapped master key: present" not in stdout or re.search(r"expires in: \d+ seconds", stdout) or not re.search(r"expires in: (\d+h\d\dm|\d+m\d\ds)\n", stdout):
+if rc != 0 or "source: session agent" not in stdout or "wrapped master key: present" not in stdout or re.search(r"expires in: \d+ seconds", stdout) or not re.search(r"expires in: (1m\d\ds|2m00s)\n", stdout):
     fail(f"status after bootstrap unexpected: rc={rc} stdout={stdout!r}")
 
-rc, stdout, stderr = run(scoped(["unlock", "--duration", "95"], root_domain))
+rc, stdout, stderr = run(scoped(["unlock", "--duration", "PT95S"], root_domain))
 if rc != 0 or "session refreshed\n" not in stdout or stderr != f"resolved domain: {root_domain}\n":
     fail(f"refresh unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if "note: 2 descendant domains remain locked under this branch\n" not in stdout:
@@ -517,6 +519,23 @@ if "note: 2 descendant domains remain locked under this branch\n" not in stdout:
 rc, stdout, stderr = run(scoped(["status"], root_domain))
 if rc != 0 or not re.search(r"expires in: 1m\d\ds\n", stdout):
     fail(f"status after refresh unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["unlock", "--duration", "1hr30min"], root_domain))
+if rc != 0 or "session refreshed\n" not in stdout:
+    fail(f"suffix duration refresh failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status"], root_domain))
+if rc != 0 or not re.search(r"expires in: 1h(29|30)m\n", stdout):
+    fail(f"status after suffix refresh unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+absolute_deadline = (datetime.now(timezone.utc) + timedelta(seconds=95)).strftime("%Y-%m-%dT%H:%M:%SZ")
+rc, stdout, stderr = run(scoped(["unlock", "--until", absolute_deadline], root_domain))
+if rc != 0 or "session refreshed\n" not in stdout:
+    fail(f"absolute duration refresh failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status"], root_domain))
+if rc != 0 or not re.search(r"expires in: 1m\d\ds\n", stdout):
+    fail(f"status after absolute refresh unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, _ = run(scoped(["status", "-q"], child_domain))
 if rc != 1 or stdout != "":

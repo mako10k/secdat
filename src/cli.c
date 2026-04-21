@@ -469,7 +469,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "load", "FILE");
         break;
     case SECDAT_COMMAND_UNLOCK:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[-t SECONDS|--duration SECONDS] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]");
         break;
     case SECDAT_COMMAND_INHERIT:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "inherit", "");
@@ -611,7 +611,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
     secdat_cli_print_detail_line(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
     secdat_cli_print_detail_line(_("  load: import a passphrase-protected bundle into the current domain view\n"));
-    secdat_cli_print_detail_line(_("  unlock: start or refresh an authenticated secret session for the current domain; --duration sets the remaining unlock time in seconds, and --inherit drops the current domain's local override to fall back to inherited state\n"));
+    secdat_cli_print_detail_line(_("  unlock: start or refresh an authenticated secret session for the current domain; --duration accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such as PT1H30M, --until accepts an absolute RFC 3339 timestamp, and --inherit drops the current domain's local override to fall back to inherited state\n"));
     secdat_cli_print_detail_line(_("  inherit: force the current domain back to inherited state by removing a local lock marker or clearing a direct local session, without checking whether the result stays unlocked\n"));
     secdat_cli_print_detail_line(_("  passwd: change the wrapped-master-key passphrase\n"));
     secdat_cli_print_detail_line(_("  lock: clear the current domain's direct secret session, or do nothing when it is already locked\n"));
@@ -691,7 +691,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "unlock") == 0) {
-        secdat_cli_print_detail_line(_("  unlock: start or refresh an authenticated secret session for the current domain; --duration sets the remaining unlock time in seconds, and --inherit drops the current domain's local override to fall back to inherited state\n"));
+        secdat_cli_print_detail_line(_("  unlock: start or refresh an authenticated secret session for the current domain; --duration accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such as PT1H30M, --until accepts an absolute RFC 3339 timestamp, and --inherit drops the current domain's local override to fall back to inherited state\n"));
         return;
     }
     if (target != NULL && strcmp(target, "inherit") == 0) {
@@ -779,7 +779,7 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         char buffer[512];
         snprintf(buffer, sizeof(buffer), _("  start a session for the current project directory: %s unlock\n"), program_name);
         secdat_cli_print_detail_line(buffer);
-        snprintf(buffer, sizeof(buffer), _("  refresh an active session for 15 minutes without re-entering the passphrase: %s unlock --duration 900\n"), program_name);
+        snprintf(buffer, sizeof(buffer), _("  refresh an active session for 15 minutes without re-entering the passphrase: %s unlock --duration 15\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  unlock one specific domain from elsewhere: %s --dir ~/example/project unlock\n"), program_name);
         secdat_cli_print_detail_line(buffer);

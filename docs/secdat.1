@@ -105,10 +105,20 @@ Write the current visible secrets into a passphrase-protected bundle.
 .B load FILE
 Load a passphrase-protected bundle into the current domain/store context.
 .TP
-.B [\-d DIR|\-\-dir DIR] unlock [\-t SECONDS|\-\-duration SECONDS] [\-i|\-\-inherit] [\-v|\-\-volatile|\-r|\-\-readonly] [\-d|\-\-descendants] [\-y|\-\-yes]
+.B [\-d DIR|\-\-dir DIR] unlock [\-t TTL|\-\-duration TTL] [\-\-until TIME] [\-i|\-\-inherit] [\-v|\-\-volatile|\-r|\-\-readonly] [\-d|\-\-descendants] [\-y|\-\-yes]
 Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked. With
 .B --duration
-the command sets the remaining unlock time in seconds for the session being created or refreshed. When the current domain is already unlocked, plain
+the command sets the remaining unlock time for the session being created or refreshed. Plain numbers are interpreted as minutes, suffixed combinations such as
+.B 1h30m
+and
+.B 56s
+are accepted, and ISO 8601 durations such as
+.B PT1H30M
+work as relative TTL values. With
+.B --until
+RFC 3339 timestamps such as
+.B 2026-04-21T15:04:05Z
+set an absolute expiry target. The two options cannot be combined. When the current domain is already unlocked, plain
 .B unlock
 refreshes that current domain without prompting for the passphrase again.
 With

@@ -250,6 +250,7 @@ struct secdat_unlock_options {
     time_t duration_seconds;
     int include_descendants;
     int duration_configured;
+    int until_configured;
     int inherit_mode;
     int assume_yes;
     int volatile_mode;
@@ -894,16 +895,392 @@ static int secdat_parse_timeout_seconds(const char *value, time_t *timeout_secon
     return 0;
 }
 
-static int secdat_parse_session_duration_seconds(const char *value, time_t *duration_seconds)
+static int secdat_add_duration_component(long long *total_seconds, unsigned long long magnitude, long long unit_seconds)
 {
-    time_t parsed = 0;
+    long long component_seconds;
 
-    if (value == NULL || value[0] == '\0' || secdat_parse_i64(value, &parsed) != 0 || parsed <= 0) {
+    if (total_seconds == NULL || magnitude == 0 || unit_seconds <= 0) {
+        return 1;
+    }
+    if (magnitude > (unsigned long long)(LLONG_MAX / unit_seconds)) {
         return 1;
     }
 
-    *duration_seconds = parsed;
+    component_seconds = (long long)magnitude * unit_seconds;
+    if (*total_seconds > LLONG_MAX - component_seconds) {
+        return 1;
+    }
+
+    *total_seconds += component_seconds;
     return 0;
+}
+
+static int secdat_duration_unit_seconds(const char *text, size_t length, long long *unit_seconds)
+{
+    if (text == NULL || unit_seconds == NULL || length == 0) {
+        return 1;
+    }
+
+    if ((length == 1 && strncasecmp(text, "s", length) == 0)
+        || (length == 3 && strncasecmp(text, "sec", length) == 0)
+        || (length == 4 && strncasecmp(text, "secs", length) == 0)
+        || (length == 6 && strncasecmp(text, "second", length) == 0)
+        || (length == 7 && strncasecmp(text, "seconds", length) == 0)) {
+        *unit_seconds = 1;
+        return 0;
+    }
+    if ((length == 1 && strncasecmp(text, "m", length) == 0)
+        || (length == 3 && strncasecmp(text, "min", length) == 0)
+        || (length == 4 && strncasecmp(text, "mins", length) == 0)
+        || (length == 6 && strncasecmp(text, "minute", length) == 0)
+        || (length == 7 && strncasecmp(text, "minutes", length) == 0)) {
+        *unit_seconds = 60;
+        return 0;
+    }
+    if ((length == 1 && strncasecmp(text, "h", length) == 0)
+        || (length == 2 && strncasecmp(text, "hr", length) == 0)
+        || (length == 3 && strncasecmp(text, "hrs", length) == 0)
+        || (length == 4 && strncasecmp(text, "hour", length) == 0)
+        || (length == 5 && strncasecmp(text, "hours", length) == 0)) {
+        *unit_seconds = 3600;
+        return 0;
+    }
+    if ((length == 1 && strncasecmp(text, "d", length) == 0)
+        || (length == 3 && strncasecmp(text, "day", length) == 0)
+        || (length == 4 && strncasecmp(text, "days", length) == 0)) {
+        *unit_seconds = 86400;
+        return 0;
+    }
+
+    return 1;
+}
+
+static int secdat_parse_human_duration(const char *value, time_t *duration_seconds)
+{
+    const char *cursor = value;
+    long long total_seconds = 0;
+    int saw_unit = 0;
+
+    if (cursor == NULL || *cursor == '\0') {
+        return 1;
+    }
+
+    while (*cursor != '\0') {
+        char *end = NULL;
+        const char *unit_start;
+        unsigned long long magnitude;
+        long long unit_seconds;
+
+        while (isspace((unsigned char)*cursor)) {
+            cursor += 1;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+        if (!isdigit((unsigned char)*cursor)) {
+            return 1;
+        }
+
+        errno = 0;
+        magnitude = strtoull(cursor, &end, 10);
+        if (errno != 0 || end == cursor) {
+            return 1;
+        }
+        cursor = end;
+        while (isspace((unsigned char)*cursor)) {
+            cursor += 1;
+        }
+        unit_start = cursor;
+        while (isalpha((unsigned char)*cursor)) {
+            cursor += 1;
+        }
+        if (unit_start == cursor) {
+            while (isspace((unsigned char)*cursor)) {
+                cursor += 1;
+            }
+            if (*cursor != '\0' || saw_unit || magnitude > (unsigned long long)(LLONG_MAX / 60)) {
+                return 1;
+            }
+            *duration_seconds = (time_t)((long long)magnitude * 60);
+            return *duration_seconds > 0 ? 0 : 1;
+        }
+        if (secdat_duration_unit_seconds(unit_start, (size_t)(cursor - unit_start), &unit_seconds) != 0
+            || secdat_add_duration_component(&total_seconds, magnitude, unit_seconds) != 0) {
+            return 1;
+        }
+        saw_unit = 1;
+    }
+
+    if (!saw_unit || total_seconds <= 0) {
+        return 1;
+    }
+
+    *duration_seconds = (time_t)total_seconds;
+    return 0;
+}
+
+static int secdat_parse_iso8601_duration(const char *value, time_t *duration_seconds)
+{
+    const char *cursor = value;
+    long long total_seconds = 0;
+    int in_time_section = 0;
+    int saw_component = 0;
+
+    if (cursor == NULL || *cursor == '\0') {
+        return 1;
+    }
+    if (*cursor == '+') {
+        cursor += 1;
+    }
+    if (*cursor != 'P' && *cursor != 'p') {
+        return 1;
+    }
+    cursor += 1;
+
+    while (*cursor != '\0') {
+        char *end = NULL;
+        unsigned long long magnitude;
+        long long unit_seconds;
+        char designator;
+
+        if (*cursor == 'T' || *cursor == 't') {
+            if (in_time_section) {
+                return 1;
+            }
+            in_time_section = 1;
+            cursor += 1;
+            continue;
+        }
+        if (!isdigit((unsigned char)*cursor)) {
+            return 1;
+        }
+
+        errno = 0;
+        magnitude = strtoull(cursor, &end, 10);
+        if (errno != 0 || end == cursor || *end == '\0') {
+            return 1;
+        }
+        cursor = end;
+        designator = (char)toupper((unsigned char)*cursor);
+        cursor += 1;
+
+        switch (designator) {
+        case 'W':
+            if (in_time_section) {
+                return 1;
+            }
+            unit_seconds = 7 * 86400;
+            break;
+        case 'D':
+            if (in_time_section) {
+                return 1;
+            }
+            unit_seconds = 86400;
+            break;
+        case 'H':
+            if (!in_time_section) {
+                return 1;
+            }
+            unit_seconds = 3600;
+            break;
+        case 'M':
+            if (!in_time_section) {
+                return 1;
+            }
+            unit_seconds = 60;
+            break;
+        case 'S':
+            if (!in_time_section) {
+                return 1;
+            }
+            unit_seconds = 1;
+            break;
+        default:
+            return 1;
+        }
+
+        if (secdat_add_duration_component(&total_seconds, magnitude, unit_seconds) != 0) {
+            return 1;
+        }
+        saw_component = 1;
+    }
+
+    if (!saw_component || total_seconds <= 0) {
+        return 1;
+    }
+
+    *duration_seconds = (time_t)total_seconds;
+    return 0;
+}
+
+static int secdat_parse_fixed_digits(const char **cursor, size_t digits, int *value)
+{
+    size_t index;
+    int parsed = 0;
+
+    if (cursor == NULL || *cursor == NULL || value == NULL) {
+        return 1;
+    }
+    for (index = 0; index < digits; index += 1) {
+        if (!isdigit((unsigned char)(*cursor)[index])) {
+            return 1;
+        }
+        parsed = parsed * 10 + ((*cursor)[index] - '0');
+    }
+
+    *cursor += digits;
+    *value = parsed;
+    return 0;
+}
+
+static int secdat_is_leap_year(int year)
+{
+    return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+}
+
+static int secdat_days_in_month(int year, int month)
+{
+    static const int days_per_month[] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+    };
+
+    if (month < 1 || month > 12) {
+        return 0;
+    }
+    if (month == 2 && secdat_is_leap_year(year)) {
+        return 29;
+    }
+
+    return days_per_month[month - 1];
+}
+
+static long long secdat_days_from_civil(int year, unsigned month, unsigned day)
+{
+    year -= month <= 2;
+    {
+        const int era = (year >= 0 ? year : year - 399) / 400;
+        const unsigned year_of_era = (unsigned)(year - era * 400);
+        const unsigned day_of_year = (153 * (month + (month > 2 ? (unsigned)-3 : 9)) + 2) / 5 + day - 1;
+        const unsigned day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+
+        return era * 146097LL + (long long)day_of_era - 719468LL;
+    }
+}
+
+static int secdat_parse_rfc3339_time_offset(const char **cursor, long long *offset_seconds)
+{
+    int sign;
+    int hours;
+    int minutes;
+
+    if (cursor == NULL || *cursor == NULL || offset_seconds == NULL) {
+        return 1;
+    }
+    if (**cursor == 'Z' || **cursor == 'z') {
+        *offset_seconds = 0;
+        *cursor += 1;
+        return 0;
+    }
+    if (**cursor != '+' && **cursor != '-') {
+        return 1;
+    }
+
+    sign = **cursor == '-' ? -1 : 1;
+    *cursor += 1;
+    if (secdat_parse_fixed_digits(cursor, 2, &hours) != 0) {
+        return 1;
+    }
+    if (**cursor == ':') {
+        *cursor += 1;
+    }
+    if (secdat_parse_fixed_digits(cursor, 2, &minutes) != 0 || hours > 23 || minutes > 59) {
+        return 1;
+    }
+
+    *offset_seconds = sign * (hours * 3600LL + minutes * 60LL);
+    return 0;
+}
+
+static int secdat_parse_absolute_duration(const char *value, time_t *duration_seconds)
+{
+    const char *cursor = value;
+    int year;
+    int month;
+    int day;
+    int hour;
+    int minute;
+    int second = 0;
+    long long offset_seconds;
+    long long epoch_seconds;
+    long long remaining_seconds;
+    time_t now;
+
+    if (cursor == NULL || *cursor == '\0') {
+        return 1;
+    }
+    if (secdat_parse_fixed_digits(&cursor, 4, &year) != 0 || *cursor != '-') {
+        return 1;
+    }
+    cursor += 1;
+    if (secdat_parse_fixed_digits(&cursor, 2, &month) != 0 || *cursor != '-') {
+        return 1;
+    }
+    cursor += 1;
+    if (secdat_parse_fixed_digits(&cursor, 2, &day) != 0 || (*cursor != 'T' && *cursor != 't')) {
+        return 1;
+    }
+    cursor += 1;
+    if (secdat_parse_fixed_digits(&cursor, 2, &hour) != 0 || *cursor != ':') {
+        return 1;
+    }
+    cursor += 1;
+    if (secdat_parse_fixed_digits(&cursor, 2, &minute) != 0) {
+        return 1;
+    }
+    if (*cursor == ':') {
+        cursor += 1;
+        if (secdat_parse_fixed_digits(&cursor, 2, &second) != 0) {
+            return 1;
+        }
+    }
+    if (*cursor == '.') {
+        cursor += 1;
+        if (!isdigit((unsigned char)*cursor)) {
+            return 1;
+        }
+        while (isdigit((unsigned char)*cursor)) {
+            cursor += 1;
+        }
+    }
+    if (secdat_parse_rfc3339_time_offset(&cursor, &offset_seconds) != 0 || *cursor != '\0') {
+        return 1;
+    }
+    if (month < 1 || month > 12 || day < 1 || day > secdat_days_in_month(year, month)
+        || hour > 23 || minute > 59 || second > 60) {
+        return 1;
+    }
+
+    epoch_seconds = secdat_days_from_civil(year, (unsigned)month, (unsigned)day) * 86400LL
+        + hour * 3600LL + minute * 60LL + (second == 60 ? 59 : second) - offset_seconds;
+    now = time(NULL);
+    remaining_seconds = epoch_seconds - (long long)now;
+    if (remaining_seconds <= 0) {
+        return 1;
+    }
+
+    *duration_seconds = (time_t)remaining_seconds;
+    return 0;
+}
+
+static int secdat_parse_session_duration_seconds(const char *value, time_t *duration_seconds)
+{
+    if (value == NULL || value[0] == '\0') {
+        return 1;
+    }
+    if (secdat_parse_iso8601_duration(value, duration_seconds) == 0) {
+        return 0;
+    }
+    return secdat_parse_human_duration(value, duration_seconds);
 }
 
 static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_get_options *options)
@@ -1169,6 +1546,7 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
 {
     static const struct option long_options[] = {
         {"duration", required_argument, NULL, 't'},
+        {"until", required_argument, NULL, 'u'},
         {"inherit", no_argument, NULL, 'i'},
         {"volatile", no_argument, NULL, 'v'},
         {"readonly", no_argument, NULL, 'r'},
@@ -1184,7 +1562,7 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
 
     secdat_prepare_option_argv(cli, "unlock", &argc, argv);
     secdat_reset_getopt_state();
-    while ((option = getopt_long(argc, argv, ":t:ivrdy", long_options, NULL)) != -1) {
+    while ((option = getopt_long(argc, argv, ":t:u:ivrdy", long_options, NULL)) != -1) {
         switch (option) {
         case 't':
             if (secdat_parse_session_duration_seconds(optarg, &options->duration_seconds) != 0) {
@@ -1192,6 +1570,13 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
                 return 2;
             }
             options->duration_configured = 1;
+            break;
+        case 'u':
+            if (secdat_parse_absolute_duration(optarg, &options->duration_seconds) != 0) {
+                fprintf(stderr, _("invalid value for --until: %s\n"), optarg != NULL ? optarg : "");
+                return 2;
+            }
+            options->until_configured = 1;
             break;
         case 'i':
             options->inherit_mode = 1;
@@ -1219,6 +1604,12 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
 
     if (optind != argc) {
         fprintf(stderr, _("invalid arguments for unlock\n"));
+        secdat_cli_print_try_help(cli, "unlock");
+        return 2;
+    }
+
+    if (options->until_configured && options->duration_configured) {
+        fprintf(stderr, _("--duration and --until cannot be combined\n"));
         secdat_cli_print_try_help(cli, "unlock");
         return 2;
     }
@@ -5398,13 +5789,13 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         }
     }
 
-    session_duration = options.duration_configured ? options.duration_seconds : secdat_session_idle_seconds();
+    session_duration = (options.duration_configured || options.until_configured) ? options.duration_seconds : secdat_session_idle_seconds();
     access_mode = options.volatile_mode ? SECDAT_SESSION_ACCESS_VOLATILE : (options.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT);
 
     if (env_master_key == NULL || env_master_key[0] == '\0') {
         if (secdat_session_agent_status_details(&current_chain, &active_record, &matched_index, NULL) == 0
             && secdat_session_agent_get(&current_chain, &secret_record) == 0) {
-            session_duration = options.duration_configured ? options.duration_seconds : secdat_session_effective_duration(&active_record);
+            session_duration = (options.duration_configured || options.until_configured) ? options.duration_seconds : secdat_session_effective_duration(&active_record);
             if (!options.volatile_mode && !options.readonly_mode) {
                 access_mode = active_record.volatile_mode ? SECDAT_SESSION_ACCESS_VOLATILE
                     : (active_record.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT);

@@ -260,7 +260,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat status` returns non-zero and reports `locked` when no active master-key source exists
 - `secdat [--dir DIR] status --quiet` suppresses output and reports state only through the exit code
 - `status` without `--quiet` reports the active source and whether a wrapped persistent master key is present
-- `secdat [--dir DIR] unlock [--duration SECONDS] [--inherit] [--volatile|--readonly] [--descendants] [--yes]` creates or refreshes a domain-scoped cache of the current master key
+- `secdat [--dir DIR] unlock [--duration TTL] [--until TIME] [--inherit] [--volatile|--readonly] [--descendants] [--yes]` creates or refreshes a domain-scoped cache of the current master key
 - `secdat [--dir DIR] wait-unlock [--timeout SECONDS] [--quiet]` waits for the current effective domain scope to become unlocked and is intended for scripts that handle external notifications separately
 - `wait-unlock` exits successfully immediately when the scope is already unlocked, returns non-zero on timeout, and prints unlock guidance to standard error unless `--quiet` is used
 - if no wrapped persistent master key exists, `unlock` prompts twice on a terminal, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
@@ -274,7 +274,12 @@ To make the requested behavior implementable, the following are treated as norma
 - if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `unlock`
 - otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent
-- `unlock --duration SECONDS` sets the remaining unlock time for the session being created or refreshed
+- `unlock --duration TTL` sets the remaining unlock time for the session being created or refreshed
+- plain numeric `TTL` values are interpreted as minutes
+- suffixed `TTL` values accept combined components such as `1h`, `1h30m`, `1h30m56s`, `30m`, and `56s`, including common variants like `hr`, `hour`, `min`, and `sec`
+- ISO 8601 duration forms such as `PT1H30M` are accepted as relative TTL values
+- `unlock --until TIME` accepts RFC 3339 absolute timestamps such as `2026-04-21T15:04:05Z` and interprets them as the target expiry time
+- `--duration` and `--until` are mutually exclusive
 - before prompting, `unlock` reports the resolved domain it is about to unlock
 - unlocking one domain must not unlock sibling domains
 - descendant domains may reuse an unlocked ancestor session without an extra `unlock`

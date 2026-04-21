@@ -311,12 +311,24 @@ msgstr ""
 #: src/cli.c:614 src/cli.c:694
 msgid ""
 "  unlock: start or refresh an authenticated secret session for the current "
-"domain; --duration sets the remaining unlock time in seconds, and --inherit "
-"drops the current domain's local override to fall back to inherited state\n"
+"domain; --duration accepts plain minutes, suffix forms like 1h30m, or ISO "
+"8601 durations such as PT1H30M, --until accepts an absolute RFC 3339 "
+"timestamp, and --inherit drops the current domain's local override to fall "
+"back to inherited state\n"
 msgstr ""
 "  unlock: 現在の domain 用の認証済み secret session を開始または更新しま"
-"す。--duration は残り unlock 時間を秒で指定し、--inherit は現在の domain の "
-"local override を外して継承状態へ戻します\n"
+"す。--duration は数値のみなら分、1h30m のようなサフィックス付き形式、または "
+"PT1H30M のような ISO 8601 duration を受け付け、--until は絶対 RFC 3339 "
+"timestamp を受け付けます。--inherit は現在の domain の local override を外"
+"して継承状態へ戻します\n"
+
+#: src/store.c
+msgid "invalid value for --until: %s\n"
+msgstr "--until の値が不正です: %s\n"
+
+#: src/store.c
+msgid "--duration and --until cannot be combined\n"
+msgstr "--duration と --until は同時に指定できません\n"
 
 #: src/cli.c:615 src/cli.c:698
 msgid ""
@@ -473,10 +485,10 @@ msgstr "  現在の project directory 用 session を開始する: %s unlock\n"
 #, c-format
 msgid ""
 "  refresh an active session for 15 minutes without re-entering the "
-"passphrase: %s unlock --duration 900\n"
+"passphrase: %s unlock --duration 15\n"
 msgstr ""
 "  パスフレーズ再入力なしで有効な session を 15 分延長する: %s unlock --"
-"duration 900\n"
+"duration 15\n"
 
 #: src/cli.c:784
 #, c-format
