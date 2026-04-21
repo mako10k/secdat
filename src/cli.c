@@ -126,6 +126,19 @@ static int secdat_cli_is_space_at(const char *text)
     return iswspace(character) != 0;
 }
 
+static int secdat_cli_is_japanese_wrap_punctuation(wchar_t character)
+{
+    switch (character) {
+    case L'、':
+    case L'。':
+    case L'，':
+    case L'．':
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static void secdat_cli_print_wrapped_text(const char *text, size_t indent)
 {
     const char *cursor = text;
@@ -136,6 +149,7 @@ static void secdat_cli_print_wrapped_text(const char *text, size_t indent)
         const char *line_end;
         const char *scan;
         const char *last_space = NULL;
+        const char *last_punctuation_end = NULL;
         size_t width = 0;
         mbstate_t state;
 
@@ -170,6 +184,8 @@ static void secdat_cli_print_wrapped_text(const char *text, size_t indent)
 
             if (iswspace(character)) {
                 last_space = scan;
+            } else if (secdat_cli_is_japanese_wrap_punctuation(character)) {
+                last_punctuation_end = scan + consumed;
             }
             line_end = scan + consumed;
             scan += consumed;
@@ -180,9 +196,14 @@ static void secdat_cli_print_wrapped_text(const char *text, size_t indent)
             }
         }
 
-        if (*scan != '\0' && !secdat_cli_is_space_at(scan) && last_space != NULL) {
-            line_end = last_space;
-            scan = last_space;
+        if (*scan != '\0' && !secdat_cli_is_space_at(scan)) {
+            if (last_punctuation_end != NULL) {
+                line_end = last_punctuation_end;
+                scan = last_punctuation_end;
+            } else if (last_space != NULL) {
+                line_end = last_space;
+                scan = last_space;
+            }
         }
 
         fwrite(line_start, 1, (size_t)(line_end - line_start), stdout);

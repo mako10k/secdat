@@ -492,6 +492,8 @@ rc, stdout, stderr = run([bin_path, "--help"], {"LANGUAGE": "ja", "LC_ALL": ""})
 output = stdout + stderr
 if rc != 0 or "トピック:" not in output or "show global help, or combine with COMMAND or TOPIC for detailed help" in output or "decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock" in output or "explain domains, stores, inheritance, sessions, and KEYREF resolution" in output or "local unlock" not in output or "local lock" not in output:
     fail(f"japanese global help translation check failed: rc={rc} output={output!r}")
+if "全体 help を表示します。\n                        COMMAND または TOPIC と組み合わせると詳細 help を表示します" not in output:
+    fail(f"japanese global help wrap check failed: rc={rc} output={output!r}")
 
 issues_column = description_display_column(output, "issue 報告先:")
 repository_column = description_display_column(output, "repository:")
@@ -507,6 +509,8 @@ rc, stdout, stderr = run([bin_path, "help", "unlock"], {"LANGUAGE": "ja", "LC_AL
 output = stdout + stderr
 if rc != 0 or "local unlock" not in output or "local override" not in output or "authenticated secret session" in output:
     fail(f"japanese unlock help translation check failed: rc={rc} output={output!r}")
+if "現在の domain 用の local unlock を開始または更新します。\n                        --duration" not in output or "3339 timestamp を受け付けます。\n                        --inherit" not in output:
+    fail(f"japanese unlock help wrap check failed: rc={rc} output={output!r}")
 
 rc, stdout, stderr = run([bin_path, "help", "lock"], {"LANGUAGE": "ja", "LC_ALL": ""})
 output = stdout + stderr
