@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: secdat 0.1.0\n"
 "Report-Msgid-Bugs-To: noreply@example.invalid\n"
-"POT-Creation-Date: 2026-04-21 09:56+0900\n"
+"POT-Creation-Date: 2026-04-21 16:53+0900\n"
 "PO-Revision-Date: 2026-04-13 00:00+0000\n"
 "Last-Translator: GitHub Copilot <noreply@example.invalid>\n"
 "Language-Team: ja\n"
@@ -310,25 +310,16 @@ msgstr ""
 
 #: src/cli.c:614 src/cli.c:694
 msgid ""
-"  unlock: start or refresh a local unlock for the current "
-"domain; --duration accepts plain minutes, suffix forms like 1h30m, or ISO "
-"8601 durations such as PT1H30M, --until accepts an absolute RFC 3339 "
-"timestamp, and --inherit drops the current domain's local override to fall "
-"back to inherited state\n"
+"  unlock: start or refresh a local unlock for the current domain; --duration "
+"accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such "
+"as PT1H30M, --until accepts an absolute RFC 3339 timestamp, and --inherit "
+"drops the current domain's local override to fall back to inherited state\n"
 msgstr ""
-"  unlock: 現在の domain 用の local unlock を開始または更新します。"
-"--duration は数値のみなら分、1h30m のようなサフィックス付き形式、または "
-"PT1H30M のような ISO 8601 duration を受け付け、--until は絶対 RFC 3339 "
-"timestamp を受け付けます。--inherit は現在の domain の local override を外"
-"して継承状態へ戻します\n"
-
-#: src/store.c
-msgid "invalid value for --until: %s\n"
-msgstr "--until の値が不正です: %s\n"
-
-#: src/store.c
-msgid "--duration and --until cannot be combined\n"
-msgstr "--duration と --until は同時に指定できません\n"
+"  unlock: 現在の domain 用の local unlock を開始または更新します。--duration "
+"は数値のみなら分、1h30m のようなサフィックス付き形式、または PT1H30M のよう"
+"な ISO 8601 duration を受け付け、--until は絶対 RFC 3339 timestamp を受け付け"
+"ます。--inherit は現在の domain の local override を外して継承状態へ戻しま"
+"す\n"
 
 #: src/cli.c:615 src/cli.c:698
 msgid ""
@@ -336,8 +327,8 @@ msgid ""
 "local lock or clearing a local unlock, without checking whether the result "
 "stays unlocked\n"
 msgstr ""
-"  inherit: 結果がアンロックのままか確認せず、local lock を削除するか、"
-"local unlock を消して、現在の domain を継承状態へ戻します\n"
+"  inherit: 結果がアンロックのままか確認せず、local lock を削除するか、local "
+"unlock を消して、現在の domain を継承状態へ戻します\n"
 
 #: src/cli.c:616 src/cli.c:702
 msgid "  passwd: change the wrapped-master-key passphrase\n"
@@ -348,8 +339,8 @@ msgid ""
 "  lock: return the current domain to a locked local state, or do nothing "
 "when it is already locked\n"
 msgstr ""
-"  lock: 現在の domain を local に locked な状態へ戻し、すでに lock 中なら何もし"
-"ません\n"
+"  lock: 現在の domain をローカルなロック状態へ戻し、すでに lock 中なら何もしま"
+"せん\n"
 
 #: src/cli.c:618 src/cli.c:710
 msgid ""
@@ -387,12 +378,13 @@ msgstr ""
 "  usecases: 典型的なワークフローと作業指向のコマンド組み合わせ例を表示しま"
 "す\n"
 
-#: src/cli.c:627 src/cli.c:726
+#: src/cli.c:627
 msgid ""
-"  concepts: explain domains, stores, inheritance, local unlocks, local locks, and KEYREF "
-"resolution\n"
+"  concepts: explain domains, stores, inheritance, local unlocks, local "
+"locks, and KEYREF resolution\n"
 msgstr ""
-"  concepts: domain、store、継承、local unlock、local lock、KEYREF 解決の考え方を説明します\n"
+"  concepts: domain、store、継承、local unlock、local lock、KEYREF 解決の考え"
+"方を説明します\n"
 
 #: src/cli.c:632
 #, c-format
@@ -402,6 +394,18 @@ msgid ""
 msgstr ""
 "\n"
 "意味:\n"
+
+#: src/cli.c:726
+#, fuzzy
+#| msgid ""
+#| "  concepts: explain domains, stores, inheritance, local unlocks, local "
+#| "locks, and KEYREF resolution\n"
+msgid ""
+"  concepts: explain domains, stores, inheritance, sessions, and KEYREF "
+"resolution\n"
+msgstr ""
+"  concepts: domain、store、継承、local unlock、local lock、KEYREF 解決の考え"
+"方を説明します\n"
 
 #: src/cli.c:745 src/cli.c:838
 #, c-format
@@ -622,8 +626,8 @@ msgstr ""
 #: src/cli.c:851
 #, c-format
 msgid ""
-"  inspect inheritance and local locks under one branch: %s --dir ~/"
-"example/project domain ls -l --descendants\n"
+"  inspect inheritance and local locks under one branch: %s --dir ~/example/"
+"project domain ls -l --descendants\n"
 msgstr ""
 "  1 つの branch 配下の継承と local lock を確認する: %s --dir ~/example/"
 "project domain ls -l --descendants\n"
@@ -659,16 +663,16 @@ msgid ""
 "  inheritance: reads fall back to parent domains until a local value, "
 "tombstone, or local lock changes the effective view\n"
 msgstr ""
-"  inheritance: 読み取りは local の値、tombstone、local lock が有効 view を"
-"変えるまで親 domain へフォールバックします\n"
+"  inheritance: 読み取りは local の値、tombstone、local lock が有効 view を変"
+"えるまで親 domain へフォールバックします\n"
 
 #: src/cli.c:865
 msgid ""
 "  local lock: a local override that blocks reuse of an inherited unlock "
 "until the current domain unlocks or inherits again\n"
 msgstr ""
-"  local lock: 現在 domain が再び unlock または inherit するまで、継承された"
-" unlock の再利用を止める local override です\n"
+"  local lock: 現在 domain が再び unlock または inherit するまで、継承された "
+"unlock の再利用を止める local override です\n"
 
 #: src/cli.c:866
 #, c-format
@@ -785,191 +789,191 @@ msgstr "Issue 報告先: %s\n"
 msgid "Author: %s\n"
 msgstr "Author: %s\n"
 
-#: src/store.c:313 src/store.c:329 src/store.c:400 src/store.c:436
-#: src/store.c:481 src/store.c:571 src/store.c:580 src/store.c:594
-#: src/store.c:600 src/store.c:1778 src/store.c:1820 src/store.c:1847
-#: src/store.c:1876 src/store.c:1911 src/store.c:2248 src/store.c:3769
-#: src/store.c:4242 src/store.c:4346 src/store.c:4396 src/store.c:4626
-#: src/store.c:4729 src/store.c:4770 src/store.c:4839 src/store.c:5793
-#: src/store.c:5915 src/store.c:5936 src/store.c:6008 src/store.c:6865
-#: src/store.c:7026 src/store.c:7832 src/store.c:8124
+#: src/store.c:314 src/store.c:330 src/store.c:401 src/store.c:437
+#: src/store.c:482 src/store.c:572 src/store.c:581 src/store.c:595
+#: src/store.c:601 src/store.c:2169 src/store.c:2211 src/store.c:2238
+#: src/store.c:2267 src/store.c:2302 src/store.c:2639 src/store.c:4160
+#: src/store.c:4633 src/store.c:4737 src/store.c:4787 src/store.c:5017
+#: src/store.c:5120 src/store.c:5161 src/store.c:5230 src/store.c:6182
+#: src/store.c:6304 src/store.c:6325 src/store.c:6397 src/store.c:7269
+#: src/store.c:7430 src/store.c:8236 src/store.c:8528
 #, c-format
 msgid "out of memory\n"
 msgstr ""
 
-#: src/store.c:621 src/store.c:639 src/store.c:1463 src/store.c:1750
-#: src/store.c:1925 src/store.c:2029 src/store.c:2056 src/store.c:2072
-#: src/store.c:2159 src/store.c:2280 src/store.c:2303 src/store.c:2319
-#: src/store.c:2898 src/store.c:3180 src/store.c:3207 src/store.c:4189
-#: src/store.c:6253 src/store.c:6287 src/store.c:6336 src/store.c:7079
-#: src/store.c:7201 src/store.c:7307
+#: src/store.c:622 src/store.c:640 src/store.c:1854 src/store.c:2141
+#: src/store.c:2316 src/store.c:2420 src/store.c:2447 src/store.c:2463
+#: src/store.c:2550 src/store.c:2671 src/store.c:2694 src/store.c:2710
+#: src/store.c:3289 src/store.c:3571 src/store.c:3598 src/store.c:4580
+#: src/store.c:6642 src/store.c:6676 src/store.c:6725 src/store.c:7483
+#: src/store.c:7605 src/store.c:7711
 #, c-format
 msgid "path is too long\n"
 msgstr ""
 
-#: src/store.c:634
+#: src/store.c:635
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to resolve directory: %s\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:653
+#: src/store.c:654
 #, c-format
 msgid "writes to the default domain are not supported\n"
 msgstr "default domain への書き込みはサポートされていません\n"
 
-#: src/store.c:730 src/store.c:2140
+#: src/store.c:731 src/store.c:2531
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to remove file: %s\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:774
+#: src/store.c:775
 #, c-format
 msgid "note: %zu descendant domains can now reuse this session\n"
 msgstr "補足: %zu 個の descendant domain がこの session を再利用できます\n"
 
-#: src/store.c:780
+#: src/store.c:781
 #, c-format
 msgid "note: %zu descendant domains remain locked under this branch\n"
 msgstr ""
 "補足: この branch 配下では %zu 個の descendant domain がまだ locked のままで"
 "す\n"
 
-#: src/store.c:781
+#: src/store.c:782
 msgid "affected descendants:"
 msgstr "影響を受ける descendant:"
 
-#: src/store.c:793
+#: src/store.c:794
 #, c-format
 msgid "  %s\n"
 msgstr "  %s\n"
 
-#: src/store.c:797
+#: src/store.c:798
 #, c-format
 msgid "  ... and %zu more\n"
 msgstr "  ... さらに %zu 個\n"
 
-#: src/store.c:800
+#: src/store.c:801
 #, c-format
 msgid "inspect descendants: secdat --dir %s domain ls -l --descendants\n"
 msgstr "descendant を確認: secdat --dir %s domain ls -l --descendants\n"
 
-#: src/store.c:802
+#: src/store.c:803
 #, c-format
 msgid "inspect one descendant: secdat --dir %s domain status\n"
 msgstr "1 つの descendant を確認: secdat --dir %s domain status\n"
 
-#: src/store.c:803
+#: src/store.c:804
 #, c-format
 msgid "unlock one descendant: secdat --dir %s unlock\n"
 msgstr "1 つの descendant を unlock: secdat --dir %s unlock\n"
 
-#: src/store.c:821 src/store.c:827 src/store.c:4013 src/store.c:5374
+#: src/store.c:822 src/store.c:828 src/store.c:4404 src/store.c:5764
 #, c-format
 msgid "resolved domain: %s\n"
 msgstr "解決された domain: %s\n"
 
-#: src/store.c:822
+#: src/store.c:823
 #, c-format
 msgid "inspect current domain: secdat domain status\n"
 msgstr "現在の domain を確認: secdat domain status\n"
 
-#: src/store.c:823
+#: src/store.c:824
 #, c-format
 msgid "unlock current domain: secdat unlock\n"
 msgstr "現在の domain を unlock: secdat unlock\n"
 
-#: src/store.c:828
+#: src/store.c:829
 #, c-format
 msgid "inspect current domain: secdat --dir %s domain status\n"
 msgstr "現在の domain を確認: secdat --dir %s domain status\n"
 
-#: src/store.c:829
+#: src/store.c:830
 #, c-format
 msgid "unlock current domain: secdat --dir %s unlock\n"
 msgstr "現在の domain を unlock: secdat --dir %s unlock\n"
 
-#: src/store.c:876
+#: src/store.c:877
 #, c-format
 msgid "invalid value for --unlock-timeout: %s\n"
 msgstr "--unlock-timeout の値が不正です: %s\n"
 
-#: src/store.c:948
+#: src/store.c:1325
 #, c-format
 msgid "missing value for --unlock-timeout\n"
 msgstr "--unlock-timeout に値が必要です\n"
 
-#: src/store.c:950 src/store.c:956 src/store.c:965
+#: src/store.c:1327 src/store.c:1333 src/store.c:1342
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid arguments for get\n"
 msgstr "%s の引数が不正です\n"
 
-#: src/store.c:971
+#: src/store.c:1348
 #, c-format
 msgid "missing key for get\n"
 msgstr "get のキーが不足しています\n"
 
-#: src/store.c:976
+#: src/store.c:1353
 #, c-format
 msgid "--unlock-timeout requires --on-demand-unlock or %s\n"
 msgstr "--unlock-timeout を使うには --on-demand-unlock または %s が必要です\n"
 
-#: src/store.c:1005
+#: src/store.c:1382
 #, c-format
 msgid "invalid value for --timeout: %s\n"
 msgstr "--timeout の値が不正です: %s\n"
 
-#: src/store.c:1012
+#: src/store.c:1389
 #, c-format
 msgid "missing value for --timeout\n"
 msgstr "--timeout に値が必要です\n"
 
-#: src/store.c:1021 src/store.c:1028 src/store.c:5307
+#: src/store.c:1398 src/store.c:1405 src/store.c:5698
 #, c-format
 msgid "invalid arguments for wait-unlock\n"
 msgstr "wait-unlock の引数が不正です\n"
 
-#: src/store.c:1050
+#: src/store.c:1427
 #, c-format
 msgid ""
 "waiting for another terminal to unlock secrets for resolved domain: %s\n"
 msgstr ""
 "別端末で secrets が unlock されるのを待機しています。解決済み domain: %s\n"
 
-#: src/store.c:1052 src/store.c:1111
+#: src/store.c:1429 src/store.c:1488
 #, c-format
 msgid "unlock from another terminal: secdat unlock\n"
 msgstr "別端末で unlock: secdat unlock\n"
 
-#: src/store.c:1054 src/store.c:1113
+#: src/store.c:1431 src/store.c:1490
 #, c-format
 msgid "unlock from another terminal: secdat --dir %s unlock\n"
 msgstr "別端末で unlock: secdat --dir %s unlock\n"
 
-#: src/store.c:1057
+#: src/store.c:1434
 #, c-format
 msgid "unlock wait timeout: %lld seconds\n"
 msgstr "unlock 待機タイムアウト: %lld 秒\n"
 
-#: src/store.c:1084
+#: src/store.c:1461
 #, c-format
 msgid ""
 "timed out waiting for another terminal to unlock secrets after %lld seconds\n"
 msgstr "別端末での secrets の unlock 待機が %lld 秒でタイムアウトしました\n"
 
-#: src/store.c:1109
+#: src/store.c:1486
 #, c-format
 msgid "waiting for another terminal to unlock resolved domain: %s\n"
 msgstr "別端末で解決済み domain が unlock されるのを待機しています: %s\n"
 
-#: src/store.c:1116
+#: src/store.c:1493
 #, c-format
 msgid "wait-unlock timeout: %lld seconds\n"
 msgstr "wait-unlock タイムアウト: %lld 秒\n"
 
-#: src/store.c:1140
+#: src/store.c:1517
 #, c-format
 msgid ""
 "timed out waiting for another terminal to unlock resolved domain after %lld "
@@ -977,24 +981,34 @@ msgid ""
 msgstr ""
 "別端末での解決済み domain の unlock 待機が %lld 秒でタイムアウトしました\n"
 
-#: src/store.c:1191
+#: src/store.c:1569
 #, fuzzy, c-format
 #| msgid "invalid value for --timeout: %s\n"
 msgid "invalid value for --duration: %s\n"
 msgstr "--timeout の値が不正です: %s\n"
 
-#: src/store.c:1214 src/store.c:1221 src/store.c:1227 src/store.c:1232
-#: src/store.c:1237 src/store.c:5359
+#: src/store.c:1576
+#, c-format
+msgid "invalid value for --until: %s\n"
+msgstr "--until の値が不正です: %s\n"
+
+#: src/store.c:1599 src/store.c:1606 src/store.c:1618 src/store.c:1623
+#: src/store.c:1628 src/store.c:5749
 #, c-format
 msgid "invalid arguments for unlock\n"
 msgstr "unlock の引数が不正です\n"
 
-#: src/store.c:1271 src/store.c:1278 src/store.c:1284 src/store.c:5616
+#: src/store.c:1612
+#, c-format
+msgid "--duration and --until cannot be combined\n"
+msgstr "--duration と --until は同時に指定できません\n"
+
+#: src/store.c:1662 src/store.c:1669 src/store.c:1675 src/store.c:6005
 #, c-format
 msgid "invalid arguments for lock\n"
 msgstr "lock の引数が不正です\n"
 
-#: src/store.c:1343
+#: src/store.c:1734
 #, c-format
 msgid ""
 "unlock --descendants requires confirmation on a terminal or rerun with --"
@@ -1003,24 +1017,24 @@ msgstr ""
 "unlock --descendants には端末での確認が必要です。非対話では --yes を付けて再"
 "実行してください\n"
 
-#: src/store.c:1350
+#: src/store.c:1741
 #, c-format
 msgid "failed to read confirmation\n"
 msgstr "確認入力の読み取りに失敗しました\n"
 
-#: src/store.c:1370
+#: src/store.c:1761
 msgid ""
 "unlock descendant domains in this subtree? local locks will remain [y/N]: "
 msgstr ""
-"この subtree の descendant domain を unlock しますか? local lock は残りま"
-"す [y/N]: "
+"この subtree の descendant domain を unlock しますか? local lock は残ります "
+"[y/N]: "
 
-#: src/store.c:1380
+#: src/store.c:1771
 #, c-format
 msgid "descendant unlock cancelled\n"
 msgstr "descendant unlock を中止しました\n"
 
-#: src/store.c:1411
+#: src/store.c:1802
 #, c-format
 msgid ""
 "note: unlocked %zu descendant domains in this subtree; local locks remain\n"
@@ -1028,337 +1042,337 @@ msgstr ""
 "注: この subtree で %zu 個の descendant domain を unlock しました。local "
 "lock は残ります\n"
 
-#: src/store.c:1433 src/store.c:1457 src/store.c:1475 src/store.c:1484
+#: src/store.c:1824 src/store.c:1848 src/store.c:1866 src/store.c:1875
 #, c-format
 msgid "invalid key reference: %s\n"
 msgstr "不正なキー参照です: %s\n"
 
-#: src/store.c:1550
+#: src/store.c:1941
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid arguments for ls\n"
 msgstr "%s の引数が不正です\n"
 
-#: src/store.c:1603 src/store.c:1612
+#: src/store.c:1994 src/store.c:2003
 #, fuzzy, c-format
 #| msgid "invalid arguments for lock\n"
 msgid "invalid arguments for exec\n"
 msgstr "lock の引数が不正です\n"
 
-#: src/store.c:1659 src/store.c:1666
+#: src/store.c:2050 src/store.c:2057
 #, c-format
 msgid "invalid arguments for list\n"
 msgstr "list の引数が不正です\n"
 
-#: src/store.c:1672
+#: src/store.c:2063
 #, c-format
 msgid "missing state filter for list\n"
 msgstr "list に state filter が必要です\n"
 
-#: src/store.c:1697 src/store.c:1705 src/store.c:1715
+#: src/store.c:2088 src/store.c:2096 src/store.c:2106
 #, c-format
 msgid "invalid arguments for %s\n"
 msgstr "%s の引数が不正です\n"
 
-#: src/store.c:1842 src/store.c:1855
+#: src/store.c:2233 src/store.c:2246
 #, c-format
 msgid "invalid overlay payload\n"
 msgstr "overlay payload が不正です\n"
 
-#: src/store.c:1963 src/store.c:6045 src/store.c:7627
+#: src/store.c:2354 src/store.c:6434 src/store.c:8031
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to open directory: %s\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:2084 src/store.c:2091
+#: src/store.c:2475 src/store.c:2482
 #, fuzzy, c-format
 #| msgid "failed to create session agent socket\n"
 msgid "failed to create directory: %s\n"
 msgstr "セッションエージェントのソケット作成に失敗しました\n"
 
-#: src/store.c:2096
+#: src/store.c:2487
 #, c-format
 msgid "not a directory: %s\n"
 msgstr ""
 
-#: src/store.c:2154
+#: src/store.c:2545
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid path: %s\n"
 msgstr "不正なパスです: %s\n"
 
-#: src/store.c:2169
+#: src/store.c:2560
 #, fuzzy, c-format
 #| msgid "failed to create session agent socket\n"
 msgid "failed to create temporary file for: %s\n"
 msgstr "セッションエージェントのソケット作成に失敗しました\n"
 
-#: src/store.c:2174
+#: src/store.c:2565
 #, fuzzy, c-format
 #| msgid "failed to start session agent\n"
 msgid "failed to set permissions on: %s\n"
 msgstr "セッションエージェントの起動に失敗しました\n"
 
-#: src/store.c:2184
+#: src/store.c:2575
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to write file: %s\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:2193
+#: src/store.c:2584
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to fsync file: %s\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:2200
+#: src/store.c:2591
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to close file: %s\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:2206
+#: src/store.c:2597
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to rename file into place: %s\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:2222
+#: src/store.c:2613
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to open file: %s\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:2228 src/store.c:2241
+#: src/store.c:2619 src/store.c:2632
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to seek file: %s\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:2235
+#: src/store.c:2626
 #, fuzzy, c-format
 #| msgid "failed to update terminal settings\n"
 msgid "failed to determine file size: %s\n"
 msgstr "端末設定の更新に失敗しました\n"
 
-#: src/store.c:2255
+#: src/store.c:2646
 #, fuzzy, c-format
 #| msgid "failed to read terminal settings\n"
 msgid "failed to read file: %s\n"
 msgstr "端末設定の読み取りに失敗しました\n"
 
-#: src/store.c:2298
+#: src/store.c:2689
 #, c-format
 msgid "HOME is not set\n"
 msgstr ""
 
-#: src/store.c:2347 src/store.c:4944
+#: src/store.c:2738 src/store.c:5335
 #, fuzzy, c-format
 #| msgid "failed to derive wrap key\n"
 msgid "failed to derive encryption key\n"
 msgstr "wrap key の導出に失敗しました\n"
 
-#: src/store.c:2484
+#: src/store.c:2875
 #, c-format
 msgid "failed to open file descriptor\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:2906
+#: src/store.c:3297
 #, c-format
 msgid "failed to bind session agent socket\n"
 msgstr "セッションエージェントのソケット bind に失敗しました\n"
 
-#: src/store.c:2912
+#: src/store.c:3303
 #, c-format
 msgid "failed to listen on session agent socket\n"
 msgstr "セッションエージェントのソケット listen に失敗しました\n"
 
-#: src/store.c:2958 src/store.c:2991
+#: src/store.c:3349 src/store.c:3382
 #, c-format
 msgid "failed to start session agent\n"
 msgstr "セッションエージェントの起動に失敗しました\n"
 
-#: src/store.c:3014 src/store.c:3212
+#: src/store.c:3405 src/store.c:3603
 #, c-format
 msgid "failed to connect to session agent\n"
 msgstr "セッションエージェントへの接続に失敗しました\n"
 
-#: src/store.c:3026
+#: src/store.c:3417
 #, c-format
 msgid "this command requires a terminal for passphrase input\n"
 msgstr "このコマンドにはパスフレーズ入力用の端末が必要です\n"
 
-#: src/store.c:3034
+#: src/store.c:3425
 #, c-format
 msgid "failed to read terminal settings\n"
 msgstr "端末設定の読み取りに失敗しました\n"
 
-#: src/store.c:3041 src/store.c:3057
+#: src/store.c:3432 src/store.c:3448
 #, c-format
 msgid "failed to update terminal settings\n"
 msgstr "端末設定の更新に失敗しました\n"
 
-#: src/store.c:3047
+#: src/store.c:3438
 #, c-format
 msgid "failed to read passphrase\n"
 msgstr "パスフレーズの読み取りに失敗しました\n"
 
-#: src/store.c:3068
+#: src/store.c:3459
 #, c-format
 msgid "empty passphrase is not allowed\n"
 msgstr "空のパスフレーズは許可されません\n"
 
-#: src/store.c:3079
+#: src/store.c:3470
 msgid "Create secdat passphrase: "
 msgstr "secdat パスフレーズを作成してください: "
 
-#: src/store.c:3082
+#: src/store.c:3473
 msgid "Confirm secdat passphrase: "
 msgstr "secdat パスフレーズを再入力してください: "
 
-#: src/store.c:3089 src/store.c:3116
+#: src/store.c:3480 src/store.c:3507
 #, c-format
 msgid "passphrase confirmation did not match\n"
 msgstr "確認用パスフレーズが一致しません\n"
 
-#: src/store.c:3144
+#: src/store.c:3535
 msgid "Enter secdat passphrase: "
 msgstr "secdat パスフレーズを入力してください: "
 
-#: src/store.c:3172 src/store.c:3202
+#: src/store.c:3563 src/store.c:3593
 #, c-format
 msgid "failed to create session agent socket\n"
 msgstr "セッションエージェントのソケット作成に失敗しました\n"
 
-#: src/store.c:4015
+#: src/store.c:4406
 #, c-format
 msgid "unlock writable session: secdat unlock\n"
 msgstr "書き込み可能セッションを開始: secdat unlock\n"
 
-#: src/store.c:4017
+#: src/store.c:4408
 #, c-format
 msgid "unlock writable session: secdat --dir %s unlock\n"
 msgstr "書き込み可能セッションを開始: secdat --dir %s unlock\n"
 
-#: src/store.c:4026
+#: src/store.c:4417
 #, c-format
 msgid "current session is readonly and cannot run %s\n"
 msgstr "現在のセッションは読み取り専用のため %s を実行できません\n"
 
-#: src/store.c:4075 src/store.c:7137
+#: src/store.c:4466 src/store.c:7541
 #, fuzzy, c-format
 #| msgid "failed to derive wrap key\n"
 msgid "failed to remove key: %s\n"
 msgstr "wrap key の導出に失敗しました\n"
 
-#: src/store.c:4091 src/store.c:4096
+#: src/store.c:4482 src/store.c:4487
 #, c-format
 msgid "lock --save requires a local volatile session\n"
 msgstr "lock --save にはローカルの揮発セッションが必要です\n"
 
-#: src/store.c:4176
+#: src/store.c:4567
 #, c-format
 msgid "failed to derive wrap key\n"
 msgstr "wrap key の導出に失敗しました\n"
 
-#: src/store.c:4193 src/store.c:4232 src/store.c:4616 src/store.c:5785
+#: src/store.c:4584 src/store.c:4623 src/store.c:5007 src/store.c:6174
 #, fuzzy, c-format
 #| msgid "failed to derive wrap key\n"
 msgid "failed to generate nonce\n"
 msgstr "wrap key の導出に失敗しました\n"
 
-#: src/store.c:4258 src/store.c:4642 src/store.c:5807
+#: src/store.c:4649 src/store.c:5033 src/store.c:6196
 #, fuzzy, c-format
 #| msgid "failed to create session agent socket\n"
 msgid "failed to create encryption context\n"
 msgstr "セッションエージェントのソケット作成に失敗しました\n"
 
-#: src/store.c:4264 src/store.c:4648 src/store.c:5814
+#: src/store.c:4655 src/store.c:5039 src/store.c:6203
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to initialize encryption\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:4274 src/store.c:4658 src/store.c:5825
+#: src/store.c:4665 src/store.c:5049 src/store.c:6214
 #, fuzzy, c-format
 #| msgid "failed to derive wrap key\n"
 msgid "failed to encrypt value\n"
 msgstr "wrap key の導出に失敗しました\n"
 
-#: src/store.c:4282 src/store.c:4666 src/store.c:5830
+#: src/store.c:4673 src/store.c:5057 src/store.c:6219
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to finalize encryption\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:4287 src/store.c:4671 src/store.c:5836
+#: src/store.c:4678 src/store.c:5062 src/store.c:6225
 #, fuzzy, c-format
 #| msgid "failed to start session agent\n"
 msgid "failed to obtain authentication tag\n"
 msgstr "セッションエージェントの起動に失敗しました\n"
 
-#: src/store.c:4329 src/store.c:4337 src/store.c:4879
+#: src/store.c:4720 src/store.c:4728 src/store.c:5270
 #, c-format
 msgid "invalid wrapped master key\n"
 msgstr "ラップ済み master key が不正です\n"
 
-#: src/store.c:4421 src/store.c:4710 src/store.c:4719 src/store.c:8114
-#: src/store.c:8118 src/store.c:8141
+#: src/store.c:4812 src/store.c:5101 src/store.c:5110 src/store.c:8518
+#: src/store.c:8522 src/store.c:8545
 #, c-format
 msgid "invalid secret bundle\n"
 msgstr "secret bundle が不正です\n"
 
-#: src/store.c:4461
+#: src/store.c:4852
 #, c-format
 msgid "secret bundle entry is too large\n"
 msgstr "secret bundle のエントリが大きすぎます\n"
 
-#: src/store.c:4608
+#: src/store.c:4999
 #, c-format
 msgid "bundle file already exists: %s\n"
 msgstr "bundle ファイルは既に存在します: %s\n"
 
-#: src/store.c:4612
+#: src/store.c:5003
 #, c-format
 msgid "secret bundle is too large\n"
 msgstr "secret bundle が大きすぎます\n"
 
-#: src/store.c:4775 src/store.c:4845 src/store.c:5946
+#: src/store.c:5166 src/store.c:5236 src/store.c:6335
 #, fuzzy, c-format
 #| msgid "failed to create session agent socket\n"
 msgid "failed to create decryption context\n"
 msgstr "セッションエージェントのソケット作成に失敗しました\n"
 
-#: src/store.c:4781 src/store.c:4851 src/store.c:5953
+#: src/store.c:5172 src/store.c:5242 src/store.c:6342
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to initialize decryption\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:4785 src/store.c:4861 src/store.c:5958
+#: src/store.c:5176 src/store.c:5252 src/store.c:6347
 #, fuzzy, c-format
 #| msgid "failed to derive wrap key\n"
 msgid "failed to decrypt value\n"
 msgstr "wrap key の導出に失敗しました\n"
 
-#: src/store.c:4789 src/store.c:4870 src/store.c:5963
+#: src/store.c:5180 src/store.c:5261 src/store.c:6352
 #, fuzzy, c-format
 #| msgid "failed to start session agent\n"
 msgid "failed to set authentication tag\n"
 msgstr "セッションエージェントの起動に失敗しました\n"
 
-#: src/store.c:4793
+#: src/store.c:5184
 #, c-format
 msgid "failed to unlock secret bundle\n"
 msgstr "secret bundle の unlock に失敗しました\n"
 
-#: src/store.c:4874
+#: src/store.c:5265
 #, c-format
 msgid "failed to unlock persistent master key\n"
 msgstr "永続 master key の unlock に失敗しました\n"
 
-#: src/store.c:4935
+#: src/store.c:5326
 #, c-format
 msgid ""
 "missing SECDAT_MASTER_KEY and no active secdat session; run secdat unlock or "
@@ -1367,189 +1381,162 @@ msgstr ""
 "SECDAT_MASTER_KEY が未設定で、有効な secdat セッションもありません。secdat "
 "unlock を実行するか SECDAT_MASTER_KEY を export してください\n"
 
-#: src/store.c:5106 src/store.c:5110 src/store.c:5133
+#: src/store.c:5497 src/store.c:5501 src/store.c:5524
 #, c-format
 msgid "no local lock for: %s\n"
 msgstr "%s に local lock はありません\n"
 
-#: src/store.c:5120
+#: src/store.c:5511
 #, c-format
 msgid "refusing to remove local lock for: %s\n"
 msgstr "%s の local lock の削除を拒否しました\n"
 
-#: src/store.c:5121 src/store.c:5169
+#: src/store.c:5512 src/store.c:5560
 #, c-format
 msgid "expected resulting state: %s\n"
 msgstr "期待する結果状態: %s\n"
 
-#: src/store.c:5123
+#: src/store.c:5514
 #, c-format
 msgid "actual resulting state after removing local lock: %s\n"
 msgstr "local lock 削除後の実際の結果状態: %s\n"
 
-#: src/store.c:5138
+#: src/store.c:5529
 msgid "local lock removed; resulting state: unlocked"
 msgstr "local lock を削除しました。結果状態: unlocked"
 
-#: src/store.c:5140
+#: src/store.c:5531
 msgid "local lock removed; resulting state: locked"
 msgstr "local lock を削除しました。結果状態: locked"
 
-#: src/store.c:5142
+#: src/store.c:5533
 msgid "local lock removed"
 msgstr "local lock を削除しました"
 
-#: src/store.c:5158 src/store.c:5204
+#: src/store.c:5549 src/store.c:5595
 #, c-format
 msgid "no local lock or local unlock for: %s\n"
 msgstr "%s に local lock も local unlock もありません\n"
 
-#: src/store.c:5168
+#: src/store.c:5559
 #, c-format
 msgid "refusing to clear local unlock for: %s\n"
 msgstr "%s の local unlock の消去を拒否しました\n"
 
-#: src/store.c:5171
+#: src/store.c:5562
 #, c-format
 msgid "actual resulting state after clearing local unlock: %s\n"
 msgstr "local unlock 消去後の実際の結果状態: %s\n"
 
-#: src/store.c:5182
+#: src/store.c:5573
 msgid "local unlock cleared; resulting state: unlocked"
 msgstr "local unlock を消去しました。結果状態: unlocked"
 
-#: src/store.c:5184
+#: src/store.c:5575
 msgid "local unlock cleared; resulting state: locked"
 msgstr "local unlock を消去しました。結果状態: locked"
 
-#: src/store.c:5186
+#: src/store.c:5577
 msgid "local unlock cleared"
 msgstr "local unlock を消去しました"
 
-#: src/store.c:5244 src/store.c:5251 src/store.c:5257
+#: src/store.c:5635 src/store.c:5642 src/store.c:5648
 #, c-format
 msgid "invalid arguments for status\n"
 msgstr "status の引数が不正です\n"
 
-#: src/store.c:5264 src/store.c:5273
+#: src/store.c:5655 src/store.c:5664
 msgid "unlocked"
 msgstr "アンロック済み"
 
-#: src/store.c:5265
+#: src/store.c:5656
 msgid "source: environment"
 msgstr "取得元: 環境変数"
 
-#: src/store.c:5266 src/store.c:5283 src/store.c:5294
+#: src/store.c:5657 src/store.c:5674 src/store.c:5685
 msgid "wrapped master key: present"
 msgstr "ラップ済み master key: あり"
 
-#: src/store.c:5266 src/store.c:5283 src/store.c:5294
+#: src/store.c:5657 src/store.c:5674 src/store.c:5685
 msgid "wrapped master key: absent"
 msgstr "ラップ済み master key: なし"
 
-#: src/store.c:5274
+#: src/store.c:5665
 msgid "source: session agent"
 msgstr "取得元: セッションエージェント"
 
-#: src/store.c:5276
+#: src/store.c:5667
 msgid "overlay: volatile"
 msgstr "overlay: volatile"
 
-#: src/store.c:5279
+#: src/store.c:5670
 msgid "access: readonly"
 msgstr "access: readonly"
 
-#: src/store.c:5282
+#: src/store.c:5673
 #, c-format
 msgid "expires in: %s\n"
 msgstr "残り時間: %s\n"
 
-#: src/store.c:5293
+#: src/store.c:5684
 msgid "locked"
 msgstr "ロック中"
 
-#: src/store.c:5392
+#: src/store.c:5782
 #, c-format
 msgid "this will unlock %zu descendant domains in the current subtree\n"
 msgstr "現在の subtree で %zu 個の descendant domain を unlock します\n"
 
-#: src/store.c:5393
+#: src/store.c:5783
 #, c-format
-msgid ""
-"local locks will remain after local unlock expiry or a later lock\n"
-msgstr ""
-"local unlock の期限切れ後や後続の lock 後も local lock は残ります\n"
+msgid "local locks will remain after local unlock expiry or a later lock\n"
+msgstr "local unlock の期限切れ後や後続の lock 後も local lock は残ります\n"
 
-#: src/domain.c:1771
-msgid "effective source: local unlock"
-msgstr "有効な取得元: local unlock"
-
-#: src/domain.c:1775
-msgid "effective source: inherited unlock"
-msgstr "有効な取得元: inherited unlock"
-
-#: src/domain.c:1780
-msgid "effective source: local lock"
-msgstr "有効な取得元: local lock"
-
-#: src/domain.c:1784
-msgid "effective source: inherited lock"
-msgstr "有効な取得元: inherited lock"
-
-#: src/domain.c:1776 src/domain.c:1785
-#, c-format
-msgid "inherited from: %s\n"
-msgstr "%s から継承\n"
-
-#: src/domain.c:301
-msgid "local-unlock"
-msgstr "local-unlock"
-
-#: src/store.c:5428
+#: src/store.c:5817
 msgid "volatile session refreshed"
 msgstr "揮発セッションを延長しました"
 
-#: src/store.c:5428
+#: src/store.c:5817
 msgid "readonly session refreshed"
 msgstr "読み取り専用セッションを延長しました"
 
-#: src/store.c:5428
+#: src/store.c:5817
 msgid "session refreshed"
 msgstr "セッションを延長しました"
 
-#: src/store.c:5502
+#: src/store.c:5891
 msgid "readonly session unlocked from environment"
 msgstr "環境変数から読み取り専用セッションをアンロックしました"
 
-#: src/store.c:5503 src/store.c:5595
+#: src/store.c:5892 src/store.c:5984
 msgid "readonly session unlocked"
 msgstr "読み取り専用セッションをアンロックしました"
 
-#: src/store.c:5505 src/store.c:5541
+#: src/store.c:5894 src/store.c:5930
 msgid "volatile session unlocked with an ephemeral master key"
 msgstr "揮発セッションを一時 master key でアンロックしました"
 
-#: src/store.c:5508
+#: src/store.c:5897
 msgid "volatile session unlocked from environment"
 msgstr "環境変数から揮発セッションをアンロックしました"
 
-#: src/store.c:5509 src/store.c:5595
+#: src/store.c:5898 src/store.c:5984
 msgid "volatile session unlocked"
 msgstr "揮発セッションをアンロックしました"
 
-#: src/store.c:5512
+#: src/store.c:5901
 msgid "persistent master key initialized; session unlocked from environment"
 msgstr "永続 master key を初期化し、環境変数からセッションをアンロックしました"
 
-#: src/store.c:5513
+#: src/store.c:5902
 msgid "persistent master key initialized; session unlocked"
 msgstr "永続 master key を初期化し、セッションをアンロックしました"
 
-#: src/store.c:5515
+#: src/store.c:5904
 msgid "session unlocked from environment"
 msgstr "環境変数からセッションをアンロックしました"
 
-#: src/store.c:5548
+#: src/store.c:5937
 #, c-format
 msgid ""
 "no persistent master key is initialized; readonly unlock requires an "
@@ -1558,7 +1545,7 @@ msgstr ""
 "永続 master key が未初期化のため、readonly unlock には既存の master key が必"
 "要です\n"
 
-#: src/store.c:5553 src/store.c:5723
+#: src/store.c:5942 src/store.c:6112
 #, c-format
 msgid ""
 "no persistent master key is initialized; run secdat unlock once on a "
@@ -1567,80 +1554,80 @@ msgstr ""
 "永続 master key が未初期化です。端末上で一度 secdat unlock を実行して作成して"
 "ください\n"
 
-#: src/store.c:5595
+#: src/store.c:5984
 msgid "session unlocked"
 msgstr "セッションをアンロックしました"
 
-#: src/store.c:5639
+#: src/store.c:6028
 msgid "already locked"
 msgstr "すでにロック中です"
 
-#: src/store.c:5661
+#: src/store.c:6050
 msgid "volatile session saved and locked"
 msgstr "揮発セッションを保存してロックしました"
 
-#: src/store.c:5661
+#: src/store.c:6050
 msgid "session locked"
 msgstr "セッションをロックしました"
 
-#: src/store.c:5694
+#: src/store.c:6083
 #, c-format
 msgid "invalid arguments for inherit\n"
 msgstr "inherit の引数が不正です\n"
 
-#: src/store.c:5718
+#: src/store.c:6107
 #, c-format
 msgid "invalid arguments for passwd\n"
 msgstr "passwd の引数が不正です\n"
 
-#: src/store.c:5735
+#: src/store.c:6124
 msgid "Create new secdat passphrase: "
 msgstr "新しい secdat パスフレーズを作成してください: "
 
-#: src/store.c:5736
+#: src/store.c:6125
 msgid "Confirm new secdat passphrase: "
 msgstr "新しい secdat パスフレーズを再入力してください: "
 
-#: src/store.c:5751
+#: src/store.c:6140
 msgid "persistent master key passphrase updated"
 msgstr "永続 master key のパスフレーズを更新しました"
 
-#: src/store.c:5881 src/store.c:5899 src/store.c:5904 src/store.c:5910
-#: src/store.c:5925 src/store.c:6484 src/store.c:6518
+#: src/store.c:6270 src/store.c:6288 src/store.c:6293 src/store.c:6299
+#: src/store.c:6314 src/store.c:6876 src/store.c:6922
 #, fuzzy, c-format
 msgid "invalid encrypted entry\n"
 msgstr "ラップ済み master key が不正です\n"
 
-#: src/store.c:5886 src/store.c:6489 src/store.c:6522
+#: src/store.c:6275 src/store.c:6881 src/store.c:6926
 #, c-format
 msgid "unsupported encrypted entry format\n"
 msgstr ""
 
-#: src/store.c:5892 src/store.c:6494 src/store.c:6526
+#: src/store.c:6281 src/store.c:6886 src/store.c:6930
 #, c-format
 msgid "unsupported encryption algorithm\n"
 msgstr ""
 
-#: src/store.c:5968
+#: src/store.c:6357
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to authenticate encrypted value\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:6021
+#: src/store.c:6410
 #, fuzzy, c-format
 #| msgid "failed to read terminal settings\n"
 msgid "failed to read standard input\n"
 msgstr "端末設定の読み取りに失敗しました\n"
 
-#: src/store.c:6457 src/store.c:7099 src/store.c:7120 src/store.c:7164
-#: src/store.c:7232 src/store.c:7275
+#: src/store.c:6849 src/store.c:7503 src/store.c:7524 src/store.c:7568
+#: src/store.c:7636 src/store.c:7679
 #, fuzzy, c-format
 #| msgid "unknown command: %s\n"
 msgid "key not found: %s\n"
 msgstr "不明なコマンドです: %s\n"
 
-#: src/store.c:6458
+#: src/store.c:6850
 #, c-format
 msgid ""
 "Hint: check secdat status, --dir, and --store to confirm the lookup context\n"
@@ -1648,61 +1635,61 @@ msgstr ""
 "ヒント: secdat status、--dir、--store を確認して探索文脈が正しいか確かめてく"
 "ださい\n"
 
-#: src/store.c:6699
+#: src/store.c:7103
 #, c-format
 msgid "missing key for exists\n"
 msgstr "exists のキーが不足しています\n"
 
-#: src/store.c:6704
+#: src/store.c:7108
 #, c-format
 msgid "invalid arguments for exists\n"
 msgstr "exists の引数が不正です\n"
 
-#: src/store.c:6732
+#: src/store.c:7136
 #, c-format
 msgid "key value contains NUL byte and cannot be shell-escaped: %s\n"
 msgstr "key の値に NUL バイトが含まれているため shell escaped できません: %s\n"
 
-#: src/store.c:6746 src/store.c:6811
+#: src/store.c:7150 src/store.c:7215
 #, fuzzy, c-format
 #| msgid "failed to read terminal settings\n"
 msgid "failed to write standard output\n"
 msgstr "端末設定の読み取りに失敗しました\n"
 
-#: src/store.c:6792
+#: src/store.c:7196
 #, c-format
 msgid "refusing to write secret to a terminal\n"
 msgstr ""
 
-#: src/store.c:6937 src/store.c:6945 src/store.c:6953 src/store.c:6962
-#: src/store.c:6978 src/store.c:6993 src/store.c:7002
+#: src/store.c:7341 src/store.c:7349 src/store.c:7357 src/store.c:7366
+#: src/store.c:7382 src/store.c:7397 src/store.c:7406
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid arguments for set\n"
 msgstr "%s の引数が不正です\n"
 
-#: src/store.c:6969
+#: src/store.c:7373
 #, c-format
 msgid "environment variable is not set: %s\n"
 msgstr ""
 
-#: src/store.c:6985
+#: src/store.c:7389
 #, fuzzy, c-format
 #| msgid "missing value for --store\n"
 msgid "missing key for set\n"
 msgstr "--store に値が必要です\n"
 
-#: src/store.c:7015
+#: src/store.c:7419
 #, c-format
 msgid "refusing to read secret from a terminal\n"
 msgstr ""
 
-#: src/store.c:7222 src/store.c:7253
+#: src/store.c:7626 src/store.c:7657
 #, c-format
 msgid "key exists locally and cannot be masked: %s\n"
 msgstr "key はローカルに存在するため mask できません: %s\n"
 
-#: src/store.c:7327
+#: src/store.c:7731
 #, c-format
 msgid ""
 "cannot unmask a persisted tombstone while volatile session overlay is "
@@ -1710,161 +1697,180 @@ msgid ""
 msgstr ""
 "揮発セッション overlay が有効な間は永続 tombstone を unmask できません: %s\n"
 
-#: src/store.c:7330 src/store.c:7342
+#: src/store.c:7734 src/store.c:7746
 #, c-format
 msgid "key is not masked in current domain: %s\n"
 msgstr "key は現在の domain で mask されていません: %s\n"
 
-#: src/store.c:7363
+#: src/store.c:7767
 #, fuzzy, c-format
 #| msgid "invalid arguments for lock\n"
 msgid "invalid arguments for cp\n"
 msgstr "lock の引数が不正です\n"
 
-#: src/store.c:7368 src/store.c:7442
+#: src/store.c:7772 src/store.c:7846
 #, c-format
 msgid "source and destination keys must differ\n"
 msgstr ""
 
-#: src/store.c:7405 src/store.c:7480
+#: src/store.c:7809 src/store.c:7884
 #, c-format
 msgid "destination key already exists: %s\n"
 msgstr ""
 
-#: src/store.c:7437
+#: src/store.c:7841
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid arguments for mv\n"
 msgstr "%s の引数が不正です\n"
 
-#: src/store.c:7518
+#: src/store.c:7922
 #, c-format
 msgid "invalid arguments for mask\n"
 msgstr "mask の引数が不正です\n"
 
-#: src/store.c:7542
+#: src/store.c:7946
 #, c-format
 msgid "invalid arguments for unmask\n"
 msgstr "unmask の引数が不正です\n"
 
-#: src/store.c:7584 src/store.c:7591
+#: src/store.c:7988 src/store.c:7995
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid arguments for rm\n"
 msgstr "%s の引数が不正です\n"
 
-#: src/store.c:7663 src/store.c:7697 src/store.c:7760
+#: src/store.c:8067 src/store.c:8101 src/store.c:8164
 #, c-format
 msgid "--store is not valid with store commands\n"
 msgstr ""
 
-#: src/store.c:7702
+#: src/store.c:8106
 #, c-format
 msgid "missing store name for store create\n"
 msgstr "store create の store 名が不足しています\n"
 
-#: src/store.c:7707
+#: src/store.c:8111
 #, fuzzy, c-format
 #| msgid "invalid arguments for status\n"
 msgid "invalid arguments for store create\n"
 msgstr "status の引数が不正です\n"
 
-#: src/store.c:7732
+#: src/store.c:8136
 #, c-format
 msgid "store already exists: %s\n"
 msgstr ""
 
-#: src/store.c:7765
+#: src/store.c:8169
 #, c-format
 msgid "missing store name for store delete\n"
 msgstr "store delete の store 名が不足しています\n"
 
-#: src/store.c:7770
+#: src/store.c:8174
 #, fuzzy, c-format
 #| msgid "invalid arguments for status\n"
 msgid "invalid arguments for store delete\n"
 msgstr "status の引数が不正です\n"
 
-#: src/store.c:7803
+#: src/store.c:8207
 #, c-format
 msgid "store is not empty: %s\n"
 msgstr ""
 
-#: src/store.c:7808
+#: src/store.c:8212
 #, fuzzy, c-format
 #| msgid "failed to open file descriptor\n"
 msgid "failed to remove directory: %s\n"
 msgstr "ファイル記述子のオープンに失敗しました\n"
 
-#: src/store.c:7826
+#: src/store.c:8230
 #, c-format
 msgid "key value contains NUL byte and cannot be exported: %s\n"
 msgstr ""
 
-#: src/store.c:7910
+#: src/store.c:8314
 #, c-format
 msgid "key is not a valid shell identifier: %s\n"
 msgstr "key は有効な shell 識別子ではありません: %s\n"
 
-#: src/store.c:8006
+#: src/store.c:8410
 #, fuzzy, c-format
 #| msgid "failed to connect to session agent\n"
 msgid "failed to export key to environment: %s\n"
 msgstr "セッションエージェントへの接続に失敗しました\n"
 
-#: src/store.c:8025
+#: src/store.c:8429
 #, c-format
 msgid "failed to execute command: %s\n"
 msgstr ""
 
-#: src/store.c:8039
+#: src/store.c:8443
 #, fuzzy, c-format
 #| msgid "invalid arguments for %s\n"
 msgid "invalid arguments for save\n"
 msgstr "save の引数が不正です\n"
 
-#: src/store.c:8044
+#: src/store.c:8448
 msgid "Create secdat bundle passphrase: "
 msgstr "secdat bundle 用パスフレーズを作成してください: "
 
-#: src/store.c:8045
+#: src/store.c:8449
 msgid "Confirm secdat bundle passphrase: "
 msgstr "secdat bundle 用パスフレーズを再入力してください: "
 
-#: src/store.c:8076
+#: src/store.c:8480
 #, c-format
 msgid "invalid arguments for load\n"
 msgstr "load の引数が不正です\n"
 
-#: src/store.c:8090
+#: src/store.c:8494
 msgid "Enter secdat bundle passphrase: "
 msgstr "secdat bundle 用パスフレーズを入力してください: "
 
-#: src/store.c:8161
+#: src/store.c:8565
 #, c-format
 msgid "cannot combine --dir and --domain\n"
 msgstr ""
 
-#: src/store.c:8221
+#: src/store.c:8625
 #, c-format
 msgid "command not implemented yet: %s\n"
 msgstr "コマンドは未実装です: %s\n"
 
-#: src/store.c:8223
+#: src/store.c:8627
 #, c-format
 msgid "  dir=%s\n"
 msgstr "  dir=%s\n"
 
-#: src/store.c:8226
+#: src/store.c:8630
 #, fuzzy, c-format
 #| msgid "  dir=%s\n"
 msgid "  domain=%s\n"
 msgstr "  dir=%s\n"
 
-#: src/store.c:8229
+#: src/store.c:8633
 #, c-format
 msgid "  store=%s\n"
 msgstr "  store=%s\n"
+
+#~ msgid "effective source: local unlock"
+#~ msgstr "有効な取得元: local unlock"
+
+#~ msgid "effective source: inherited unlock"
+#~ msgstr "有効な取得元: inherited unlock"
+
+#~ msgid "effective source: local lock"
+#~ msgstr "有効な取得元: local lock"
+
+#~ msgid "effective source: inherited lock"
+#~ msgstr "有効な取得元: inherited lock"
+
+#, c-format
+#~ msgid "inherited from: %s\n"
+#~ msgstr "%s から継承\n"
+
+#~ msgid "local-unlock"
+#~ msgstr "local-unlock"
 
 #~ msgid "REMAINING"
 #~ msgstr "残り時間"

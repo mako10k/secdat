@@ -614,7 +614,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  unlock: start or refresh a local unlock for the current domain; --duration accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such as PT1H30M, --until accepts an absolute RFC 3339 timestamp, and --inherit drops the current domain's local override to fall back to inherited state\n"));
     secdat_cli_print_detail_line(_("  inherit: force the current domain back to inherited state by removing a local lock or clearing a local unlock, without checking whether the result stays unlocked\n"));
     secdat_cli_print_detail_line(_("  passwd: change the wrapped-master-key passphrase\n"));
-    secdat_cli_print_detail_line(_("  lock: clear the current domain's direct secret session, or do nothing when it is already locked\n"));
+    secdat_cli_print_detail_line(_("  lock: return the current domain to a locked local state, or do nothing when it is already locked\n"));
     secdat_cli_print_detail_line(_("  status: report whether secret material is available from the current domain scope\n"));
     secdat_cli_print_detail_line(_("  wait-unlock: wait until the current domain scope becomes unlocked, or fail on timeout\n"));
     secdat_cli_print_detail_line(_("  version: print the secdat version\n"));

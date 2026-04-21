@@ -111,6 +111,29 @@ def run_background(args, extra_env=None):
         run_env.update(extra_env)
     return subprocess.Popen(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=run_env)
 
+def assert_pot_is_up_to_date():
+    repo_root = Path(bin_path).resolve().parent.parent
+    po_dir = repo_root / "po"
+    pot_path = po_dir / "secdat.pot"
+    original = pot_path.read_text(encoding="utf-8")
+    try:
+        completed = subprocess.run(
+            ["make", "-C", str(po_dir), "secdat.pot-update"],
+            text=True,
+            capture_output=True,
+            env=env,
+        )
+        if completed.returncode != 0:
+            fail(
+                "secdat.pot update failed: "
+                f"rc={completed.returncode} stdout={completed.stdout!r} stderr={completed.stderr!r}"
+            )
+        updated = pot_path.read_text(encoding="utf-8")
+        if updated != original:
+            fail("po/secdat.pot is stale; regenerate it after changing translatable strings")
+    finally:
+        pot_path.write_text(original, encoding="utf-8")
+
 def run_pty(args, prompts, extra_env=None, eof_after_prompts=False):
     run_env = env.copy()
     if extra_env:
@@ -467,7 +490,7 @@ if help_column != get_column or get_column != wait_unlock_column:
 
 rc, stdout, stderr = run([bin_path, "--help"], {"LANGUAGE": "ja", "LC_ALL": ""})
 output = stdout + stderr
-if rc != 0 or "トピック:" not in output or "show global help, or combine with COMMAND or TOPIC for detailed help" in output or "decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock" in output or "explain domains, stores, inheritance, sessions, and KEYREF resolution" in output:
+if rc != 0 or "トピック:" not in output or "show global help, or combine with COMMAND or TOPIC for detailed help" in output or "decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock" in output or "explain domains, stores, inheritance, sessions, and KEYREF resolution" in output or "local unlock" not in output or "local lock" not in output:
     fail(f"japanese global help translation check failed: rc={rc} output={output!r}")
 
 issues_column = description_display_column(output, "issue 報告先:")
@@ -479,6 +502,18 @@ rc, stdout, stderr = run([bin_path, "help", "get"], {"LANGUAGE": "ja", "LC_ALL":
 output = stdout + stderr
 if rc != 0 or "利用例:" not in output or "意味:" not in output or "read one value to stdout:" in output or "wait for another terminal to unlock before reading:" in output:
     fail(f"japanese get help translation check failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run([bin_path, "help", "unlock"], {"LANGUAGE": "ja", "LC_ALL": ""})
+output = stdout + stderr
+if rc != 0 or "local unlock" not in output or "local override" not in output or "authenticated secret session" in output:
+    fail(f"japanese unlock help translation check failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run([bin_path, "help", "lock"], {"LANGUAGE": "ja", "LC_ALL": ""})
+output = stdout + stderr
+if rc != 0 or "ローカルなロック状態へ戻し" not in output or "clear the current domain's direct secret session" in output:
+    fail(f"japanese lock help translation check failed: rc={rc} output={output!r}")
+
+assert_pot_is_up_to_date()
 
 rc, stdout, stderr = run([bin_path, "--version"])
 output = stdout + stderr

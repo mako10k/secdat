@@ -32,6 +32,7 @@ all-local:
 	done
 
 check-local:
+	$(MAKE) all-local
 	bash $(srcdir)/tests/lower_level_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/keyref_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/session_regression.sh "$(abs_top_builddir)/src/secdat"
