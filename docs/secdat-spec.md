@@ -284,19 +284,19 @@ To make the requested behavior implementable, the following are treated as norma
 - unlocking one domain must not unlock sibling domains
 - descendant domains may reuse an unlocked ancestor session without an extra `unlock`
 - when the current domain is already unlocked, plain `unlock` refreshes that current domain without asking for the passphrase again
-- `unlock --inherit` must not create a local session; it removes the current domain's local explicit-lock marker when present, otherwise it clears the current domain's local session, and succeeds only when the resulting effective state would become unlocked
-- `unlock --inherit` is an error when no current-domain explicit-lock marker or local session exists, or when the checked result would remain locked
+- `unlock --inherit` must not create a local unlock; it removes the current domain's local lock when present, otherwise it clears the current domain's local unlock, and succeeds only when the resulting effective state would become unlocked
+- `unlock --inherit` is an error when no current-domain local lock or local unlock exists, or when the checked result would remain locked
 - `unlock --descendants` applies only to the resolved target domain plus registered descendants rooted beneath it; it must never affect ancestors, siblings, or unregistered directories
-- `unlock --descendants` must keep explicit-lock markers intact and instead create or refresh local descendant sessions where needed so blocked descendants become effectively unlocked for the current session lifetime
-- when `unlock --descendants` would broaden access beyond the current domain, it must print the affected descendant count, warn that explicit-lock markers remain in force, and require confirmation unless `--yes` is present
-- when `unlock` succeeds for one domain while descendant domains remain effectively locked because of explicit-lock shadow state, the command must say so explicitly and print follow-up inspection/unlock commands using the correct `--dir` targets
+- `unlock --descendants` must keep local locks intact and instead create or refresh local descendant unlocks where needed so blocked descendants become effectively unlocked for the current session lifetime
+- when `unlock --descendants` would broaden access beyond the current domain, it must print the affected descendant count, warn that local locks remain in force, and require confirmation unless `--yes` is present
+- when `unlock` succeeds for one domain while descendant domains remain effectively locked because of local-lock shadow state, the command must say so explicitly and print follow-up inspection/unlock commands using the correct `--dir` targets
 - when a secret read fails because no active session is available, the error must report the resolved domain context and print matching `domain status` / `unlock` follow-up commands so users can unlock the correct domain
-- `secdat [--dir DIR] lock [--inherit]` clears the current domain's local agent-backed session state
+- `secdat [--dir DIR] lock [--inherit]` clears the current domain's local unlock state
 - plain `lock` is a no-op success when the current domain is already locked
-- when the resolved domain has a registered parent and `--inherit` is not present, `lock` must persist a local explicit-lock marker after clearing the local session
-- `lock --inherit` must not clear or create sessions; it removes only the current domain's local explicit-lock marker and succeeds only when the resulting effective state would remain locked
-- `lock --inherit` is an error when no current-domain explicit-lock marker exists or when the checked result would become unlocked
-- `secdat [--dir DIR] inherit` removes the current domain's local explicit-lock marker when present, otherwise clears the current domain's local session, without checking the resulting effective state
+- when the resolved domain has a registered parent and `--inherit` is not present, `lock` must persist a local lock after clearing the local unlock
+- `lock --inherit` must not clear or create local unlocks; it removes only the current domain's local lock and succeeds only when the resulting effective state would remain locked
+- `lock --inherit` is an error when no current-domain local lock exists or when the checked result would become unlocked
+- `secdat [--dir DIR] inherit` removes the current domain's local lock when present, otherwise clears the current domain's local unlock, without checking the resulting effective state
 - the current implementation refreshes the idle timeout when the agent serves the cached key
 - no raw master-key retrieval path is required for normal operation; the generated key remains internal unless a separate future recovery/export flow is introduced
 - safe values still refuse terminal-based stdin/stdout for `set` and `get`
@@ -353,7 +353,7 @@ To make the requested behavior implementable, the following are treated as norma
 - when `domain ls -l` writes to a terminal, it may render a human-oriented grouped view that lifts the shared parent directory into a heading and wraps long domain labels before the metadata columns
 - non-terminal `domain ls -l` output must keep the tab-separated full-path rows so scripts can continue to consume the current layout
 - `secdat [--dir DIR] domain ls -l` adds the key source, effective state, remaining unlock time, effective-state source, current-domain store count, visible key count, and wrapped-master-key presence for each listed domain
-- the long-format effective-state source must distinguish `direct-session`, `inherited-from:DOMAIN`, `local-lock`, `blocked-by:DOMAIN`, and plain `locked`
+- the long-format effective-state source must distinguish `local-unlock`, `inherited-unlock-from:DOMAIN`, `local-lock`, `inherited-lock-from:DOMAIN`, and plain `locked`
 - `secdat [--dir DIR] domain status` reports the resolved current domain used by normal store commands
 - `secdat [--domain DIR] ...` uses that exact registered domain root as the current domain context
 - `domain status` reports whether that resolution came from `--dir` or the current working directory

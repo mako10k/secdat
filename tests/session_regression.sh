@@ -414,7 +414,7 @@ if rc != 0 or "Meaning:" not in output or "Use cases:" not in output or "bootstr
 
 rc, stdout, stderr = run([bin_path, "--help", "concepts"])
 output = stdout + stderr
-if rc != 0 or "Meaning:" not in output or "Concepts:" not in output or "explicit lock:" not in output or "KEYREF:" not in output:
+if rc != 0 or "Meaning:" not in output or "Concepts:" not in output or "local lock:" not in output or "local unlock:" not in output or "KEYREF:" not in output:
     fail(f"concepts topic help check failed: rc={rc} output={output!r}")
 
 rc, stdout, stderr = run([bin_path, "help"])
@@ -604,15 +604,15 @@ assert_contains(stdout, "effective source: local lock\n", "domain status explici
 rc, stdout, stderr = run(scoped(["domain", "status"], grandchild_domain))
 if rc != 0 or stderr != "":
     fail(f"grandchild domain status after parent explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: blocked by ancestor lock\n", "grandchild blocked status")
-assert_contains(stdout, f"blocked by: {child_domain}\n", "grandchild blocked status")
+assert_contains(stdout, "effective source: inherited lock\n", "grandchild blocked status")
+assert_contains(stdout, f"inherited from: {child_domain}\n", "grandchild blocked status")
 
 rc, stdout, stderr = run(scoped(["domain", "ls", "-l", "--descendants"], root_domain))
 if rc != 0 or stderr != "":
     fail(f"domain ls -l after explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "domain ls -l header")
 assert_contains(stdout, f"{child_domain}\tlocked\tlocked\t-\tlocal-lock", "domain ls explicit-lock row")
-assert_contains(stdout, f"{grandchild_domain}\tlocked\tlocked\t-\tblocked-by:{child_domain}", "domain ls blocked row")
+assert_contains(stdout, f"{grandchild_domain}\tlocked\tlocked\t-\tinherited-lock-from:{child_domain}", "domain ls blocked row")
 
 rc, stdout, stderr = run(scoped(["get", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain))
 if rc == 0 or "no active secdat session" not in stderr:
@@ -724,33 +724,33 @@ if rc == 0 or "unlock --descendants requires confirmation on a terminal or rerun
 rc, transcript = run_pty(
     scoped(["unlock", "--descendants"], root_domain),
     [
-        ("unlock descendant domains in this subtree? explicit lock markers will remain [y/N]: ", "y"),
+        ("unlock descendant domains in this subtree? local locks will remain [y/N]: ", "y"),
         ("Enter secdat passphrase:", passphrase),
     ],
 )
 if rc != 0 or f"resolved domain: {root_domain}" not in transcript or "this will unlock 2 descendant domains in the current subtree" not in transcript:
     fail(f"interactive descendant unlock failed: rc={rc} transcript={transcript!r}")
-if "note: unlocked 2 descendant domains in this subtree; explicit lock markers remain" not in transcript:
+if "note: unlocked 2 descendant domains in this subtree; local locks remain" not in transcript:
     fail(f"interactive descendant unlock summary missing: transcript={transcript!r}")
 
 rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
 if rc != 0 or stderr != "":
     fail(f"child domain status after descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: direct session\n", "child local session after descendant unlock")
+assert_contains(stdout, "effective source: local unlock\n", "child local session after descendant unlock")
 
 rc, stdout, stderr = run(scoped(["domain", "status"], grandchild_domain))
 if rc != 0 or stderr != "":
     fail(f"grandchild domain status after descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: direct session\n", "grandchild local session after descendant unlock")
+assert_contains(stdout, "effective source: local unlock\n", "grandchild local session after descendant unlock")
 
 rc, stdout, stderr = run(scoped(["lock"], child_domain))
 if rc != 0 or stdout.strip() != "session locked":
     fail(f"child relock before --yes descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["unlock", "--descendants", "--yes"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
-if rc != 0 or "note: unlocked 1 descendant domains in this subtree; explicit lock markers remain\n" not in stdout:
+if rc != 0 or "note: unlocked 1 descendant domains in this subtree; local locks remain\n" not in stdout:
     fail(f"descendant unlock with --yes failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-if "unlock descendant domains in this subtree? explicit lock markers will remain [y/N]: " in stderr:
+if "unlock descendant domains in this subtree? local locks will remain [y/N]: " in stderr:
     fail(f"--yes descendant unlock should not prompt: stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["status", "-q"], child_domain))
@@ -764,12 +764,12 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
 if rc != 0 or stderr != "":
     fail(f"domain status after descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: direct session\n", "child local status after descendant unlock")
+assert_contains(stdout, "effective source: local unlock\n", "child local status after descendant unlock")
 
 rc, stdout, stderr = run(scoped(["domain", "status"], grandchild_domain))
 if rc != 0 or stderr != "":
     fail(f"grandchild domain status after descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: direct session\n", "grandchild local status after descendant unlock")
+assert_contains(stdout, "effective source: local unlock\n", "grandchild local status after descendant unlock")
 
 rc, stdout, stderr = run(scoped(["status", "-q"], sibling_domain))
 if rc != 1 or stdout != "" or stderr != "":
@@ -978,7 +978,7 @@ if rc != 0 or stderr != "":
     fail(f"default-scope domain status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "resolved domain: *default*\n", "default-scope domain status label")
 assert_contains(stdout, "key source: session agent\n", "default-scope domain status key source")
-assert_contains(stdout, "effective source: direct session\n", "default-scope domain status local session")
+assert_contains(stdout, "effective source: local unlock\n", "default-scope domain status local session")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(default_scope), "domain", "ls", "-la"], {
     "XDG_RUNTIME_DIR": str(default_runtime),
@@ -988,7 +988,7 @@ if rc != 0 or stderr != "":
     fail(f"default-scope domain ls -la failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "default-scope domain ls -la header")
 assert_contains(stdout, "*default*\tsession\tunlocked\t", "default-scope domain ls -la fallback row prefix")
-assert_contains(stdout, "\tdirect-session\t0\t0\tpresent\n", "default-scope domain ls -la fallback row suffix")
+assert_contains(stdout, "\tlocal-unlock\t0\t0\tpresent\n", "default-scope domain ls -la fallback row suffix")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(default_child), "domain", "create"], {
     "XDG_RUNTIME_DIR": str(default_runtime),
@@ -1025,7 +1025,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(default_child), "unlock", "--in
     "XDG_RUNTIME_DIR": str(default_runtime),
     "XDG_DATA_HOME": str(default_data),
 })
-if rc != 0 or stdout != "local session cleared; resulting state: unlocked\n" or stderr != f"resolved domain: {default_child}\n":
+if rc != 0 or stdout != "local unlock cleared; resulting state: unlocked\n" or stderr != f"resolved domain: {default_child}\n":
     fail(f"default-child unlock --inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(default_child), "domain", "status"], {
@@ -1034,7 +1034,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(default_child), "domain", "stat
 })
 if rc != 0 or stderr != "":
     fail(f"default-child status after unlock --inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: inherited session\n", "default-child inherited status after unlock --inherit")
+assert_contains(stdout, "effective source: inherited unlock\n", "default-child inherited status after unlock --inherit")
 assert_contains(stdout, "inherited from: *default*\n", "default-child inherited source after unlock --inherit")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(default_child), "get", "DEFAULT_CHILD_KEY", "-o"], {

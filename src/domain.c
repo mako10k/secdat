@@ -298,27 +298,27 @@ static int secdat_format_state_source(
         row->state_source = _("environment");
         return 0;
     case SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION:
-        row->state_source = _("direct-session");
+        row->state_source = _("local-unlock");
         return 0;
     case SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION:
-        row->state_source_owned = malloc(strlen("inherited-from:") + strlen(summary->related_domain_root) + 1);
+        row->state_source_owned = malloc(strlen("inherited-unlock-from:") + strlen(summary->related_domain_root) + 1);
         if (row->state_source_owned == NULL) {
             fprintf(stderr, _("out of memory\n"));
             return 1;
         }
-        sprintf(row->state_source_owned, "inherited-from:%s", summary->related_domain_root);
+        sprintf(row->state_source_owned, "inherited-unlock-from:%s", summary->related_domain_root);
         row->state_source = row->state_source_owned;
         return 0;
     case SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK:
         row->state_source = _("local-lock");
         return 0;
     case SECDAT_EFFECTIVE_SOURCE_BLOCKED:
-        row->state_source_owned = malloc(strlen("blocked-by:") + strlen(summary->related_domain_root) + 1);
+        row->state_source_owned = malloc(strlen("inherited-lock-from:") + strlen(summary->related_domain_root) + 1);
         if (row->state_source_owned == NULL) {
             fprintf(stderr, _("out of memory\n"));
             return 1;
         }
-        sprintf(row->state_source_owned, "blocked-by:%s", summary->related_domain_root);
+        sprintf(row->state_source_owned, "inherited-lock-from:%s", summary->related_domain_root);
         row->state_source = row->state_source_owned;
         return 0;
     default:
@@ -1768,11 +1768,11 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
         break;
     case SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION:
         puts(_("effective state: unlocked"));
-        puts(_("effective source: direct session"));
+        puts(_("effective source: local unlock"));
         break;
     case SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION:
         puts(_("effective state: unlocked"));
-        puts(_("effective source: inherited session"));
+        puts(_("effective source: inherited unlock"));
         printf(_("inherited from: %s\n"), summary.related_domain_root);
         break;
     case SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK:
@@ -1781,8 +1781,8 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
         break;
     case SECDAT_EFFECTIVE_SOURCE_BLOCKED:
         puts(_("effective state: locked"));
-        puts(_("effective source: blocked by ancestor lock"));
-        printf(_("blocked by: %s\n"), summary.related_domain_root);
+        puts(_("effective source: inherited lock"));
+        printf(_("inherited from: %s\n"), summary.related_domain_root);
         break;
     default:
         puts(_("effective state: locked"));

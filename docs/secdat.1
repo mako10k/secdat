@@ -123,7 +123,7 @@ set an absolute expiry target. The two options cannot be combined. When the curr
 refreshes that current domain without prompting for the passphrase again.
 With
 .B --inherit
-the command removes the current domain's local explicit-lock marker when one is present, or clears the current domain's local session when no marker is present, and succeeds only when the resulting effective state would become unlocked; it does not create a new local session.
+the command removes the current domain's local lock when one is present, or clears the current domain's local unlock when no lock is present, and succeeds only when the resulting effective state would become unlocked; it does not create a new local unlock.
 With
 .B --volatile
 the command keeps subsequent secret writes, deletes, tombstones, and read-side resolution changes inside the session agent's memory overlay until
@@ -136,9 +136,9 @@ With
 the command reuses an existing master key but rejects mutating commands while leaving reads, listing, export-like operations, and status available.
 With
 .B --descendants
-the command performs an explicit subtree unlock for the resolved domain and its registered descendants, creating local descendant sessions where needed while leaving explicit-lock markers intact; broader-scope unlocks require confirmation unless
+the command performs an explicit subtree unlock for the resolved domain and its registered descendants, creating local descendant unlocks where needed while leaving local locks intact; broader-scope unlocks require confirmation unless
 .B --yes
-is present. If some descendant domains under the unlocked branch remain shadowed by explicit locks, plain
+is present. If some descendant domains under the unlocked branch remain shadowed by local locks, plain
 .B unlock
 prints follow-up inspection and descendant-specific unlock commands using the correct
 .B --dir
@@ -150,10 +150,10 @@ to mean that no registered domain resolved and the top-level inherited fallback 
 Change the passphrase used to wrap the persistent master key.
 .TP
 .B [\-d DIR|\-\-dir DIR] inherit
-Remove the current domain's local explicit-lock marker when one is present, or clear the current domain's local session when no marker is present, without checking the resulting effective state.
+Remove the current domain's local lock when one is present, or clear the current domain's local unlock when no lock is present, without checking the resulting effective state.
 .TP
 .B [\-d DIR|\-\-dir DIR] lock
-Clear the current domain's local secret session. When the current domain is already locked, plain
+Clear the current domain's local unlock. When the current domain is already locked, plain
 .B lock
 returns success without changing local state.
 .TP
@@ -182,7 +182,7 @@ row when the chain reaches the user-global fallback scope.
 When long format is written to a terminal, shared parent directories are shown once as a heading and very long domain labels wrap before the metadata columns. Non-terminal long-format output keeps the tab-separated full-path rows.
 .TP
 .B domain status [\-q|\-\-quiet]
-Report the resolved domain for the current context along with store count, visible key count, key source, wrapped-key presence, and effective access state. Effective access distinguishes environment, local session, inherited session, explicit lock, and blocked-by-explicit-lock outcomes.
+Report the resolved domain for the current context along with store count, visible key count, key source, wrapped-key presence, and effective access state. Effective access distinguishes environment, local unlock, inherited unlock, local lock, and inherited-lock outcomes.
 When a session is active, the output also includes the remaining unlock time in a compact form such as
 .B 1h59m
 or

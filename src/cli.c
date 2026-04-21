@@ -611,8 +611,8 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
     secdat_cli_print_detail_line(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
     secdat_cli_print_detail_line(_("  load: import a passphrase-protected bundle into the current domain view\n"));
-    secdat_cli_print_detail_line(_("  unlock: start or refresh an authenticated secret session for the current domain; --duration accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such as PT1H30M, --until accepts an absolute RFC 3339 timestamp, and --inherit drops the current domain's local override to fall back to inherited state\n"));
-    secdat_cli_print_detail_line(_("  inherit: force the current domain back to inherited state by removing a local lock marker or clearing a direct local session, without checking whether the result stays unlocked\n"));
+    secdat_cli_print_detail_line(_("  unlock: start or refresh a local unlock for the current domain; --duration accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such as PT1H30M, --until accepts an absolute RFC 3339 timestamp, and --inherit drops the current domain's local override to fall back to inherited state\n"));
+    secdat_cli_print_detail_line(_("  inherit: force the current domain back to inherited state by removing a local lock or clearing a local unlock, without checking whether the result stays unlocked\n"));
     secdat_cli_print_detail_line(_("  passwd: change the wrapped-master-key passphrase\n"));
     secdat_cli_print_detail_line(_("  lock: clear the current domain's direct secret session, or do nothing when it is already locked\n"));
     secdat_cli_print_detail_line(_("  status: report whether secret material is available from the current domain scope\n"));
@@ -624,7 +624,7 @@ static void secdat_cli_print_topic_meanings(void)
 {
     printf(_("\nTopics:\n"));
     secdat_cli_print_detail_line(_("  usecases: show example workflows and task-oriented command combinations\n"));
-    secdat_cli_print_detail_line(_("  concepts: explain domains, stores, inheritance, sessions, and KEYREF resolution\n"));
+    secdat_cli_print_detail_line(_("  concepts: explain domains, stores, inheritance, local unlocks, local locks, and KEYREF resolution\n"));
 }
 
 static void secdat_cli_print_target_meaning(const char *target)
@@ -691,11 +691,11 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "unlock") == 0) {
-        secdat_cli_print_detail_line(_("  unlock: start or refresh an authenticated secret session for the current domain; --duration accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such as PT1H30M, --until accepts an absolute RFC 3339 timestamp, and --inherit drops the current domain's local override to fall back to inherited state\n"));
+        secdat_cli_print_detail_line(_("  unlock: start or refresh a local unlock for the current domain; --duration accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such as PT1H30M, --until accepts an absolute RFC 3339 timestamp, and --inherit drops the current domain's local override to fall back to inherited state\n"));
         return;
     }
     if (target != NULL && strcmp(target, "inherit") == 0) {
-        secdat_cli_print_detail_line(_("  inherit: force the current domain back to inherited state by removing a local lock marker or clearing a direct local session, without checking whether the result stays unlocked\n"));
+        secdat_cli_print_detail_line(_("  inherit: force the current domain back to inherited state by removing a local lock or clearing a local unlock, without checking whether the result stays unlocked\n"));
         return;
     }
     if (target != NULL && strcmp(target, "passwd") == 0) {
@@ -703,7 +703,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "lock") == 0) {
-        secdat_cli_print_detail_line(_("  lock: clear the current domain's direct secret session, or do nothing when it is already locked\n"));
+        secdat_cli_print_detail_line(_("  lock: return the current domain to a locked local state, or do nothing when it is already locked\n"));
         return;
     }
     if (target != NULL && strcmp(target, "status") == 0) {
@@ -848,7 +848,7 @@ static void secdat_cli_print_use_cases_overview(const char *program_name)
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  block automation until a human unlocks the domain elsewhere: %s --dir ~/example/project wait-unlock --timeout 900\n"), program_name);
         secdat_cli_print_detail_line(buffer);
-        snprintf(buffer, sizeof(buffer), _("  inspect inheritance and explicit locks under one branch: %s --dir ~/example/project domain ls -l --descendants\n"), program_name);
+        snprintf(buffer, sizeof(buffer), _("  inspect inheritance and local locks under one branch: %s --dir ~/example/project domain ls -l --descendants\n"), program_name);
         secdat_cli_print_detail_line(buffer);
     }
 }
@@ -861,9 +861,9 @@ static void secdat_cli_print_concepts_detail(const char *program_name)
         snprintf(buffer, sizeof(buffer), _("  domain: a directory-scoped boundary for inheritance, sessions, and tombstones; resolve it with --dir or inspect it with %s domain status\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         secdat_cli_print_detail_line(_("  store: a domain-local namespace selected by --store; use it to separate app, ops, or personal keys inside one domain\n"));
-        secdat_cli_print_detail_line(_("  inheritance: reads fall back to parent domains until a local value, tombstone, or explicit lock changes the effective view\n"));
-        secdat_cli_print_detail_line(_("  explicit lock: a local shadow that blocks reuse of an inherited unlocked session until the current domain unlocks or inherits again\n"));
-        snprintf(buffer, sizeof(buffer), _("  session: an authenticated master-key cache scoped to one domain branch; inspect availability with %s status and refresh it with %s unlock\n"), program_name, program_name);
+        secdat_cli_print_detail_line(_("  inheritance: reads fall back to parent domains until a local value, tombstone, or local lock changes the effective view\n"));
+        secdat_cli_print_detail_line(_("  local lock: a local override that blocks reuse of an inherited unlock until the current domain unlocks or inherits again\n"));
+        snprintf(buffer, sizeof(buffer), _("  local unlock: an authenticated master-key cache scoped to one domain branch; inspect availability with %s status and refresh it with %s unlock\n"), program_name, program_name);
         secdat_cli_print_detail_line(buffer);
         secdat_cli_print_detail_line(_("  KEYREF: the canonical lookup syntax KEY[/ABSOLUTE/DOMAIN][:STORE] expressed in help as [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
     }

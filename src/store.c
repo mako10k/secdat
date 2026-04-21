@@ -1758,7 +1758,7 @@ static int secdat_confirm_descendant_unlock(size_t affected_count)
         return 0;
     }
     if (secdat_read_confirmation_from_tty(
-            _("unlock descendant domains in this subtree? explicit lock markers will remain [y/N]: "),
+            _("unlock descendant domains in this subtree? local locks will remain [y/N]: "),
             response,
             sizeof(response)
         ) != 0) {
@@ -1799,7 +1799,7 @@ static void secdat_print_descendant_unlock_summary(size_t affected_count)
     if (affected_count == 0) {
         return;
     }
-    printf(_("note: unlocked %zu descendant domains in this subtree; explicit lock markers remain\n"), affected_count);
+    printf(_("note: unlocked %zu descendant domains in this subtree; local locks remain\n"), affected_count);
 }
 
 static int secdat_parse_key_reference(
@@ -5494,11 +5494,11 @@ static int secdat_remove_local_explicit_lock(
     int would_unlock = 0;
 
     if (chain->count == 0) {
-        fprintf(stderr, _("no local explicit lock marker for: %s\n"), current_domain_label);
+        fprintf(stderr, _("no local lock for: %s\n"), current_domain_label);
         return 1;
     }
     if (!secdat_domain_has_explicit_lock(chain->ids[0])) {
-        fprintf(stderr, _("no local explicit lock marker for: %s\n"), current_domain_label);
+        fprintf(stderr, _("no local lock for: %s\n"), current_domain_label);
         return 1;
     }
 
@@ -5508,10 +5508,10 @@ static int secdat_remove_local_explicit_lock(
         }
         if ((expectation == SECDAT_INHERIT_EXPECT_UNLOCKED && !would_unlock)
             || (expectation == SECDAT_INHERIT_EXPECT_LOCKED && would_unlock)) {
-            fprintf(stderr, _("refusing to remove local explicit lock for: %s\n"), current_domain_label);
+            fprintf(stderr, _("refusing to remove local lock for: %s\n"), current_domain_label);
             fprintf(stderr, _("expected resulting state: %s\n"),
                 expectation == SECDAT_INHERIT_EXPECT_UNLOCKED ? "unlocked" : "locked");
-            fprintf(stderr, _("actual resulting state after removing local explicit lock: %s\n"),
+            fprintf(stderr, _("actual resulting state after removing local lock: %s\n"),
                 would_unlock ? "unlocked" : "locked");
             return 1;
         }
@@ -5521,16 +5521,16 @@ static int secdat_remove_local_explicit_lock(
         return 1;
     }
     if (!removed) {
-        fprintf(stderr, _("no local explicit lock marker for: %s\n"), current_domain_label);
+        fprintf(stderr, _("no local lock for: %s\n"), current_domain_label);
         return 1;
     }
 
     if (expectation == SECDAT_INHERIT_EXPECT_UNLOCKED) {
-        puts(_("local explicit lock removed; resulting state: unlocked"));
+        puts(_("local lock removed; resulting state: unlocked"));
     } else if (expectation == SECDAT_INHERIT_EXPECT_LOCKED) {
-        puts(_("local explicit lock removed; resulting state: locked"));
+        puts(_("local lock removed; resulting state: locked"));
     } else {
-        puts(_("local explicit lock removed"));
+        puts(_("local lock removed"));
     }
     return 0;
 }
@@ -5546,7 +5546,7 @@ static int secdat_clear_local_session(
     int would_unlock = 0;
 
     if (!secdat_current_scope_has_local_session(chain)) {
-        fprintf(stderr, _("no local explicit lock marker or local session for: %s\n"), current_domain_label);
+        fprintf(stderr, _("no local lock or local unlock for: %s\n"), current_domain_label);
         return 1;
     }
 
@@ -5556,10 +5556,10 @@ static int secdat_clear_local_session(
         }
         if ((expectation == SECDAT_INHERIT_EXPECT_UNLOCKED && !would_unlock)
             || (expectation == SECDAT_INHERIT_EXPECT_LOCKED && would_unlock)) {
-            fprintf(stderr, _("refusing to clear local session for: %s\n"), current_domain_label);
+            fprintf(stderr, _("refusing to clear local unlock for: %s\n"), current_domain_label);
             fprintf(stderr, _("expected resulting state: %s\n"),
                 expectation == SECDAT_INHERIT_EXPECT_UNLOCKED ? "unlocked" : "locked");
-            fprintf(stderr, _("actual resulting state after clearing local session: %s\n"),
+            fprintf(stderr, _("actual resulting state after clearing local unlock: %s\n"),
                 would_unlock ? "unlocked" : "locked");
             return 1;
         }
@@ -5570,11 +5570,11 @@ static int secdat_clear_local_session(
     }
 
     if (expectation == SECDAT_INHERIT_EXPECT_UNLOCKED) {
-        puts(_("local session cleared; resulting state: unlocked"));
+        puts(_("local unlock cleared; resulting state: unlocked"));
     } else if (expectation == SECDAT_INHERIT_EXPECT_LOCKED) {
-        puts(_("local session cleared; resulting state: locked"));
+        puts(_("local unlock cleared; resulting state: locked"));
     } else {
-        puts(_("local session cleared"));
+        puts(_("local unlock cleared"));
     }
     return 0;
 }
@@ -5592,7 +5592,7 @@ static int secdat_clear_local_inherit_override(
         return secdat_clear_local_session(chain, current_domain_label, expectation);
     }
 
-    fprintf(stderr, _("no local explicit lock marker or local session for: %s\n"), current_domain_label);
+    fprintf(stderr, _("no local lock or local unlock for: %s\n"), current_domain_label);
     return 1;
 }
 
@@ -5780,7 +5780,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         }
         if (descendant_unlock_count > 0) {
             fprintf(stderr, _("this will unlock %zu descendant domains in the current subtree\n"), descendant_unlock_count);
-            fprintf(stderr, _("explicit lock markers will remain after session expiry or a later lock\n"));
+            fprintf(stderr, _("local locks will remain after local unlock expiry or a later lock\n"));
             if (!options.assume_yes && secdat_confirm_descendant_unlock(descendant_unlock_count) != 0) {
                 secdat_domain_root_list_free(&descendant_targets);
                 secdat_domain_chain_free(&current_chain);
