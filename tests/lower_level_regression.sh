@@ -133,7 +133,7 @@ if rc != 0 or "session unlocked from environment\n" not in stdout:
 rc, stdout, stderr = run([bin_path, "--dir", str(work_root), "domain", "ls", "-l"])
 if rc != 0 or stderr != "":
     fail(f"non-tty domain ls -l failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "non-tty domain ls header")
+assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "non-tty domain ls header")
 assert_contains(stdout, f"{long_named_domain}\t", "non-tty domain retains full path")
 
 rc, transcript = run_pty([bin_path, "--dir", str(work_root), "domain", "ls", "-l"])
@@ -193,17 +193,17 @@ if rc != 1 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(work_root), "domain", "ls", "-l", "--descendants"])
 if rc != 0 or stderr != "":
     fail(f"domain ls -l plain locked state failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, f"{sibling_domain}\tlocked\tlocked\tno-session", "domain ls plain locked row")
+assert_contains(stdout, f"{sibling_domain}\tlocked\tlocked\t-\tlocked", "domain ls plain locked row")
 
 rc, stdout, stderr = run(scoped(["unlock"], child_domain))
-if rc != 0 or stdout.strip() != "session unlocked\nnote: 1 descendant domains can now reuse this session":
+if rc != 0 or stdout.strip() != "session refreshed\nnote: 1 descendant domains can now reuse this session":
     fail(f"child local unlock before inherit checks failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stderr, f"resolved domain: {child_domain}\n", "child local unlock resolved domain")
 
 rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
 if rc != 0 or stderr != "":
     fail(f"child domain status after local unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: local session\n", "child local status before checked inherit")
+assert_contains(stdout, "effective source: direct session\n", "child local status before checked inherit")
 
 rc, stdout, stderr = run(scoped(["unlock", "--inherit"], child_domain))
 if rc != 0 or stdout.strip() != "local session cleared; resulting state: unlocked":
@@ -217,7 +217,7 @@ assert_contains(stdout, "effective source: inherited session\n", "child inherite
 assert_contains(stdout, f"inherited from: {root_domain}\n", "child inherited source after local-session unlock --inherit")
 
 rc, stdout, stderr = run(scoped(["unlock"], child_domain))
-if rc != 0 or stdout.strip() != "session unlocked\nnote: 1 descendant domains can now reuse this session":
+if rc != 0 or stdout.strip() != "session refreshed\nnote: 1 descendant domains can now reuse this session":
     fail(f"child second local unlock before unchecked inherit failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["inherit"], child_domain))
@@ -237,12 +237,12 @@ if rc != 0 or stdout.strip() != "session locked":
 rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
 if rc != 0 or stderr != "":
     fail(f"child domain status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: explicit lock\n", "child explicit lock state")
+assert_contains(stdout, "effective source: local lock\n", "child explicit lock state")
 
 rc, stdout, stderr = run(scoped(["domain", "status"], grandchild_domain))
 if rc != 0 or stderr != "":
     fail(f"grandchild domain status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: blocked by explicit lock\n", "grandchild blocked state")
+assert_contains(stdout, "effective source: blocked by ancestor lock\n", "grandchild blocked state")
 assert_contains(stdout, f"blocked by: {child_domain}\n", "grandchild blocked source")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "--store", "team", "get", "API_TOKEN", "-o"])

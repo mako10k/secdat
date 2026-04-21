@@ -171,6 +171,7 @@ enum secdat_session_access_mode {
 struct secdat_session_record {
     char master_key[512];
     time_t expires_at;
+    time_t duration_seconds;
     int volatile_mode;
     int readonly_mode;
     struct secdat_overlay_list overlay;
@@ -232,16 +233,23 @@ static int secdat_session_agent_status_details(
     size_t *matched_index,
     size_t *blocked_index
 );
-static int secdat_session_agent_set(const char *domain_id, const char *master_key, enum secdat_session_access_mode access_mode);
+static int secdat_session_agent_set(const char *domain_id, const char *master_key, enum secdat_session_access_mode access_mode, time_t duration_seconds);
 static int secdat_session_agent_clear(const char *domain_id);
+static time_t secdat_session_idle_seconds(void);
+static time_t secdat_session_effective_duration(const struct secdat_session_record *record);
 static void secdat_session_record_reset(struct secdat_session_record *record);
+static void secdat_session_record_refresh(struct secdat_session_record *record);
 static void secdat_print_unlock_guidance(const char *current_domain_root);
 static void secdat_print_locked_read_guidance(const struct secdat_domain_chain *chain);
 static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_get_options *options);
 static int secdat_parse_wait_unlock_options(const struct secdat_cli *cli, struct secdat_wait_unlock_options *options);
+static int secdat_parse_session_duration_seconds(const char *value, time_t *duration_seconds);
+static void secdat_format_remaining_duration(time_t expires_at, char *buffer, size_t size);
 
 struct secdat_unlock_options {
+    time_t duration_seconds;
     int include_descendants;
+    int duration_configured;
     int inherit_mode;
     int assume_yes;
     int volatile_mode;
@@ -886,6 +894,18 @@ static int secdat_parse_timeout_seconds(const char *value, time_t *timeout_secon
     return 0;
 }
 
+static int secdat_parse_session_duration_seconds(const char *value, time_t *duration_seconds)
+{
+    time_t parsed = 0;
+
+    if (value == NULL || value[0] == '\0' || secdat_parse_i64(value, &parsed) != 0 || parsed <= 0) {
+        return 1;
+    }
+
+    *duration_seconds = parsed;
+    return 0;
+}
+
 static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_get_options *options)
 {
     static const struct option long_options[] = {
@@ -1137,7 +1157,7 @@ static const char *secdat_session_scope_id(const struct secdat_domain_chain *cha
 
 static int secdat_session_agent_set_current_scope(const struct secdat_domain_chain *chain, const char *master_key)
 {
-    return secdat_session_agent_set(secdat_session_scope_id(chain), master_key, SECDAT_SESSION_ACCESS_PERSISTENT);
+    return secdat_session_agent_set(secdat_session_scope_id(chain), master_key, SECDAT_SESSION_ACCESS_PERSISTENT, secdat_session_idle_seconds());
 }
 
 static int secdat_session_agent_clear_current_scope(const struct secdat_domain_chain *chain)
@@ -1148,6 +1168,7 @@ static int secdat_session_agent_clear_current_scope(const struct secdat_domain_c
 static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secdat_unlock_options *options)
 {
     static const struct option long_options[] = {
+        {"duration", required_argument, NULL, 't'},
         {"inherit", no_argument, NULL, 'i'},
         {"volatile", no_argument, NULL, 'v'},
         {"readonly", no_argument, NULL, 'r'},
@@ -1163,8 +1184,15 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
 
     secdat_prepare_option_argv(cli, "unlock", &argc, argv);
     secdat_reset_getopt_state();
-    while ((option = getopt_long(argc, argv, ":ivrdy", long_options, NULL)) != -1) {
+    while ((option = getopt_long(argc, argv, ":t:ivrdy", long_options, NULL)) != -1) {
         switch (option) {
+        case 't':
+            if (secdat_parse_session_duration_seconds(optarg, &options->duration_seconds) != 0) {
+                fprintf(stderr, _("invalid value for --duration: %s\n"), optarg != NULL ? optarg : "");
+                return 2;
+            }
+            options->duration_configured = 1;
+            break;
         case 'i':
             options->inherit_mode = 1;
             break;
@@ -1356,7 +1384,8 @@ static int secdat_confirm_descendant_unlock(size_t affected_count)
 static int secdat_unlock_descendant_sessions(
     const struct secdat_domain_root_list *targets,
     const char *master_key,
-    enum secdat_session_access_mode access_mode
+    enum secdat_session_access_mode access_mode,
+    time_t duration_seconds
 )
 {
     char domain_id[PATH_MAX];
@@ -1366,7 +1395,7 @@ static int secdat_unlock_descendant_sessions(
         if (secdat_domain_resolve_current(targets->roots[index], domain_id, sizeof(domain_id)) != 0) {
             return 1;
         }
-        if (secdat_session_agent_set(domain_id, master_key, access_mode) != 0) {
+        if (secdat_session_agent_set(domain_id, master_key, access_mode, duration_seconds) != 0) {
             return 1;
         }
     }
@@ -2372,6 +2401,15 @@ static time_t secdat_session_idle_seconds(void)
     return SECDAT_SESSION_IDLE_SECONDS;
 }
 
+static time_t secdat_session_effective_duration(const struct secdat_session_record *record)
+{
+    if (record != NULL && record->duration_seconds > 0) {
+        return record->duration_seconds;
+    }
+
+    return secdat_session_idle_seconds();
+}
+
 static void secdat_trim_newline(char *buffer)
 {
     size_t length = strlen(buffer);
@@ -2387,9 +2425,15 @@ static void secdat_session_record_reset(struct secdat_session_record *record)
     secdat_secure_clear(record->master_key, sizeof(record->master_key));
     record->master_key[0] = '\0';
     record->expires_at = 0;
+    record->duration_seconds = 0;
     record->volatile_mode = 0;
     record->readonly_mode = 0;
     secdat_overlay_list_clear(&record->overlay);
+}
+
+static void secdat_session_record_refresh(struct secdat_session_record *record)
+{
+    record->expires_at = time(NULL) + secdat_session_effective_duration(record);
 }
 
 static void secdat_session_record_expire_if_needed(struct secdat_session_record *record)
@@ -2416,6 +2460,7 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
     FILE *stream;
     char command[64];
     char payload[sizeof(record->master_key)];
+    char duration_text[32];
     char line_domain[PATH_MAX * 3];
     char line_store[PATH_MAX * 3];
     char line_key[PATH_MAX * 3];
@@ -2451,9 +2496,10 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         } else {
             fprintf(
                 stream,
-                "OK %lld %s\n",
+                "OK %lld %s %lld\n",
                 (long long)record->expires_at,
-                record->volatile_mode ? "volatile" : (record->readonly_mode ? "readonly" : "persistent")
+                record->volatile_mode ? "volatile" : (record->readonly_mode ? "readonly" : "persistent"),
+                (long long)secdat_session_effective_duration(record)
             );
         }
         fflush(stream);
@@ -2465,8 +2511,8 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         if (record->master_key[0] == '\0') {
             fprintf(stream, "ERR locked\n");
         } else {
-            record->expires_at = time(NULL) + secdat_session_idle_seconds();
-            fprintf(stream, "OK %lld\n%s\n", (long long)record->expires_at, record->master_key);
+            secdat_session_record_refresh(record);
+            fprintf(stream, "OK %lld %lld\n%s\n", (long long)record->expires_at, (long long)secdat_session_effective_duration(record), record->master_key);
         }
         fflush(stream);
         fclose(stream);
@@ -2474,16 +2520,21 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
     }
 
     if (strcmp(command, "SET") == 0) {
-        if (secdat_read_line(stream, payload, sizeof(payload)) != 0) {
+        if (secdat_read_line(stream, duration_text, sizeof(duration_text)) != 0
+            || secdat_read_line(stream, payload, sizeof(payload)) != 0) {
             fclose(stream);
             return 1;
         }
         secdat_session_record_reset(record);
+        if (secdat_parse_i64(duration_text, &record->duration_seconds) != 0 || record->duration_seconds <= 0) {
+            fclose(stream);
+            return 1;
+        }
         if (secdat_copy_string(record->master_key, sizeof(record->master_key), payload) != 0) {
             fclose(stream);
             return 1;
         }
-        record->expires_at = time(NULL) + secdat_session_idle_seconds();
+        secdat_session_record_refresh(record);
         fprintf(stream, "OK %lld\n", (long long)record->expires_at);
         fflush(stream);
         fclose(stream);
@@ -2491,17 +2542,22 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
     }
 
     if (strcmp(command, "SETVOLATILE") == 0) {
-        if (secdat_read_line(stream, payload, sizeof(payload)) != 0) {
+        if (secdat_read_line(stream, duration_text, sizeof(duration_text)) != 0
+            || secdat_read_line(stream, payload, sizeof(payload)) != 0) {
             fclose(stream);
             return 1;
         }
         secdat_session_record_reset(record);
+        if (secdat_parse_i64(duration_text, &record->duration_seconds) != 0 || record->duration_seconds <= 0) {
+            fclose(stream);
+            return 1;
+        }
         if (secdat_copy_string(record->master_key, sizeof(record->master_key), payload) != 0) {
             fclose(stream);
             return 1;
         }
         record->volatile_mode = 1;
-        record->expires_at = time(NULL) + secdat_session_idle_seconds();
+        secdat_session_record_refresh(record);
         fprintf(stream, "OK %lld\n", (long long)record->expires_at);
         fflush(stream);
         fclose(stream);
@@ -2509,17 +2565,22 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
     }
 
     if (strcmp(command, "SETREADONLY") == 0) {
-        if (secdat_read_line(stream, payload, sizeof(payload)) != 0) {
+        if (secdat_read_line(stream, duration_text, sizeof(duration_text)) != 0
+            || secdat_read_line(stream, payload, sizeof(payload)) != 0) {
             fclose(stream);
             return 1;
         }
         secdat_session_record_reset(record);
+        if (secdat_parse_i64(duration_text, &record->duration_seconds) != 0 || record->duration_seconds <= 0) {
+            fclose(stream);
+            return 1;
+        }
         if (secdat_copy_string(record->master_key, sizeof(record->master_key), payload) != 0) {
             fclose(stream);
             return 1;
         }
         record->readonly_mode = 1;
-        record->expires_at = time(NULL) + secdat_session_idle_seconds();
+        secdat_session_record_refresh(record);
         fprintf(stream, "OK %lld\n", (long long)record->expires_at);
         fflush(stream);
         fclose(stream);
@@ -2608,7 +2669,7 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         free(domain_id);
         free(store_name);
         free(key);
-        record->expires_at = time(NULL) + secdat_session_idle_seconds();
+        secdat_session_record_refresh(record);
         fprintf(stream, "OK %lld\n", (long long)record->expires_at);
         fflush(stream);
         fclose(stream);
@@ -2644,7 +2705,7 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         free(domain_id);
         free(store_name);
         free(key);
-        record->expires_at = time(NULL) + secdat_session_idle_seconds();
+        secdat_session_record_refresh(record);
         fprintf(stream, "OK %lld\n", (long long)record->expires_at);
         fflush(stream);
         fclose(stream);
@@ -2674,7 +2735,7 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         free(domain_id);
         free(store_name);
         free(key);
-        record->expires_at = time(NULL) + secdat_session_idle_seconds();
+        secdat_session_record_refresh(record);
         fprintf(stream, "OK %lld\n", (long long)record->expires_at);
         fflush(stream);
         fclose(stream);
@@ -3227,6 +3288,7 @@ static int secdat_session_agent_status_details(
 {
     FILE *stream;
     int fd;
+    char duration_text[32];
     char response[64];
     char expires_text[32];
     char mode[16];
@@ -3255,16 +3317,21 @@ static int secdat_session_agent_status_details(
         return 1;
     }
     mode[0] = '\0';
-    if (sscanf(response, "OK %31s %15s", expires_text, mode) < 1) {
+    duration_text[0] = '\0';
+    if (sscanf(response, "OK %31s %15s %31s", expires_text, mode, duration_text) < 2) {
         return 1;
     }
     if (secdat_parse_i64(expires_text, &record->expires_at) != 0) {
         return 1;
     }
+    record->duration_seconds = secdat_session_idle_seconds();
     if (strcmp(mode, "volatile") == 0) {
         record->volatile_mode = 1;
     } else if (strcmp(mode, "readonly") == 0) {
         record->readonly_mode = 1;
+    }
+    if (duration_text[0] != '\0' && secdat_parse_i64(duration_text, &record->duration_seconds) != 0) {
+        return 1;
     }
     return 0;
 }
@@ -3274,6 +3341,8 @@ static int secdat_session_agent_get(const struct secdat_domain_chain *chain, str
     FILE *stream;
     int fd;
     char response[64];
+    char duration_text[32];
+    char expires_text[32];
     char secret[sizeof(record->master_key)];
 
     memset(record, 0, sizeof(*record));
@@ -3298,7 +3367,10 @@ static int secdat_session_agent_get(const struct secdat_domain_chain *chain, str
         fclose(stream);
         return 1;
     }
-    if (secdat_parse_i64(response + 3, &record->expires_at) != 0 || secdat_read_line(stream, secret, sizeof(secret)) != 0) {
+    if (sscanf(response, "OK %31s %31s", expires_text, duration_text) != 2
+        || secdat_parse_i64(expires_text, &record->expires_at) != 0
+        || secdat_parse_i64(duration_text, &record->duration_seconds) != 0
+        || secdat_read_line(stream, secret, sizeof(secret)) != 0) {
         fclose(stream);
         return 1;
     }
@@ -3307,7 +3379,7 @@ static int secdat_session_agent_get(const struct secdat_domain_chain *chain, str
     return secdat_copy_string(record->master_key, sizeof(record->master_key), secret);
 }
 
-static int secdat_session_agent_set(const char *domain_id, const char *master_key, enum secdat_session_access_mode access_mode)
+static int secdat_session_agent_set(const char *domain_id, const char *master_key, enum secdat_session_access_mode access_mode, time_t duration_seconds)
 {
     FILE *stream;
     int fd;
@@ -3326,9 +3398,10 @@ static int secdat_session_agent_set(const char *domain_id, const char *master_ke
 
     fprintf(
         stream,
-        "%s\n%s\n",
+        "%s\n%lld\n%s\n",
         access_mode == SECDAT_SESSION_ACCESS_VOLATILE ? "SETVOLATILE"
             : (access_mode == SECDAT_SESSION_ACCESS_READONLY ? "SETREADONLY" : "SET"),
+        (long long)duration_seconds,
         master_key
     );
     fflush(stream);
@@ -3345,6 +3418,7 @@ static int secdat_session_agent_status_scope(const char *domain_id, struct secda
     FILE *stream;
     int fd;
     char response[64];
+    char duration_text[32];
     char expires_text[32];
     char mode[16];
 
@@ -3369,13 +3443,18 @@ static int secdat_session_agent_status_scope(const char *domain_id, struct secda
         return 1;
     }
     mode[0] = '\0';
-    if (sscanf(response, "OK %31s %15s", expires_text, mode) < 1 || secdat_parse_i64(expires_text, &record->expires_at) != 0) {
+    duration_text[0] = '\0';
+    if (sscanf(response, "OK %31s %15s %31s", expires_text, mode, duration_text) < 2 || secdat_parse_i64(expires_text, &record->expires_at) != 0) {
         return 1;
     }
+    record->duration_seconds = secdat_session_idle_seconds();
     if (strcmp(mode, "volatile") == 0) {
         record->volatile_mode = 1;
     } else if (strcmp(mode, "readonly") == 0) {
         record->readonly_mode = 1;
+    }
+    if (duration_text[0] != '\0' && secdat_parse_i64(duration_text, &record->duration_seconds) != 0) {
+        return 1;
     }
     return 0;
 }
@@ -5150,6 +5229,7 @@ static int secdat_command_status(const struct secdat_cli *cli)
     int option;
     int quiet = 0;
     int wrapped_present = secdat_wrapped_master_key_exists();
+    char remaining_text[32];
 
     secdat_prepare_option_argv(cli, "status", &argc, argv);
     secdat_reset_getopt_state();
@@ -5198,7 +5278,8 @@ static int secdat_command_status(const struct secdat_cli *cli)
             if (record.readonly_mode) {
                 puts(_("access: readonly"));
             }
-            printf(_("expires in: %lld seconds\n"), (long long)(record.expires_at - time(NULL)));
+            secdat_format_remaining_duration(record.expires_at, remaining_text, sizeof(remaining_text));
+            printf(_("expires in: %s\n"), remaining_text);
             puts(wrapped_present ? _("wrapped master key: present") : _("wrapped master key: absent"));
         }
         secdat_secure_clear(record.master_key, strlen(record.master_key));
@@ -5255,17 +5336,22 @@ static int secdat_command_wait_unlock(const struct secdat_cli *cli)
 static int secdat_command_unlock(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain current_chain = {0};
+    struct secdat_session_record active_record = {0};
+    struct secdat_session_record secret_record = {0};
     char current_domain_label[PATH_MAX];
     char current_domain_root[PATH_MAX];
     struct secdat_unlock_options options;
     struct secdat_domain_root_list descendant_targets = {0};
     const char *env_master_key = getenv("SECDAT_MASTER_KEY");
     size_t descendant_unlock_count = 0;
+    size_t matched_index = SIZE_MAX;
     int wrapped_present = secdat_wrapped_master_key_exists();
     int initialized = 0;
     int parse_status;
+    enum secdat_session_access_mode access_mode;
     char passphrase[512];
     const char *session_master_key = env_master_key;
+    time_t session_duration;
     char secret[512];
 
     if (cli->store != NULL) {
@@ -5312,6 +5398,45 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         }
     }
 
+    session_duration = options.duration_configured ? options.duration_seconds : secdat_session_idle_seconds();
+    access_mode = options.volatile_mode ? SECDAT_SESSION_ACCESS_VOLATILE : (options.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT);
+
+    if (env_master_key == NULL || env_master_key[0] == '\0') {
+        if (secdat_session_agent_status_details(&current_chain, &active_record, &matched_index, NULL) == 0
+            && secdat_session_agent_get(&current_chain, &secret_record) == 0) {
+            session_duration = options.duration_configured ? options.duration_seconds : secdat_session_effective_duration(&active_record);
+            if (!options.volatile_mode && !options.readonly_mode) {
+                access_mode = active_record.volatile_mode ? SECDAT_SESSION_ACCESS_VOLATILE
+                    : (active_record.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT);
+            }
+            if (secdat_session_agent_set(secdat_session_scope_id(&current_chain), secret_record.master_key, access_mode, session_duration) != 0) {
+                secdat_session_record_reset(&secret_record);
+                secdat_domain_root_list_free(&descendant_targets);
+                secdat_domain_chain_free(&current_chain);
+                return 1;
+            }
+            if (options.include_descendants && secdat_unlock_descendant_sessions(&descendant_targets, secret_record.master_key, access_mode, session_duration) != 0) {
+                secdat_session_record_reset(&secret_record);
+                secdat_domain_root_list_free(&descendant_targets);
+                secdat_domain_chain_free(&current_chain);
+                return 1;
+            }
+            secdat_session_record_reset(&secret_record);
+            secdat_session_record_reset(&active_record);
+            puts(access_mode == SECDAT_SESSION_ACCESS_VOLATILE ? _("volatile session refreshed") : (access_mode == SECDAT_SESSION_ACCESS_READONLY ? _("readonly session refreshed") : _("session refreshed")));
+            if (options.include_descendants) {
+                secdat_print_descendant_unlock_summary(descendant_unlock_count);
+            } else {
+                secdat_print_unlock_guidance(current_domain_root);
+            }
+            secdat_domain_root_list_free(&descendant_targets);
+            secdat_domain_chain_free(&current_chain);
+            return 0;
+        }
+        secdat_session_record_reset(&secret_record);
+        secdat_session_record_reset(&active_record);
+    }
+
     if (!wrapped_present && !options.volatile_mode && !options.readonly_mode) {
         if (secdat_read_new_master_key_passphrase(passphrase, sizeof(passphrase)) != 0) {
             secdat_domain_root_list_free(&descendant_targets);
@@ -5344,7 +5469,8 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         if (secdat_session_agent_set(
                 secdat_session_scope_id(&current_chain),
                 session_master_key,
-                options.volatile_mode ? SECDAT_SESSION_ACCESS_VOLATILE : (options.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT)
+            access_mode,
+            session_duration
             ) != 0) {
             if (session_master_key == secret) {
                 secdat_secure_clear(secret, strlen(secret));
@@ -5356,7 +5482,8 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         if (options.include_descendants && secdat_unlock_descendant_sessions(
                 &descendant_targets,
                 session_master_key,
-                options.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT
+            access_mode,
+            session_duration
             ) != 0) {
             if (session_master_key == secret) {
                 secdat_secure_clear(secret, strlen(secret));
@@ -5402,7 +5529,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
                 secdat_domain_chain_free(&current_chain);
                 return 1;
             }
-            if (secdat_session_agent_set(secdat_session_scope_id(&current_chain), secret, SECDAT_SESSION_ACCESS_VOLATILE) != 0) {
+            if (secdat_session_agent_set(secdat_session_scope_id(&current_chain), secret, SECDAT_SESSION_ACCESS_VOLATILE, session_duration) != 0) {
                 secdat_secure_clear(secret, strlen(secret));
                 secdat_domain_root_list_free(&descendant_targets);
                 secdat_domain_chain_free(&current_chain);
@@ -5442,7 +5569,8 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     if (secdat_session_agent_set(
             secdat_session_scope_id(&current_chain),
             secret,
-            options.volatile_mode ? SECDAT_SESSION_ACCESS_VOLATILE : (options.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT)
+            access_mode,
+            session_duration
         ) != 0) {
         secdat_secure_clear(secret, strlen(secret));
         secdat_domain_root_list_free(&descendant_targets);
@@ -5452,7 +5580,8 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     if (options.include_descendants && secdat_unlock_descendant_sessions(
             &descendant_targets,
             secret,
-            options.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT
+            access_mode,
+            session_duration
         ) != 0) {
         secdat_secure_clear(secret, strlen(secret));
         secdat_domain_root_list_free(&descendant_targets);
@@ -5475,6 +5604,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
 static int secdat_command_lock(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
+    struct secdat_session_record record = {0};
     struct secdat_lock_options options;
     char current_domain_label[PATH_MAX];
     int parse_status;
@@ -5501,6 +5631,13 @@ static int secdat_command_lock(const struct secdat_cli *cli)
         secdat_domain_chain_free(&chain);
         return parse_status;
     }
+    if ((getenv("SECDAT_MASTER_KEY") == NULL || getenv("SECDAT_MASTER_KEY")[0] == '\0')
+        && secdat_session_agent_status(&chain, &record) != 0) {
+        secdat_domain_chain_free(&chain);
+        puts(_("already locked"));
+        return 0;
+    }
+    secdat_session_record_reset(&record);
     should_persist_lock = chain.count > 1;
 
     if (options.save_mode && secdat_save_local_volatile_session_overlay(&chain) != 0) {
@@ -5521,6 +5658,28 @@ static int secdat_command_lock(const struct secdat_cli *cli)
 
     puts(options.save_mode ? _("volatile session saved and locked") : _("session locked"));
     return 0;
+}
+
+static void secdat_format_remaining_duration(time_t expires_at, char *buffer, size_t size)
+{
+    time_t remaining = expires_at - time(NULL);
+    long long hours;
+    long long minutes;
+    long long seconds;
+
+    if (remaining < 0) {
+        remaining = 0;
+    }
+    if (remaining >= 3600) {
+        hours = (long long)(remaining / 3600);
+        minutes = (long long)((remaining % 3600) / 60);
+        snprintf(buffer, size, "%lldh%02lldm", hours, minutes);
+        return;
+    }
+
+    minutes = (long long)(remaining / 60);
+    seconds = (long long)(remaining % 60);
+    snprintf(buffer, size, "%lldm%02llds", minutes, seconds);
 }
 
 static int secdat_command_inherit(const struct secdat_cli *cli)

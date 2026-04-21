@@ -86,16 +86,16 @@ if "$bin_path" --dir "$root" --domain "$child" status --quiet >/tmp/secdat-keyre
 fi
 
 domain_long_output="$(LANGUAGE=C "$bin_path" --dir "$work_root/work" domain ls -l)"
-assert_contains_line "$domain_long_output" $'DOMAIN\tKEY_SOURCE\tEFFECTIVE\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED'
-assert_contains_line "$domain_long_output" "$root"$'\tenvironment\tunlocked\tenvironment\t3\t5\tabsent'
-assert_contains_line "$domain_long_output" "$child"$'\tenvironment\tunlocked\tenvironment\t1\t5\tabsent'
-assert_contains_line "$domain_long_output" "$sibling"$'\tenvironment\tunlocked\tenvironment\t1\t0\tabsent'
+assert_contains_line "$domain_long_output" $'DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED'
+assert_contains_line "$domain_long_output" "$root"$'\tenvironment\tunlocked\t-\tenvironment\t3\t5\tabsent'
+assert_contains_line "$domain_long_output" "$child"$'\tenvironment\tunlocked\t-\tenvironment\t1\t5\tabsent'
+assert_contains_line "$domain_long_output" "$sibling"$'\tenvironment\tunlocked\t-\tenvironment\t1\t0\tabsent'
 
 domain_inherited_output="$(LANGUAGE=C "$bin_path" --dir "$child" domain ls -la --descendants)"
-assert_contains_line "$domain_inherited_output" $'DOMAIN\tKEY_SOURCE\tEFFECTIVE\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED'
-assert_contains_line "$domain_inherited_output" "$root"$'\tenvironment\tunlocked\tenvironment\t3\t5\tabsent'
-assert_contains_line "$domain_inherited_output" "$child"$'\tenvironment\tunlocked\tenvironment\t1\t5\tabsent'
-assert_contains_line "$domain_inherited_output" '*default*'$'\tenvironment\tunlocked\tenvironment\t0\t0\tabsent'
+assert_contains_line "$domain_inherited_output" $'DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED'
+assert_contains_line "$domain_inherited_output" "$root"$'\tenvironment\tunlocked\t-\tenvironment\t3\t5\tabsent'
+assert_contains_line "$domain_inherited_output" "$child"$'\tenvironment\tunlocked\t-\tenvironment\t1\t5\tabsent'
+assert_contains_line "$domain_inherited_output" '*default*'$'\tenvironment\tunlocked\t-\tenvironment\t0\t0\tabsent'
 
 if ! "$bin_path" --dir "$root" exists prefix_one >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'exists did not report an existing key'

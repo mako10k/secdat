@@ -260,7 +260,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat status` returns non-zero and reports `locked` when no active master-key source exists
 - `secdat [--dir DIR] status --quiet` suppresses output and reports state only through the exit code
 - `status` without `--quiet` reports the active source and whether a wrapped persistent master key is present
-- `secdat [--dir DIR] unlock [--inherit] [--volatile|--readonly] [--descendants] [--yes]` creates or refreshes a domain-scoped cache of the current master key
+- `secdat [--dir DIR] unlock [--duration SECONDS] [--inherit] [--volatile|--readonly] [--descendants] [--yes]` creates or refreshes a domain-scoped cache of the current master key
 - `secdat [--dir DIR] wait-unlock [--timeout SECONDS] [--quiet]` waits for the current effective domain scope to become unlocked and is intended for scripts that handle external notifications separately
 - `wait-unlock` exits successfully immediately when the scope is already unlocked, returns non-zero on timeout, and prints unlock guidance to standard error unless `--quiet` is used
 - if no wrapped persistent master key exists, `unlock` prompts twice on a terminal, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
@@ -274,9 +274,11 @@ To make the requested behavior implementable, the following are treated as norma
 - if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `unlock`
 - otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent
+- `unlock --duration SECONDS` sets the remaining unlock time for the session being created or refreshed
 - before prompting, `unlock` reports the resolved domain it is about to unlock
 - unlocking one domain must not unlock sibling domains
 - descendant domains may reuse an unlocked ancestor session without an extra `unlock`
+- when the current domain is already unlocked, plain `unlock` refreshes that current domain without asking for the passphrase again
 - `unlock --inherit` must not create a local session; it removes the current domain's local explicit-lock marker when present, otherwise it clears the current domain's local session, and succeeds only when the resulting effective state would become unlocked
 - `unlock --inherit` is an error when no current-domain explicit-lock marker or local session exists, or when the checked result would remain locked
 - `unlock --descendants` applies only to the resolved target domain plus registered descendants rooted beneath it; it must never affect ancestors, siblings, or unregistered directories
@@ -285,6 +287,7 @@ To make the requested behavior implementable, the following are treated as norma
 - when `unlock` succeeds for one domain while descendant domains remain effectively locked because of explicit-lock shadow state, the command must say so explicitly and print follow-up inspection/unlock commands using the correct `--dir` targets
 - when a secret read fails because no active session is available, the error must report the resolved domain context and print matching `domain status` / `unlock` follow-up commands so users can unlock the correct domain
 - `secdat [--dir DIR] lock [--inherit]` clears the current domain's local agent-backed session state
+- plain `lock` is a no-op success when the current domain is already locked
 - when the resolved domain has a registered parent and `--inherit` is not present, `lock` must persist a local explicit-lock marker after clearing the local session
 - `lock --inherit` must not clear or create sessions; it removes only the current domain's local explicit-lock marker and succeeds only when the resulting effective state would remain locked
 - `lock --inherit` is an error when no current-domain explicit-lock marker exists or when the checked result would become unlocked
@@ -344,12 +347,12 @@ To make the requested behavior implementable, the following are treated as norma
 - combining `--ancestors` and `--descendants` is equivalent to the default `domain ls` behavior
 - when `domain ls -l` writes to a terminal, it may render a human-oriented grouped view that lifts the shared parent directory into a heading and wraps long domain labels before the metadata columns
 - non-terminal `domain ls -l` output must keep the tab-separated full-path rows so scripts can continue to consume the current layout
-- `secdat [--dir DIR] domain ls -l` adds the key source, effective state, effective-state source, current-domain store count, visible key count, and wrapped-master-key presence for each listed domain
-- the long-format effective-state source must distinguish plain `no-session` from `explicit-lock` and `blocked:DOMAIN`; plain `no-session` means no environment override, no local session, no inherited session, and no explicit-lock marker currently applies
+- `secdat [--dir DIR] domain ls -l` adds the key source, effective state, remaining unlock time, effective-state source, current-domain store count, visible key count, and wrapped-master-key presence for each listed domain
+- the long-format effective-state source must distinguish `direct-session`, `inherited-from:DOMAIN`, `local-lock`, `blocked-by:DOMAIN`, and plain `locked`
 - `secdat [--dir DIR] domain status` reports the resolved current domain used by normal store commands
 - `secdat [--domain DIR] ...` uses that exact registered domain root as the current domain context
 - `domain status` reports whether that resolution came from `--dir` or the current working directory
-- `domain status` summarizes the visible key count, current-domain store count, key source, wrapped-master-key presence, and the effective access state for that resolved domain
+- `domain status` summarizes the visible key count, current-domain store count, key source, remaining unlock time, wrapped-master-key presence, and the effective access state for that resolved domain
 - `secdat [--dir DIR] domain status --quiet` prints only the resolved domain root, or an emphasized fallback label such as `*default*` when no registered domain applies; that label means no registered domain resolved and the top-level inherited fallback scope is active
 
 #### FR-11 Domain Resolution

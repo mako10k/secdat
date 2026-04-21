@@ -354,7 +354,7 @@ for args, marker in [
     ([bin_path, "-h", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "--help"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
     ([bin_path, "status", "-h"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
-    ([bin_path, "help", "unlock"], "unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]"),
+    ([bin_path, "help", "unlock"], "unlock [-t SECONDS|--duration SECONDS] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]"),
     ([bin_path, "help", "inherit"], "[-d DIR|--dir DIR] inherit"),
     ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [-i|--inherit] [-s|--save]"),
     ([bin_path, "help", "list"], "list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe] [-u|--unsafe]"),
@@ -494,7 +494,7 @@ if rc != 0 or not output.startswith("secdat ") or "Issues: https://github.com/ma
     fail(f"-V failed: rc={rc} output={(stdout + stderr)!r}")
 
 rc, transcript = run_pty(
-    scoped(["unlock"]),
+    scoped(["unlock", "--duration", "95"]),
     [("Create secdat passphrase:", passphrase), ("Confirm secdat passphrase:", passphrase)],
 )
 if rc != 0 or f"resolved domain: {root_domain}" not in transcript or "persistent master key initialized; session unlocked" not in transcript:
@@ -505,8 +505,18 @@ if not wrapped_path.is_file():
     fail("wrapped master key was not created")
 
 rc, stdout, _ = run(scoped(["status"], root_domain))
-if rc != 0 or "source: session agent" not in stdout or "wrapped master key: present" not in stdout:
+if rc != 0 or "source: session agent" not in stdout or "wrapped master key: present" not in stdout or re.search(r"expires in: \d+ seconds", stdout) or not re.search(r"expires in: (\d+h\d\dm|\d+m\d\ds)\n", stdout):
     fail(f"status after bootstrap unexpected: rc={rc} stdout={stdout!r}")
+
+rc, stdout, stderr = run(scoped(["unlock", "--duration", "95"], root_domain))
+if rc != 0 or "session refreshed\n" not in stdout or stderr != f"resolved domain: {root_domain}\n":
+    fail(f"refresh unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if "note: 2 descendant domains remain locked under this branch\n" not in stdout:
+    fail(f"refresh unlock guidance missing: stdout={stdout!r}")
+
+rc, stdout, stderr = run(scoped(["status"], root_domain))
+if rc != 0 or not re.search(r"expires in: 1m\d\ds\n", stdout):
+    fail(f"status after refresh unexpected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, _ = run(scoped(["status", "-q"], child_domain))
 if rc != 1 or stdout != "":
@@ -520,6 +530,10 @@ rc, stdout, stderr = run(scoped(["lock"], root_domain))
 if rc != 0 or stdout.strip() != "session locked":
     fail(f"lock before reconnect check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run(scoped(["lock"], root_domain))
+if rc != 0 or stdout.strip() != "already locked":
+    fail(f"second lock noop failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
 if rc != 0 or "session unlocked\n" not in stdout or "note: 2 descendant domains remain locked under this branch\n" not in stdout:
     fail(f"root unlock before shadow check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -529,6 +543,10 @@ if f"resolved domain: {root_domain}\n" not in stderr:
 rc, stdout, stderr = run(scoped(["set", "PARENT_UNLOCK_VISIBLE", "-v", "visible-from-parent"], root_domain))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"root set for explicit-lock coverage failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+if rc != 0 or "session unlocked\n" not in stdout:
+    fail(f"child local unlock before explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["lock"], child_domain))
 if rc != 0 or stdout.strip() != "session locked":
@@ -546,20 +564,20 @@ rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
 if rc != 0 or stderr != "":
     fail(f"domain status after explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "effective state: locked\n", "domain status explicit lock")
-assert_contains(stdout, "effective source: explicit lock\n", "domain status explicit lock")
+assert_contains(stdout, "effective source: local lock\n", "domain status explicit lock")
 
 rc, stdout, stderr = run(scoped(["domain", "status"], grandchild_domain))
 if rc != 0 or stderr != "":
     fail(f"grandchild domain status after parent explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: blocked by explicit lock\n", "grandchild blocked status")
+assert_contains(stdout, "effective source: blocked by ancestor lock\n", "grandchild blocked status")
 assert_contains(stdout, f"blocked by: {child_domain}\n", "grandchild blocked status")
 
 rc, stdout, stderr = run(scoped(["domain", "ls", "-l", "--descendants"], root_domain))
 if rc != 0 or stderr != "":
     fail(f"domain ls -l after explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "domain ls -l header")
-assert_contains(stdout, f"{child_domain}\tlocked\tlocked\texplicit-lock", "domain ls explicit-lock row")
-assert_contains(stdout, f"{grandchild_domain}\tlocked\tlocked\tblocked:{child_domain}", "domain ls blocked row")
+assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "domain ls -l header")
+assert_contains(stdout, f"{child_domain}\tlocked\tlocked\t-\tlocal-lock", "domain ls explicit-lock row")
+assert_contains(stdout, f"{grandchild_domain}\tlocked\tlocked\t-\tblocked-by:{child_domain}", "domain ls blocked row")
 
 rc, stdout, stderr = run(scoped(["get", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain))
 if rc == 0 or "no active secdat session" not in stderr:
@@ -683,12 +701,12 @@ if "note: unlocked 2 descendant domains in this subtree; explicit lock markers r
 rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
 if rc != 0 or stderr != "":
     fail(f"child domain status after descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: local session\n", "child local session after descendant unlock")
+assert_contains(stdout, "effective source: direct session\n", "child local session after descendant unlock")
 
 rc, stdout, stderr = run(scoped(["domain", "status"], grandchild_domain))
 if rc != 0 or stderr != "":
     fail(f"grandchild domain status after descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: local session\n", "grandchild local session after descendant unlock")
+assert_contains(stdout, "effective source: direct session\n", "grandchild local session after descendant unlock")
 
 rc, stdout, stderr = run(scoped(["lock"], child_domain))
 if rc != 0 or stdout.strip() != "session locked":
@@ -711,12 +729,12 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run(scoped(["domain", "status"], child_domain))
 if rc != 0 or stderr != "":
     fail(f"domain status after descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: local session\n", "child local status after descendant unlock")
+assert_contains(stdout, "effective source: direct session\n", "child local status after descendant unlock")
 
 rc, stdout, stderr = run(scoped(["domain", "status"], grandchild_domain))
 if rc != 0 or stderr != "":
     fail(f"grandchild domain status after descendant unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "effective source: local session\n", "grandchild local status after descendant unlock")
+assert_contains(stdout, "effective source: direct session\n", "grandchild local status after descendant unlock")
 
 rc, stdout, stderr = run(scoped(["status", "-q"], sibling_domain))
 if rc != 1 or stdout != "" or stderr != "":
@@ -736,7 +754,7 @@ if rc != 0 or stdout.strip() != "session locked":
     fail(f"lock after passwd rotation failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": new_passphrase})
-if rc != 0 or "session unlocked\n" not in stdout:
+if rc != 0 or ("session refreshed\n" not in stdout and "session unlocked\n" not in stdout):
     fail(f"unlock with rotated env passphrase failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if f"resolved domain: {root_domain}\n" not in stderr:
     fail(f"rotated unlock prompt context missing: stderr={stderr!r}")
@@ -867,7 +885,7 @@ if rc != 0 or stderr != "":
     fail(f"default-scope domain status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "resolved domain: *default*\n", "default-scope domain status label")
 assert_contains(stdout, "key source: session agent\n", "default-scope domain status key source")
-assert_contains(stdout, "effective source: local session\n", "default-scope domain status local session")
+assert_contains(stdout, "effective source: direct session\n", "default-scope domain status local session")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(default_scope), "domain", "ls", "-la"], {
     "XDG_RUNTIME_DIR": str(default_runtime),
@@ -875,8 +893,9 @@ rc, stdout, stderr = run([bin_path, "--dir", str(default_scope), "domain", "ls",
 })
 if rc != 0 or stderr != "":
     fail(f"default-scope domain ls -la failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "default-scope domain ls -la header")
-assert_contains(stdout, "*default*\tsession\tunlocked\tlocal-session\t0\t0\tpresent\n", "default-scope domain ls -la fallback row")
+assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "default-scope domain ls -la header")
+assert_contains(stdout, "*default*\tsession\tunlocked\t", "default-scope domain ls -la fallback row prefix")
+assert_contains(stdout, "\tdirect-session\t0\t0\tpresent\n", "default-scope domain ls -la fallback row suffix")
 PY
 
 printf 'PASS session regression\n'

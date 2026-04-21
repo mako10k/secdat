@@ -36,12 +36,35 @@ struct secdat_domain_ls_row {
     const char *root;
     const char *key_source;
     const char *effective_state;
+    char remaining[32];
     const char *state_source;
     char *state_source_owned;
     size_t store_count;
     size_t visible_key_count;
     const char *wrapped;
 };
+
+static void secdat_format_remaining_duration(time_t expires_at, char *buffer, size_t size)
+{
+    time_t remaining = expires_at - time(NULL);
+    long long hours;
+    long long minutes;
+    long long seconds;
+
+    if (remaining < 0) {
+        remaining = 0;
+    }
+    if (remaining >= 3600) {
+        hours = (long long)(remaining / 3600);
+        minutes = (long long)((remaining % 3600) / 60);
+        snprintf(buffer, size, "%lldh%02lldm", hours, minutes);
+        return;
+    }
+
+    minutes = (long long)(remaining / 60);
+    seconds = (long long)(remaining % 60);
+    snprintf(buffer, size, "%lldm%02llds", minutes, seconds);
+}
 
 static int secdat_compare_strings(const void *left, const void *right)
 {
@@ -275,31 +298,31 @@ static int secdat_format_state_source(
         row->state_source = _("environment");
         return 0;
     case SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION:
-        row->state_source = _("local-session");
+        row->state_source = _("direct-session");
         return 0;
     case SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION:
-        row->state_source_owned = malloc(strlen("inherited:") + strlen(summary->related_domain_root) + 1);
+        row->state_source_owned = malloc(strlen("inherited-from:") + strlen(summary->related_domain_root) + 1);
         if (row->state_source_owned == NULL) {
             fprintf(stderr, _("out of memory\n"));
             return 1;
         }
-        sprintf(row->state_source_owned, "inherited:%s", summary->related_domain_root);
+        sprintf(row->state_source_owned, "inherited-from:%s", summary->related_domain_root);
         row->state_source = row->state_source_owned;
         return 0;
     case SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK:
-        row->state_source = _("explicit-lock");
+        row->state_source = _("local-lock");
         return 0;
     case SECDAT_EFFECTIVE_SOURCE_BLOCKED:
-        row->state_source_owned = malloc(strlen("blocked:") + strlen(summary->related_domain_root) + 1);
+        row->state_source_owned = malloc(strlen("blocked-by:") + strlen(summary->related_domain_root) + 1);
         if (row->state_source_owned == NULL) {
             fprintf(stderr, _("out of memory\n"));
             return 1;
         }
-        sprintf(row->state_source_owned, "blocked:%s", summary->related_domain_root);
+        sprintf(row->state_source_owned, "blocked-by:%s", summary->related_domain_root);
         row->state_source = row->state_source_owned;
         return 0;
     default:
-        row->state_source = _("no-session");
+        row->state_source = _("locked");
         return 0;
     }
 }
@@ -317,6 +340,7 @@ static int secdat_fill_domain_ls_row(
     row->root = root;
     row->store_count = summary->store_count;
     row->visible_key_count = summary->visible_key_count;
+    strcpy(row->remaining, "-");
     wrapped_label = summary->wrapped_master_key_present ? _("wrapped master key: present") : _("wrapped master key: absent");
     wrapped_separator = strstr(wrapped_label, ": ");
     row->wrapped = wrapped_separator != NULL ? wrapped_separator + 2 : wrapped_label;
@@ -327,6 +351,7 @@ static int secdat_fill_domain_ls_row(
         break;
     case SECDAT_KEY_SOURCE_SESSION:
         row->key_source = _("session");
+        secdat_format_remaining_duration(summary->session_expires_at, row->remaining, sizeof(row->remaining));
         break;
     default:
         row->key_source = _("locked");
@@ -348,6 +373,7 @@ static void secdat_render_domain_ls_tty_rows(const struct secdat_domain_ls_row *
     struct secdat_string_list display_roots = {0};
     size_t key_width = strlen(_("KEY_SOURCE"));
     size_t effective_width = strlen(_("EFFECTIVE"));
+    size_t remaining_width = strlen(_("REMAINING"));
     size_t state_width = strlen(_("STATE_SOURCE"));
     size_t stores_width = strlen(_("STORES"));
     size_t visible_width = strlen(_("VISIBLE"));
@@ -374,6 +400,7 @@ static void secdat_render_domain_ls_tty_rows(const struct secdat_domain_ls_row *
 
         key_width = secdat_max_size(key_width, secdat_display_width(rows[index].key_source));
         effective_width = secdat_max_size(effective_width, secdat_display_width(rows[index].effective_state));
+        remaining_width = secdat_max_size(remaining_width, secdat_display_width(rows[index].remaining));
         state_width = secdat_max_size(state_width, secdat_display_width(rows[index].state_source));
         stores_width = secdat_max_size(stores_width, snprintf(NULL, 0, "%zu", rows[index].store_count));
         visible_width = secdat_max_size(visible_width, snprintf(NULL, 0, "%zu", rows[index].visible_key_count));
@@ -389,6 +416,8 @@ static void secdat_render_domain_ls_tty_rows(const struct secdat_domain_ls_row *
     secdat_print_left_padded(_("KEY_SOURCE"), key_width);
     fputs("  ", stdout);
     secdat_print_left_padded(_("EFFECTIVE"), effective_width);
+    fputs("  ", stdout);
+    secdat_print_left_padded(_("REMAINING"), remaining_width);
     fputs("  ", stdout);
     secdat_print_left_padded(_("STATE_SOURCE"), state_width);
     fputs("  ", stdout);
@@ -419,6 +448,8 @@ static void secdat_render_domain_ls_tty_rows(const struct secdat_domain_ls_row *
             fputs("  ", stdout);
             secdat_print_left_padded(rows[index].effective_state, effective_width);
             fputs("  ", stdout);
+            secdat_print_left_padded(rows[index].remaining, remaining_width);
+            fputs("  ", stdout);
             secdat_print_left_padded(rows[index].state_source, state_width);
             fputs("  ", stdout);
             secdat_print_right_padded(stores_text, stores_width);
@@ -438,6 +469,8 @@ static void secdat_render_domain_ls_tty_rows(const struct secdat_domain_ls_row *
             fputs("  ", stdout);
             secdat_print_left_padded(rows[index].effective_state, effective_width);
             fputs("  ", stdout);
+            secdat_print_left_padded(rows[index].remaining, remaining_width);
+            fputs("  ", stdout);
             secdat_print_left_padded(rows[index].state_source, state_width);
             fputs("  ", stdout);
             secdat_print_right_padded(stores_text, stores_width);
@@ -454,6 +487,8 @@ static void secdat_render_domain_ls_tty_rows(const struct secdat_domain_ls_row *
         secdat_print_left_padded(rows[index].key_source, key_width);
         fputs("  ", stdout);
         secdat_print_left_padded(rows[index].effective_state, effective_width);
+        fputs("  ", stdout);
+        secdat_print_left_padded(rows[index].remaining, remaining_width);
         fputs("  ", stdout);
         secdat_print_left_padded(rows[index].state_source, state_width);
         fputs("  ", stdout);
@@ -1492,10 +1527,11 @@ static int secdat_domain_ls_emit_row(
         if (secdat_fill_domain_ls_row(root, summary, &row) != 0) {
             return 1;
         }
-        printf("%s\t%s\t%s\t%s\t%zu\t%zu\t%s\n",
+        printf("%s\t%s\t%s\t%s\t%s\t%zu\t%zu\t%s\n",
             row.root,
             row.key_source,
             row.effective_state,
+            row.remaining,
             row.state_source,
             row.store_count,
             row.visible_key_count,
@@ -1607,7 +1643,7 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     tty_long_format = long_format && isatty(STDOUT_FILENO);
 
     if (long_format && !tty_long_format) {
-        printf(_("DOMAIN\tKEY_SOURCE\tEFFECTIVE\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n"));
+        printf(_("DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n"));
     }
 
     for (index = 0; index < roots.count; index += 1) {
@@ -1714,7 +1750,12 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
         break;
     case SECDAT_KEY_SOURCE_SESSION:
         puts(_("key source: session agent"));
-        printf(_("expires in: %lld seconds\n"), (long long)(summary.session_expires_at - time(NULL)));
+        {
+            char remaining_text[32];
+
+            secdat_format_remaining_duration(summary.session_expires_at, remaining_text, sizeof(remaining_text));
+            printf(_("remaining unlock time: %s\n"), remaining_text);
+        }
         break;
     default:
         puts(_("key source: locked"));
@@ -1727,7 +1768,7 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
         break;
     case SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION:
         puts(_("effective state: unlocked"));
-        puts(_("effective source: local session"));
+        puts(_("effective source: direct session"));
         break;
     case SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION:
         puts(_("effective state: unlocked"));
@@ -1736,11 +1777,11 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
         break;
     case SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK:
         puts(_("effective state: locked"));
-        puts(_("effective source: explicit lock"));
+        puts(_("effective source: local lock"));
         break;
     case SECDAT_EFFECTIVE_SOURCE_BLOCKED:
         puts(_("effective state: locked"));
-        puts(_("effective source: blocked by explicit lock"));
+        puts(_("effective source: blocked by ancestor lock"));
         printf(_("blocked by: %s\n"), summary.related_domain_root);
         break;
     default:

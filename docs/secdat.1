@@ -105,8 +105,13 @@ Write the current visible secrets into a passphrase-protected bundle.
 .B load FILE
 Load a passphrase-protected bundle into the current domain/store context.
 .TP
-.B [\-d DIR|\-\-dir DIR] unlock [\-i|\-\-inherit] [\-v|\-\-volatile|\-r|\-\-readonly] [\-d|\-\-descendants] [\-y|\-\-yes]
+.B [\-d DIR|\-\-dir DIR] unlock [\-t SECONDS|\-\-duration SECONDS] [\-i|\-\-inherit] [\-v|\-\-volatile|\-r|\-\-readonly] [\-d|\-\-descendants] [\-y|\-\-yes]
 Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked. With
+.B --duration
+the command sets the remaining unlock time in seconds for the session being created or refreshed. When the current domain is already unlocked, plain
+.B unlock
+refreshes that current domain without prompting for the passphrase again.
+With
 .B --inherit
 the command removes the current domain's local explicit-lock marker when one is present, or clears the current domain's local session when no marker is present, and succeeds only when the resulting effective state would become unlocked; it does not create a new local session.
 With
@@ -138,7 +143,9 @@ Change the passphrase used to wrap the persistent master key.
 Remove the current domain's local explicit-lock marker when one is present, or clear the current domain's local session when no marker is present, without checking the resulting effective state.
 .TP
 .B [\-d DIR|\-\-dir DIR] lock
-Clear the current domain's local secret session.
+Clear the current domain's local secret session. When the current domain is already locked, plain
+.B lock
+returns success without changing local state.
 .TP
 .B [\-d DIR|\-\-dir DIR] status [\-q|\-\-quiet]
 Report whether secret material is available from the current domain scope.
@@ -166,6 +173,10 @@ When long format is written to a terminal, shared parent directories are shown o
 .TP
 .B domain status [\-q|\-\-quiet]
 Report the resolved domain for the current context along with store count, visible key count, key source, wrapped-key presence, and effective access state. Effective access distinguishes environment, local session, inherited session, explicit lock, and blocked-by-explicit-lock outcomes.
+When a session is active, the output also includes the remaining unlock time in a compact form such as
+.B 1h59m
+or
+.B 1m32s.
 When no registered domain applies, user-facing output shows an emphasized fallback label such as
 .B *default*
 rather than any internal sentinel or a misleading registered-domain path. That label means no registered domain resolved and the top-level inherited fallback scope is active.
@@ -178,6 +189,10 @@ to keep only the current domain and its descendant side.
 To load exported values into the current bash shell, use one of:
 
 .nf
+When a session is active, the output also includes the remaining unlock time in a compact form such as
+.B 1h59m
+or
+.B 1m32s.
 eval "$(secdat export)"
 source <(secdat export)
 . <(secdat export)
