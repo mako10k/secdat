@@ -6837,8 +6837,11 @@ static int secdat_load_resolved_plaintext(
 )
 {
     struct secdat_effective_entry entry = {0};
+    struct secdat_domain_chain resolved_chain = {0};
+    const struct secdat_domain_chain *decrypt_chain = chain;
     unsigned char *encrypted = NULL;
     size_t encrypted_length = 0;
+    size_t chain_index;
     int status;
 
     status = secdat_resolve_effective_entry(chain, store_name, key, 1, &entry);
@@ -6887,7 +6890,19 @@ static int secdat_load_resolved_plaintext(
         *unsafe_store = encrypted[9] == SECDAT_ENTRY_ALGORITHM_PLAINTEXT;
     }
 
-    status = secdat_decrypt_value(chain, encrypted, encrypted_length, plaintext, plaintext_length, access_options);
+    if (entry.resolved_index > 0) {
+        resolved_chain.ids = chain->ids + entry.resolved_index;
+        resolved_chain.count = chain->count - entry.resolved_index;
+        resolved_chain.current_path[0] = '\0';
+        decrypt_chain = &resolved_chain;
+        for (chain_index = 0; chain_index < entry.resolved_index; chain_index += 1) {
+            if (secdat_domain_has_explicit_lock(chain->ids[chain_index])) {
+                decrypt_chain = chain;
+                break;
+            }
+        }
+    }
+    status = secdat_decrypt_value(decrypt_chain, encrypted, encrypted_length, plaintext, plaintext_length, access_options);
     free(encrypted);
     secdat_effective_entry_reset(&entry);
     return status;

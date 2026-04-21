@@ -892,6 +892,62 @@ if rc != 0 or "persistent master key initialized; session unlocked from environm
 if not fresh_wrapped.is_file():
     fail("environment migration bootstrap did not create wrapped master key")
 
+mismatch_runtime = isolated_root / "runtime-mismatch"
+mismatch_data = isolated_root / "data-mismatch"
+mismatch_parent = isolated_root / "domain-mismatch-parent"
+mismatch_child = mismatch_parent / "child-domain"
+mismatch_runtime.mkdir(parents=True, exist_ok=True)
+mismatch_data.mkdir(parents=True, exist_ok=True)
+mismatch_child.mkdir(parents=True, exist_ok=True)
+mismatch_env = {
+    "XDG_RUNTIME_DIR": str(mismatch_runtime),
+    "XDG_DATA_HOME": str(mismatch_data),
+}
+
+for domain in (mismatch_parent, mismatch_child):
+    rc, stdout, stderr = run([bin_path, "--dir", str(domain), "domain", "create"], mismatch_env)
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"mismatch domain create failed for {domain}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, transcript = run_pty(
+    [bin_path, "--dir", str(mismatch_parent), "unlock"],
+    [("Create secdat passphrase:", passphrase), ("Confirm secdat passphrase:", passphrase)],
+    {
+        **mismatch_env,
+        "SECDAT_MASTER_KEY": "mismatch-parent-master",
+    },
+)
+if rc != 0 or "persistent master key initialized; session unlocked from environment" not in transcript:
+    fail(f"mismatch bootstrap unlock failed: rc={rc} transcript={transcript!r}")
+
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(mismatch_parent), "set", "PARENT_KEY", "-v", "parent-secret"],
+    mismatch_env,
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"mismatch parent set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(mismatch_parent), "lock"], mismatch_env)
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"mismatch parent lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(mismatch_child), "unlock"],
+    {
+        **mismatch_env,
+        "SECDAT_MASTER_KEY": "mismatch-child-master",
+    },
+)
+if rc != 0 or "session unlocked from environment\n" not in stdout:
+    fail(f"mismatch child unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(mismatch_child), "get", "PARENT_KEY", "-o"], mismatch_env)
+if rc == 0 or stdout != "" or "failed to authenticate encrypted value\n" in stderr or "no active secdat session" not in stderr:
+    fail(f"ancestor read with mismatched child session should request ancestor unlock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stderr, f"resolved domain: {mismatch_parent}\n", "mismatch ancestor read resolved domain guidance")
+assert_contains(stderr, f"inspect current domain: secdat --dir {mismatch_parent} domain status\n", "mismatch ancestor read status guidance")
+assert_contains(stderr, f"unlock current domain: secdat --dir {mismatch_parent} unlock\n", "mismatch ancestor read unlock guidance")
+
 default_runtime = isolated_root / "runtime-default"
 default_data = isolated_root / "data-default"
 default_scope = isolated_root / "default-scope"
