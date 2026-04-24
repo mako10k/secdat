@@ -14,6 +14,7 @@
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
+#include <regex.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,6 +79,11 @@ struct secdat_ls_options {
 struct secdat_exec_options {
     struct secdat_key_list include_patterns;
     struct secdat_key_list exclude_patterns;
+    regex_t env_map_address_regex;
+    regex_t env_map_regex;
+    char *env_map_replacement;
+    int env_map_configured;
+    int env_map_has_address;
     size_t command_index;
 };
 
@@ -160,6 +166,22 @@ static void secdat_reset_getopt_state(void)
 {
     opterr = 0;
     optind = 0;
+}
+
+static void secdat_key_list_free(struct secdat_key_list *list);
+
+static void secdat_exec_options_reset(struct secdat_exec_options *options)
+{
+    secdat_key_list_free(&options->include_patterns);
+    secdat_key_list_free(&options->exclude_patterns);
+    if (options->env_map_has_address) {
+        regfree(&options->env_map_address_regex);
+    }
+    if (options->env_map_configured) {
+        regfree(&options->env_map_regex);
+    }
+    free(options->env_map_replacement);
+    memset(options, 0, sizeof(*options));
 }
 
 enum secdat_session_access_mode {
@@ -1962,6 +1984,7 @@ static int secdat_parse_exec_options(const struct secdat_cli *cli, struct secdat
     static const struct option long_options[] = {
         {"pattern", required_argument, NULL, 'p'},
         {"pattern-exclude", required_argument, NULL, 'x'},
+        {"env-map-sed", required_argument, NULL, 1000},
         {NULL, 0, NULL, 0},
     };
     char *argv[cli->argc + 2];
@@ -1976,24 +1999,183 @@ static int secdat_parse_exec_options(const struct secdat_cli *cli, struct secdat
         switch (option) {
         case 'p':
             if (secdat_key_list_append(&options->include_patterns, optarg) != 0) {
-                secdat_key_list_free(&options->include_patterns);
-                secdat_key_list_free(&options->exclude_patterns);
+                secdat_exec_options_reset(options);
                 return 1;
             }
             break;
         case 'x':
             if (secdat_key_list_append(&options->exclude_patterns, optarg) != 0) {
-                secdat_key_list_free(&options->include_patterns);
-                secdat_key_list_free(&options->exclude_patterns);
+                secdat_exec_options_reset(options);
                 return 1;
+            }
+            break;
+        case 1000:
+            {
+                const char *cursor = optarg;
+                const char *segment_start;
+                char *address_pattern = NULL;
+                char *match_pattern = NULL;
+                char *replacement = NULL;
+                char regex_error[256];
+                size_t length;
+                char delimiter;
+                int reg_status;
+
+                if (options->env_map_configured) {
+                    fprintf(stderr, _("--env-map-sed may be specified at most once\n"));
+                    secdat_exec_options_reset(options);
+                    return 2;
+                }
+
+                if (*cursor == '/') {
+                    const char *address_end = cursor + 1;
+
+                    while (*address_end != '\0') {
+                        size_t backslash_count = 0;
+                        const char *backtrack = address_end;
+
+                        if (*address_end == '/') {
+                            while (backtrack > cursor + 1 && backtrack[-1] == '\\') {
+                                backslash_count += 1;
+                                backtrack -= 1;
+                            }
+                            if ((backslash_count % 2) == 0) {
+                                break;
+                            }
+                        }
+                        address_end += 1;
+                    }
+                    if (*address_end != '/') {
+                        fprintf(stderr, _("invalid --env-map-sed expression\n"));
+                        secdat_exec_options_reset(options);
+                        return 2;
+                    }
+                    length = (size_t)(address_end - (cursor + 1));
+                    address_pattern = malloc(length + 1);
+                    if (address_pattern == NULL) {
+                        secdat_exec_options_reset(options);
+                        return 1;
+                    }
+                    memcpy(address_pattern, cursor + 1, length);
+                    address_pattern[length] = '\0';
+                    reg_status = regcomp(&options->env_map_address_regex, address_pattern, 0);
+                    if (reg_status != 0) {
+                        regerror(reg_status, &options->env_map_address_regex, regex_error, sizeof(regex_error));
+                        fprintf(stderr, _("invalid --env-map-sed regex: %s\n"), regex_error);
+                        free(address_pattern);
+                        secdat_exec_options_reset(options);
+                        return 2;
+                    }
+                    options->env_map_has_address = 1;
+                    free(address_pattern);
+                    cursor = address_end + 1;
+                }
+
+                if (*cursor != 's') {
+                    fprintf(stderr, _("invalid --env-map-sed expression\n"));
+                    secdat_exec_options_reset(options);
+                    return 2;
+                }
+                cursor += 1;
+                delimiter = *cursor;
+                if (delimiter == '\0' || delimiter == '\\' || isalnum((unsigned char)delimiter)) {
+                    fprintf(stderr, _("invalid --env-map-sed expression\n"));
+                    secdat_exec_options_reset(options);
+                    return 2;
+                }
+
+                segment_start = cursor + 1;
+                while (*cursor != '\0') {
+                    size_t backslash_count = 0;
+                    const char *backtrack;
+
+                    cursor += 1;
+                    if (*cursor == '\0') {
+                        break;
+                    }
+                    if (*cursor != delimiter) {
+                        continue;
+                    }
+                    backtrack = cursor;
+                    while (backtrack > segment_start && backtrack[-1] == '\\') {
+                        backslash_count += 1;
+                        backtrack -= 1;
+                    }
+                    if ((backslash_count % 2) == 0) {
+                        break;
+                    }
+                }
+                if (*cursor != delimiter) {
+                    fprintf(stderr, _("invalid --env-map-sed expression\n"));
+                    secdat_exec_options_reset(options);
+                    return 2;
+                }
+                length = (size_t)(cursor - segment_start);
+                match_pattern = malloc(length + 1);
+                if (match_pattern == NULL) {
+                    secdat_exec_options_reset(options);
+                    return 1;
+                }
+                memcpy(match_pattern, segment_start, length);
+                match_pattern[length] = '\0';
+
+                segment_start = cursor + 1;
+                while (*cursor != '\0') {
+                    size_t backslash_count = 0;
+                    const char *backtrack;
+
+                    cursor += 1;
+                    if (*cursor == '\0') {
+                        break;
+                    }
+                    if (*cursor != delimiter) {
+                        continue;
+                    }
+                    backtrack = cursor;
+                    while (backtrack > segment_start && backtrack[-1] == '\\') {
+                        backslash_count += 1;
+                        backtrack -= 1;
+                    }
+                    if ((backslash_count % 2) == 0) {
+                        break;
+                    }
+                }
+                if (*cursor != delimiter || cursor[1] != '\0') {
+                    free(match_pattern);
+                    fprintf(stderr, _("invalid --env-map-sed expression\n"));
+                    secdat_exec_options_reset(options);
+                    return 2;
+                }
+                length = (size_t)(cursor - segment_start);
+                replacement = malloc(length + 1);
+                if (replacement == NULL) {
+                    free(match_pattern);
+                    secdat_exec_options_reset(options);
+                    return 1;
+                }
+                memcpy(replacement, segment_start, length);
+                replacement[length] = '\0';
+
+                reg_status = regcomp(&options->env_map_regex, match_pattern, 0);
+                if (reg_status != 0) {
+                    regerror(reg_status, &options->env_map_regex, regex_error, sizeof(regex_error));
+                    fprintf(stderr, _("invalid --env-map-sed regex: %s\n"), regex_error);
+                    free(match_pattern);
+                    free(replacement);
+                    secdat_exec_options_reset(options);
+                    return 2;
+                }
+
+                free(match_pattern);
+                options->env_map_replacement = replacement;
+                options->env_map_configured = 1;
             }
             break;
         case '?':
         case ':':
         default:
             fprintf(stderr, _("invalid arguments for exec\n"));
-            secdat_key_list_free(&options->include_patterns);
-            secdat_key_list_free(&options->exclude_patterns);
+            secdat_exec_options_reset(options);
             return 2;
         }
     }
@@ -2001,8 +2183,7 @@ static int secdat_parse_exec_options(const struct secdat_cli *cli, struct secdat
     options->command_index = (size_t)(optind - 1);
     if (optind >= argc) {
         fprintf(stderr, _("invalid arguments for exec\n"));
-        secdat_key_list_free(&options->include_patterns);
-        secdat_key_list_free(&options->exclude_patterns);
+        secdat_exec_options_reset(options);
         return 2;
     }
 
@@ -8245,6 +8426,129 @@ static int secdat_plaintext_to_env_value(
     return 0;
 }
 
+static int secdat_is_valid_env_name(const char *value)
+{
+    return value != NULL && value[0] != '\0' && strchr(value, '=') == NULL;
+}
+
+static int secdat_exec_env_name_from_key(
+    const struct secdat_exec_options *options,
+    const char *key,
+    char **env_name_out,
+    int *include_key
+)
+{
+    regmatch_t matches[10];
+    char *env_name;
+    size_t total_length = 0;
+    size_t replacement_index;
+    int reg_status;
+
+    *env_name_out = NULL;
+    *include_key = 0;
+
+    if (!options->env_map_configured) {
+        env_name = strdup(key);
+        if (env_name == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        *env_name_out = env_name;
+        *include_key = 1;
+        return 0;
+    }
+
+    if (options->env_map_has_address) {
+        reg_status = regexec(&options->env_map_address_regex, key, 0, NULL, 0);
+        if (reg_status == REG_NOMATCH) {
+            return 0;
+        }
+        if (reg_status != 0) {
+            fprintf(stderr, _("failed to match --env-map-sed against key: %s\n"), key);
+            return 1;
+        }
+    }
+
+    reg_status = regexec(&options->env_map_regex, key, (int)(sizeof(matches) / sizeof(matches[0])), matches, 0);
+    if (reg_status == REG_NOMATCH) {
+        return 0;
+    }
+    if (reg_status != 0) {
+        fprintf(stderr, _("failed to match --env-map-sed against key: %s\n"), key);
+        return 1;
+    }
+
+    for (replacement_index = 0; options->env_map_replacement[replacement_index] != '\0'; replacement_index += 1) {
+        char current = options->env_map_replacement[replacement_index];
+
+        if (current == '&') {
+            total_length += (size_t)(matches[0].rm_eo - matches[0].rm_so);
+            continue;
+        }
+        if (current == '\\' && isdigit((unsigned char)options->env_map_replacement[replacement_index + 1])) {
+            int capture_index = options->env_map_replacement[replacement_index + 1] - '0';
+
+            if (capture_index < (int)(sizeof(matches) / sizeof(matches[0])) && matches[capture_index].rm_so >= 0) {
+                total_length += (size_t)(matches[capture_index].rm_eo - matches[capture_index].rm_so);
+            }
+            replacement_index += 1;
+            continue;
+        }
+        if (current == '\\' && options->env_map_replacement[replacement_index + 1] != '\0') {
+            replacement_index += 1;
+        }
+        total_length += 1;
+    }
+
+    env_name = malloc(total_length + 1);
+    if (env_name == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+
+    total_length = 0;
+    for (replacement_index = 0; options->env_map_replacement[replacement_index] != '\0'; replacement_index += 1) {
+        char current = options->env_map_replacement[replacement_index];
+
+        if (current == '&') {
+            size_t capture_length = (size_t)(matches[0].rm_eo - matches[0].rm_so);
+
+            memcpy(env_name + total_length, key + matches[0].rm_so, capture_length);
+            total_length += capture_length;
+            continue;
+        }
+        if (current == '\\' && isdigit((unsigned char)options->env_map_replacement[replacement_index + 1])) {
+            int capture_index = options->env_map_replacement[replacement_index + 1] - '0';
+
+            if (capture_index < (int)(sizeof(matches) / sizeof(matches[0])) && matches[capture_index].rm_so >= 0) {
+                size_t capture_length = (size_t)(matches[capture_index].rm_eo - matches[capture_index].rm_so);
+
+                memcpy(env_name + total_length, key + matches[capture_index].rm_so, capture_length);
+                total_length += capture_length;
+            }
+            replacement_index += 1;
+            continue;
+        }
+        if (current == '\\' && options->env_map_replacement[replacement_index + 1] != '\0') {
+            replacement_index += 1;
+            current = options->env_map_replacement[replacement_index];
+        }
+        env_name[total_length] = current;
+        total_length += 1;
+    }
+    env_name[total_length] = '\0';
+
+    if (!secdat_is_valid_env_name(env_name)) {
+        fprintf(stderr, _("invalid environment variable name from --env-map-sed: %s\n"), env_name);
+        free(env_name);
+        return 1;
+    }
+
+    *env_name_out = env_name;
+    *include_key = 1;
+    return 0;
+}
+
 static int secdat_is_shell_identifier(const char *value)
 {
     size_t index;
@@ -8344,6 +8648,7 @@ static int secdat_command_exec(const struct secdat_cli *cli)
     struct secdat_domain_chain chain = {0};
     struct secdat_key_list visible_keys = {0};
     struct secdat_exec_options options;
+    char **env_names = NULL;
     char **command_argv;
     size_t key_index;
     int status;
@@ -8355,22 +8660,70 @@ static int secdat_command_exec(const struct secdat_cli *cli)
     }
 
     if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
-        secdat_key_list_free(&options.include_patterns);
-        secdat_key_list_free(&options.exclude_patterns);
+        secdat_exec_options_reset(&options);
         return 1;
     }
     if (secdat_collect_visible_keys(&chain, cli->store, &options.include_patterns, &options.exclude_patterns, &visible_keys) != 0) {
-        secdat_key_list_free(&options.include_patterns);
-        secdat_key_list_free(&options.exclude_patterns);
+        secdat_exec_options_reset(&options);
+        secdat_domain_chain_free(&chain);
+        secdat_key_list_free(&visible_keys);
+        return 1;
+    }
+
+    env_names = calloc(visible_keys.count, sizeof(*env_names));
+    if (env_names == NULL && visible_keys.count > 0) {
+        fprintf(stderr, _("out of memory\n"));
+        secdat_exec_options_reset(&options);
         secdat_domain_chain_free(&chain);
         secdat_key_list_free(&visible_keys);
         return 1;
     }
 
     for (key_index = 0; key_index < visible_keys.count; key_index += 1) {
+        int include_key = 0;
+        size_t compare_index;
+
+        status = secdat_exec_env_name_from_key(&options, visible_keys.items[key_index], &env_names[key_index], &include_key);
+        if (status != 0) {
+            size_t free_index;
+
+            for (free_index = 0; free_index < visible_keys.count; free_index += 1) {
+                free(env_names[free_index]);
+            }
+            free(env_names);
+            secdat_exec_options_reset(&options);
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+        if (!include_key) {
+            continue;
+        }
+        for (compare_index = 0; compare_index < key_index; compare_index += 1) {
+            if (env_names[compare_index] != NULL && strcmp(env_names[compare_index], env_names[key_index]) == 0) {
+                size_t free_index;
+
+                fprintf(stderr, _("duplicate environment variable name from --env-map-sed: %s\n"), env_names[key_index]);
+                for (free_index = 0; free_index < visible_keys.count; free_index += 1) {
+                    free(env_names[free_index]);
+                }
+                free(env_names);
+                secdat_exec_options_reset(&options);
+                secdat_domain_chain_free(&chain);
+                secdat_key_list_free(&visible_keys);
+                return 1;
+            }
+        }
+    }
+
+    for (key_index = 0; key_index < visible_keys.count; key_index += 1) {
         unsigned char *plaintext = NULL;
         size_t plaintext_length = 0;
         char *env_value = NULL;
+
+        if (env_names[key_index] == NULL) {
+            continue;
+        }
 
         status = secdat_load_resolved_plaintext(
             &chain,
@@ -8383,8 +8736,13 @@ static int secdat_command_exec(const struct secdat_cli *cli)
             NULL
         );
         if (status != 0) {
-            secdat_key_list_free(&options.include_patterns);
-            secdat_key_list_free(&options.exclude_patterns);
+            size_t free_index;
+
+            for (free_index = 0; free_index < visible_keys.count; free_index += 1) {
+                free(env_names[free_index]);
+            }
+            free(env_names);
+            secdat_exec_options_reset(&options);
             secdat_domain_chain_free(&chain);
             secdat_key_list_free(&visible_keys);
             return 1;
@@ -8399,19 +8757,29 @@ static int secdat_command_exec(const struct secdat_cli *cli)
         secdat_secure_clear(plaintext, plaintext_length);
         free(plaintext);
         if (status != 0) {
-            secdat_key_list_free(&options.include_patterns);
-            secdat_key_list_free(&options.exclude_patterns);
+            size_t free_index;
+
+            for (free_index = 0; free_index < visible_keys.count; free_index += 1) {
+                free(env_names[free_index]);
+            }
+            free(env_names);
+            secdat_exec_options_reset(&options);
             secdat_domain_chain_free(&chain);
             secdat_key_list_free(&visible_keys);
             return 1;
         }
 
-        if (setenv(visible_keys.items[key_index], env_value, 1) != 0) {
-            fprintf(stderr, _("failed to export key to environment: %s\n"), visible_keys.items[key_index]);
+        if (setenv(env_names[key_index], env_value, 1) != 0) {
+            size_t free_index;
+
+            fprintf(stderr, _("failed to export key to environment: %s\n"), env_names[key_index]);
             secdat_secure_clear(env_value, strlen(env_value));
             free(env_value);
-            secdat_key_list_free(&options.include_patterns);
-            secdat_key_list_free(&options.exclude_patterns);
+            for (free_index = 0; free_index < visible_keys.count; free_index += 1) {
+                free(env_names[free_index]);
+            }
+            free(env_names);
+            secdat_exec_options_reset(&options);
             secdat_domain_chain_free(&chain);
             secdat_key_list_free(&visible_keys);
             return 1;
@@ -8422,8 +8790,11 @@ static int secdat_command_exec(const struct secdat_cli *cli)
     }
 
     command_argv = &cli->argv[options.command_index];
-    secdat_key_list_free(&options.include_patterns);
-    secdat_key_list_free(&options.exclude_patterns);
+    for (key_index = 0; key_index < visible_keys.count; key_index += 1) {
+        free(env_names[key_index]);
+    }
+    free(env_names);
+    secdat_exec_options_reset(&options);
     execvp(command_argv[0], command_argv);
 
     fprintf(stderr, _("failed to execute command: %s\n"), command_argv[0]);

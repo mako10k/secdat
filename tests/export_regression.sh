@@ -96,6 +96,8 @@ for args in [
     [bin_path, "--dir", str(child_dir), "set", "CHILD_TOKEN", "child secret's value"],
     [bin_path, "--dir", str(root_dir), "--store", "app", "set", "APP_TOKEN", "app-secret"],
     [bin_path, "--dir", str(invalid_dir), "set", "BAD-KEY", "bad-secret"],
+    [bin_path, "--dir", str(child_dir), "set", "MY_REDMINE_API_KEY", "mapped-api-secret"],
+    [bin_path, "--dir", str(child_dir), "set", "MY_REDMINE_PROJECT", "mapped-project-secret"],
     [bin_path, "--dir", str(child_dir), "set", "HOSTILE_TOKEN", "--value", hostile_payload],
     [bin_path, "--dir", str(child_dir), "set", "LONG_TOKEN", "--value", long_payload],
     [bin_path, "--dir", str(child_dir), "set", "CONTROL_TOKEN", "--value", control_payload],
@@ -240,6 +242,57 @@ if rc != 0 or stderr != "":
     fail(f"compatible exec parsing failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if json.loads(stdout) != {"CONTROL_TOKEN": control_payload}:
     fail(f"compatible exec payload mismatch: {stdout!r}")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--env-map-sed",
+    r"/^MY_REDMINE_.\+/s/MY_REDMINE_\(.\+\)/SPV_REDMINE_\1/",
+    "python3",
+    "-c",
+    "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k.startswith('SPV_REDMINE_') or k in ('MY_REDMINE_API_KEY', 'CONTROL_TOKEN'))}, sort_keys=True))",
+])
+if rc != 0 or stderr != "":
+    fail(f"exec env-map-sed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if json.loads(stdout) != {
+    "SPV_REDMINE_API_KEY": "mapped-api-secret",
+    "SPV_REDMINE_PROJECT": "mapped-project-secret",
+}:
+    fail(f"exec env-map-sed payload mismatch: {stdout!r}")
+
+for expression, expected in [
+    (
+        r"s|^MY_REDMINE_\(.\+\)$|PIPE_REDMINE_\1|",
+        {
+            "PIPE_REDMINE_API_KEY": "mapped-api-secret",
+            "PIPE_REDMINE_PROJECT": "mapped-project-secret",
+        },
+    ),
+    (
+        r"s#^MY_REDMINE_\(.\+\)$#HASH_REDMINE_\1#",
+        {
+            "HASH_REDMINE_API_KEY": "mapped-api-secret",
+            "HASH_REDMINE_PROJECT": "mapped-project-secret",
+        },
+    ),
+]:
+    rc, stdout, stderr = run([
+        bin_path,
+        "--dir",
+        str(child_dir),
+        "exec",
+        "--env-map-sed",
+        expression,
+        "python3",
+        "-c",
+        "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k.endswith('REDMINE_API_KEY') or k.endswith('REDMINE_PROJECT'))}, sort_keys=True))",
+    ])
+    if rc != 0 or stderr != "":
+        fail(f"exec env-map-sed alternate delimiter failed for {expression!r}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    if json.loads(stdout) != expected:
+        fail(f"exec env-map-sed alternate delimiter payload mismatch for {expression!r}: {stdout!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(root_dir), "--store", "app", "export"])
 if rc != 0 or stderr != "":

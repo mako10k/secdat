@@ -230,9 +230,12 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat exec CMD [ARGS...]` injects the effective visible keys into a child process environment and executes the command
 - repeated `--pattern GLOBPATTERN` options widen the include set for both `ls` and `exec`
 - repeated `--pattern-exclude GLOBPATTERN` options remove matches from the include set for both `ls` and `exec`
+- `--env-map-sed EXPR` for `exec` applies one sed-style key-to-environment-name mapping after pattern filtering; when present, only keys matched by the substitution are injected
 - `secdat ls --safe` lists only effective keys whose resolved entry is stored encrypted at rest
 - `secdat ls --unsafe` lists only effective keys whose resolved entry is stored plaintext at rest
 - `secdat exec --pattern GLOBPATTERN CMD [ARGS...]` injects only matched keys
+- the initial `--env-map-sed` subset accepts a single `s///` expression with an optional leading `/ADDRESS/` filter and supports `&` plus `\1` through `\9` in the replacement text
+- the delimiter after `s` may be any non-alphanumeric, non-backslash character, so `s|...|...|` and `s#...#...#` are accepted
 - the parent process environment is not modified
 - resolved values are decrypted and passed through an `execve`-style API
 
@@ -587,12 +590,14 @@ secdat [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY
 ### 4.8 `exec`
 
 ```text
-secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] CMD [ARGS...]
 ```
 
 - without `--pattern`, all effective visible keys are injected
 - repeated `--pattern` options are ORed together
 - repeated `--pattern-exclude` options subtract matches after include filtering
+- `--env-map-sed EXPR` accepts one sed-style substitution for exec-time environment names; when present, only matched keys are injected
+- the initial subset accepts `s/REGEX/REPLACEMENT/` with an optional leading `/ADDRESS/`; replacement supports `&` and `\1` through `\9`, and the delimiter after `s` may be any non-alphanumeric, non-backslash character
 - the parent process environment is unchanged
 
 Environment variable mapping:

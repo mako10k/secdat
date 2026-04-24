@@ -93,8 +93,10 @@ Rename or relocate one key between resolved locations.
 .B cp SRC_KEYREF DST_KEYREF
 Copy one key into another resolved location.
 .TP
-.B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-\-] CMD [ARGS...]
-Inject resolved keys into a child process environment and execute the command. Repeated include patterns widen the match set, and repeated exclude patterns subtract from it.
+.B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-\-env-map-sed EXPR] [\-\-] CMD [ARGS...]
+Inject resolved keys into a child process environment and execute the command. Repeated include patterns widen the match set, repeated exclude patterns subtract from it, and
+.B --env-map-sed
+applies one sed-style key-to-environment-name mapping. In the current minimal subset, only keys matched by that substitution are injected.
 .TP
 .B export [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]
 Emit bash-oriented export lines for the current visible keys.

@@ -128,6 +128,7 @@ Use `--` to stop command-local option parsing explicitly when you need a literal
 ./src/secdat --dir ~/example/project rm OLD_API_TOKEN -f
 ./src/secdat set DASHED_VALUE -- --starts-with-dash
 ./src/secdat exec --pattern 'APP_*' -- python3 -c 'import os; print(os.environ["APP_TOKEN"])'
+./src/secdat exec --env-map-sed 's/^MY_REDMINE_\(.*\)$/SPV_REDMINE_\1/' -- env | grep '^SPV_REDMINE_'
 ```
 
 For shell branching without printing secret material, use `exists` and check the exit status:
@@ -222,7 +223,7 @@ source <(./src/secdat --dir ~/example/project --store app export)
 
 The output is shell-ready text such as `eval "export API_TOKEN=$(./src/secdat ... get API_TOKEN --shellescaped)"`; it does not print raw secret values directly. `get --shellescaped` emits a single-quoted shell literal for one secret value, and `export` reuses that path. In bash, you can either `eval "$(...)"` or source it with process substitution as `source <(...)` / `. <(...)`. Plain `. $(...)` is not valid here because `.` expects a file path, not command text. The current implementation is bash-oriented, single-quote escapes command arguments, and rejects keys that are not valid shell identifiers.
 
-For command injection into a child process, `exec` now accepts repeated `--pattern` and `--pattern-exclude` filters. Include patterns are ORed together, and exclude patterns are applied afterward. Use `--` before `CMD` when the command itself or its first argument starts with `-`.
+For command injection into a child process, `exec` accepts repeated `--pattern` and `--pattern-exclude` filters. Include patterns are ORed together, and exclude patterns are applied afterward. `--env-map-sed EXPR` adds one sed-style environment-name remapping rule for `exec`; when present, only keys matched by the substitution are injected, and the replacement text becomes the environment variable name. The current minimal subset accepts one `s///` expression, with an optional leading `/ADDRESS/` filter, and supports `&` plus `\1` through `\9` in the replacement. As with sed, the delimiter after `s` may be any non-alphanumeric, non-backslash character, so forms like `s|...|...|` and `s#...#...#` also work. Use `--` before `CMD` when the command itself or its first argument starts with `-`.
 
 Bash completion source is in `completions/secdat.bash`, and `make install` installs it for automatic loading as `secdat` under the system bash-completion directory. `make install` also installs the command reference into the system manpath from `docs/secdat.1`.
 

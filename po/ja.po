@@ -606,10 +606,10 @@ msgstr ""
 #, c-format
 msgid ""
 "  inject secrets into one subprocess only: %s --dir ~/example/project exec --"
-"pattern 'APP_*' CMD\n"
+"env-map-sed 's/^MY_APP_\\(.*\\)$/APP_\\1/' CMD\n"
 msgstr ""
 "  1 つの子プロセスにだけ secret を注入する: %s --dir ~/example/project exec "
-"--pattern 'APP_*' CMD\n"
+"--env-map-sed 's/^MY_APP_\\(.*\\)$/APP_\\1/' CMD\n"
 
 #: src/cli.c:870
 #, fuzzy, c-format
@@ -1054,10 +1054,24 @@ msgid "invalid arguments for ls\n"
 msgstr "%s の引数が不正です\n"
 
 #: src/store.c:1994 src/store.c:2003
-#, fuzzy, c-format
-#| msgid "invalid arguments for lock\n"
+#, c-format
 msgid "invalid arguments for exec\n"
-msgstr "lock の引数が不正です\n"
+msgstr "exec の引数が不正です\n"
+
+#: src/store.c:2018
+#, c-format
+msgid "--env-map-sed may be specified at most once\n"
+msgstr "--env-map-sed は 1 回までしか指定できません\n"
+
+#: src/store.c:2034 src/store.c:2057 src/store.c:2064 src/store.c:2091
+#, c-format
+msgid "invalid --env-map-sed expression\n"
+msgstr "--env-map-sed の式が不正です\n"
+
+#: src/store.c:2048 src/store.c:2108
+#, c-format
+msgid "invalid --env-map-sed regex: %s\n"
+msgstr "--env-map-sed の正規表現が不正です: %s\n"
 
 #: src/store.c:2050 src/store.c:2057
 #, c-format
@@ -1794,10 +1808,24 @@ msgid "key is not a valid shell identifier: %s\n"
 msgstr "key は有効な shell 識別子ではありません: %s\n"
 
 #: src/store.c:8410
-#, fuzzy, c-format
-#| msgid "failed to connect to session agent\n"
+#, c-format
 msgid "failed to export key to environment: %s\n"
-msgstr "セッションエージェントへの接続に失敗しました\n"
+msgstr "key の環境変数への書き出しに失敗しました: %s\n"
+
+#: src/store.c:8454 src/store.c:8464
+#, c-format
+msgid "failed to match --env-map-sed against key: %s\n"
+msgstr "--env-map-sed を key に照合できませんでした: %s\n"
+
+#: src/store.c:8537
+#, c-format
+msgid "invalid environment variable name from --env-map-sed: %s\n"
+msgstr "--env-map-sed から不正な環境変数名が生成されました: %s\n"
+
+#: src/store.c:8694
+#, c-format
+msgid "duplicate environment variable name from --env-map-sed: %s\n"
+msgstr "--env-map-sed で環境変数名が重複しました: %s\n"
 
 #: src/store.c:8429
 #, c-format

@@ -478,7 +478,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "cp", "SRC_KEYREF DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--] CMD [ARGS...]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--] CMD [ARGS...]");
         break;
     case SECDAT_COMMAND_EXPORT:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "export", "[-p GLOBPATTERN|--pattern GLOBPATTERN]");
@@ -865,7 +865,7 @@ static void secdat_cli_print_use_cases_overview(const char *program_name)
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  load shell variables without exposing raw values in exported text: source <(%s --dir ~/example/project export)\n"), program_name);
         secdat_cli_print_detail_line(buffer);
-        snprintf(buffer, sizeof(buffer), _("  inject secrets into one subprocess only: %s --dir ~/example/project exec --pattern 'APP_*' CMD\n"), program_name);
+        snprintf(buffer, sizeof(buffer), _("  inject secrets into one subprocess only: %s --dir ~/example/project exec --env-map-sed 's/^MY_APP_\\(.*\\)$/APP_\\1/' CMD\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  block automation until a human unlocks the domain elsewhere: %s --dir ~/example/project wait-unlock --timeout 900\n"), program_name);
         secdat_cli_print_detail_line(buffer);

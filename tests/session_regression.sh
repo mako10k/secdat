@@ -388,7 +388,7 @@ for args, marker in [
     ([bin_path, "help", "ls"], "[-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe] [-u|--unsafe]"),
     ([bin_path, "help", "get"], "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF"),
     ([bin_path, "help", "wait-unlock"], "wait-unlock [-t SECONDS|--timeout SECONDS] [-q|--quiet]"),
-    ([bin_path, "help", "exec"], "[-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--] CMD [ARGS...]"),
+    ([bin_path, "help", "exec"], "[-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--] CMD [ARGS...]"),
     ([bin_path, "help", "rm"], "rm [-f|--ignore-missing] KEYREF"),
     ([bin_path, "help", "set"], "set KEYREF [-u|--unsafe]"),
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN]"),
