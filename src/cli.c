@@ -1065,9 +1065,7 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
     } else if (secdat_cli_is_assignment_operand(argv[index])) {
         cli->command = SECDAT_COMMAND_SET;
     } else {
-        fprintf(stderr, _("unknown command: %s\n"), argv[index]);
-        secdat_cli_print_try_help(cli, NULL);
-        return 2;
+        cli->command = SECDAT_COMMAND_GET;
     }
 
     cli->argc = argc - index;

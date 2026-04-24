@@ -81,6 +81,7 @@ secdat [--dir DIR] [--store STORE] export [--pattern GLOBPATTERN]
 To make the requested behavior implementable, the following are treated as normative:
 
 - `get KEYREF` is equivalent to `get KEYREF --stdout`
+- if the first operand is not a known subcommand and is not an assignment, `secdat KEYREF` falls back to `get KEYREF`
 - `get KEYREF --shellescaped` emits a shell-escaped single-value representation suitable for `eval`-style shell assignment
 - `set KEYREF VALUE` is equivalent to `set KEYREF --value VALUE`
 - `set KEYREF` is equivalent to `set KEYREF --stdin`
@@ -161,6 +162,7 @@ To make the requested behavior implementable, the following are treated as norma
 #### FR-2 Value Retrieval
 
 - `secdat get KEYREF` is equivalent to `secdat get KEYREF --stdout`
+- if the first operand is not a known subcommand and is not an assignment, `secdat KEYREF` falls back to `secdat get KEYREF`
 - the resolved plaintext value is written to standard output unchanged
 - no trailing newline is added automatically
 - it is an error if the key is not found in the effective domain view

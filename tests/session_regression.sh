@@ -464,7 +464,7 @@ for args, expected in [
     ([bin_path, "lock", "--bad"], f"Try: {bin_path} help lock"),
     ([bin_path, "store", "bogus"], f"Try: {bin_path} help store"),
     ([bin_path, "domain", "bogus"], f"Try: {bin_path} help domain"),
-    ([bin_path, "bogus"], f"Try: {bin_path} help"),
+    ([bin_path, "bogus", "extra"], f"Try: {bin_path} help get"),
 ]:
     rc, stdout, stderr = run(args)
     output = stdout + stderr

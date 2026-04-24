@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: secdat 0.1.0\n"
 "Report-Msgid-Bugs-To: noreply@example.invalid\n"
-"POT-Creation-Date: 2026-04-24 13:35+0900\n"
+"POT-Creation-Date: 2026-04-24 13:48+0900\n"
 "PO-Revision-Date: 2026-04-13 00:00+0000\n"
 "Last-Translator: GitHub Copilot <noreply@example.invalid>\n"
 "Language-Team: ja\n"
@@ -740,31 +740,26 @@ msgstr "不明な store サブコマンドです: %s\n"
 msgid "unknown domain subcommand: %s\n"
 msgstr "不明な domain サブコマンドです: %s\n"
 
-#: src/cli.c:1068
-#, c-format
-msgid "unknown command: %s\n"
-msgstr "不明なコマンドです: %s\n"
-
-#: src/cli.c:1084 src/cli.c:1100 src/cli.c:1121 src/cli.c:1136 src/cli.c:1149
+#: src/cli.c:1082 src/cli.c:1098 src/cli.c:1119 src/cli.c:1134 src/cli.c:1147
 #, c-format
 msgid "Usage:\n"
 msgstr "使い方:\n"
 
-#: src/cli.c:1105
+#: src/cli.c:1103
 #, c-format
 msgid "\n"
 msgstr "\n"
 
-#: src/cli.c:1106
+#: src/cli.c:1104
 msgid "  KEYREF syntax: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"
 msgstr "  KEYREF 構文: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"
 
-#: src/cli.c:1174
+#: src/cli.c:1172
 #, c-format
 msgid "Try: %s help %s\n"
 msgstr "試してください: %s help %s\n"
 
-#: src/cli.c:1178
+#: src/cli.c:1176
 #, c-format
 msgid "Try: %s help\n"
 msgstr "試してください: %s help\n"
@@ -1888,6 +1883,10 @@ msgstr "  dir=%s\n"
 #, c-format
 msgid "  store=%s\n"
 msgstr "  store=%s\n"
+
+#, c-format
+#~ msgid "unknown command: %s\n"
+#~ msgstr "不明なコマンドです: %s\n"
 
 #~ msgid "effective source: local unlock"
 #~ msgstr "有効な取得元: local unlock"
