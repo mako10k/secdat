@@ -95,7 +95,6 @@ for args in [
     [bin_path, "--dir", str(root_dir), "set", "ROOT_TOKEN", "root-secret"],
     [bin_path, "--dir", str(child_dir), "set", "CHILD_TOKEN", "child secret's value"],
     [bin_path, "--dir", str(root_dir), "--store", "app", "set", "APP_TOKEN", "app-secret"],
-    [bin_path, "--dir", str(invalid_dir), "set", "BAD-KEY", "bad-secret"],
     [bin_path, "--dir", str(child_dir), "set", "MY_REDMINE_API_KEY", "mapped-api-secret"],
     [bin_path, "--dir", str(child_dir), "set", "MY_REDMINE_PROJECT", "mapped-project-secret"],
     [bin_path, "--dir", str(child_dir), "set", "HOSTILE_TOKEN", "--value", hostile_payload],
@@ -294,6 +293,20 @@ for expression, expected in [
     if json.loads(stdout) != expected:
         fail(f"exec env-map-sed alternate delimiter payload mismatch for {expression!r}: {stdout!r}")
 
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--env-map-sed",
+    r"s/^MY_REDMINE_PROJECT$//",
+    "python3",
+    "-c",
+    "print('unreachable')",
+])
+if rc == 0 or "invalid environment variable name from --env-map-sed:" not in stderr:
+    fail(f"empty env-map-sed result unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(root_dir), "--store", "app", "export"])
 if rc != 0 or stderr != "":
     fail(f"store export failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -309,9 +322,9 @@ assert_contains(stdout, "ROOT_TOKEN", "pattern export keeps match")
 if "CHILD_TOKEN" in stdout:
     fail(f"pattern export unexpectedly included unmatched key: {stdout!r}")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(invalid_dir), "export"])
-if rc == 0 or "key is not a valid shell identifier: BAD-KEY" not in stderr:
-    fail(f"invalid shell identifier check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(invalid_dir), "set", "BAD-KEY", "bad-secret"])
+if rc == 0 or "key is not a valid environment variable name: BAD-KEY" not in stderr:
+    fail(f"invalid key-name check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 print("PASS export regression")
 PY

@@ -135,6 +135,7 @@ To make the requested behavior implementable, the following are treated as norma
 - Domain: a configuration boundary associated with a directory path
 - Key: the logical name of a stored value
 - Key reference (`KEYREF`): `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`
+- `KEY` must be a valid environment-variable identifier: it starts with a letter or `_`, and the remaining characters are limited to letters, digits, or `_`
 - the `/ABSOLUTE/DOMAIN/` qualifier is optional, must begin with `/`, and must include the trailing slash before `KEY`
 - the `:STORE` qualifier is optional
 - if the domain qualifier is omitted, the command falls back to `--domain DIR`, then `--dir DIR`, and then the current working directory
@@ -231,6 +232,7 @@ To make the requested behavior implementable, the following are treated as norma
 - repeated `--pattern GLOBPATTERN` options widen the include set for both `ls` and `exec`
 - repeated `--pattern-exclude GLOBPATTERN` options remove matches from the include set for both `ls` and `exec`
 - `--env-map-sed EXPR` for `exec` applies one sed-style key-to-environment-name mapping after pattern filtering; when present, only keys matched by the substitution are injected
+- mapped environment variable names must remain valid identifiers; empty or otherwise invalid results are rejected
 - `secdat ls --safe` lists only effective keys whose resolved entry is stored encrypted at rest
 - `secdat ls --unsafe` lists only effective keys whose resolved entry is stored plaintext at rest
 - `secdat exec --pattern GLOBPATTERN CMD [ARGS...]` injects only matched keys

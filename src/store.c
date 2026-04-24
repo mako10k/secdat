@@ -267,9 +267,11 @@ static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_
 static int secdat_parse_wait_unlock_options(const struct secdat_cli *cli, struct secdat_wait_unlock_options *options);
 static int secdat_parse_session_duration_seconds(const char *value, time_t *duration_seconds);
 static void secdat_format_remaining_duration(time_t expires_at, char *buffer, size_t size);
+static int secdat_is_valid_env_name(const char *value);
 
 struct secdat_unlock_options {
     time_t duration_seconds;
+    char until_value[128];
     int include_descendants;
     int duration_configured;
     int until_configured;
@@ -1594,7 +1596,7 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
             options->duration_configured = 1;
             break;
         case 'u':
-            if (secdat_parse_absolute_duration(optarg, &options->duration_seconds) != 0) {
+            if (optarg == NULL || secdat_copy_string(options->until_value, sizeof(options->until_value), optarg) != 0) {
                 fprintf(stderr, _("invalid value for --until: %s\n"), optarg != NULL ? optarg : "");
                 return 2;
             }
@@ -1649,6 +1651,11 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
     if (options->volatile_mode && (options->include_descendants || options->assume_yes)) {
         fprintf(stderr, _("invalid arguments for unlock\n"));
         secdat_cli_print_try_help(cli, "unlock");
+        return 2;
+    }
+
+    if (options->until_configured && secdat_parse_absolute_duration(options->until_value, &options->duration_seconds) != 0) {
+        fprintf(stderr, _("invalid value for --until: %s\n"), options->until_value);
         return 2;
     }
 
@@ -1895,6 +1902,10 @@ static int secdat_parse_key_reference(
 
     if (key_length == 0 || key_length >= sizeof(reference->key)) {
         fprintf(stderr, _("invalid key reference: %s\n"), raw);
+        return 1;
+    }
+    if (!secdat_is_valid_env_name(reference->key)) {
+        fprintf(stderr, _("key is not a valid environment variable name: %s\n"), reference->key);
         return 1;
     }
     return 0;
@@ -8544,7 +8555,20 @@ static int secdat_plaintext_to_env_value(
 
 static int secdat_is_valid_env_name(const char *value)
 {
-    return value != NULL && value[0] != '\0' && strchr(value, '=') == NULL;
+    size_t index;
+
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+    if (!(isalpha((unsigned char)value[0]) || value[0] == '_')) {
+        return 0;
+    }
+    for (index = 1; value[index] != '\0'; index += 1) {
+        if (!(isalnum((unsigned char)value[index]) || value[index] == '_')) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static int secdat_exec_env_name_from_key(
@@ -8730,7 +8754,7 @@ static int secdat_command_export(const struct secdat_cli *cli)
     }
 
     for (key_index = 0; key_index < visible_keys.count; key_index += 1) {
-        if (!secdat_is_shell_identifier(visible_keys.items[key_index])) {
+        if (!secdat_is_valid_env_name(visible_keys.items[key_index])) {
             fprintf(stderr, _("key is not a valid shell identifier: %s\n"), visible_keys.items[key_index]);
             secdat_key_list_free(&include_patterns);
             secdat_domain_chain_free(&chain);

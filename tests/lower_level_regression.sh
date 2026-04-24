@@ -182,6 +182,10 @@ for bad_ref, expected in [
     if rc == 0 or expected not in stderr:
         fail(f"bad keyref {bad_ref!r} unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run(scoped(["set", "BAD-KEY", "bad-value"]))
+if rc == 0 or "key is not a valid environment variable name: BAD-KEY" not in stderr:
+    fail(f"invalid key-name unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run(scoped(["status", "-q"], child_domain))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"child did not inherit root session: rc={rc} stdout={stdout!r} stderr={stderr!r}")

@@ -177,6 +177,7 @@ If you explicitly need a value to remain readable while `secdat` is locked, `set
 Unsafe values may also be entered from or written to a terminal. Safe values keep the existing terminal I/O refusal.
 Copying or moving a `--unsafe` key preserves that plaintext-at-rest storage mode.
 For simple shell-style assignment input, you can also use `KEY=VALUE` operands directly. `secdat KEY=VALUE ...` is treated as repeated `set`, and `secdat set KEY=VALUE ...` does the same. The split happens on the first `=`, so later `=` characters stay in the stored value.
+Key names are restricted to shell/environment identifier syntax: they must start with a letter or `_`, and the remaining characters may contain only letters, digits, or `_`. `exec --env-map-sed` applies the same rule to generated environment variable names, so empty results or names with unsuitable characters are rejected.
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
 When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--domain`, then `--dir`, then `--store`, and finally the current defaults are used.
@@ -224,7 +225,7 @@ eval "$(./src/secdat --dir ~/example/project --store app export)"
 source <(./src/secdat --dir ~/example/project --store app export)
 ```
 
-The output is shell-ready text such as `eval "export API_TOKEN=$(./src/secdat ... get API_TOKEN --shellescaped)"`; it does not print raw secret values directly. `get --shellescaped` emits a single-quoted shell literal for one secret value, and `export` reuses that path. In bash, you can either `eval "$(...)"` or source it with process substitution as `source <(...)` / `. <(...)`. Plain `. $(...)` is not valid here because `.` expects a file path, not command text. The current implementation is bash-oriented, single-quote escapes command arguments, and rejects keys that are not valid shell identifiers.
+The output is shell-ready text such as `eval "export API_TOKEN=$(./src/secdat ... get API_TOKEN --shellescaped)"`; it does not print raw secret values directly. `get --shellescaped` emits a single-quoted shell literal for one secret value, and `export` reuses that path. In bash, you can either `eval "$(...)"` or source it with process substitution as `source <(...)` / `. <(...)`. Plain `. $(...)` is not valid here because `.` expects a file path, not command text. The current implementation is bash-oriented, single-quote escapes command arguments, and key names already follow shell-identifier syntax.
 
 For command injection into a child process, `exec` accepts repeated `--pattern` and `--pattern-exclude` filters. Include patterns are ORed together, and exclude patterns are applied afterward. `--env-map-sed EXPR` adds one sed-style environment-name remapping rule for `exec`; when present, only keys matched by the substitution are injected, and the replacement text becomes the environment variable name. The current minimal subset accepts one `s///` expression, with an optional leading `/ADDRESS/` filter, and supports `&` plus `\1` through `\9` in the replacement. As with sed, the delimiter after `s` may be any non-alphanumeric, non-backslash character, so forms like `s|...|...|` and `s#...#...#` also work. Use `--` before `CMD` when the command itself or its first argument starts with `-`.
 
