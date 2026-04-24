@@ -127,6 +127,8 @@ Use `--` to stop command-local option parsing explicitly when you need a literal
 ./src/secdat get HOGE --std
 ./src/secdat --dir ~/example/project rm OLD_API_TOKEN -f
 ./src/secdat set DASHED_VALUE -- --starts-with-dash
+./src/secdat --dir ~/example/project API_TOKEN=token-123 API_ENDPOINT=https://example.invalid/api
+./src/secdat --dir ~/example/project set API_TOKEN=token-123 API_ENDPOINT=https://example.invalid/api
 ./src/secdat exec --pattern 'APP_*' -- python3 -c 'import os; print(os.environ["APP_TOKEN"])'
 ./src/secdat exec --env-map-sed 's/^MY_REDMINE_\(.*\)$/SPV_REDMINE_\1/' -- env | grep '^SPV_REDMINE_'
 ```
@@ -174,6 +176,7 @@ If you explicitly need a value to remain readable while `secdat` is locked, `set
 `--unsafe` is intentionally outside the normal secret workflow. It does not require the master key, remains readable while locked, and should only be used for values you accept storing in plaintext.
 Unsafe values may also be entered from or written to a terminal. Safe values keep the existing terminal I/O refusal.
 Copying or moving a `--unsafe` key preserves that plaintext-at-rest storage mode.
+For simple shell-style assignment input, you can also use `KEY=VALUE` operands directly. `secdat KEY=VALUE ...` is treated as repeated `set`, and `secdat set KEY=VALUE ...` does the same. The split happens on the first `=`, so later `=` characters stay in the stored value.
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
 When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--domain`, then `--dir`, then `--store`, and finally the current defaults are used.

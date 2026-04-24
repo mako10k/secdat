@@ -129,6 +129,17 @@ fi
 explicit_value="$($bin_path get "$root"/explicit_key:team --stdout)"
 assert_eq "$explicit_value" 'explicit_value' 'KEYREF set/get'
 
+"$bin_path" --dir "$root" SHORTHAND_ONE=one SHORTHAND_TWO=two=with=equals >/dev/null
+assert_eq "$($bin_path --dir "$root" get SHORTHAND_ONE --stdout)" 'one' 'implicit shorthand set first value'
+assert_eq "$($bin_path --dir "$root" get SHORTHAND_TWO --stdout)" 'two=with=equals' 'implicit shorthand set keeps suffix after first equals'
+
+"$bin_path" --dir "$root" set SHORTHAND_THREE=three SHORTHAND_FOUR=four >/dev/null
+assert_eq "$($bin_path --dir "$root" get SHORTHAND_THREE --stdout)" 'three' 'explicit shorthand set first value'
+assert_eq "$($bin_path --dir "$root" get SHORTHAND_FOUR --stdout)" 'four' 'explicit shorthand set second value'
+
+"$bin_path" --dir "$root" set --unsafe UNSAFE_SHORTHAND=visible >/dev/null
+assert_eq "$($bin_path --dir "$root" get UNSAFE_SHORTHAND --stdout)" 'visible' 'unsafe shorthand set value'
+
 "$bin_path" --dir "$root" set dashed_value_key --value=--dash-prefixed >/dev/null
 dashed_value="$($bin_path --dir "$root" get dashed_value_key --std)"
 assert_eq "$dashed_value" '--dash-prefixed' 'set --value= and abbreviated long get'

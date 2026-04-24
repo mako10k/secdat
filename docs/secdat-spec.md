@@ -555,8 +555,10 @@ secdat [--dir DIR] [--store STORE] get KEY [--stdout]
 ### 4.4 `set`
 
 ```text
+secdat [--dir DIR] [--store STORE] KEY=VALUE [KEY=VALUE]...
 secdat [--dir DIR] [--store STORE] set KEY
 secdat [--dir DIR] [--store STORE] set KEY VALUE
+secdat [--dir DIR] [--store STORE] set KEY=VALUE [KEY=VALUE]...
 secdat [--dir DIR] [--store STORE] set KEY --stdin
 secdat [--dir DIR] [--store STORE] set KEY --env ENVNAME
 secdat [--dir DIR] [--store STORE] set KEY --value VALUE
@@ -565,6 +567,9 @@ secdat [--dir DIR] [--store STORE] set KEY --value VALUE
 - these modes are mutually exclusive
 - `set KEY` means `--stdin`
 - `set KEY VALUE` means `--value VALUE`
+- `secdat KEY=VALUE ...` behaves like repeating `set KEY VALUE`
+- `secdat set KEY=VALUE ...` behaves like repeating `set KEY VALUE`
+- shorthand assignment splits on the first `=` and keeps any later `=` in the stored value
 - `--stdin` fails if standard input is a TTY
 
 ### 4.5 `rm`

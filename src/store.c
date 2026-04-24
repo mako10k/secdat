@@ -7487,6 +7487,97 @@ static int secdat_store_plaintext_for_chain(
     return secdat_store_plaintext(domain_id, store_name, key, plaintext, plaintext_length, unsafe_store);
 }
 
+static int secdat_store_literal_keyref(
+    const struct secdat_cli *cli,
+    const char *keyref,
+    const char *literal_value,
+    int unsafe_store
+)
+{
+    struct secdat_key_reference reference;
+    struct secdat_domain_chain chain = {0};
+    char current_domain_id[PATH_MAX];
+    const char *key;
+    unsigned char *plaintext = NULL;
+    size_t plaintext_length;
+    int status;
+
+    if (secdat_parse_key_reference(keyref, secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
+        return 1;
+    }
+
+    plaintext_length = strlen(literal_value);
+    plaintext = malloc(plaintext_length == 0 ? 1 : plaintext_length);
+    if (plaintext == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    if (plaintext_length > 0) {
+        memcpy(plaintext, literal_value, plaintext_length);
+    }
+
+    if (secdat_domain_resolve_current(reference.domain_value, current_domain_id, sizeof(current_domain_id)) != 0) {
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
+        return 1;
+    }
+
+    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
+        return 1;
+    }
+    if (secdat_require_mutable_session_chain(&chain, "set") != 0) {
+        secdat_domain_chain_free(&chain);
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
+        return 1;
+    }
+
+    key = reference.key;
+    status = secdat_store_plaintext_for_chain(&chain, current_domain_id, reference.store_value, key, plaintext, plaintext_length, unsafe_store);
+    secdat_domain_chain_free(&chain);
+    secdat_secure_clear(plaintext, plaintext_length);
+    free(plaintext);
+    return status;
+}
+
+static int secdat_is_assignment_operand(const char *value)
+{
+    return value != NULL && strchr(value, '=') != NULL;
+}
+
+static int secdat_store_assignment_operand(
+    const struct secdat_cli *cli,
+    const char *operand,
+    int unsafe_store
+)
+{
+    const char *separator = strchr(operand, '=');
+    char *keyref;
+    size_t keyref_length;
+    int status;
+
+    if (separator == NULL) {
+        fprintf(stderr, _("invalid arguments for set\n"));
+        secdat_cli_print_try_help(cli, "set");
+        return 2;
+    }
+
+    keyref_length = (size_t)(separator - operand);
+    keyref = malloc(keyref_length + 1);
+    if (keyref == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    memcpy(keyref, operand, keyref_length);
+    keyref[keyref_length] = '\0';
+
+    status = secdat_store_literal_keyref(cli, keyref, separator + 1, unsafe_store);
+    free(keyref);
+    return status;
+}
+
 static int secdat_command_set(const struct secdat_cli *cli)
 {
     static const struct option long_options[] = {
@@ -7571,6 +7662,38 @@ static int secdat_command_set(const struct secdat_cli *cli)
         return 2;
     }
 
+    if (read_stdin && literal_value == NULL) {
+        int saw_assignment = 0;
+        int saw_non_assignment = 0;
+        int assignment_index;
+
+        for (assignment_index = optind; assignment_index < argc; assignment_index += 1) {
+            if (secdat_is_assignment_operand(argv[assignment_index])) {
+                saw_assignment = 1;
+            } else {
+                saw_non_assignment = 1;
+            }
+        }
+
+        if (saw_assignment && saw_non_assignment) {
+            fprintf(stderr, _("invalid arguments for set\n"));
+            secdat_cli_print_try_help(cli, "set");
+            return 2;
+        }
+
+        if (saw_assignment) {
+            int assignment_index;
+
+            for (assignment_index = optind; assignment_index < argc; assignment_index += 1) {
+                status = secdat_store_assignment_operand(cli, argv[assignment_index], unsafe_store);
+                if (status != 0) {
+                    return status;
+                }
+            }
+            return 0;
+        }
+    }
+
     keyref = argv[optind];
     optind += 1;
     if (optind < argc) {
@@ -7589,13 +7712,13 @@ static int secdat_command_set(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_parse_key_reference(keyref, secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
-        return 1;
-    }
-
-    key = reference.key;
-
     if (read_stdin) {
+        if (secdat_parse_key_reference(keyref, secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
+            return 1;
+        }
+
+        key = reference.key;
+
         if (isatty(STDIN_FILENO) && !unsafe_store) {
             fprintf(stderr, _("refusing to read secret from a terminal\n"));
             return 1;
@@ -7604,39 +7727,32 @@ static int secdat_command_set(const struct secdat_cli *cli)
         if (secdat_read_stdin(&plaintext, &plaintext_length) != 0) {
             return 1;
         }
-    } else {
-        plaintext_length = strlen(literal_value);
-        plaintext = malloc(plaintext_length == 0 ? 1 : plaintext_length);
-        if (plaintext == NULL) {
-            fprintf(stderr, _("out of memory\n"));
+        if (secdat_domain_resolve_current(reference.domain_value, current_domain_id, sizeof(current_domain_id)) != 0) {
+            secdat_secure_clear(plaintext, plaintext_length);
+            free(plaintext);
             return 1;
         }
-        memcpy(plaintext, literal_value, plaintext_length);
-    }
 
-    if (secdat_domain_resolve_current(reference.domain_value, current_domain_id, sizeof(current_domain_id)) != 0) {
-        secdat_secure_clear(plaintext, plaintext_length);
-        free(plaintext);
-        return 1;
-    }
+        if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+            secdat_secure_clear(plaintext, plaintext_length);
+            free(plaintext);
+            return 1;
+        }
+        if (secdat_require_mutable_session_chain(&chain, "set") != 0) {
+            secdat_domain_chain_free(&chain);
+            secdat_secure_clear(plaintext, plaintext_length);
+            free(plaintext);
+            return 1;
+        }
 
-    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
-        secdat_secure_clear(plaintext, plaintext_length);
-        free(plaintext);
-        return 1;
-    }
-    if (secdat_require_mutable_session_chain(&chain, "set") != 0) {
+        status = secdat_store_plaintext_for_chain(&chain, current_domain_id, reference.store_value, key, plaintext, plaintext_length, unsafe_store);
         secdat_domain_chain_free(&chain);
         secdat_secure_clear(plaintext, plaintext_length);
         free(plaintext);
-        return 1;
+        return status;
     }
 
-    status = secdat_store_plaintext_for_chain(&chain, current_domain_id, reference.store_value, key, plaintext, plaintext_length, unsafe_store);
-    secdat_domain_chain_free(&chain);
-    secdat_secure_clear(plaintext, plaintext_length);
-    free(plaintext);
-    return status;
+    return secdat_store_literal_keyref(cli, keyref, literal_value, unsafe_store);
 }
 
 static int secdat_write_empty_file(const char *path)

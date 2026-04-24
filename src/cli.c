@@ -370,6 +370,11 @@ static int secdat_cli_requests_explicit_help(enum secdat_command_type command, i
     return 0;
 }
 
+static int secdat_cli_is_assignment_operand(const char *value)
+{
+    return value != NULL && strchr(value, '=') != NULL;
+}
+
 enum secdat_command_type secdat_cli_parse_command_name(const char *name)
 {
     if (strcmp(name, "ls") == 0) {
@@ -1057,6 +1062,8 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
             secdat_cli_print_try_help(cli, "domain");
             return 2;
         }
+    } else if (secdat_cli_is_assignment_operand(argv[index])) {
+        cli->command = SECDAT_COMMAND_SET;
     } else {
         fprintf(stderr, _("unknown command: %s\n"), argv[index]);
         secdat_cli_print_try_help(cli, NULL);
