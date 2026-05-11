@@ -61,6 +61,31 @@ int secdat_sdk_set(
     size_t value_length,
     int unsafe_store
 );
+int secdat_sdk_rm(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    int ignore_missing
+);
+int secdat_sdk_mv(
+    const struct secdat_sdk_options *options,
+    const char *source_keyref,
+    const char *destination_keyref
+);
+int secdat_sdk_cp(
+    const struct secdat_sdk_options *options,
+    const char *source_keyref,
+    const char *destination_keyref
+);
+int secdat_sdk_mask(
+    const struct secdat_sdk_options *options,
+    const char *keyref
+);
+int secdat_sdk_unmask(
+    const struct secdat_sdk_options *options,
+    const char *keyref
+);
+int secdat_sdk_unlock(const struct secdat_sdk_options *options);
+int secdat_sdk_lock(const struct secdat_sdk_options *options);
 int secdat_sdk_exists(
     const struct secdat_sdk_options *options,
     const char *keyref,

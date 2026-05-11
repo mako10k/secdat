@@ -286,6 +286,13 @@ static int secdat_parse_wait_unlock_options(const struct secdat_cli *cli, struct
 static int secdat_parse_session_duration_seconds(const char *value, time_t *duration_seconds);
 static void secdat_format_remaining_duration(time_t expires_at, char *buffer, size_t size);
 static int secdat_is_valid_env_name(const char *value);
+static int secdat_command_unlock(const struct secdat_cli *cli);
+static int secdat_command_lock(const struct secdat_cli *cli);
+static int secdat_command_cp(const struct secdat_cli *cli);
+static int secdat_command_mv(const struct secdat_cli *cli);
+static int secdat_command_mask(const struct secdat_cli *cli);
+static int secdat_command_unmask(const struct secdat_cli *cli);
+static int secdat_command_rm(const struct secdat_cli *cli);
 
 struct secdat_unlock_options {
     time_t duration_seconds;
@@ -697,6 +704,24 @@ static const char *secdat_sdk_domain_base(const struct secdat_sdk_options *optio
         return NULL;
     }
     return options->domain != NULL ? options->domain : options->dir;
+}
+
+static void secdat_sdk_init_cli(
+    const struct secdat_sdk_options *options,
+    struct secdat_cli *cli,
+    enum secdat_command_type command,
+    int argc,
+    char **argv
+)
+{
+    memset(cli, 0, sizeof(*cli));
+    cli->program_name = "libsecdat";
+    cli->dir = options != NULL ? options->dir : NULL;
+    cli->domain = options != NULL ? options->domain : NULL;
+    cli->store = options != NULL ? options->store : NULL;
+    cli->command = command;
+    cli->argc = argc;
+    cli->argv = argv;
 }
 
 static int secdat_default_domain_write_error(void)
@@ -5354,6 +5379,120 @@ int secdat_sdk_set(
     secdat_secure_clear(plaintext, value_length);
     free(plaintext);
     return status;
+}
+
+int secdat_sdk_rm(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    int ignore_missing
+)
+{
+    struct secdat_cli cli;
+    char *argv[2];
+    int argc = 0;
+
+    if (keyref == NULL) {
+        return 1;
+    }
+
+    if (ignore_missing) {
+        argv[argc] = "-f";
+        argc += 1;
+    }
+    argv[argc] = (char *)keyref;
+    argc += 1;
+    secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_RM, argc, argv);
+    return secdat_command_rm(&cli);
+}
+
+int secdat_sdk_mv(
+    const struct secdat_sdk_options *options,
+    const char *source_keyref,
+    const char *destination_keyref
+)
+{
+    struct secdat_cli cli;
+    char *argv[2];
+
+    if (source_keyref == NULL || destination_keyref == NULL) {
+        return 1;
+    }
+
+    argv[0] = (char *)source_keyref;
+    argv[1] = (char *)destination_keyref;
+    secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_MV, 2, argv);
+    return secdat_command_mv(&cli);
+}
+
+int secdat_sdk_cp(
+    const struct secdat_sdk_options *options,
+    const char *source_keyref,
+    const char *destination_keyref
+)
+{
+    struct secdat_cli cli;
+    char *argv[2];
+
+    if (source_keyref == NULL || destination_keyref == NULL) {
+        return 1;
+    }
+
+    argv[0] = (char *)source_keyref;
+    argv[1] = (char *)destination_keyref;
+    secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_CP, 2, argv);
+    return secdat_command_cp(&cli);
+}
+
+int secdat_sdk_mask(
+    const struct secdat_sdk_options *options,
+    const char *keyref
+)
+{
+    struct secdat_cli cli;
+    char *argv[1];
+
+    if (keyref == NULL) {
+        return 1;
+    }
+
+    argv[0] = (char *)keyref;
+    secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_MASK, 1, argv);
+    return secdat_command_mask(&cli);
+}
+
+int secdat_sdk_unmask(
+    const struct secdat_sdk_options *options,
+    const char *keyref
+)
+{
+    struct secdat_cli cli;
+    char *argv[1];
+
+    if (keyref == NULL) {
+        return 1;
+    }
+
+    argv[0] = (char *)keyref;
+    secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_UNMASK, 1, argv);
+    return secdat_command_unmask(&cli);
+}
+
+int secdat_sdk_unlock(const struct secdat_sdk_options *options)
+{
+    struct secdat_cli cli;
+
+    secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_UNLOCK, 0, NULL);
+    cli.store = NULL;
+    return secdat_command_unlock(&cli);
+}
+
+int secdat_sdk_lock(const struct secdat_sdk_options *options)
+{
+    struct secdat_cli cli;
+
+    secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_LOCK, 0, NULL);
+    cli.store = NULL;
+    return secdat_command_lock(&cli);
 }
 
 void secdat_sdk_free(void *pointer)
