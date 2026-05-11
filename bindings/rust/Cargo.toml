@@ -2,6 +2,9 @@
 name = "secdat-sdk"
 version = "0.1.0"
 edition = "2021"
+description = "Rust FFI bindings for libsecdat"
+repository = "https://github.com/mako10k/secdat"
+include = ["src/**/*", "Cargo.toml", "Cargo.lock"]
 
 [lib]
 path = "src/lib.rs"

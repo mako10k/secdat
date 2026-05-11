@@ -40,5 +40,8 @@ check-local:
 	bash $(srcdir)/tests/save_load_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/export_regression.sh "$(abs_top_builddir)/src/secdat"
 
+pkgconfigdir = $(libdir)/pkgconfig
+pkgconfig_DATA = libsecdat.pc
+
 clean-local:
 	rm -rf $(abs_top_builddir)/po/.locale

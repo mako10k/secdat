@@ -16,5 +16,6 @@ AC_CONFIG_FILES([
 Makefile
 src/Makefile
 po/Makefile.in
+libsecdat.pc
 ])
 AC_OUTPUT
