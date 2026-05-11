@@ -160,6 +160,172 @@ Napi::Value Exists(const Napi::CallbackInfo &info)
     return Napi::Boolean::New(env, exists != 0);
 }
 
+Napi::Value Remove(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    bool ok;
+    bool ignore_missing = false;
+
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "rm(keyref, options?, ignoreMissing?) expects a string keyref").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    OwnedOptions options = ParseOptions(env, info.Length() > 1 ? info[1] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+    if (info.Length() > 2) {
+        if (!info[2].IsBoolean()) {
+            Napi::TypeError::New(env, "ignoreMissing must be a boolean").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        ignore_missing = info[2].As<Napi::Boolean>().Value();
+    }
+
+    std::string keyref = info[0].As<Napi::String>().Utf8Value();
+    if (secdat_sdk_rm(&options.raw, keyref.c_str(), ignore_missing ? 1 : 0) != 0) {
+        Napi::Error::New(env, "secdat_sdk_rm failed; see stderr for details").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    return env.Undefined();
+}
+
+Napi::Value Move(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    bool ok;
+
+    if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString()) {
+        Napi::TypeError::New(env, "mv(sourceKeyref, destinationKeyref, options?) expects two string keyrefs").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    OwnedOptions options = ParseOptions(env, info.Length() > 2 ? info[2] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+
+    std::string source_keyref = info[0].As<Napi::String>().Utf8Value();
+    std::string destination_keyref = info[1].As<Napi::String>().Utf8Value();
+    if (secdat_sdk_mv(&options.raw, source_keyref.c_str(), destination_keyref.c_str()) != 0) {
+        Napi::Error::New(env, "secdat_sdk_mv failed; see stderr for details").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    return env.Undefined();
+}
+
+Napi::Value Copy(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    bool ok;
+
+    if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString()) {
+        Napi::TypeError::New(env, "cp(sourceKeyref, destinationKeyref, options?) expects two string keyrefs").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    OwnedOptions options = ParseOptions(env, info.Length() > 2 ? info[2] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+
+    std::string source_keyref = info[0].As<Napi::String>().Utf8Value();
+    std::string destination_keyref = info[1].As<Napi::String>().Utf8Value();
+    if (secdat_sdk_cp(&options.raw, source_keyref.c_str(), destination_keyref.c_str()) != 0) {
+        Napi::Error::New(env, "secdat_sdk_cp failed; see stderr for details").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    return env.Undefined();
+}
+
+Napi::Value Mask(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    bool ok;
+
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "mask(keyref, options?) expects a string keyref").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    OwnedOptions options = ParseOptions(env, info.Length() > 1 ? info[1] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+
+    std::string keyref = info[0].As<Napi::String>().Utf8Value();
+    if (secdat_sdk_mask(&options.raw, keyref.c_str()) != 0) {
+        Napi::Error::New(env, "secdat_sdk_mask failed; see stderr for details").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    return env.Undefined();
+}
+
+Napi::Value Unmask(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    bool ok;
+
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "unmask(keyref, options?) expects a string keyref").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    OwnedOptions options = ParseOptions(env, info.Length() > 1 ? info[1] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+
+    std::string keyref = info[0].As<Napi::String>().Utf8Value();
+    if (secdat_sdk_unmask(&options.raw, keyref.c_str()) != 0) {
+        Napi::Error::New(env, "secdat_sdk_unmask failed; see stderr for details").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    return env.Undefined();
+}
+
+Napi::Value Unlock(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    bool ok;
+
+    OwnedOptions options = ParseOptions(env, info.Length() > 0 ? info[0] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+
+    if (secdat_sdk_unlock(&options.raw) != 0) {
+        Napi::Error::New(env, "secdat_sdk_unlock failed; see stderr for details").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    return env.Undefined();
+}
+
+Napi::Value Lock(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    bool ok;
+
+    OwnedOptions options = ParseOptions(env, info.Length() > 0 ? info[0] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+
+    if (secdat_sdk_lock(&options.raw) != 0) {
+        Napi::Error::New(env, "secdat_sdk_lock failed; see stderr for details").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    return env.Undefined();
+}
+
 Napi::Value CollectStatus(const Napi::CallbackInfo &info)
 {
     Napi::Env env = info.Env();
@@ -192,6 +358,13 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     exports.Set("get", Napi::Function::New(env, Get));
     exports.Set("set", Napi::Function::New(env, Set));
     exports.Set("exists", Napi::Function::New(env, Exists));
+    exports.Set("rm", Napi::Function::New(env, Remove));
+    exports.Set("mv", Napi::Function::New(env, Move));
+    exports.Set("cp", Napi::Function::New(env, Copy));
+    exports.Set("mask", Napi::Function::New(env, Mask));
+    exports.Set("unmask", Napi::Function::New(env, Unmask));
+    exports.Set("unlock", Napi::Function::New(env, Unlock));
+    exports.Set("lock", Napi::Function::New(env, Lock));
     exports.Set("collectStatus", Napi::Function::New(env, CollectStatus));
     return exports;
 }

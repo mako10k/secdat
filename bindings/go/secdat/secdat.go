@@ -105,6 +105,95 @@ func Set(options Options, keyref string, value []byte, unsafeStore bool) error {
 	return nil
 }
 
+func Remove(options Options, keyref string, ignoreMissing bool) error {
+	prepared := newCOptions(options)
+	defer prepared.free()
+
+	ckeyref := C.CString(keyref)
+	defer C.free(unsafe.Pointer(ckeyref))
+
+	if C.secdat_sdk_rm(&prepared.raw, ckeyref, C.int(boolToInt(ignoreMissing))) != 0 {
+		return ErrCallFailed
+	}
+	return nil
+}
+
+func Move(options Options, sourceKeyref string, destinationKeyref string) error {
+	prepared := newCOptions(options)
+	defer prepared.free()
+
+	csource := C.CString(sourceKeyref)
+	defer C.free(unsafe.Pointer(csource))
+	cdestination := C.CString(destinationKeyref)
+	defer C.free(unsafe.Pointer(cdestination))
+
+	if C.secdat_sdk_mv(&prepared.raw, csource, cdestination) != 0 {
+		return ErrCallFailed
+	}
+	return nil
+}
+
+func Copy(options Options, sourceKeyref string, destinationKeyref string) error {
+	prepared := newCOptions(options)
+	defer prepared.free()
+
+	csource := C.CString(sourceKeyref)
+	defer C.free(unsafe.Pointer(csource))
+	cdestination := C.CString(destinationKeyref)
+	defer C.free(unsafe.Pointer(cdestination))
+
+	if C.secdat_sdk_cp(&prepared.raw, csource, cdestination) != 0 {
+		return ErrCallFailed
+	}
+	return nil
+}
+
+func Mask(options Options, keyref string) error {
+	prepared := newCOptions(options)
+	defer prepared.free()
+
+	ckeyref := C.CString(keyref)
+	defer C.free(unsafe.Pointer(ckeyref))
+
+	if C.secdat_sdk_mask(&prepared.raw, ckeyref) != 0 {
+		return ErrCallFailed
+	}
+	return nil
+}
+
+func Unmask(options Options, keyref string) error {
+	prepared := newCOptions(options)
+	defer prepared.free()
+
+	ckeyref := C.CString(keyref)
+	defer C.free(unsafe.Pointer(ckeyref))
+
+	if C.secdat_sdk_unmask(&prepared.raw, ckeyref) != 0 {
+		return ErrCallFailed
+	}
+	return nil
+}
+
+func Unlock(options Options) error {
+	prepared := newCOptions(options)
+	defer prepared.free()
+
+	if C.secdat_sdk_unlock(&prepared.raw) != 0 {
+		return ErrCallFailed
+	}
+	return nil
+}
+
+func Lock(options Options) error {
+	prepared := newCOptions(options)
+	defer prepared.free()
+
+	if C.secdat_sdk_lock(&prepared.raw) != 0 {
+		return ErrCallFailed
+	}
+	return nil
+}
+
 func Exists(options Options, keyref string) (bool, error) {
 	prepared := newCOptions(options)
 	defer prepared.free()

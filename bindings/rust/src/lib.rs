@@ -39,6 +39,21 @@ extern "C" {
         value_length: usize,
         unsafe_store: c_int,
     ) -> c_int;
+    fn secdat_sdk_rm(options: *const RawOptions, keyref: *const c_char, ignore_missing: c_int) -> c_int;
+    fn secdat_sdk_mv(
+        options: *const RawOptions,
+        source_keyref: *const c_char,
+        destination_keyref: *const c_char,
+    ) -> c_int;
+    fn secdat_sdk_cp(
+        options: *const RawOptions,
+        source_keyref: *const c_char,
+        destination_keyref: *const c_char,
+    ) -> c_int;
+    fn secdat_sdk_mask(options: *const RawOptions, keyref: *const c_char) -> c_int;
+    fn secdat_sdk_unmask(options: *const RawOptions, keyref: *const c_char) -> c_int;
+    fn secdat_sdk_unlock(options: *const RawOptions) -> c_int;
+    fn secdat_sdk_lock(options: *const RawOptions) -> c_int;
     fn secdat_sdk_exists(
         options: *const RawOptions,
         keyref: *const c_char,
@@ -170,6 +185,83 @@ pub fn set(options: &Options, keyref: &str, value: &[u8], unsafe_store: bool) ->
             i32::from(unsafe_store),
         )
     };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+    Ok(())
+}
+
+pub fn remove(options: &Options, keyref: &str, ignore_missing: bool) -> Result<(), Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let keyref = CString::new(keyref).map_err(|_| Error::invalid_string())?;
+
+    let status = unsafe { secdat_sdk_rm(&prepared.raw, keyref.as_ptr(), i32::from(ignore_missing)) };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+    Ok(())
+}
+
+pub fn mv(options: &Options, source_keyref: &str, destination_keyref: &str) -> Result<(), Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let source_keyref = CString::new(source_keyref).map_err(|_| Error::invalid_string())?;
+    let destination_keyref = CString::new(destination_keyref).map_err(|_| Error::invalid_string())?;
+
+    let status = unsafe { secdat_sdk_mv(&prepared.raw, source_keyref.as_ptr(), destination_keyref.as_ptr()) };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+    Ok(())
+}
+
+pub fn cp(options: &Options, source_keyref: &str, destination_keyref: &str) -> Result<(), Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let source_keyref = CString::new(source_keyref).map_err(|_| Error::invalid_string())?;
+    let destination_keyref = CString::new(destination_keyref).map_err(|_| Error::invalid_string())?;
+
+    let status = unsafe { secdat_sdk_cp(&prepared.raw, source_keyref.as_ptr(), destination_keyref.as_ptr()) };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+    Ok(())
+}
+
+pub fn mask(options: &Options, keyref: &str) -> Result<(), Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let keyref = CString::new(keyref).map_err(|_| Error::invalid_string())?;
+
+    let status = unsafe { secdat_sdk_mask(&prepared.raw, keyref.as_ptr()) };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+    Ok(())
+}
+
+pub fn unmask(options: &Options, keyref: &str) -> Result<(), Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let keyref = CString::new(keyref).map_err(|_| Error::invalid_string())?;
+
+    let status = unsafe { secdat_sdk_unmask(&prepared.raw, keyref.as_ptr()) };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+    Ok(())
+}
+
+pub fn unlock(options: &Options) -> Result<(), Error> {
+    let prepared = PreparedOptions::new(options)?;
+
+    let status = unsafe { secdat_sdk_unlock(&prepared.raw) };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+    Ok(())
+}
+
+pub fn lock(options: &Options) -> Result<(), Error> {
+    let prepared = PreparedOptions::new(options)?;
+
+    let status = unsafe { secdat_sdk_lock(&prepared.raw) };
     if status != 0 {
         return Err(Error::failed());
     }

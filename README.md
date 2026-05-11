@@ -5,6 +5,7 @@ Minimal C implementation of the secdat secure local secret store.
 Current status:
 
 - requirements and design are documented in `docs/secdat-spec.md`
+- release and publish workflow is documented in `docs/release-workflow.md`
 - repository-local coding workflow and project rules are documented in `.github/copilot-instructions.md`
 - autotools support is available through `configure.ac` and `Makefile.am`
 - gettext-based localization is wired in for user-facing CLI messages
@@ -44,11 +45,16 @@ The first SDK surface is intentionally small:
 
 - `secdat_sdk_get()` for binary-safe reads
 - `secdat_sdk_set()` for binary-safe writes
+- `secdat_sdk_rm()` for deletes with optional ignore-missing behavior
+- `secdat_sdk_mv()` and `secdat_sdk_cp()` for key moves and copies
+- `secdat_sdk_mask()` and `secdat_sdk_unmask()` for domain-local tombstones
+- `secdat_sdk_unlock()` and `secdat_sdk_lock()` for session control
 - `secdat_sdk_exists()` for presence checks
 - `secdat_sdk_collect_status()` for the current domain summary
 - `secdat_sdk_free()` for buffers returned by the library
 
 The public header is [src/secdat-sdk.h](src/secdat-sdk.h). Minimal bindings live under [bindings](bindings): Python uses `ctypes`, Go uses `cgo`, Rust uses `extern "C"`, and Node uses a small N-API addon.
+Release tagging and package publication steps are captured in [docs/release-workflow.md](docs/release-workflow.md).
 
 Typical native consumers can compile and run against the build tree directly during development:
 

@@ -72,6 +72,45 @@ def _load_library(library_path: str | None) -> ctypes.CDLL:
     ]
     library.secdat_sdk_set.restype = ctypes.c_int
 
+    library.secdat_sdk_rm.argtypes = [
+        ctypes.POINTER(_Options),
+        ctypes.c_char_p,
+        ctypes.c_int,
+    ]
+    library.secdat_sdk_rm.restype = ctypes.c_int
+
+    library.secdat_sdk_mv.argtypes = [
+        ctypes.POINTER(_Options),
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+    ]
+    library.secdat_sdk_mv.restype = ctypes.c_int
+
+    library.secdat_sdk_cp.argtypes = [
+        ctypes.POINTER(_Options),
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+    ]
+    library.secdat_sdk_cp.restype = ctypes.c_int
+
+    library.secdat_sdk_mask.argtypes = [
+        ctypes.POINTER(_Options),
+        ctypes.c_char_p,
+    ]
+    library.secdat_sdk_mask.restype = ctypes.c_int
+
+    library.secdat_sdk_unmask.argtypes = [
+        ctypes.POINTER(_Options),
+        ctypes.c_char_p,
+    ]
+    library.secdat_sdk_unmask.restype = ctypes.c_int
+
+    library.secdat_sdk_unlock.argtypes = [ctypes.POINTER(_Options)]
+    library.secdat_sdk_unlock.restype = ctypes.c_int
+
+    library.secdat_sdk_lock.argtypes = [ctypes.POINTER(_Options)]
+    library.secdat_sdk_lock.restype = ctypes.c_int
+
     library.secdat_sdk_exists.argtypes = [
         ctypes.POINTER(_Options),
         ctypes.c_char_p,
@@ -119,6 +158,48 @@ class Secdat:
         result = self._lib.secdat_sdk_set(ctypes.byref(options), keyref.encode(), buffer, len(payload), int(unsafe_store))
         if result != 0:
             raise SecdatError(f"secdat_sdk_set failed with status {result}; see stderr for details")
+
+    def rm(self, keyref: str, *, dir: str | None = None, domain: str | None = None, store: str | None = None, ignore_missing: bool = False) -> None:
+        options = self._options(dir=dir, domain=domain, store=store)
+        result = self._lib.secdat_sdk_rm(ctypes.byref(options), keyref.encode(), int(ignore_missing))
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_rm failed with status {result}; see stderr for details")
+
+    def mv(self, source_keyref: str, destination_keyref: str, *, dir: str | None = None, domain: str | None = None, store: str | None = None) -> None:
+        options = self._options(dir=dir, domain=domain, store=store)
+        result = self._lib.secdat_sdk_mv(ctypes.byref(options), source_keyref.encode(), destination_keyref.encode())
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_mv failed with status {result}; see stderr for details")
+
+    def cp(self, source_keyref: str, destination_keyref: str, *, dir: str | None = None, domain: str | None = None, store: str | None = None) -> None:
+        options = self._options(dir=dir, domain=domain, store=store)
+        result = self._lib.secdat_sdk_cp(ctypes.byref(options), source_keyref.encode(), destination_keyref.encode())
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_cp failed with status {result}; see stderr for details")
+
+    def mask(self, keyref: str, *, dir: str | None = None, domain: str | None = None, store: str | None = None) -> None:
+        options = self._options(dir=dir, domain=domain, store=store)
+        result = self._lib.secdat_sdk_mask(ctypes.byref(options), keyref.encode())
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_mask failed with status {result}; see stderr for details")
+
+    def unmask(self, keyref: str, *, dir: str | None = None, domain: str | None = None, store: str | None = None) -> None:
+        options = self._options(dir=dir, domain=domain, store=store)
+        result = self._lib.secdat_sdk_unmask(ctypes.byref(options), keyref.encode())
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_unmask failed with status {result}; see stderr for details")
+
+    def unlock(self, *, dir: str | None = None, domain: str | None = None, store: str | None = None) -> None:
+        options = self._options(dir=dir, domain=domain, store=store)
+        result = self._lib.secdat_sdk_unlock(ctypes.byref(options))
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_unlock failed with status {result}; see stderr for details")
+
+    def lock(self, *, dir: str | None = None, domain: str | None = None, store: str | None = None) -> None:
+        options = self._options(dir=dir, domain=domain, store=store)
+        result = self._lib.secdat_sdk_lock(ctypes.byref(options))
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_lock failed with status {result}; see stderr for details")
 
     def exists(self, keyref: str, *, dir: str | None = None, domain: str | None = None, store: str | None = None) -> bool:
         options = self._options(dir=dir, domain=domain, store=store)
