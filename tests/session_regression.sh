@@ -62,6 +62,12 @@ def assert_contains(output, fragment, context):
     if fragment not in output:
         fail(f"{context}: missing fragment {fragment!r} in {output!r}")
 
+
+def assert_contains_any(output, fragments, context):
+    if any(fragment in output for fragment in fragments):
+        return
+    fail(f"{context}: missing any of {fragments!r} in {output!r}")
+
 def normalize_spaces(text):
     return re.sub(r"[ \t]+", " ", text)
 
@@ -468,8 +474,18 @@ for args, expected in [
 ]:
     rc, stdout, stderr = run(args)
     output = stdout + stderr
-    if rc != 2 or expected not in output:
+    if expected.startswith(f"Try: {bin_path} help "):
+        expected_variants = [expected]
+        relative_bin_path = os.path.relpath(bin_path, Path.cwd())
+        if not relative_bin_path.startswith("."):
+            relative_bin_path = f"./{relative_bin_path}"
+        expected_variants.append(expected.replace(bin_path, relative_bin_path, 1))
+    else:
+        expected_variants = [expected]
+
+    if rc != 2:
         fail(f"recovery hint check failed for {args}: rc={rc} output={output!r}")
+    assert_contains_any(output, expected_variants, f"recovery hint check failed for {args}")
 
 rc, stdout, stderr = run([bin_path, "store", "create"])
 output = stdout + stderr

@@ -1,5 +1,7 @@
 #include "store.h"
 
+#include "secdat-sdk.h"
+
 #include "domain.h"
 
 #include "i18n.h"
@@ -234,7 +236,23 @@ static int secdat_load_resolved_plaintext(
     int *unsafe_store,
     const struct secdat_key_access_options *access_options
 );
+static int secdat_resolve_entry_path(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    char *buffer,
+    size_t size
+);
 static int secdat_store_plaintext(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store
+);
+static int secdat_store_plaintext_for_chain(
+    const struct secdat_domain_chain *chain,
     const char *domain_id,
     const char *store_name,
     const char *key,
@@ -671,6 +689,14 @@ static int secdat_canonicalize_directory_path(const char *input, char *buffer, s
 static const char *secdat_cli_domain_base(const struct secdat_cli *cli)
 {
     return cli->domain != NULL ? cli->domain : cli->dir;
+}
+
+static const char *secdat_sdk_domain_base(const struct secdat_sdk_options *options)
+{
+    if (options == NULL) {
+        return NULL;
+    }
+    return options->domain != NULL ? options->domain : options->dir;
 }
 
 static int secdat_default_domain_write_error(void)
@@ -5167,6 +5193,172 @@ int secdat_collect_user_global_status_summary(struct secdat_domain_status_summar
     struct secdat_domain_chain chain = {0};
 
     return secdat_collect_domain_status_summary_for_chain(&chain, summary);
+}
+
+int secdat_sdk_collect_status(
+    const struct secdat_sdk_options *options,
+    struct secdat_sdk_status_summary *summary
+)
+{
+    struct secdat_domain_status_summary internal_summary;
+    struct secdat_domain_chain chain = {0};
+    const char *domain_base;
+    int status;
+
+    if (summary == NULL) {
+        return 1;
+    }
+
+    memset(summary, 0, sizeof(*summary));
+    domain_base = secdat_sdk_domain_base(options);
+    if (options != NULL && options->domain != NULL) {
+        if (secdat_domain_resolve_chain(domain_base, &chain) != 0) {
+            return 1;
+        }
+        status = secdat_collect_domain_status_summary_for_chain(&chain, &internal_summary);
+        secdat_domain_chain_free(&chain);
+    } else {
+        status = secdat_collect_domain_status_summary(domain_base, &internal_summary);
+    }
+    if (status != 0) {
+        return status;
+    }
+
+    summary->store_count = internal_summary.store_count;
+    summary->visible_key_count = internal_summary.visible_key_count;
+    summary->wrapped_master_key_present = internal_summary.wrapped_master_key_present;
+    summary->key_source = (enum secdat_sdk_key_source_type)internal_summary.key_source;
+    summary->effective_source = (enum secdat_sdk_effective_source_type)internal_summary.effective_source;
+    summary->session_expires_at = internal_summary.session_expires_at;
+    memcpy(summary->related_domain_root, internal_summary.related_domain_root, sizeof(summary->related_domain_root));
+    return 0;
+}
+
+int secdat_sdk_exists(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    int *exists_out
+)
+{
+    struct secdat_key_reference reference;
+    struct secdat_domain_chain chain = {0};
+    char entry_path[PATH_MAX];
+    int status;
+
+    if (keyref == NULL || exists_out == NULL) {
+        return 1;
+    }
+
+    *exists_out = 0;
+    if (secdat_parse_key_reference(keyref, secdat_sdk_domain_base(options), options != NULL ? options->store : NULL, &reference) != 0) {
+        return 1;
+    }
+    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+        return 1;
+    }
+
+    status = secdat_resolve_entry_path(&chain, reference.store_value, reference.key, entry_path, sizeof(entry_path));
+    secdat_domain_chain_free(&chain);
+    *exists_out = status == 0;
+    return 0;
+}
+
+int secdat_sdk_get(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    unsigned char **value_out,
+    size_t *value_length_out,
+    int *unsafe_store_out
+)
+{
+    struct secdat_key_reference reference;
+    struct secdat_domain_chain chain = {0};
+    unsigned char *plaintext = NULL;
+    size_t plaintext_length = 0;
+    int unsafe_store = 0;
+
+    if (keyref == NULL || value_out == NULL || value_length_out == NULL) {
+        return 1;
+    }
+
+    *value_out = NULL;
+    *value_length_out = 0;
+    if (unsafe_store_out != NULL) {
+        *unsafe_store_out = 0;
+    }
+
+    if (secdat_parse_key_reference(keyref, secdat_sdk_domain_base(options), options != NULL ? options->store : NULL, &reference) != 0) {
+        return 1;
+    }
+    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+        return 1;
+    }
+    if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL) != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+
+    secdat_domain_chain_free(&chain);
+    *value_out = plaintext;
+    *value_length_out = plaintext_length;
+    if (unsafe_store_out != NULL) {
+        *unsafe_store_out = unsafe_store;
+    }
+    return 0;
+}
+
+int secdat_sdk_set(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    const unsigned char *value,
+    size_t value_length,
+    int unsafe_store
+)
+{
+    struct secdat_key_reference reference;
+    struct secdat_domain_chain chain = {0};
+    char current_domain_id[PATH_MAX];
+    unsigned char *plaintext = NULL;
+    int status;
+
+    if (keyref == NULL || (value == NULL && value_length != 0)) {
+        return 1;
+    }
+
+    if (secdat_parse_key_reference(keyref, secdat_sdk_domain_base(options), options != NULL ? options->store : NULL, &reference) != 0) {
+        return 1;
+    }
+    if (secdat_domain_resolve_current(reference.domain_value, current_domain_id, sizeof(current_domain_id)) != 0) {
+        return 1;
+    }
+    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+        return 1;
+    }
+    if (secdat_require_mutable_session_chain(&chain, "set") != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+
+    plaintext = malloc(value_length == 0 ? 1 : value_length);
+    if (plaintext == NULL) {
+        secdat_domain_chain_free(&chain);
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    if (value_length > 0) {
+        memcpy(plaintext, value, value_length);
+    }
+
+    status = secdat_store_plaintext_for_chain(&chain, current_domain_id, reference.store_value, reference.key, plaintext, value_length, unsafe_store);
+    secdat_domain_chain_free(&chain);
+    secdat_secure_clear(plaintext, value_length);
+    free(plaintext);
+    return status;
+}
+
+void secdat_sdk_free(void *pointer)
+{
+    free(pointer);
 }
 
 static int secdat_write_secret_bundle_file(

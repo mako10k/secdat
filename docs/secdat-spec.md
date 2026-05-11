@@ -14,6 +14,12 @@ This document consolidates the initial requirements, defines the product and sec
 
 ## 2. Requirement Summary
 
+### 2.0 SDK and FFI Layer
+
+In addition to the CLI, `secdat` may expose a small stable C ABI for in-process use by other languages. That SDK layer should stay thin, reuse the same domain and store semantics as the CLI, and avoid inventing a second secret-management model.
+
+Bindings for higher-level languages should prefer this C ABI over reimplementing store logic independently.
+
 ### 2.1 Target CLI
 
 The intended command set is:

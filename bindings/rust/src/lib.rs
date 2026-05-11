@@ -1,0 +1,221 @@
+use std::ffi::{CStr, CString};
+use std::os::raw::{c_char, c_int, c_uchar, c_void};
+use std::ptr;
+use std::slice;
+
+const PATH_MAX: usize = 4096;
+
+#[repr(C)]
+struct RawOptions {
+    dir: *const c_char,
+    domain: *const c_char,
+    store: *const c_char,
+}
+
+#[repr(C)]
+struct RawStatusSummary {
+    store_count: usize,
+    visible_key_count: usize,
+    wrapped_master_key_present: c_int,
+    key_source: c_int,
+    effective_source: c_int,
+    session_expires_at: i64,
+    related_domain_root: [c_char; PATH_MAX],
+}
+
+#[link(name = "secdat")]
+extern "C" {
+    fn secdat_sdk_get(
+        options: *const RawOptions,
+        keyref: *const c_char,
+        value_out: *mut *mut c_uchar,
+        value_length_out: *mut usize,
+        unsafe_store_out: *mut c_int,
+    ) -> c_int;
+    fn secdat_sdk_set(
+        options: *const RawOptions,
+        keyref: *const c_char,
+        value: *const c_uchar,
+        value_length: usize,
+        unsafe_store: c_int,
+    ) -> c_int;
+    fn secdat_sdk_exists(
+        options: *const RawOptions,
+        keyref: *const c_char,
+        exists_out: *mut c_int,
+    ) -> c_int;
+    fn secdat_sdk_collect_status(options: *const RawOptions, summary: *mut RawStatusSummary) -> c_int;
+    fn secdat_sdk_free(pointer: *mut c_void);
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Options {
+    pub dir: Option<String>,
+    pub domain: Option<String>,
+    pub store: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StatusSummary {
+    pub store_count: usize,
+    pub visible_key_count: usize,
+    pub wrapped_master_key_present: bool,
+    pub key_source: i32,
+    pub effective_source: i32,
+    pub session_expires_at: i64,
+    pub related_domain_root: String,
+}
+
+#[derive(Debug)]
+pub struct Error {
+    message: &'static str,
+}
+
+impl Error {
+    fn failed() -> Self {
+        Self {
+            message: "libsecdat call failed; see stderr for details",
+        }
+    }
+
+    fn invalid_string() -> Self {
+        Self {
+            message: "string contains interior NUL byte",
+        }
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.message)
+    }
+}
+
+impl std::error::Error for Error {}
+
+struct PreparedOptions {
+    raw: RawOptions,
+    _dir: Option<CString>,
+    _domain: Option<CString>,
+    _store: Option<CString>,
+}
+
+impl PreparedOptions {
+    fn new(options: &Options) -> Result<Self, Error> {
+        let dir = to_cstring(&options.dir)?;
+        let domain = to_cstring(&options.domain)?;
+        let store = to_cstring(&options.store)?;
+        Ok(Self {
+            raw: RawOptions {
+                dir: dir.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+                domain: domain.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+                store: store.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            },
+            _dir: dir,
+            _domain: domain,
+            _store: store,
+        })
+    }
+}
+
+fn to_cstring(value: &Option<String>) -> Result<Option<CString>, Error> {
+    match value {
+        Some(value) => CString::new(value.as_str()).map(Some).map_err(|_| Error::invalid_string()),
+        None => Ok(None),
+    }
+}
+
+pub fn get(options: &Options, keyref: &str) -> Result<(Vec<u8>, bool), Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let keyref = CString::new(keyref).map_err(|_| Error::invalid_string())?;
+    let mut value = ptr::null_mut();
+    let mut value_length = 0usize;
+    let mut unsafe_store = 0;
+
+    let status = unsafe {
+        secdat_sdk_get(
+            &prepared.raw,
+            keyref.as_ptr(),
+            &mut value,
+            &mut value_length,
+            &mut unsafe_store,
+        )
+    };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+
+    let bytes = unsafe { slice::from_raw_parts(value, value_length).to_vec() };
+    unsafe {
+        secdat_sdk_free(value.cast::<c_void>());
+    }
+    Ok((bytes, unsafe_store != 0))
+}
+
+pub fn set(options: &Options, keyref: &str, value: &[u8], unsafe_store: bool) -> Result<(), Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let keyref = CString::new(keyref).map_err(|_| Error::invalid_string())?;
+    let payload = if value.is_empty() {
+        ptr::null()
+    } else {
+        value.as_ptr()
+    };
+
+    let status = unsafe {
+        secdat_sdk_set(
+            &prepared.raw,
+            keyref.as_ptr(),
+            payload,
+            value.len(),
+            i32::from(unsafe_store),
+        )
+    };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+    Ok(())
+}
+
+pub fn exists(options: &Options, keyref: &str) -> Result<bool, Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let keyref = CString::new(keyref).map_err(|_| Error::invalid_string())?;
+    let mut exists = 0;
+
+    let status = unsafe { secdat_sdk_exists(&prepared.raw, keyref.as_ptr(), &mut exists) };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+    Ok(exists != 0)
+}
+
+pub fn collect_status(options: &Options) -> Result<StatusSummary, Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let mut summary = RawStatusSummary {
+        store_count: 0,
+        visible_key_count: 0,
+        wrapped_master_key_present: 0,
+        key_source: 0,
+        effective_source: 0,
+        session_expires_at: 0,
+        related_domain_root: [0; PATH_MAX],
+    };
+
+    let status = unsafe { secdat_sdk_collect_status(&prepared.raw, &mut summary) };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+
+    let related_domain_root = unsafe { CStr::from_ptr(summary.related_domain_root.as_ptr()) }
+        .to_string_lossy()
+        .into_owned();
+
+    Ok(StatusSummary {
+        store_count: summary.store_count,
+        visible_key_count: summary.visible_key_count,
+        wrapped_master_key_present: summary.wrapped_master_key_present != 0,
+        key_source: summary.key_source,
+        effective_source: summary.effective_source,
+        session_expires_at: summary.session_expires_at,
+        related_domain_root,
+    })
+}

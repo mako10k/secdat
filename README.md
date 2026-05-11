@@ -34,6 +34,28 @@ The session-agent path relies on normal OS user separation and private XDG runti
 make
 ```
 
+The build now also produces `src/.libs/libsecdat.so` and installs the public C header `src/secdat-sdk.h` as `secdat-sdk.h`.
+
+## SDK
+
+`libsecdat` exposes a small C ABI for embedding the existing secret-store behavior without shelling out through the CLI parser.
+
+The first SDK surface is intentionally small:
+
+- `secdat_sdk_get()` for binary-safe reads
+- `secdat_sdk_set()` for binary-safe writes
+- `secdat_sdk_exists()` for presence checks
+- `secdat_sdk_collect_status()` for the current domain summary
+- `secdat_sdk_free()` for buffers returned by the library
+
+The public header is [src/secdat-sdk.h](src/secdat-sdk.h). Minimal bindings live under [bindings](bindings): Python uses `ctypes`, Go uses `cgo`, Rust uses `extern "C"`, and Node uses a small N-API addon.
+
+Typical native consumers can compile and run against the build tree directly during development:
+
+```sh
+cc -I./src example.c -L./src/.libs -lsecdat -Wl,-rpath,"$PWD/src/.libs"
+```
+
 ## Run
 
 ```sh

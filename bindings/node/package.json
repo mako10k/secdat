@@ -1,0 +1,13 @@
+{
+  "name": "secdat-sdk-node",
+  "version": "0.1.0",
+  "private": true,
+  "gypfile": true,
+  "main": "index.js",
+  "scripts": {
+    "build": "node-gyp rebuild"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.1.0"
+  }
+}

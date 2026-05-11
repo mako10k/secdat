@@ -110,6 +110,10 @@ if rc != 0 or stderr != "":
     fail(f"export current view failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, 'eval "export CHILD_TOKEN=$(', "child export command")
 quoted_paths = {shlex.quote(bin_path), shlex.quote(str(Path(bin_path).resolve()))}
+relative_bin_path = os.path.relpath(bin_path, Path.cwd())
+if not relative_bin_path.startswith("."):
+    relative_bin_path = f"./{relative_bin_path}"
+quoted_paths.add(shlex.quote(relative_bin_path))
 if not any(candidate in stdout for candidate in quoted_paths):
     fail(f"quoted command path: missing one of {sorted(quoted_paths)!r} in [{stdout}]")
 assert_contains(stdout, "get 'CHILD_TOKEN' --shellescaped)\"", "child local key line")

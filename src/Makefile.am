@@ -6,14 +6,23 @@ AM_CPPFLAGS = \
 	-DSECDAT_BUILD_ID=\"$(SECDAT_BUILD_ID)\" \
 	$(OPENSSL_CFLAGS)
 
-bin_PROGRAMS = secdat
-secdat_LDADD = $(OPENSSL_LIBS)
-secdat_SOURCES = \
-	main.c \
+include_HEADERS = secdat-sdk.h
+
+lib_LTLIBRARIES = libsecdat.la
+libsecdat_la_LDFLAGS = -version-info 0:0:0
+libsecdat_la_LIBADD = $(OPENSSL_LIBS)
+libsecdat_la_SOURCES = \
 	cli.c \
 	cli.h \
 	domain.c \
 	domain.h \
 	i18n.h \
+	secdat-sdk.h \
 	store.c \
 	store.h
+
+bin_PROGRAMS = secdat
+secdat_LDADD = libsecdat.la
+secdat_SOURCES = \
+	main.c \
+	i18n.h
