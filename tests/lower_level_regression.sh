@@ -136,6 +136,19 @@ if rc != 0 or stderr != "":
 assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "non-tty domain ls header")
 assert_contains(stdout, f"{long_named_domain}\t", "non-tty domain retains full path")
 
+rc, stdout, stderr = run(scoped(["set", "ORPHANED_KEY", "orphaned-value"], sibling_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"sibling set before orphaning failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+sibling_domain.rmdir()
+
+rc, stdout, stderr = run([bin_path, "--dir", str(work_root), "domain", "ls", "-l", "--descendants"])
+if rc != 0 or stderr != "":
+    fail(f"domain ls -l with orphaned root failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, f"{sibling_domain}\torphaned\torphaned\t-\torphaned-domain\t1\t1\tpresent", "domain ls orphaned row")
+
+sibling_domain.mkdir(parents=True, exist_ok=True)
+
 rc, transcript = run_pty([bin_path, "--dir", str(work_root), "domain", "ls", "-l"])
 if rc != 0:
     fail(f"tty domain ls -l failed: rc={rc} transcript={transcript!r}")

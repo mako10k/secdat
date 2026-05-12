@@ -5199,6 +5199,20 @@ cleanup:
     return status;
 }
 
+static int secdat_registered_root_is_directory(const char *registered_root)
+{
+    struct stat status;
+
+    if (stat(registered_root, &status) == 0) {
+        return S_ISDIR(status.st_mode) ? 1 : 0;
+    }
+    if (errno == ENOENT || errno == ENOTDIR) {
+        return 0;
+    }
+    fprintf(stderr, _("failed to stat path: %s\n"), registered_root);
+    return -1;
+}
+
 int secdat_collect_domain_status_summary(const char *dir_override, struct secdat_domain_status_summary *summary)
 {
     struct secdat_domain_chain chain = {0};
@@ -5209,6 +5223,31 @@ int secdat_collect_domain_status_summary(const char *dir_override, struct secdat
     }
 
     status = secdat_collect_domain_status_summary_for_chain(&chain, summary);
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
+int secdat_collect_registered_domain_status_summary(const char *registered_root, struct secdat_domain_status_summary *summary)
+{
+    struct secdat_domain_chain chain = {0};
+    int directory_status;
+    int status;
+
+    directory_status = secdat_registered_root_is_directory(registered_root);
+    if (directory_status < 0) {
+        return 1;
+    }
+    if (directory_status > 0) {
+        return secdat_collect_domain_status_summary(registered_root, summary);
+    }
+    if (secdat_domain_resolve_registered_root_chain(registered_root, &chain) != 0) {
+        return 1;
+    }
+
+    status = secdat_collect_domain_status_summary_for_chain(&chain, summary);
+    if (status == 0) {
+        summary->orphaned_domain = 1;
+    }
     secdat_domain_chain_free(&chain);
     return status;
 }

@@ -366,7 +366,8 @@ To make the requested behavior implementable, the following are treated as norma
 - when `domain ls -l` writes to a terminal, it may render a human-oriented grouped view that lifts the shared parent directory into a heading and wraps long domain labels before the metadata columns
 - non-terminal `domain ls -l` output must keep the tab-separated full-path rows so scripts can continue to consume the current layout
 - `secdat [--dir DIR] domain ls -l` adds the key source, effective state, remaining unlock time, effective-state source, current-domain store count, visible key count, and wrapped-master-key presence for each listed domain
-- the long-format effective-state source must distinguish `local-unlock`, `inherited-unlock-from:DOMAIN`, `local-lock`, `inherited-lock-from:DOMAIN`, and plain `locked`
+- when a registered domain root no longer exists, `domain ls -l` must keep listing that row and mark its key source and effective state as `orphaned` with `orphaned-domain` as the effective-state source
+- the long-format effective-state source must distinguish `local-unlock`, `inherited-unlock-from:DOMAIN`, `local-lock`, `inherited-lock-from:DOMAIN`, plain `locked`, and `orphaned-domain`
 - `secdat [--dir DIR] domain status` reports the resolved current domain used by normal store commands
 - `secdat [--domain DIR] ...` uses that exact registered domain root as the current domain context
 - `domain status` reports whether that resolution came from `--dir` or the current working directory

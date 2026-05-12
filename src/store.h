@@ -26,6 +26,7 @@ struct secdat_domain_status_summary {
 	size_t store_count;
 	size_t visible_key_count;
 	int wrapped_master_key_present;
+	int orphaned_domain;
 	enum secdat_key_source_type key_source;
 	enum secdat_effective_source_type effective_source;
 	time_t session_expires_at;
@@ -34,6 +35,7 @@ struct secdat_domain_status_summary {
 
 int secdat_run_command(const struct secdat_cli *cli);
 int secdat_collect_domain_status_summary(const char *dir_override, struct secdat_domain_status_summary *summary);
+int secdat_collect_registered_domain_status_summary(const char *registered_root, struct secdat_domain_status_summary *summary);
 int secdat_collect_user_global_status_summary(struct secdat_domain_status_summary *summary);
 int secdat_require_writable_session_access(const char *dir_override, const char *command_name);
 

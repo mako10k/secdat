@@ -293,6 +293,11 @@ static int secdat_format_state_source(
     struct secdat_domain_ls_row *row
 )
 {
+	if (summary->orphaned_domain) {
+		row->state_source = _("orphaned-domain");
+		return 0;
+	}
+
     switch (summary->effective_source) {
     case SECDAT_EFFECTIVE_SOURCE_ENVIRONMENT:
         row->state_source = _("environment");
@@ -344,6 +349,12 @@ static int secdat_fill_domain_ls_row(
     wrapped_label = summary->wrapped_master_key_present ? _("wrapped master key: present") : _("wrapped master key: absent");
     wrapped_separator = strstr(wrapped_label, ": ");
     row->wrapped = wrapped_separator != NULL ? wrapped_separator + 2 : wrapped_label;
+
+	if (summary->orphaned_domain) {
+		row->key_source = _("orphaned");
+		row->effective_state = _("orphaned");
+		return secdat_format_state_source(summary, row);
+	}
 
     switch (summary->key_source) {
     case SECDAT_KEY_SOURCE_ENVIRONMENT:
@@ -1209,6 +1220,52 @@ int secdat_domain_resolve_chain(const char *dir_override, struct secdat_domain_c
     return 0;
 }
 
+int secdat_domain_resolve_registered_root_chain(const char *registered_root, struct secdat_domain_chain *chain)
+{
+    char current_path[PATH_MAX];
+    char domain_id[PATH_MAX];
+    struct secdat_string_list ids = {0};
+    int lookup_status;
+
+    chain->ids = NULL;
+    chain->count = 0;
+    chain->current_path[0] = '\0';
+
+    if (registered_root == NULL || registered_root[0] != '/') {
+        fprintf(stderr, _("failed to resolve directory: %s\n"), registered_root == NULL ? "" : registered_root);
+        return 1;
+    }
+    if (strlen(registered_root) >= sizeof(current_path)) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+
+    strcpy(current_path, registered_root);
+    strcpy(chain->current_path, registered_root);
+
+    for (;;) {
+        lookup_status = secdat_lookup_domain_id_for_root(current_path, domain_id, sizeof(domain_id));
+        if (lookup_status == 0) {
+            if (secdat_string_list_append(&ids, domain_id) != 0) {
+                secdat_string_list_free(&ids);
+                return 1;
+            }
+        } else if (lookup_status != 1) {
+            secdat_string_list_free(&ids);
+            return 1;
+        }
+
+        if (strcmp(current_path, "/") == 0) {
+            break;
+        }
+        secdat_parent_path(current_path);
+    }
+
+    chain->ids = ids.items;
+    chain->count = ids.count;
+    return 0;
+}
+
 int secdat_domain_root_path(const char *domain_id, char *buffer, size_t size)
 {
     char domain_root[PATH_MAX];
@@ -1660,7 +1717,7 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
             continue;
         }
 
-        if (secdat_collect_domain_status_summary(roots.items[index], &summary) != 0) {
+        if (secdat_collect_registered_domain_status_summary(roots.items[index], &summary) != 0) {
             secdat_domain_chain_free(&current_chain);
             secdat_string_list_free(&inherited_roots);
             secdat_string_list_free(&roots);
