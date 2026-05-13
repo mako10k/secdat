@@ -56,6 +56,13 @@ make install
 PKG_CONFIG_PATH=/tmp/secdat-prefix/lib/pkgconfig pkg-config --cflags --libs libsecdat
 ```
 
+For a narrower release-like container build, you can also use the build-only recipe introduced for reproducible environments:
+
+```sh
+docker build -f .devcontainer/Dockerfile.build --build-arg BASE_IMAGE=debian:bookworm-slim .
+docker build -f .devcontainer/Dockerfile.build --build-arg BASE_IMAGE=amazonlinux:2023 .
+```
+
 ## Binding publication notes
 
 ### Python

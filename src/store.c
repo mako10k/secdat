@@ -3671,18 +3671,18 @@ static int secdat_read_secret_from_tty(const char *prompt, char *buffer, size_t 
 
     new_settings = old_settings;
     new_settings.c_lflag &= ~(ECHO);
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_settings) != 0) {
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &new_settings) != 0) {
         fprintf(stderr, _("failed to update terminal settings\n"));
         return 1;
     }
 
     if (fgets(buffer, (int)size, stdin) == NULL) {
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_settings);
+        tcsetattr(STDIN_FILENO, TCSANOW, &old_settings);
         fprintf(stderr, _("failed to read passphrase\n"));
         return 1;
     }
 
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_settings) == 0) {
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &old_settings) == 0) {
         restored = 1;
     }
     fprintf(stderr, "\n");

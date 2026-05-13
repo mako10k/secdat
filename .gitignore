@@ -36,9 +36,11 @@ src/Makefile
 src/Makefile.in
 src/secdat
 bindings/python/__pycache__/
+bindings/python/*.egg-info/
 bindings/node/node_modules/
 bindings/node/build/
 bindings/rust/target/
+libsecdat.pc
 po/.locale/
 po/Makefile.in
 po/Makefile.in.in

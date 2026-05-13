@@ -1,0 +1,16 @@
+FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+COPY scripts/bootstrap-system.sh /usr/local/bin/secdat-bootstrap-system
+
+RUN chmod +x /usr/local/bin/secdat-bootstrap-system \
+    && /usr/local/bin/secdat-bootstrap-system --profile dev --install --assume-yes \
+    && sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
+    && sed -i 's/^# *\(ja_JP.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
+    && locale-gen \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+ENV LANGUAGE=en_US:en

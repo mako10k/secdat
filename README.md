@@ -30,10 +30,19 @@ The session-agent path relies on normal OS user separation and private XDG runti
 ## Bootstrap
 
 ```sh
-./autogen.sh
+./autogen.sh --profile build
 ./configure
 make
 ```
+
+For a fuller local setup, including language-binding toolchains and debugging/search tools, install the `dev` profile once:
+
+```sh
+sudo ./scripts/bootstrap-system.sh --profile dev --install --assume-yes
+./autogen.sh --profile dev --configure
+```
+
+The bootstrap helper supports Debian-family and Amazon Linux-family systems and can print or install either the narrow `build` profile or the fuller `dev` profile. The repository also ships a VS Code devcontainer and a separate build-only container recipe. See [docs/development-environment.md](docs/development-environment.md) for host setup, devcontainer usage, production-style container builds, and the recommended AI-assisted development tools.
 
 The build now also produces `src/.libs/libsecdat.so` and installs the public C header `src/secdat-sdk.h` as `secdat-sdk.h`.
 

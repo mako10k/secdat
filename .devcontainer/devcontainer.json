@@ -1,0 +1,31 @@
+{
+  "name": "secdat-dev",
+  "build": {
+    "dockerfile": "Dockerfile.dev",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspaces/secdat",
+  "remoteUser": "vscode",
+  "postCreateCommand": "./autogen.sh --profile dev --configure",
+  "postStartCommand": "git config --global --add safe.directory /workspaces/secdat",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "files.eol": "\n",
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "C_Cpp.default.configurationProvider": "ms-vscode.makefile-tools"
+      },
+      "extensions": [
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
+        "ms-vscode.cpptools-extension-pack",
+        "ms-vscode.makefile-tools",
+        "ms-python.python",
+        "golang.go",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "foxundermoon.shell-format"
+      ]
+    }
+  }
+}
