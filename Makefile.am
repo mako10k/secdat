@@ -9,8 +9,20 @@ install-data-local:
 	$(MKDIR_P) "$(DESTDIR)$(bashcompletiondir)"
 	$(INSTALL_DATA) "$(srcdir)/completions/secdat.bash" "$(DESTDIR)$(bashcompletiondir)/secdat"
 
+install-exec-local:
+	@if test -z "$(DESTDIR)" && command -v ldconfig >/dev/null 2>&1; then \
+		case "$(libdir)" in \
+			/lib*|/usr/lib*|/usr/local/lib*) ldconfig ;; \
+		esac; \
+	fi
+
 uninstall-local:
 	rm -f "$(DESTDIR)$(bashcompletiondir)/secdat"
+	@if test -z "$(DESTDIR)" && command -v ldconfig >/dev/null 2>&1; then \
+		case "$(libdir)" in \
+			/lib*|/usr/lib*|/usr/local/lib*) ldconfig ;; \
+		esac; \
+	fi
 
 all-local:
 	@set -e; \

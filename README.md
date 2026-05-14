@@ -267,7 +267,7 @@ The output is shell-ready text such as `eval "export API_TOKEN=$(./src/secdat ..
 
 For command injection into a child process, `exec` accepts repeated `--pattern` and `--pattern-exclude` filters. Include patterns are ORed together, and exclude patterns are applied afterward. `--env-map-sed EXPR` adds one sed-style environment-name remapping rule for `exec`; when present, only keys matched by the substitution are injected, and the replacement text becomes the environment variable name. The current minimal subset accepts one `s///` expression, with an optional leading `/ADDRESS/` filter, and supports `&` plus `\1` through `\9` in the replacement. As with sed, the delimiter after `s` may be any non-alphanumeric, non-backslash character, so forms like `s|...|...|` and `s#...#...#` also work. Use `--` before `CMD` when the command itself or its first argument starts with `-`.
 
-Bash completion source is in `completions/secdat.bash`, and `make install` installs it for automatic loading as `secdat` under the system bash-completion directory. `make install` also installs the command reference into the system manpath from `docs/secdat.1`.
+Bash completion source is in `completions/secdat.bash`, and `make install` installs it for automatic loading as `secdat` under the system bash-completion directory. `make install` also installs the command reference into the system manpath from `docs/secdat.1`. For direct system installs into standard library directories such as `/usr/local/lib`, the install step also refreshes the dynamic linker cache with `ldconfig` when available so the installed `secdat` binary can resolve `libsecdat` immediately.
 
 You can also save the currently visible secrets from one view and load them into another domain/store context:
 
@@ -331,4 +331,3 @@ Help is also available per command:
 1. Add pinentry or askpass support for non-terminal passphrase entry.
 2. Revisit wrapped-key passphrase KDF cost and configurability while keeping compatibility with existing wrapped keys.
 3. Expose more structured status output for scripts if a machine-readable mode becomes necessary.
-

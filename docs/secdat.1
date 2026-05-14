@@ -222,7 +222,15 @@ installs it for automatic loading as
 .B secdat
 under the system bash-completion directory. The man page is installed into the normal
 .B man1
-path.
+path. For direct system installs into standard library directories such as
+.B /usr/local/lib ,
+the install step also refreshes the dynamic linker cache with
+.B ldconfig
+when available so the installed
+.B secdat
+binary can resolve
+.B libsecdat
+immediately.
 .SH PASSPHRASE SOURCES
 By default,
 .B unlock
