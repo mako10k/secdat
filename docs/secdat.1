@@ -220,7 +220,13 @@ and
 .B make install
 installs it for automatic loading as
 .B secdat
-under the system bash-completion directory. The man page is installed into the normal
+under the system bash-completion directory. The installed script asks
+.B secdat __completion --bash
+for the current command and option surface instead of duplicating a static command table, which keeps bash completion aligned with new CLI additions while preserving the normal fallback that treats unknown leading operands as keys. Automatic loading still depends on bash-completion being installed and initialized by the shell, and in-tree or custom-prefix testing still needs
+.B secdat
+to resolve
+.B libsecdat .
+The man page is installed into the normal
 .B man1
 path. For direct system installs into standard library directories such as
 .B /usr/local/lib ,

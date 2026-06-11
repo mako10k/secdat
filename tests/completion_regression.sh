@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+bin_path="${1:-./src/secdat}"
+
+fail() {
+    printf 'FAIL: %s\n' "$1" >&2
+    exit 1
+}
+
+python3 - "$bin_path" <<'PY'
+import os
+import subprocess
+import sys
+import tempfile
+
+bin_path = sys.argv[1]
+repo_root = os.path.dirname(os.path.dirname(os.path.abspath(bin_path)))
+completion_script = os.path.join(repo_root, "completions", "secdat.bash")
+
+
+def run_completion(*words):
+    completed = subprocess.run(
+        [bin_path, "__completion", "--bash", *words],
+        text=True,
+        capture_output=True,
+        env={**os.environ, "LC_ALL": "C", "LANGUAGE": "C"},
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise SystemExit(f"FAIL: __completion failed for {words!r}: rc={completed.returncode} stderr={completed.stderr!r}")
+    lines = completed.stdout.splitlines()
+    if not lines or not lines[0].startswith("__secdat_completion_mode="):
+        raise SystemExit(f"FAIL: missing completion mode header for {words!r}: {completed.stdout!r}")
+    return lines[0].split("=", 1)[1], lines[1:]
+
+
+def assert_contains(values, expected, label):
+    if expected not in values:
+        raise SystemExit(f"FAIL: {label}: missing {expected!r} in {values!r}")
+
+
+mode, values = run_completion("")
+if mode != "plain":
+    raise SystemExit(f"FAIL: top-level completion mode mismatch: {mode!r}")
+for expected in ["wait-unlock", "inherit", "store", "domain", "unlock", "version"]:
+    assert_contains(values, expected, "top-level commands")
+
+mode, values = run_completion("help", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: help completion mode mismatch: {mode!r}")
+for expected in ["usecases", "concepts", "wait-unlock", "store", "domain"]:
+    assert_contains(values, expected, "help targets")
+
+mode, values = run_completion("domain", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: domain completion mode mismatch: {mode!r}")
+for expected in ["create", "delete", "ls", "status"]:
+    assert_contains(values, expected, "domain subcommands")
+
+mode, values = run_completion("ls", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: ls option completion mode mismatch: {mode!r}")
+for expected in ["--pattern-exclude", "--canonical-store", "--safe", "--unsafe"]:
+    assert_contains(values, expected, "ls options")
+
+mode, values = run_completion("unlock", "--")
+for expected in ["--duration", "--until", "--descendants", "--yes", "--readonly"]:
+    assert_contains(values, expected, "unlock options")
+
+mode, values = run_completion("wait-unlock", "--")
+for expected in ["--timeout", "--quiet"]:
+    assert_contains(values, expected, "wait-unlock options")
+
+mode, values = run_completion("--dir", "")
+if mode != "dir" or values:
+    raise SystemExit(f"FAIL: --dir completion mode mismatch: mode={mode!r} values={values!r}")
+
+mode, values = run_completion("--domain", "")
+if mode != "dir" or values:
+    raise SystemExit(f"FAIL: --domain completion mode mismatch: mode={mode!r} values={values!r}")
+
+mode, values = run_completion("--store", "")
+if mode != "none" or values:
+    raise SystemExit(f"FAIL: --store completion mode mismatch: mode={mode!r} values={values!r}")
+
+mode, values = run_completion("save", "")
+if mode != "file" or values:
+    raise SystemExit(f"FAIL: save completion mode mismatch: mode={mode!r} values={values!r}")
+
+work_root = tempfile.mkdtemp(prefix="secdat-completion-")
+env = {**os.environ, "LC_ALL": "C", "LANGUAGE": "C", "XDG_RUNTIME_DIR": os.path.join(work_root, "runtime"), "XDG_DATA_HOME": os.path.join(work_root, "data"), "SECDAT_MASTER_KEY": "completion-test-key"}
+os.makedirs(env["XDG_RUNTIME_DIR"], exist_ok=True)
+os.makedirs(env["XDG_DATA_HOME"], exist_ok=True)
+
+literal_dir = os.path.join(work_root, "literal")
+os.makedirs(literal_dir, exist_ok=True)
+subprocess.run([bin_path, "--dir", literal_dir, "domain", "create"], check=True, capture_output=True, text=True, env=env)
+subprocess.run([bin_path, "--dir", literal_dir, "set", "__completion", "literal-value"], check=True, capture_output=True, text=True, env=env)
+literal_get = subprocess.run([bin_path, "--dir", literal_dir, "__completion"], check=False, capture_output=True, text=True, env=env)
+if literal_get.returncode != 0 or literal_get.stdout != "literal-value":
+    raise SystemExit(f"FAIL: bare __completion no longer falls back to get: rc={literal_get.returncode} stdout={literal_get.stdout!r} stderr={literal_get.stderr!r}")
+
+bash_test = subprocess.run(
+    [
+        "bash",
+        "-lc",
+        (
+            f"source {completion_script!r}; "
+            f"export SECDAT_COMPLETION_BIN={bin_path!r}; "
+            "COMP_WORDS=(secdat domain ''); "
+            "COMP_CWORD=2; "
+            "_secdat_complete; "
+            "printf '%s\n' \"${COMPREPLY[@]}\""
+        ),
+    ],
+    text=True,
+    capture_output=True,
+    env=env,
+    check=False,
+)
+if bash_test.returncode != 0:
+    raise SystemExit(f"FAIL: bash completion wrapper failed: rc={bash_test.returncode} stderr={bash_test.stderr!r}")
+bash_values = [line for line in bash_test.stdout.splitlines() if line]
+for expected in ["create", "delete", "ls", "status"]:
+    assert_contains(bash_values, expected, "bash wrapper domain completions")
+
+print("PASS completion regression")
+PY

@@ -191,6 +191,10 @@ int main(int argc, char **argv)
     display_program_name = secdat_relativize_program_name(display_program_name, relative_program_name_buffer, sizeof(relative_program_name_buffer));
     argv[0] = (char *)display_program_name;
 
+    if (argc > 2 && strcmp(argv[1], "__completion") == 0 && strcmp(argv[2], "--bash") == 0) {
+        return secdat_cli_complete(argc - 3, &argv[3]);
+    }
+
     result = secdat_cli_parse(argc, argv, &cli);
     if (result != 0) {
         secdat_cli_print_usage(display_program_name);

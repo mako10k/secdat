@@ -48,6 +48,7 @@ struct secdat_cli {
 };
 
 int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli);
+int secdat_cli_complete(int argc, char **argv);
 void secdat_cli_print_usage(const char *program_name);
 void secdat_cli_print_command_usage(const char *program_name, enum secdat_command_type command);
 void secdat_cli_print_help_target(const char *program_name, const char *target);

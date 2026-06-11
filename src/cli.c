@@ -375,6 +375,354 @@ static int secdat_cli_is_assignment_operand(const char *value)
     return value != NULL && strchr(value, '=') != NULL;
 }
 
+static int secdat_cli_completion_is_global_option_with_value(const char *value)
+{
+    return value != NULL
+        && (strcmp(value, "--dir") == 0 || strcmp(value, "-d") == 0
+            || strcmp(value, "--domain") == 0 || strcmp(value, "--store") == 0 || strcmp(value, "-s") == 0);
+}
+
+static int secdat_cli_completion_is_help_target(const char *value)
+{
+    return value != NULL && (strcmp(value, "help") == 0 || strcmp(value, "version") == 0
+        || strcmp(value, "usecases") == 0 || strcmp(value, "concepts") == 0
+        || strcmp(value, "store") == 0 || strcmp(value, "domain") == 0);
+}
+
+static int secdat_cli_completion_token_matches(const char *current, const char *candidate)
+{
+    if (candidate == NULL) {
+        return 0;
+    }
+    if (current == NULL || current[0] == '\0') {
+        return 1;
+    }
+
+    return strncmp(candidate, current, strlen(current)) == 0;
+}
+
+static void secdat_cli_completion_print_mode(const char *mode)
+{
+    printf("__secdat_completion_mode=%s\n", mode);
+}
+
+static void secdat_cli_completion_print_candidate(const char *current, const char *candidate)
+{
+    if (secdat_cli_completion_token_matches(current, candidate)) {
+        puts(candidate);
+    }
+}
+
+static void secdat_cli_completion_print_candidates(const char *current, const char *const *candidates)
+{
+    size_t index;
+
+    for (index = 0; candidates[index] != NULL; index += 1) {
+        secdat_cli_completion_print_candidate(current, candidates[index]);
+    }
+}
+
+static void secdat_cli_completion_print_top_level_commands(const char *current)
+{
+    char previous[64] = "";
+    enum secdat_command_type command;
+
+    for (command = SECDAT_COMMAND_HELP; command <= SECDAT_COMMAND_DOMAIN_STATUS; command += 1) {
+        const char *name = secdat_cli_command_name(command);
+        size_t length = strcspn(name, " ");
+        char token[64];
+
+        if (length >= sizeof(token)) {
+            length = sizeof(token) - 1;
+        }
+        memcpy(token, name, length);
+        token[length] = '\0';
+
+        if (strcmp(token, previous) == 0) {
+            continue;
+        }
+        strcpy(previous, token);
+        secdat_cli_completion_print_candidate(current, token);
+    }
+
+    secdat_cli_completion_print_candidate(current, "version");
+}
+
+static void secdat_cli_completion_print_group_subcommands(const char *group, const char *current)
+{
+    char prefix[32];
+    char previous[64] = "";
+    enum secdat_command_type command;
+    size_t prefix_length;
+
+    snprintf(prefix, sizeof(prefix), "%s ", group);
+    prefix_length = strlen(prefix);
+
+    for (command = SECDAT_COMMAND_HELP; command <= SECDAT_COMMAND_DOMAIN_STATUS; command += 1) {
+        const char *name = secdat_cli_command_name(command);
+
+        if (strncmp(name, prefix, prefix_length) != 0) {
+            continue;
+        }
+        if (strcmp(name + prefix_length, previous) == 0) {
+            continue;
+        }
+        strcpy(previous, name + prefix_length);
+        secdat_cli_completion_print_candidate(current, name + prefix_length);
+    }
+}
+
+static void secdat_cli_completion_print_help_targets(const char *current)
+{
+    secdat_cli_completion_print_top_level_commands(current);
+    secdat_cli_completion_print_candidate(current, "usecases");
+    secdat_cli_completion_print_candidate(current, "concepts");
+}
+
+static const char *secdat_cli_completion_command_prev_option_mode(const char *command, const char *subcommand, const char *previous)
+{
+    if (previous == NULL) {
+        return "plain";
+    }
+    if (strcmp(previous, "save") == 0 || strcmp(previous, "load") == 0) {
+        return "file";
+    }
+    if (strcmp(previous, "--dir") == 0 || strcmp(previous, "-d") == 0 || strcmp(previous, "--domain") == 0) {
+        return "dir";
+    }
+    if (strcmp(previous, "--store") == 0 || strcmp(previous, "-s") == 0) {
+        return "none";
+    }
+    if (strcmp(previous, "--help") == 0 || strcmp(previous, "-h") == 0) {
+        return "help";
+    }
+    if (command == NULL) {
+        return "plain";
+    }
+
+    if (strcmp(command, "ls") == 0) {
+        if (strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0
+            || strcmp(previous, "--pattern-exclude") == 0 || strcmp(previous, "-x") == 0) {
+            return "none";
+        }
+    } else if (strcmp(command, "get") == 0) {
+        if (strcmp(previous, "--unlock-timeout") == 0 || strcmp(previous, "-t") == 0) {
+            return "none";
+        }
+    } else if (strcmp(command, "set") == 0) {
+        if (strcmp(previous, "--env") == 0 || strcmp(previous, "-e") == 0
+            || strcmp(previous, "--value") == 0 || strcmp(previous, "-v") == 0) {
+            return "none";
+        }
+    } else if (strcmp(command, "exec") == 0) {
+        if (strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0
+            || strcmp(previous, "--pattern-exclude") == 0 || strcmp(previous, "-x") == 0
+            || strcmp(previous, "--env-map-sed") == 0) {
+            return "none";
+        }
+    } else if (strcmp(command, "export") == 0) {
+        if (strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0) {
+            return "none";
+        }
+    } else if (strcmp(command, "unlock") == 0) {
+        if (strcmp(previous, "--duration") == 0 || strcmp(previous, "-t") == 0 || strcmp(previous, "--until") == 0) {
+            return "none";
+        }
+    } else if (strcmp(command, "wait-unlock") == 0) {
+        if (strcmp(previous, "--timeout") == 0 || strcmp(previous, "-t") == 0) {
+            return "none";
+        }
+    } else if (strcmp(command, "store") == 0) {
+        if (subcommand != NULL && strcmp(subcommand, "ls") == 0
+            && (strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0)) {
+            return "none";
+        }
+    } else if (strcmp(command, "domain") == 0) {
+        if (subcommand != NULL && strcmp(subcommand, "ls") == 0
+            && (strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0)) {
+            return "none";
+        }
+    }
+
+    return "plain";
+}
+
+static void secdat_cli_completion_parse_context(
+    int argc,
+    char **argv,
+    const char **command,
+    const char **subcommand,
+    const char **current,
+    const char **previous
+)
+{
+    int index;
+
+    *command = NULL;
+    *subcommand = NULL;
+    *current = argc > 0 ? argv[argc - 1] : "";
+    *previous = argc > 1 ? argv[argc - 2] : NULL;
+
+    for (index = 0; index + 1 < argc; ) {
+        const char *token = argv[index];
+
+        if (*command == NULL) {
+            if (secdat_cli_completion_is_global_option_with_value(token)) {
+                index += 2;
+                continue;
+            }
+            if (strcmp(token, "--help") == 0 || strcmp(token, "-h") == 0 || strcmp(token, "--version") == 0 || strcmp(token, "-V") == 0) {
+                index += 1;
+                continue;
+            }
+            if (strcmp(token, "store") == 0 || strcmp(token, "domain") == 0) {
+                *command = token;
+                index += 1;
+                continue;
+            }
+            if (strcmp(token, "help") == 0 || strcmp(token, "version") == 0 || secdat_cli_parse_command_name(token) != SECDAT_COMMAND_HELP) {
+                *command = token;
+                index += 1;
+                continue;
+            }
+            if (secdat_cli_is_assignment_operand(token)) {
+                *command = "set";
+                break;
+            }
+            *command = "get";
+            break;
+        }
+
+        if ((*subcommand) == NULL && (strcmp(*command, "store") == 0 || strcmp(*command, "domain") == 0)) {
+            if (token[0] != '-') {
+                *subcommand = token;
+            }
+            index += 1;
+            continue;
+        }
+
+        index += 1;
+    }
+}
+
+int secdat_cli_complete(int argc, char **argv)
+{
+    static const char *const global_options[] = {
+        "--dir", "-d", "--domain", "--store", "-s", "--help", "-h", "--version", "-V", NULL,
+    };
+    static const char *const ls_options[] = {
+        "--pattern", "-p", "--pattern-exclude", "-x", "--safe", "-e", "--unsafe", "-u",
+        "--canonical", "-c", "--canonical-domain", "-D", "--canonical-store", "-S", "--help", "-h", NULL,
+    };
+    static const char *const list_options[] = {
+        "--masked", "-m", "--overridden", "-o", "--orphaned", "-O", "--safe", "-e", "--unsafe", "-u", "--help", "-h", NULL,
+    };
+    static const char *const get_options[] = {
+        "--on-demand-unlock", "-w", "--unlock-timeout", "-t", "--stdout", "-o", "--shellescaped", "-e", "--help", "-h", NULL,
+    };
+    static const char *const set_options[] = {
+        "--unsafe", "-u", "--stdin", "-i", "--env", "-e", "--value", "-v", "--help", "-h", NULL,
+    };
+    static const char *const rm_options[] = {
+        "--ignore-missing", "-f", "--help", "-h", NULL,
+    };
+    static const char *const exec_options[] = {
+        "--pattern", "-p", "--pattern-exclude", "-x", "--env-map-sed", "--help", "-h", NULL,
+    };
+    static const char *const export_options[] = {
+        "--pattern", "-p", "--help", "-h", NULL,
+    };
+    static const char *const unlock_options[] = {
+        "--duration", "-t", "--until", "--inherit", "-i", "--volatile", "-v", "--readonly", "-r",
+        "--descendants", "-d", "--yes", "-y", "--help", "-h", NULL,
+    };
+    static const char *const lock_options[] = {
+        "--inherit", "-i", "--save", "-s", "--help", "-h", NULL,
+    };
+    static const char *const status_options[] = {
+        "--quiet", "-q", "--help", "-h", NULL,
+    };
+    static const char *const wait_unlock_options[] = {
+        "--timeout", "-t", "--quiet", "-q", "--help", "-h", NULL,
+    };
+    static const char *const store_ls_options[] = {
+        "--pattern", "-p", "--help", "-h", NULL,
+    };
+    static const char *const domain_ls_options[] = {
+        "--long", "-l", "--inherited", "-a", "--ancestors", "-A", "--descendants", "-R", "--pattern", "-p", "--help", "-h", NULL,
+    };
+    const char *command;
+    const char *subcommand;
+    const char *current;
+    const char *previous;
+    const char *mode;
+
+    secdat_cli_completion_parse_context(argc, argv, &command, &subcommand, &current, &previous);
+    mode = secdat_cli_completion_command_prev_option_mode(command, subcommand, previous);
+    secdat_cli_completion_print_mode(mode);
+
+    if (strcmp(mode, "dir") == 0 || strcmp(mode, "file") == 0 || strcmp(mode, "none") == 0) {
+        return 0;
+    }
+    if (strcmp(mode, "help") == 0) {
+        secdat_cli_completion_print_help_targets(current);
+        return 0;
+    }
+
+    if (command == NULL) {
+        if (current != NULL && current[0] == '-') {
+            secdat_cli_completion_print_candidates(current, global_options);
+        } else {
+            secdat_cli_completion_print_top_level_commands(current);
+        }
+        return 0;
+    }
+
+    if (strcmp(command, "help") == 0) {
+        secdat_cli_completion_print_help_targets(current);
+        return 0;
+    }
+
+    if (strcmp(command, "store") == 0 && subcommand == NULL) {
+        secdat_cli_completion_print_group_subcommands("store", current);
+        return 0;
+    }
+    if (strcmp(command, "domain") == 0 && subcommand == NULL) {
+        secdat_cli_completion_print_group_subcommands("domain", current);
+        return 0;
+    }
+
+    if (strcmp(command, "ls") == 0) {
+        secdat_cli_completion_print_candidates(current, ls_options);
+    } else if (strcmp(command, "list") == 0) {
+        secdat_cli_completion_print_candidates(current, list_options);
+    } else if (strcmp(command, "get") == 0) {
+        secdat_cli_completion_print_candidates(current, get_options);
+    } else if (strcmp(command, "set") == 0) {
+        secdat_cli_completion_print_candidates(current, set_options);
+    } else if (strcmp(command, "rm") == 0) {
+        secdat_cli_completion_print_candidates(current, rm_options);
+    } else if (strcmp(command, "exec") == 0) {
+        secdat_cli_completion_print_candidates(current, exec_options);
+    } else if (strcmp(command, "export") == 0) {
+        secdat_cli_completion_print_candidates(current, export_options);
+    } else if (strcmp(command, "unlock") == 0) {
+        secdat_cli_completion_print_candidates(current, unlock_options);
+    } else if (strcmp(command, "lock") == 0) {
+        secdat_cli_completion_print_candidates(current, lock_options);
+    } else if (strcmp(command, "status") == 0) {
+        secdat_cli_completion_print_candidates(current, status_options);
+    } else if (strcmp(command, "wait-unlock") == 0) {
+        secdat_cli_completion_print_candidates(current, wait_unlock_options);
+    } else if (strcmp(command, "store") == 0 && subcommand != NULL && strcmp(subcommand, "ls") == 0) {
+        secdat_cli_completion_print_candidates(current, store_ls_options);
+    } else if (strcmp(command, "domain") == 0 && subcommand != NULL && strcmp(subcommand, "ls") == 0) {
+        secdat_cli_completion_print_candidates(current, domain_ls_options);
+    }
+
+    return 0;
+}
+
 enum secdat_command_type secdat_cli_parse_command_name(const char *name)
 {
     if (strcmp(name, "ls") == 0) {
