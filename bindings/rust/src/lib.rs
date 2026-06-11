@@ -1,7 +1,27 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_uchar, c_void};
+use std::os::raw::c_long;
 use std::ptr;
 use std::slice;
+
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeySource {
+    Locked = 0,
+    Environment = 1,
+    Session = 2,
+}
+
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffectiveSource {
+    Locked = 0,
+    Environment = 1,
+    LocalSession = 2,
+    InheritedSession = 3,
+    ExplicitLock = 4,
+    Blocked = 5,
+}
 
 const PATH_MAX: usize = 4096;
 
@@ -19,7 +39,7 @@ struct RawStatusSummary {
     wrapped_master_key_present: c_int,
     key_source: c_int,
     effective_source: c_int,
-    session_expires_at: i64,
+    session_expires_at: c_long,
     related_domain_root: [c_char; PATH_MAX],
 }
 
@@ -75,9 +95,9 @@ pub struct StatusSummary {
     pub store_count: usize,
     pub visible_key_count: usize,
     pub wrapped_master_key_present: bool,
-    pub key_source: i32,
-    pub effective_source: i32,
-    pub session_expires_at: i64,
+    pub key_source: KeySource,
+    pub effective_source: EffectiveSource,
+    pub session_expires_at: i128,
     pub related_domain_root: String,
 }
 
@@ -96,6 +116,37 @@ impl Error {
     fn invalid_string() -> Self {
         Self {
             message: "string contains interior NUL byte",
+        }
+    }
+
+    fn invalid_status_enum() -> Self {
+        Self {
+            message: "libsecdat returned an unknown status enum value",
+        }
+    }
+}
+
+impl KeySource {
+    fn from_raw(value: i32) -> Result<Self, Error> {
+        match value {
+            0 => Ok(Self::Locked),
+            1 => Ok(Self::Environment),
+            2 => Ok(Self::Session),
+            _ => Err(Error::invalid_status_enum()),
+        }
+    }
+}
+
+impl EffectiveSource {
+    fn from_raw(value: i32) -> Result<Self, Error> {
+        match value {
+            0 => Ok(Self::Locked),
+            1 => Ok(Self::Environment),
+            2 => Ok(Self::LocalSession),
+            3 => Ok(Self::InheritedSession),
+            4 => Ok(Self::ExplicitLock),
+            5 => Ok(Self::Blocked),
+            _ => Err(Error::invalid_status_enum()),
         }
     }
 }
@@ -300,14 +351,16 @@ pub fn collect_status(options: &Options) -> Result<StatusSummary, Error> {
     let related_domain_root = unsafe { CStr::from_ptr(summary.related_domain_root.as_ptr()) }
         .to_string_lossy()
         .into_owned();
+    let key_source = KeySource::from_raw(summary.key_source)?;
+    let effective_source = EffectiveSource::from_raw(summary.effective_source)?;
 
     Ok(StatusSummary {
         store_count: summary.store_count,
         visible_key_count: summary.visible_key_count,
         wrapped_master_key_present: summary.wrapped_master_key_present != 0,
-        key_source: summary.key_source,
-        effective_source: summary.effective_source,
-        session_expires_at: summary.session_expires_at,
+        key_source,
+        effective_source,
+        session_expires_at: summary.session_expires_at as i128,
         related_domain_root,
     })
 }

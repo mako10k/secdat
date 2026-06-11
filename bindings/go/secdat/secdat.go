@@ -1,10 +1,9 @@
 package secdat
 
 /*
-#cgo CFLAGS: -I../../../src
-#cgo LDFLAGS: -L../../../src/.libs -lsecdat
+#cgo pkg-config: libsecdat
 #include <stdlib.h>
-#include "../../../src/secdat-sdk.h"
+#include "secdat-sdk.h"
 */
 import "C"
 
@@ -16,6 +15,25 @@ import (
 
 var ErrCallFailed = errors.New("libsecdat call failed; see stderr for details")
 
+type KeySource int
+
+const (
+	KeySourceLocked KeySource = iota
+	KeySourceEnvironment
+	KeySourceSession
+)
+
+type EffectiveSource int
+
+const (
+	EffectiveSourceLocked EffectiveSource = iota
+	EffectiveSourceEnvironment
+	EffectiveSourceLocalSession
+	EffectiveSourceInheritedSession
+	EffectiveSourceExplicitLock
+	EffectiveSourceBlocked
+)
+
 type Options struct {
 	Dir    string
 	Domain string
@@ -26,8 +44,8 @@ type StatusSummary struct {
 	StoreCount             uint64
 	VisibleKeyCount        uint64
 	WrappedMasterKeyPresent bool
-	KeySource              int
-	EffectiveSource        int
+	KeySource              KeySource
+	EffectiveSource        EffectiveSource
 	SessionExpiresAt       int64
 	RelatedDomainRoot      string
 }
@@ -221,8 +239,8 @@ func CollectStatus(options Options) (StatusSummary, error) {
 		StoreCount:             uint64(summary.store_count),
 		VisibleKeyCount:        uint64(summary.visible_key_count),
 		WrappedMasterKeyPresent: summary.wrapped_master_key_present != 0,
-		KeySource:              int(summary.key_source),
-		EffectiveSource:        int(summary.effective_source),
+		KeySource:              KeySource(summary.key_source),
+		EffectiveSource:        EffectiveSource(summary.effective_source),
 		SessionExpiresAt:       int64(summary.session_expires_at),
 		RelatedDomainRoot:      C.GoString(&summary.related_domain_root[0]),
 	}, nil

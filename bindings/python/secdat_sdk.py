@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
+from enum import IntEnum
 from dataclasses import dataclass
 
 
@@ -11,6 +12,21 @@ PATH_MAX = 4096
 
 class SecdatError(RuntimeError):
     pass
+
+
+class KeySource(IntEnum):
+    LOCKED = 0
+    ENVIRONMENT = 1
+    SESSION = 2
+
+
+class EffectiveSource(IntEnum):
+    LOCKED = 0
+    ENVIRONMENT = 1
+    LOCAL_SESSION = 2
+    INHERITED_SESSION = 3
+    EXPLICIT_LOCK = 4
+    BLOCKED = 5
 
 
 class _Options(ctypes.Structure):
@@ -38,8 +54,8 @@ class StatusSummary:
     store_count: int
     visible_key_count: int
     wrapped_master_key_present: bool
-    key_source: int
-    effective_source: int
+    key_source: KeySource
+    effective_source: EffectiveSource
     session_expires_at: int
     related_domain_root: str
 
@@ -220,8 +236,8 @@ class Secdat:
             store_count=int(summary.store_count),
             visible_key_count=int(summary.visible_key_count),
             wrapped_master_key_present=bool(summary.wrapped_master_key_present),
-            key_source=int(summary.key_source),
-            effective_source=int(summary.effective_source),
+            key_source=KeySource(summary.key_source),
+            effective_source=EffectiveSource(summary.effective_source),
             session_expires_at=int(summary.session_expires_at),
             related_domain_root=related_domain_root,
         )

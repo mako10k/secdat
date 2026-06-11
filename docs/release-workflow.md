@@ -19,12 +19,17 @@ This document captures the concrete steps for cutting a release tag and preparin
    - `./configure`
 3. run the project validation:
    - `make check`
-4. run package-shape validation for published artifacts:
+4. run installed-consumer validation for published artifacts:
    - `PKG_CONFIG_PATH=$PWD pkg-config --cflags --libs libsecdat`
-   - `cd bindings/python && python3 -m pip wheel . --no-deps -w /tmp/secdat-python-wheel`
-   - `cd bindings/rust && cargo package --allow-dirty --no-verify`
-   - `cd bindings/node && npm pack --dry-run`
-   - `cd bindings/go && go build ./...`
+   - `(cd bindings/python && python3 -m pip wheel . --no-deps -w /tmp/secdat-python-wheel)`
+   - `prefix=$(mktemp -d) && ./configure --prefix="$prefix" && make && make install`
+   - `LD_LIBRARY_PATH="$prefix/lib" SECDAT_SDK_LIBRARY="$prefix/lib/libsecdat.so" PYTHONPATH="$PWD/bindings/python" python3 -c 'from secdat_sdk import Secdat; Secdat()'`
+   - `(cd bindings/rust && PKG_CONFIG_PATH="$prefix/lib/pkgconfig" cargo check)`
+   - `(cd bindings/node && PKG_CONFIG_PATH="$prefix/lib/pkgconfig" npm run build)`
+   - `node_pkg=$(cd bindings/node && npm pack --silent) && tmp_consumer=$(mktemp -d) && cp "bindings/node/$node_pkg" "$tmp_consumer/" && (cd "$tmp_consumer" && npm init -y && PKG_CONFIG_PATH="$prefix/lib/pkgconfig" LD_LIBRARY_PATH="$prefix/lib" npm install "./$node_pkg" && node -e "require('secdat-sdk-node')")`
+   - `(cd bindings/go && PKG_CONFIG_PATH="$prefix/lib/pkgconfig" go build ./...)`
+   - `(cd bindings/node && npm pack --dry-run)`
+   - `(cd bindings/rust && cargo package --allow-dirty)`
 
 ## Tagging
 
@@ -56,13 +61,6 @@ make install
 PKG_CONFIG_PATH=/tmp/secdat-prefix/lib/pkgconfig pkg-config --cflags --libs libsecdat
 ```
 
-For a narrower release-like container build, you can also use the build-only recipe introduced for reproducible environments:
-
-```sh
-docker build -f .devcontainer/Dockerfile.build --build-arg BASE_IMAGE=debian:bookworm-slim .
-docker build -f .devcontainer/Dockerfile.build --build-arg BASE_IMAGE=amazonlinux:2023 .
-```
-
 ## Binding publication notes
 
 ### Python
@@ -77,33 +75,35 @@ The package is a thin wrapper around an installed `libsecdat` shared library. Ru
 
 ### Rust
 
-Dry-run or package from `bindings/rust`:
+Check and package from `bindings/rust`:
 
 ```sh
-cargo package --allow-dirty --no-verify
+PKG_CONFIG_PATH=/tmp/secdat-prefix/lib/pkgconfig cargo check
+cargo package --allow-dirty
 ```
 
-When publishing becomes desirable, add any remaining metadata required by crates.io such as license fields before `cargo publish`.
+The crate now uses `pkg-config` in `build.rs`, so the target environment must expose `libsecdat.pc` during builds.
 
 ### Node
 
-Inspect the package from `bindings/node`:
+Build and inspect the package from `bindings/node`:
 
 ```sh
+PKG_CONFIG_PATH=/tmp/secdat-prefix/lib/pkgconfig npm run build
 npm pack --dry-run
 ```
 
-The current package assumes the target system can build the N-API addon against an installed `libsecdat`.
+The current package assumes the target system can build the N-API addon against an installed `libsecdat` exposed through `pkg-config`.
 
 ### Go
 
 The Go binding is distributed as a module rooted at `bindings/go` and validated with:
 
 ```sh
-go build ./...
+PKG_CONFIG_PATH=/tmp/secdat-prefix/lib/pkgconfig go build ./...
 ```
 
-If a public module release is needed, the repository tag should align with the module versioning plan before publishing documentation for `go get` consumers.
+If a public module release is needed, publish tags that are valid for the `bindings/go` submodule path before documenting a `go get` flow.
 
 ## Release checklist
 

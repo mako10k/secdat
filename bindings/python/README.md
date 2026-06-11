@@ -4,6 +4,17 @@ This package provides a thin `ctypes` wrapper around the installed `libsecdat` s
 
 Set `SECDAT_SDK_LIBRARY` when the runtime loader cannot find `libsecdat` automatically.
 
+After installing the `secdat` CLI, create the target domain and store once before using the binding:
+
+```sh
+secdat --dir /tmp/example/root domain create
+secdat --dir /tmp/example/root/child domain create
+secdat --dir /tmp/example/root store create team
+secdat --dir /tmp/example/root unlock
+```
+
+For non-interactive unlock flows, export `SECDAT_MASTER_KEY_PASSPHRASE` before `secdat unlock`. If you provide `SECDAT_MASTER_KEY`, the binding can use that explicit key source without a session unlock.
+
 ## Surface
 
 `Secdat` currently exposes these methods:

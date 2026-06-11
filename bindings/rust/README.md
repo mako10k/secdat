@@ -2,6 +2,17 @@
 
 This crate is a thin FFI layer over the installed `libsecdat` shared library.
 
+After installing the `secdat` CLI, create the target domain and store once before using the binding:
+
+```sh
+secdat --dir /tmp/example/root domain create
+secdat --dir /tmp/example/root/child domain create
+secdat --dir /tmp/example/root store create team
+secdat --dir /tmp/example/root unlock
+```
+
+For non-interactive unlock flows, export `SECDAT_MASTER_KEY_PASSPHRASE` before `secdat unlock`. If you provide `SECDAT_MASTER_KEY`, the binding can use that explicit key source without a session unlock.
+
 ## Surface
 
 The crate currently exposes:
@@ -46,4 +57,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The crate does not bootstrap domains or stores on its own. Create those once with the CLI before using the binding.
+The crate does not bootstrap domains or stores on its own. When `libsecdat` is installed outside a default prefix, export `PKG_CONFIG_PATH` before `cargo build` so the build script can find `libsecdat.pc`. At runtime, ensure the loader can resolve `libsecdat`, for example with `LD_LIBRARY_PATH` when needed.

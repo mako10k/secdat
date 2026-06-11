@@ -4,7 +4,12 @@ version = "0.2.0"
 edition = "2021"
 description = "Rust FFI bindings for libsecdat"
 repository = "https://github.com/mako10k/secdat"
-include = ["src/**/*", "Cargo.toml", "Cargo.lock"]
+links = "secdat"
+build = "build.rs"
+include = ["src/**/*", "Cargo.toml", "Cargo.lock", "build.rs"]
 
 [lib]
 path = "src/lib.rs"
+
+[build-dependencies]
+pkg-config = "0.3"
