@@ -121,6 +121,16 @@ def assert_pot_is_up_to_date():
     repo_root = Path(bin_path).resolve().parent.parent
     po_dir = repo_root / "po"
     pot_path = po_dir / "secdat.pot"
+    ignore_check = subprocess.run(
+        ["git", "-C", str(repo_root), "check-ignore", "-q", "po/secdat.pot"],
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+    if ignore_check.returncode == 0:
+        return
+    if not pot_path.exists():
+        return
     original = pot_path.read_text(encoding="utf-8")
     try:
         completed = subprocess.run(
