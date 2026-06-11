@@ -499,6 +499,9 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
     if (command == NULL) {
         return "plain";
     }
+    if (strcmp(command, "mv") == 0 || strcmp(command, "cp") == 0) {
+        return "none";
+    }
 
     if (strcmp(command, "ls") == 0) {
         if (strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0

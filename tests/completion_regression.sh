@@ -65,6 +65,18 @@ if mode != "plain":
 for expected in ["--pattern-exclude", "--canonical-store", "--safe", "--unsafe"]:
     assert_contains(values, expected, "ls options")
 
+mode, values = run_completion("cp", "")
+if mode != "none":
+    raise SystemExit(f"FAIL: cp completion mode mismatch: {mode!r}")
+if values:
+    raise SystemExit(f"FAIL: cp completion should not emit positional candidates: {values!r}")
+
+mode, values = run_completion("mv", "")
+if mode != "none":
+    raise SystemExit(f"FAIL: mv completion mode mismatch: {mode!r}")
+if values:
+    raise SystemExit(f"FAIL: mv completion should not emit positional candidates: {values!r}")
+
 mode, values = run_completion("unlock", "--")
 for expected in ["--duration", "--until", "--descendants", "--yes", "--readonly"]:
     assert_contains(values, expected, "unlock options")
