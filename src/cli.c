@@ -673,11 +673,8 @@ int secdat_cli_complete(int argc, char **argv)
     }
 
     if (command == NULL) {
-        if (current != NULL && current[0] == '-') {
-            secdat_cli_completion_print_candidates(current, global_options);
-        } else {
-            secdat_cli_completion_print_top_level_commands(current);
-        }
+        secdat_cli_completion_print_top_level_commands(current);
+        secdat_cli_completion_print_candidates(current, global_options);
         return 0;
     }
 
