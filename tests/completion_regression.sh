@@ -66,16 +66,12 @@ for expected in ["--pattern-exclude", "--canonical-store", "--safe", "--unsafe"]
     assert_contains(values, expected, "ls options")
 
 mode, values = run_completion("cp", "")
-if mode != "none":
+if mode != "plain":
     raise SystemExit(f"FAIL: cp completion mode mismatch: {mode!r}")
-if values:
-    raise SystemExit(f"FAIL: cp completion should not emit positional candidates: {values!r}")
 
 mode, values = run_completion("mv", "")
-if mode != "none":
+if mode != "plain":
     raise SystemExit(f"FAIL: mv completion mode mismatch: {mode!r}")
-if values:
-    raise SystemExit(f"FAIL: mv completion should not emit positional candidates: {values!r}")
 
 mode, values = run_completion("unlock", "--")
 for expected in ["--duration", "--until", "--descendants", "--yes", "--readonly"]:
@@ -110,9 +106,44 @@ literal_dir = os.path.join(work_root, "literal")
 os.makedirs(literal_dir, exist_ok=True)
 subprocess.run([bin_path, "--dir", literal_dir, "domain", "create"], check=True, capture_output=True, text=True, env=env)
 subprocess.run([bin_path, "--dir", literal_dir, "set", "__completion", "literal-value"], check=True, capture_output=True, text=True, env=env)
+subprocess.run([bin_path, "--dir", literal_dir, "set", "COMPLETION_ALPHA", "alpha-value"], check=True, capture_output=True, text=True, env=env)
 literal_get = subprocess.run([bin_path, "--dir", literal_dir, "__completion"], check=False, capture_output=True, text=True, env=env)
 if literal_get.returncode != 0 or literal_get.stdout != "literal-value":
     raise SystemExit(f"FAIL: bare __completion no longer falls back to get: rc={literal_get.returncode} stdout={literal_get.stdout!r} stderr={literal_get.stderr!r}")
+
+def run_scoped_completion(*words):
+    completed = subprocess.run(
+        [bin_path, "__completion", "--bash", *words],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise SystemExit(f"FAIL: scoped __completion failed for {words!r}: rc={completed.returncode} stderr={completed.stderr!r}")
+    lines = completed.stdout.splitlines()
+    if not lines or not lines[0].startswith("__secdat_completion_mode="):
+        raise SystemExit(f"FAIL: missing scoped completion mode header for {words!r}: {completed.stdout!r}")
+    return lines[0].split("=", 1)[1], lines[1:]
+
+mode, values = run_scoped_completion("--dir", literal_dir, "COMPLETION_")
+if mode != "plain":
+    raise SystemExit(f"FAIL: scoped top-level key completion mode mismatch: {mode!r}")
+assert_contains(values, "COMPLETION_ALPHA", "top-level key completions")
+assert_contains(values, "COMPLETION_ALPHA=", "top-level assignment completions")
+
+for command in ["get", "exists", "rm", "mask", "unmask", "set", "cp", "mv"]:
+    mode, values = run_scoped_completion("--dir", literal_dir, command, "COMPLETION_")
+    if mode != "plain":
+        raise SystemExit(f"FAIL: {command} key completion mode mismatch: {mode!r}")
+    assert_contains(values, "COMPLETION_ALPHA", f"{command} key completions")
+    if "COMPLETION_ALPHA=" in values:
+        raise SystemExit(f"FAIL: {command} key completion should not emit assignment candidates: {values!r}")
+
+for command in ["cp", "mv"]:
+    mode, values = run_scoped_completion("--dir", literal_dir, command, "COMPLETION_ALPHA", "")
+    if "COMPLETION_ALPHA" in values:
+        raise SystemExit(f"FAIL: {command} destination completion should not reuse existing key candidates: {values!r}")
 
 bash_test = subprocess.run(
     [

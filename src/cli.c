@@ -1,6 +1,7 @@
 #include "cli.h"
 
 #include "i18n.h"
+#include "store.h"
 
 #include <getopt.h>
 #include <ctype.h>
@@ -389,6 +390,15 @@ static int secdat_cli_completion_is_help_target(const char *value)
         || strcmp(value, "store") == 0 || strcmp(value, "domain") == 0);
 }
 
+static int secdat_cli_completion_is_command_with_key_operand(const char *command)
+{
+    return command != NULL
+        && (strcmp(command, "get") == 0 || strcmp(command, "exists") == 0
+            || strcmp(command, "rm") == 0 || strcmp(command, "mask") == 0
+            || strcmp(command, "unmask") == 0 || strcmp(command, "set") == 0
+            || strcmp(command, "cp") == 0 || strcmp(command, "mv") == 0);
+}
+
 static int secdat_cli_completion_token_matches(const char *current, const char *candidate)
 {
     if (candidate == NULL) {
@@ -420,6 +430,42 @@ static void secdat_cli_completion_print_candidates(const char *current, const ch
     for (index = 0; candidates[index] != NULL; index += 1) {
         secdat_cli_completion_print_candidate(current, candidates[index]);
     }
+}
+
+static void secdat_cli_completion_print_keys(
+    int argc,
+    char **argv,
+    const char *current,
+    int append_equals
+)
+{
+    const char *dir = NULL;
+    const char *domain = NULL;
+    const char *store = NULL;
+    int index;
+
+    for (index = 0; index + 1 < argc; index += 1) {
+        const char *token = argv[index];
+
+        if (strcmp(token, "--dir") == 0 || strcmp(token, "-d") == 0) {
+            if (index + 1 < argc - 1) {
+                dir = argv[index + 1];
+            }
+            index += 1;
+        } else if (strcmp(token, "--domain") == 0) {
+            if (index + 1 < argc - 1) {
+                domain = argv[index + 1];
+            }
+            index += 1;
+        } else if (strcmp(token, "--store") == 0 || strcmp(token, "-s") == 0) {
+            if (index + 1 < argc - 1) {
+                store = argv[index + 1];
+            }
+            index += 1;
+        }
+    }
+
+    (void)secdat_print_completion_keys(dir, domain, store, current, append_equals);
 }
 
 static void secdat_cli_completion_print_top_level_commands(const char *current)
@@ -499,10 +545,6 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
     if (command == NULL) {
         return "plain";
     }
-    if (strcmp(command, "mv") == 0 || strcmp(command, "cp") == 0) {
-        return "none";
-    }
-
     if (strcmp(command, "ls") == 0) {
         if (strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0
             || strcmp(previous, "--pattern-exclude") == 0 || strcmp(previous, "-x") == 0) {
@@ -608,6 +650,46 @@ static void secdat_cli_completion_parse_context(
     }
 }
 
+static int secdat_cli_completion_positional_count(int argc, char **argv, const char *command, const char *subcommand)
+{
+    int index;
+    int count = 0;
+    int skipped_command = 0;
+    int skipped_subcommand = 0;
+
+    for (index = 0; index + 1 < argc; index += 1) {
+        const char *token = argv[index];
+
+        if (secdat_cli_completion_is_global_option_with_value(token)) {
+            index += 1;
+            continue;
+        }
+        if (strcmp(token, "--help") == 0 || strcmp(token, "-h") == 0 || strcmp(token, "--version") == 0 || strcmp(token, "-V") == 0) {
+            continue;
+        }
+        if (!skipped_command && command != NULL && strcmp(token, command) == 0) {
+            skipped_command = 1;
+            continue;
+        }
+        if (token[0] == '-') {
+            const char *option_mode = secdat_cli_completion_command_prev_option_mode(command, subcommand, token);
+            if ((strcmp(option_mode, "none") == 0 || strcmp(option_mode, "dir") == 0 || strcmp(option_mode, "file") == 0)
+                && index + 1 < argc - 1) {
+                index += 1;
+            }
+            continue;
+        }
+        if (command != NULL && (strcmp(command, "store") == 0 || strcmp(command, "domain") == 0)
+            && !skipped_subcommand && subcommand != NULL && strcmp(token, subcommand) == 0) {
+            skipped_subcommand = 1;
+            continue;
+        }
+        count += 1;
+    }
+
+    return count;
+}
+
 int secdat_cli_complete(int argc, char **argv)
 {
     static const char *const global_options[] = {
@@ -675,6 +757,8 @@ int secdat_cli_complete(int argc, char **argv)
     if (command == NULL) {
         secdat_cli_completion_print_top_level_commands(current);
         secdat_cli_completion_print_candidates(current, global_options);
+        secdat_cli_completion_print_keys(argc, argv, current, 0);
+        secdat_cli_completion_print_keys(argc, argv, current, 1);
         return 0;
     }
 
@@ -690,6 +774,11 @@ int secdat_cli_complete(int argc, char **argv)
     if (strcmp(command, "domain") == 0 && subcommand == NULL) {
         secdat_cli_completion_print_group_subcommands("domain", current);
         return 0;
+    }
+
+    if (secdat_cli_completion_is_command_with_key_operand(command)
+        && secdat_cli_completion_positional_count(argc, argv, command, subcommand) == 0) {
+        secdat_cli_completion_print_keys(argc, argv, current, 0);
     }
 
     if (strcmp(command, "ls") == 0) {

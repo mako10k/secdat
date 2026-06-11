@@ -7624,6 +7624,57 @@ static int secdat_command_ls(const struct secdat_cli *cli)
     return 0;
 }
 
+int secdat_print_completion_keys(
+    const char *dir_override,
+    const char *domain_override,
+    const char *store_name,
+    const char *current,
+    int append_equals
+)
+{
+    struct secdat_cli cli = {0};
+    struct secdat_domain_chain chain = {0};
+    struct secdat_key_list visible_keys = {0};
+    size_t index;
+    int status = 1;
+
+    cli.dir = dir_override;
+    cli.domain = domain_override;
+    cli.store = store_name;
+
+    if (cli.dir != NULL && cli.domain != NULL) {
+        return 1;
+    }
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(&cli), &chain) != 0) {
+        goto cleanup;
+    }
+    if (secdat_collect_visible_keys(&chain, cli.store, NULL, NULL, &visible_keys) != 0) {
+        goto cleanup;
+    }
+
+    for (index = 0; index < visible_keys.count; index += 1) {
+        const char *key = visible_keys.items[index];
+        size_t key_length = strlen(key);
+        size_t current_length = current != NULL ? strlen(current) : 0;
+
+        if (current_length > key_length || strncmp(key, current, current_length) != 0) {
+            continue;
+        }
+        fputs(key, stdout);
+        if (append_equals) {
+            fputc('=', stdout);
+        }
+        fputc('\n', stdout);
+    }
+
+    status = 0;
+
+cleanup:
+    secdat_domain_chain_free(&chain);
+    secdat_key_list_free(&visible_keys);
+    return status;
+}
+
 static int secdat_command_list(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
