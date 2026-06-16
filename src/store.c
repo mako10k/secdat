@@ -54,6 +54,7 @@
 static const unsigned char secdat_entry_magic[8] = {'S', 'E', 'C', 'D', 'A', 'T', '1', '\0'};
 static const unsigned char secdat_wrapped_key_magic[8] = {'S', 'E', 'C', 'D', 'W', 'R', 'P', '\0'};
 static const unsigned char secdat_bundle_magic[8] = {'S', 'E', 'C', 'D', 'B', 'N', 'D', 'L'};
+static const char secdat_attrs_magic[] = "SECDATATTR1";
 
 struct secdat_key_list {
     char **items;
@@ -76,6 +77,8 @@ struct secdat_ls_options {
     int canonical_store;
     int safe;
     int unsafe_store;
+    int metadata;
+    int sandbox_injectable;
 };
 
 struct secdat_exec_options {
@@ -95,6 +98,37 @@ struct secdat_list_options {
     int orphaned;
     int safe;
     int unsafe_store;
+    int sandbox_injectable;
+};
+
+enum secdat_key_visibility {
+    SECDAT_KEY_VISIBILITY_ALWAYS = 0,
+    SECDAT_KEY_VISIBILITY_UNLOCKED,
+};
+
+enum secdat_value_access {
+    SECDAT_VALUE_ACCESS_UNLOCKED = 0,
+    SECDAT_VALUE_ACCESS_ALWAYS,
+};
+
+enum secdat_sandbox_inject {
+    SECDAT_SANDBOX_INJECT_NEVER = 0,
+    SECDAT_SANDBOX_INJECT_EXPLICIT,
+    SECDAT_SANDBOX_INJECT_ALLOW,
+};
+
+struct secdat_secret_attrs {
+    enum secdat_key_visibility key_visibility;
+    enum secdat_value_access value_access;
+    enum secdat_sandbox_inject sandbox_inject;
+};
+
+struct secdat_attr_options {
+    const char *keyref;
+    struct secdat_secret_attrs attrs;
+    int set_key_visibility;
+    int set_value_access;
+    int set_sandbox_inject;
 };
 
 struct secdat_key_access_options {
@@ -251,6 +285,15 @@ static int secdat_store_plaintext(
     size_t plaintext_length,
     int unsafe_store
 );
+static int secdat_store_plaintext_with_attrs(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store,
+    const struct secdat_secret_attrs *attrs
+);
 static int secdat_store_plaintext_for_chain(
     const struct secdat_domain_chain *chain,
     const char *domain_id,
@@ -260,10 +303,39 @@ static int secdat_store_plaintext_for_chain(
     size_t plaintext_length,
     int unsafe_store
 );
+static int secdat_store_plaintext_attrs_for_chain(
+    const struct secdat_domain_chain *chain,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store,
+    const struct secdat_secret_attrs *attrs
+);
 static int secdat_write_empty_file(const char *path);
 static int secdat_entry_uses_plaintext_storage(const char *path, int *unsafe_store);
+static int secdat_file_exists(const char *path);
+static int secdat_read_file(const char *path, unsigned char **data, size_t *length);
+static void secdat_secret_attrs_default(int unsafe_store, struct secdat_secret_attrs *attrs);
+static int secdat_secret_attrs_supported(const struct secdat_secret_attrs *attrs);
+static int secdat_secret_attrs_are_default(const struct secdat_secret_attrs *attrs, int unsafe_store);
+static const char *secdat_key_visibility_name(enum secdat_key_visibility value);
+static const char *secdat_value_access_name(enum secdat_value_access value);
+static const char *secdat_sandbox_inject_name(enum secdat_sandbox_inject value);
+static int secdat_parse_key_visibility(const char *value, enum secdat_key_visibility *parsed);
+static int secdat_parse_value_access(const char *value, enum secdat_value_access *parsed);
+static int secdat_parse_sandbox_inject(const char *value, enum secdat_sandbox_inject *parsed);
+static int secdat_load_resolved_secret_attrs(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    struct secdat_secret_attrs *attrs,
+    int *unsafe_store
+);
 static int secdat_collect_store_names(const char *domain_id, const char *pattern, struct secdat_key_list *stores);
 static int secdat_atomic_write_file(const char *path, const unsigned char *data, size_t length);
+static int secdat_remove_if_exists(const char *path);
 static int secdat_parse_i64(const char *value, time_t *result);
 static int secdat_session_agent_connect_chain_details(const struct secdat_domain_chain *chain, size_t *matched_index, size_t *blocked_index);
 static int secdat_session_agent_status(const struct secdat_domain_chain *chain, struct secdat_session_record *record);
@@ -1977,6 +2049,10 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
         {"canonical-store", no_argument, NULL, 'S'},
         {"safe", no_argument, NULL, 'e'},
         {"unsafe", no_argument, NULL, 'u'},
+        {"secret-value", no_argument, NULL, 'e'},
+        {"public-value", no_argument, NULL, 'u'},
+        {"sandbox-injectable", no_argument, NULL, 1000},
+        {"metadata", no_argument, NULL, 1001},
         {NULL, 0, NULL, 0},
     };
     char *argv[cli->argc + 2];
@@ -2018,6 +2094,12 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
             break;
         case 'u':
             options->unsafe_store = 1;
+            break;
+        case 1000:
+            options->sandbox_injectable = 1;
+            break;
+        case 1001:
+            options->metadata = 1;
             break;
         case '?':
         case ':':
@@ -2260,6 +2342,9 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
         {"orphaned", no_argument, NULL, 'O'},
         {"safe", no_argument, NULL, 'e'},
         {"unsafe", no_argument, NULL, 'u'},
+        {"secret-value", no_argument, NULL, 'e'},
+        {"public-value", no_argument, NULL, 'u'},
+        {"sandbox-injectable", no_argument, NULL, 1000},
         {NULL, 0, NULL, 0},
     };
     char *argv[cli->argc + 2];
@@ -2287,6 +2372,9 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
         case 'u':
             options->unsafe_store = 1;
             break;
+        case 1000:
+            options->sandbox_injectable = 1;
+            break;
         case '?':
         case ':':
         default:
@@ -2302,9 +2390,73 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
         return 2;
     }
 
-    if (!options->masked && !options->overridden && !options->orphaned && !options->safe && !options->unsafe_store) {
+    if (!options->masked && !options->overridden && !options->orphaned
+        && !options->safe && !options->unsafe_store && !options->sandbox_injectable) {
         fprintf(stderr, _("missing state filter for list\n"));
         secdat_cli_print_try_help(cli, "list");
+        return 2;
+    }
+
+    return 0;
+}
+
+static int secdat_parse_attr_options(const struct secdat_cli *cli, struct secdat_attr_options *options)
+{
+    static const struct option long_options[] = {
+        {"key-visibility", required_argument, NULL, 1000},
+        {"value-access", required_argument, NULL, 1001},
+        {"sandbox-inject", required_argument, NULL, 1002},
+        {"inject", required_argument, NULL, 1002},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+
+    memset(options, 0, sizeof(*options));
+    secdat_secret_attrs_default(0, &options->attrs);
+
+    secdat_prepare_option_argv(cli, "attr", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":", long_options, NULL)) != -1) {
+        switch (option) {
+        case 1000:
+            if (secdat_parse_key_visibility(optarg, &options->attrs.key_visibility) != 0) {
+                return 2;
+            }
+            options->set_key_visibility = 1;
+            break;
+        case 1001:
+            if (secdat_parse_value_access(optarg, &options->attrs.value_access) != 0) {
+                return 2;
+            }
+            options->set_value_access = 1;
+            break;
+        case 1002:
+            if (secdat_parse_sandbox_inject(optarg, &options->attrs.sandbox_inject) != 0) {
+                return 2;
+            }
+            options->set_sandbox_inject = 1;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for attr\n"));
+            secdat_cli_print_try_help(cli, "attr");
+            return 2;
+        }
+    }
+
+    if (optind >= argc) {
+        fprintf(stderr, _("missing key for attr\n"));
+        secdat_cli_print_try_help(cli, "attr");
+        return 2;
+    }
+    options->keyref = argv[optind];
+    optind += 1;
+    if (optind != argc) {
+        fprintf(stderr, _("invalid arguments for attr\n"));
+        secdat_cli_print_try_help(cli, "attr");
         return 2;
     }
 
@@ -2692,6 +2844,292 @@ static int secdat_build_tombstone_path(const char *domain_id, const char *store_
     }
 
     return 0;
+}
+
+static int secdat_build_entry_metadata_path(const char *domain_id, const char *store_name, const char *key, char *buffer, size_t size)
+{
+    char entries_dir[PATH_MAX];
+    char *escaped_key = NULL;
+    int status;
+    int written;
+
+    status = secdat_store_entries_dir(domain_id, store_name, entries_dir, sizeof(entries_dir));
+    if (status != 0) {
+        return status;
+    }
+
+    status = secdat_escape_component(key, &escaped_key);
+    if (status != 0) {
+        return status;
+    }
+
+    written = snprintf(buffer, size, "%s/%s.meta", entries_dir, escaped_key);
+    free(escaped_key);
+    if (written < 0 || (size_t)written >= size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+
+    return 0;
+}
+
+static const char *secdat_key_visibility_name(enum secdat_key_visibility value)
+{
+    switch (value) {
+    case SECDAT_KEY_VISIBILITY_ALWAYS:
+        return "always";
+    case SECDAT_KEY_VISIBILITY_UNLOCKED:
+        return "unlocked";
+    default:
+        return "unknown";
+    }
+}
+
+static const char *secdat_value_access_name(enum secdat_value_access value)
+{
+    switch (value) {
+    case SECDAT_VALUE_ACCESS_UNLOCKED:
+        return "unlocked";
+    case SECDAT_VALUE_ACCESS_ALWAYS:
+        return "always";
+    default:
+        return "unknown";
+    }
+}
+
+static const char *secdat_sandbox_inject_name(enum secdat_sandbox_inject value)
+{
+    switch (value) {
+    case SECDAT_SANDBOX_INJECT_NEVER:
+        return "never";
+    case SECDAT_SANDBOX_INJECT_EXPLICIT:
+        return "explicit";
+    case SECDAT_SANDBOX_INJECT_ALLOW:
+        return "allow";
+    default:
+        return "unknown";
+    }
+}
+
+static int secdat_parse_key_visibility(const char *value, enum secdat_key_visibility *parsed)
+{
+    if (strcmp(value, "always") == 0) {
+        *parsed = SECDAT_KEY_VISIBILITY_ALWAYS;
+        return 0;
+    }
+    if (strcmp(value, "unlocked") == 0) {
+        *parsed = SECDAT_KEY_VISIBILITY_UNLOCKED;
+        return 0;
+    }
+    fprintf(stderr, _("invalid key visibility: %s\n"), value);
+    return 1;
+}
+
+static int secdat_parse_value_access(const char *value, enum secdat_value_access *parsed)
+{
+    if (strcmp(value, "unlocked") == 0) {
+        *parsed = SECDAT_VALUE_ACCESS_UNLOCKED;
+        return 0;
+    }
+    if (strcmp(value, "always") == 0) {
+        *parsed = SECDAT_VALUE_ACCESS_ALWAYS;
+        return 0;
+    }
+    fprintf(stderr, _("invalid value access: %s\n"), value);
+    return 1;
+}
+
+static int secdat_parse_sandbox_inject(const char *value, enum secdat_sandbox_inject *parsed)
+{
+    if (strcmp(value, "never") == 0) {
+        *parsed = SECDAT_SANDBOX_INJECT_NEVER;
+        return 0;
+    }
+    if (strcmp(value, "explicit") == 0) {
+        *parsed = SECDAT_SANDBOX_INJECT_EXPLICIT;
+        return 0;
+    }
+    if (strcmp(value, "allow") == 0) {
+        *parsed = SECDAT_SANDBOX_INJECT_ALLOW;
+        return 0;
+    }
+    fprintf(stderr, _("invalid sandbox inject policy: %s\n"), value);
+    return 1;
+}
+
+static void secdat_secret_attrs_default(int unsafe_store, struct secdat_secret_attrs *attrs)
+{
+    attrs->key_visibility = SECDAT_KEY_VISIBILITY_ALWAYS;
+    attrs->value_access = unsafe_store ? SECDAT_VALUE_ACCESS_ALWAYS : SECDAT_VALUE_ACCESS_UNLOCKED;
+    attrs->sandbox_inject = SECDAT_SANDBOX_INJECT_NEVER;
+}
+
+static int secdat_secret_attrs_supported(const struct secdat_secret_attrs *attrs)
+{
+    if (attrs->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+        fprintf(stderr, _("key_visibility=unlocked requires storage format v2 and is not supported yet\n"));
+        return 0;
+    }
+    return 1;
+}
+
+static int secdat_secret_attrs_are_default(const struct secdat_secret_attrs *attrs, int unsafe_store)
+{
+    struct secdat_secret_attrs defaults;
+
+    secdat_secret_attrs_default(unsafe_store, &defaults);
+    return attrs->key_visibility == defaults.key_visibility
+        && attrs->value_access == defaults.value_access
+        && attrs->sandbox_inject == defaults.sandbox_inject;
+}
+
+static int secdat_parse_secret_attr_line(char *line, struct secdat_secret_attrs *attrs)
+{
+    char *separator;
+
+    if (line[0] == '\0') {
+        return 0;
+    }
+    separator = strchr(line, '=');
+    if (separator == NULL) {
+        fprintf(stderr, _("invalid secret metadata\n"));
+        return 1;
+    }
+    *separator = '\0';
+    separator += 1;
+
+    if (strcmp(line, "key_visibility") == 0) {
+        return secdat_parse_key_visibility(separator, &attrs->key_visibility);
+    }
+    if (strcmp(line, "value_access") == 0) {
+        return secdat_parse_value_access(separator, &attrs->value_access);
+    }
+    if (strcmp(line, "sandbox_inject") == 0) {
+        return secdat_parse_sandbox_inject(separator, &attrs->sandbox_inject);
+    }
+
+    fprintf(stderr, _("unsupported secret metadata field: %s\n"), line);
+    return 1;
+}
+
+static int secdat_read_secret_attrs_path(const char *metadata_path, int unsafe_store, struct secdat_secret_attrs *attrs)
+{
+    unsigned char *data = NULL;
+    char *text = NULL;
+    char *line;
+    char *saveptr = NULL;
+    size_t length = 0;
+    int status = 1;
+
+    secdat_secret_attrs_default(unsafe_store, attrs);
+    if (!secdat_file_exists(metadata_path)) {
+        return 0;
+    }
+
+    if (secdat_read_file(metadata_path, &data, &length) != 0) {
+        return 1;
+    }
+    if (length > 4096 || memchr(data, '\0', length) != NULL) {
+        fprintf(stderr, _("invalid secret metadata\n"));
+        goto cleanup;
+    }
+
+    text = malloc(length + 1);
+    if (text == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    memcpy(text, data, length);
+    text[length] = '\0';
+
+    line = strtok_r(text, "\n", &saveptr);
+    if (line == NULL || strcmp(line, secdat_attrs_magic) != 0) {
+        fprintf(stderr, _("unsupported secret metadata format\n"));
+        goto cleanup;
+    }
+
+    while ((line = strtok_r(NULL, "\n", &saveptr)) != NULL) {
+        if (secdat_parse_secret_attr_line(line, attrs) != 0) {
+            goto cleanup;
+        }
+    }
+
+    attrs->value_access = unsafe_store ? SECDAT_VALUE_ACCESS_ALWAYS : SECDAT_VALUE_ACCESS_UNLOCKED;
+    status = 0;
+
+cleanup:
+    free(text);
+    free(data);
+    return status;
+}
+
+static int secdat_read_secret_attrs(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    int unsafe_store,
+    struct secdat_secret_attrs *attrs
+)
+{
+    char metadata_path[PATH_MAX];
+
+    if (secdat_build_entry_metadata_path(domain_id, store_name, key, metadata_path, sizeof(metadata_path)) != 0) {
+        return 1;
+    }
+    return secdat_read_secret_attrs_path(metadata_path, unsafe_store, attrs);
+}
+
+static int secdat_remove_secret_attrs(const char *domain_id, const char *store_name, const char *key)
+{
+    char metadata_path[PATH_MAX];
+
+    if (secdat_build_entry_metadata_path(domain_id, store_name, key, metadata_path, sizeof(metadata_path)) != 0) {
+        return 1;
+    }
+    return secdat_remove_if_exists(metadata_path);
+}
+
+static int secdat_write_secret_attrs(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    int unsafe_store,
+    const struct secdat_secret_attrs *attrs
+)
+{
+    char metadata_path[PATH_MAX];
+    char payload[512];
+    int written;
+
+    if (attrs == NULL || secdat_secret_attrs_are_default(attrs, unsafe_store)) {
+        return secdat_remove_secret_attrs(domain_id, store_name, key);
+    }
+    if (!secdat_secret_attrs_supported(attrs)) {
+        return 1;
+    }
+    if ((attrs->value_access == SECDAT_VALUE_ACCESS_ALWAYS) != (unsafe_store != 0)) {
+        fprintf(stderr, _("secret value_access does not match storage mode\n"));
+        return 1;
+    }
+    if (secdat_build_entry_metadata_path(domain_id, store_name, key, metadata_path, sizeof(metadata_path)) != 0) {
+        return 1;
+    }
+
+    written = snprintf(
+        payload,
+        sizeof(payload),
+        "%s\nkey_visibility=%s\nvalue_access=%s\nsandbox_inject=%s\n",
+        secdat_attrs_magic,
+        secdat_key_visibility_name(attrs->key_visibility),
+        secdat_value_access_name(attrs->value_access),
+        secdat_sandbox_inject_name(attrs->sandbox_inject)
+    );
+    if (written < 0 || (size_t)written >= sizeof(payload)) {
+        fprintf(stderr, _("secret metadata is too large\n"));
+        return 1;
+    }
+
+    return secdat_atomic_write_file(metadata_path, (const unsigned char *)payload, (size_t)written);
 }
 
 static int secdat_ensure_directory(const char *path, mode_t mode)
@@ -7280,6 +7718,7 @@ static int secdat_collect_list_keys(
     char entry_path[PATH_MAX];
     size_t index;
     int entry_is_unsafe;
+    struct secdat_secret_attrs attrs;
     int visible_in_parent;
     int status = 1;
 
@@ -7316,12 +7755,13 @@ static int secdat_collect_list_keys(
     }
 
     for (index = 0; index < local_entries.count; index += 1) {
-        if (options->safe || options->unsafe_store) {
+        if (options->safe || options->unsafe_store || options->sandbox_injectable) {
             if (secdat_active_overlay_lookup(chain, chain->ids[0], store_name, local_entries.items[index], &overlay) != 0) {
                 goto cleanup;
             }
             if (overlay.found && !overlay.tombstone) {
                 entry_is_unsafe = overlay.unsafe_store;
+                secdat_secret_attrs_default(entry_is_unsafe, &attrs);
                 secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
                 free(overlay.plaintext);
                 overlay.plaintext = NULL;
@@ -7333,6 +7773,9 @@ static int secdat_collect_list_keys(
                 if (secdat_entry_uses_plaintext_storage(entry_path, &entry_is_unsafe) != 0) {
                     goto cleanup;
                 }
+                if (secdat_read_secret_attrs(chain->ids[0], store_name, local_entries.items[index], entry_is_unsafe, &attrs) != 0) {
+                    goto cleanup;
+                }
             }
             if (options->unsafe_store && entry_is_unsafe) {
                 if (secdat_key_list_append(keys, local_entries.items[index]) != 0) {
@@ -7340,6 +7783,11 @@ static int secdat_collect_list_keys(
                 }
             }
             if (options->safe && !entry_is_unsafe) {
+                if (secdat_key_list_append(keys, local_entries.items[index]) != 0) {
+                    goto cleanup;
+                }
+            }
+            if (options->sandbox_injectable && attrs.sandbox_inject != SECDAT_SANDBOX_INJECT_NEVER) {
                 if (secdat_key_list_append(keys, local_entries.items[index]) != 0) {
                     goto cleanup;
                 }
@@ -7501,6 +7949,50 @@ cleanup:
     return status;
 }
 
+static int secdat_load_resolved_secret_attrs(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    struct secdat_secret_attrs *attrs,
+    int *unsafe_store
+)
+{
+    struct secdat_effective_entry entry = {0};
+    int entry_is_unsafe = 0;
+    int status;
+
+    status = secdat_resolve_effective_entry(chain, store_name, key, 0, &entry);
+    if (status != 0) {
+        fprintf(stderr, _("key not found: %s\n"), key);
+        fprintf(stderr, _("Hint: check secdat status, --dir, and --store to confirm the lookup context\n"));
+        return 1;
+    }
+
+    if (entry.from_overlay) {
+        entry_is_unsafe = entry.unsafe_store;
+        secdat_secret_attrs_default(entry_is_unsafe, attrs);
+        if (unsafe_store != NULL) {
+            *unsafe_store = entry_is_unsafe;
+        }
+        secdat_effective_entry_reset(&entry);
+        return 0;
+    }
+
+    if (secdat_entry_uses_plaintext_storage(entry.path, &entry_is_unsafe) != 0) {
+        secdat_effective_entry_reset(&entry);
+        return 1;
+    }
+    if (secdat_read_secret_attrs(chain->ids[entry.resolved_index], store_name, key, entry_is_unsafe, attrs) != 0) {
+        secdat_effective_entry_reset(&entry);
+        return 1;
+    }
+    if (unsafe_store != NULL) {
+        *unsafe_store = entry_is_unsafe;
+    }
+    secdat_effective_entry_reset(&entry);
+    return 0;
+}
+
 static int secdat_command_ls(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
@@ -7540,6 +8032,7 @@ static int secdat_command_ls(const struct secdat_cli *cli)
     for (index = 0; index < visible_keys.count; index += 1) {
         char output[PATH_MAX * 2];
         struct secdat_effective_entry entry = {0};
+        struct secdat_secret_attrs attrs;
         char domain_path[PATH_MAX];
         int entry_is_unsafe;
 
@@ -7551,25 +8044,41 @@ static int secdat_command_ls(const struct secdat_cli *cli)
             return 1;
         }
 
+        if (entry.from_overlay) {
+            entry_is_unsafe = entry.unsafe_store;
+            secdat_secret_attrs_default(entry_is_unsafe, &attrs);
+        } else if (secdat_entry_uses_plaintext_storage(entry.path, &entry_is_unsafe) != 0
+            || secdat_read_secret_attrs(chain.ids[entry.resolved_index], cli->store, visible_keys.items[index], entry_is_unsafe, &attrs) != 0) {
+            secdat_effective_entry_reset(&entry);
+            secdat_key_list_free(&options.include_patterns);
+            secdat_key_list_free(&options.exclude_patterns);
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+
         if (filter_by_storage) {
-            if (entry.from_overlay) {
-                entry_is_unsafe = entry.unsafe_store;
-            } else if (secdat_entry_uses_plaintext_storage(entry.path, &entry_is_unsafe) != 0) {
-                secdat_effective_entry_reset(&entry);
-                secdat_key_list_free(&options.include_patterns);
-                secdat_key_list_free(&options.exclude_patterns);
-                secdat_domain_chain_free(&chain);
-                secdat_key_list_free(&visible_keys);
-                return 1;
-            }
             if ((options.safe && entry_is_unsafe) || (options.unsafe_store && !entry_is_unsafe)) {
                 secdat_effective_entry_reset(&entry);
                 continue;
             }
         }
+        if (options.sandbox_injectable && attrs.sandbox_inject == SECDAT_SANDBOX_INJECT_NEVER) {
+            secdat_effective_entry_reset(&entry);
+            continue;
+        }
 
         if (!options.canonical_domain && !options.canonical_store) {
-            puts(visible_keys.items[index]);
+            fputs(visible_keys.items[index], stdout);
+            if (options.metadata) {
+                printf(
+                    "\tkey_visibility=%s\tvalue_access=%s\tsandbox_inject=%s",
+                    secdat_key_visibility_name(attrs.key_visibility),
+                    secdat_value_access_name(attrs.value_access),
+                    secdat_sandbox_inject_name(attrs.sandbox_inject)
+                );
+            }
+            fputc('\n', stdout);
             secdat_effective_entry_reset(&entry);
             continue;
         }
@@ -7613,7 +8122,16 @@ static int secdat_command_ls(const struct secdat_cli *cli)
             return 1;
         }
 
-        puts(output);
+        fputs(output, stdout);
+        if (options.metadata) {
+            printf(
+                "\tkey_visibility=%s\tvalue_access=%s\tsandbox_inject=%s",
+                secdat_key_visibility_name(attrs.key_visibility),
+                secdat_value_access_name(attrs.value_access),
+                secdat_sandbox_inject_name(attrs.sandbox_inject)
+            );
+        }
+        fputc('\n', stdout);
         secdat_effective_entry_reset(&entry);
     }
 
@@ -7703,6 +8221,119 @@ static int secdat_command_list(const struct secdat_cli *cli)
     secdat_domain_chain_free(&chain);
     secdat_key_list_free(&keys);
     return 0;
+}
+
+static void secdat_print_secret_attrs(const struct secdat_secret_attrs *attrs)
+{
+    printf("key_visibility=%s\n", secdat_key_visibility_name(attrs->key_visibility));
+    printf("value_access=%s\n", secdat_value_access_name(attrs->value_access));
+    printf("sandbox_inject=%s\n", secdat_sandbox_inject_name(attrs->sandbox_inject));
+}
+
+static int secdat_command_attr(const struct secdat_cli *cli)
+{
+    struct secdat_attr_options options;
+    struct secdat_key_reference reference;
+    struct secdat_domain_chain chain = {0};
+    struct secdat_effective_entry entry = {0};
+    struct secdat_secret_attrs attrs;
+    unsigned char *plaintext = NULL;
+    size_t plaintext_length = 0;
+    int unsafe_store = 0;
+    int target_unsafe_store;
+    int has_changes;
+    int status;
+
+    status = secdat_parse_attr_options(cli, &options);
+    if (status != 0) {
+        return status;
+    }
+    has_changes = options.set_key_visibility || options.set_value_access || options.set_sandbox_inject;
+
+    if (secdat_parse_key_reference(options.keyref, secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
+        return 1;
+    }
+    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+        return 1;
+    }
+    if (secdat_resolve_effective_entry(&chain, reference.store_value, reference.key, 0, &entry) != 0) {
+        secdat_domain_chain_free(&chain);
+        fprintf(stderr, _("key not found: %s\n"), reference.key);
+        return 1;
+    }
+
+    if (secdat_load_resolved_secret_attrs(&chain, reference.store_value, reference.key, &attrs, &unsafe_store) != 0) {
+        secdat_effective_entry_reset(&entry);
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+    if (!has_changes) {
+        secdat_print_secret_attrs(&attrs);
+        secdat_effective_entry_reset(&entry);
+        secdat_domain_chain_free(&chain);
+        return 0;
+    }
+
+    if (entry.from_overlay) {
+        fprintf(stderr, _("secret attributes cannot be changed for a volatile session overlay\n"));
+        secdat_effective_entry_reset(&entry);
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+    if (entry.resolved_index != 0) {
+        fprintf(stderr, _("cannot update inherited key attributes: %s\n"), reference.key);
+        secdat_effective_entry_reset(&entry);
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+    if (secdat_require_mutable_session_chain(&chain, "attr") != 0
+        || secdat_require_writable_domain_chain(&chain) != 0) {
+        secdat_effective_entry_reset(&entry);
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+
+    if (options.set_key_visibility) {
+        attrs.key_visibility = options.attrs.key_visibility;
+    }
+    if (options.set_sandbox_inject) {
+        attrs.sandbox_inject = options.attrs.sandbox_inject;
+    }
+    if (options.set_value_access) {
+        attrs.value_access = options.attrs.value_access;
+    }
+    if (!secdat_secret_attrs_supported(&attrs)) {
+        secdat_effective_entry_reset(&entry);
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+
+    target_unsafe_store = attrs.value_access == SECDAT_VALUE_ACCESS_ALWAYS;
+    if (target_unsafe_store != unsafe_store) {
+        if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, NULL, NULL) != 0) {
+            secdat_effective_entry_reset(&entry);
+            secdat_domain_chain_free(&chain);
+            return 1;
+        }
+        status = secdat_store_plaintext_attrs_for_chain(
+            &chain,
+            chain.count == 0 ? "" : chain.ids[0],
+            reference.store_value,
+            reference.key,
+            plaintext,
+            plaintext_length,
+            target_unsafe_store,
+            &attrs
+        );
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
+    } else {
+        status = secdat_write_secret_attrs(chain.count == 0 ? "" : chain.ids[0], reference.store_value, reference.key, unsafe_store, &attrs);
+    }
+
+    secdat_effective_entry_reset(&entry);
+    secdat_domain_chain_free(&chain);
+    return status;
 }
 
 static int secdat_command_exists(const struct secdat_cli *cli)
@@ -7850,6 +8481,19 @@ static int secdat_store_plaintext(
     int unsafe_store
 )
 {
+    return secdat_store_plaintext_with_attrs(domain_id, store_name, key, plaintext, plaintext_length, unsafe_store, NULL);
+}
+
+static int secdat_store_plaintext_with_attrs(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store,
+    const struct secdat_secret_attrs *attrs
+)
+{
     char entry_path[PATH_MAX];
     char tombstone_path[PATH_MAX];
     unsigned char *encrypted = NULL;
@@ -7875,6 +8519,14 @@ static int secdat_store_plaintext(
         return status;
     }
 
+    if (attrs != NULL && !secdat_secret_attrs_supported(attrs)) {
+        return 1;
+    }
+    if (attrs != NULL && ((attrs->value_access == SECDAT_VALUE_ACCESS_ALWAYS) != (unsafe_store != 0))) {
+        fprintf(stderr, _("secret value_access does not match storage mode\n"));
+        return 1;
+    }
+
     if (unsafe_store) {
         encrypted_length = SECDAT_HEADER_LEN + plaintext_length;
         encrypted = calloc(1, encrypted_length == 0 ? 1 : encrypted_length);
@@ -7897,6 +8549,9 @@ static int secdat_store_plaintext(
     if (status == 0) {
         status = secdat_atomic_write_file(entry_path, encrypted, encrypted_length);
     }
+    if (status == 0) {
+        status = secdat_write_secret_attrs(domain_id, store_name, key, unsafe_store, attrs);
+    }
 
     secdat_secure_clear(encrypted, encrypted_length);
     free(encrypted);
@@ -7913,17 +8568,36 @@ static int secdat_store_plaintext_for_chain(
     int unsafe_store
 )
 {
+    return secdat_store_plaintext_attrs_for_chain(chain, domain_id, store_name, key, plaintext, plaintext_length, unsafe_store, NULL);
+}
+
+static int secdat_store_plaintext_attrs_for_chain(
+    const struct secdat_domain_chain *chain,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store,
+    const struct secdat_secret_attrs *attrs
+)
+{
     if (secdat_active_overlay_enabled(chain)) {
+        if (attrs != NULL && !secdat_secret_attrs_are_default(attrs, unsafe_store)) {
+            fprintf(stderr, _("secret attributes are not supported in a volatile session overlay\n"));
+            return 1;
+        }
         return secdat_active_overlay_store_plaintext(chain, domain_id, store_name, key, plaintext, plaintext_length, unsafe_store);
     }
-    return secdat_store_plaintext(domain_id, store_name, key, plaintext, plaintext_length, unsafe_store);
+    return secdat_store_plaintext_with_attrs(domain_id, store_name, key, plaintext, plaintext_length, unsafe_store, attrs);
 }
 
 static int secdat_store_literal_keyref(
     const struct secdat_cli *cli,
     const char *keyref,
     const char *literal_value,
-    int unsafe_store
+    int unsafe_store,
+    const struct secdat_secret_attrs *attrs
 )
 {
     struct secdat_key_reference reference;
@@ -7967,7 +8641,7 @@ static int secdat_store_literal_keyref(
     }
 
     key = reference.key;
-    status = secdat_store_plaintext_for_chain(&chain, current_domain_id, reference.store_value, key, plaintext, plaintext_length, unsafe_store);
+    status = secdat_store_plaintext_attrs_for_chain(&chain, current_domain_id, reference.store_value, key, plaintext, plaintext_length, unsafe_store, attrs);
     secdat_domain_chain_free(&chain);
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
@@ -7982,7 +8656,8 @@ static int secdat_is_assignment_operand(const char *value)
 static int secdat_store_assignment_operand(
     const struct secdat_cli *cli,
     const char *operand,
-    int unsafe_store
+    int unsafe_store,
+    const struct secdat_secret_attrs *attrs
 )
 {
     const char *separator = strchr(operand, '=');
@@ -8005,7 +8680,7 @@ static int secdat_store_assignment_operand(
     memcpy(keyref, operand, keyref_length);
     keyref[keyref_length] = '\0';
 
-    status = secdat_store_literal_keyref(cli, keyref, separator + 1, unsafe_store);
+    status = secdat_store_literal_keyref(cli, keyref, separator + 1, unsafe_store, attrs);
     free(keyref);
     return status;
 }
@@ -8014,6 +8689,12 @@ static int secdat_command_set(const struct secdat_cli *cli)
 {
     static const struct option long_options[] = {
         {"unsafe", no_argument, NULL, 'u'},
+        {"public-value", no_argument, NULL, 1000},
+        {"secret-value", no_argument, NULL, 1001},
+        {"key-visibility", required_argument, NULL, 1002},
+        {"value-access", required_argument, NULL, 1003},
+        {"sandbox-inject", required_argument, NULL, 1004},
+        {"inject", required_argument, NULL, 1004},
         {"stdin", no_argument, NULL, 'i'},
         {"value", required_argument, NULL, 'v'},
         {"env", required_argument, NULL, 'e'},
@@ -8021,6 +8702,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
     };
     struct secdat_key_reference reference;
     struct secdat_domain_chain chain = {0};
+    struct secdat_secret_attrs attrs;
     char current_domain_id[PATH_MAX];
     char *argv[cli->argc + 2];
     const char *key;
@@ -8032,21 +8714,63 @@ static int secdat_command_set(const struct secdat_cli *cli)
     const char *keyref = NULL;
     int read_stdin = 1;
     int unsafe_store = 0;
+    int value_mode_configured = 0;
     int argc;
     int option;
     int status;
 
+    secdat_secret_attrs_default(0, &attrs);
     secdat_prepare_option_argv(cli, "set", &argc, argv);
     secdat_reset_getopt_state();
     while ((option = getopt_long(argc, argv, ":uiv:e:", long_options, NULL)) != -1) {
         switch (option) {
         case 'u':
-            if (unsafe_store) {
+        case 1000:
+            if (value_mode_configured && attrs.value_access != SECDAT_VALUE_ACCESS_ALWAYS) {
                 fprintf(stderr, _("invalid arguments for set\n"));
                 secdat_cli_print_try_help(cli, "set");
                 return 2;
             }
             unsafe_store = 1;
+            attrs.value_access = SECDAT_VALUE_ACCESS_ALWAYS;
+            value_mode_configured = 1;
+            break;
+        case 1001:
+            if (value_mode_configured && attrs.value_access != SECDAT_VALUE_ACCESS_UNLOCKED) {
+                fprintf(stderr, _("invalid arguments for set\n"));
+                secdat_cli_print_try_help(cli, "set");
+                return 2;
+            }
+            unsafe_store = 0;
+            attrs.value_access = SECDAT_VALUE_ACCESS_UNLOCKED;
+            value_mode_configured = 1;
+            break;
+        case 1002:
+            if (secdat_parse_key_visibility(optarg, &attrs.key_visibility) != 0) {
+                return 2;
+            }
+            break;
+        case 1003:
+            {
+                enum secdat_value_access parsed;
+
+                if (secdat_parse_value_access(optarg, &parsed) != 0) {
+                    return 2;
+                }
+                if (value_mode_configured && attrs.value_access != parsed) {
+                    fprintf(stderr, _("invalid arguments for set\n"));
+                    secdat_cli_print_try_help(cli, "set");
+                    return 2;
+                }
+                attrs.value_access = parsed;
+                unsafe_store = parsed == SECDAT_VALUE_ACCESS_ALWAYS;
+                value_mode_configured = 1;
+            }
+            break;
+        case 1004:
+            if (secdat_parse_sandbox_inject(optarg, &attrs.sandbox_inject) != 0) {
+                return 2;
+            }
             break;
         case 'i':
             if (!read_stdin || literal_value != NULL) {
@@ -8089,6 +8813,11 @@ static int secdat_command_set(const struct secdat_cli *cli)
         }
     }
 
+    if (!secdat_secret_attrs_supported(&attrs)) {
+        return 1;
+    }
+    unsafe_store = attrs.value_access == SECDAT_VALUE_ACCESS_ALWAYS;
+
     if (optind >= argc) {
         fprintf(stderr, _("missing key for set\n"));
         return 2;
@@ -8117,7 +8846,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
             int assignment_index;
 
             for (assignment_index = optind; assignment_index < argc; assignment_index += 1) {
-                status = secdat_store_assignment_operand(cli, argv[assignment_index], unsafe_store);
+                status = secdat_store_assignment_operand(cli, argv[assignment_index], unsafe_store, &attrs);
                 if (status != 0) {
                     return status;
                 }
@@ -8177,14 +8906,14 @@ static int secdat_command_set(const struct secdat_cli *cli)
             return 1;
         }
 
-        status = secdat_store_plaintext_for_chain(&chain, current_domain_id, reference.store_value, key, plaintext, plaintext_length, unsafe_store);
+        status = secdat_store_plaintext_attrs_for_chain(&chain, current_domain_id, reference.store_value, key, plaintext, plaintext_length, unsafe_store, &attrs);
         secdat_domain_chain_free(&chain);
         secdat_secure_clear(plaintext, plaintext_length);
         free(plaintext);
         return status;
     }
 
-    return secdat_store_literal_keyref(cli, keyref, literal_value, unsafe_store);
+    return secdat_store_literal_keyref(cli, keyref, literal_value, unsafe_store, &attrs);
 }
 
 static int secdat_write_empty_file(const char *path)
@@ -8268,6 +8997,9 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
     if (secdat_file_exists(entry_path)) {
         if (unlink(entry_path) != 0) {
             fprintf(stderr, _("failed to remove key: %s\n"), key);
+            return 1;
+        }
+        if (secdat_remove_secret_attrs(current_domain_id, store_name, key) != 0) {
             return 1;
         }
         return secdat_remove_if_exists(tombstone_path);
@@ -8489,6 +9221,7 @@ static int secdat_command_cp(const struct secdat_cli *cli)
     char destination_path[PATH_MAX];
     unsigned char *plaintext = NULL;
     size_t plaintext_length = 0;
+    struct secdat_secret_attrs attrs;
     int unsafe_store = 0;
     int status;
 
@@ -8539,13 +9272,14 @@ static int secdat_command_cp(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL) != 0) {
+    if (secdat_load_resolved_secret_attrs(&source_chain, source_reference.store_value, source_reference.key, &attrs, &unsafe_store) != 0
+        || secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL) != 0) {
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
         return 1;
     }
 
-    status = secdat_store_plaintext_for_chain(&destination_chain, destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, unsafe_store);
+    status = secdat_store_plaintext_attrs_for_chain(&destination_chain, destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, unsafe_store, &attrs);
     secdat_domain_chain_free(&source_chain);
     secdat_domain_chain_free(&destination_chain);
     secdat_secure_clear(plaintext, plaintext_length);
@@ -8563,6 +9297,7 @@ static int secdat_command_mv(const struct secdat_cli *cli)
     char destination_path[PATH_MAX];
     unsigned char *plaintext = NULL;
     size_t plaintext_length = 0;
+    struct secdat_secret_attrs attrs;
     int unsafe_store = 0;
     int status;
 
@@ -8614,13 +9349,14 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL) != 0) {
+    if (secdat_load_resolved_secret_attrs(&source_chain, source_reference.store_value, source_reference.key, &attrs, &unsafe_store) != 0
+        || secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL) != 0) {
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
         return 1;
     }
 
-    status = secdat_store_plaintext_for_chain(&destination_chain, destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, unsafe_store);
+    status = secdat_store_plaintext_attrs_for_chain(&destination_chain, destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, unsafe_store, &attrs);
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
     if (status != 0) {
@@ -8634,6 +9370,7 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         if (secdat_build_entry_path(destination_domain_id, destination_reference.store_value, destination_reference.key, destination_path, sizeof(destination_path)) == 0) {
             unlink(destination_path);
         }
+        (void)secdat_remove_secret_attrs(destination_domain_id, destination_reference.store_value, destination_reference.key);
     }
 
     secdat_domain_chain_free(&source_chain);
@@ -9506,6 +10243,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_ls(cli);
     case SECDAT_COMMAND_LIST:
         return secdat_command_list(cli);
+    case SECDAT_COMMAND_ATTR:
+        return secdat_command_attr(cli);
     case SECDAT_COMMAND_MASK:
         return secdat_command_mask(cli);
     case SECDAT_COMMAND_UNMASK:

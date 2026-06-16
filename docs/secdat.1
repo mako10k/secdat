@@ -47,10 +47,15 @@ Show global help, or combine with a command name for command-local help.
 Print the secdat version. When built from a Git worktree, also print a short build identifier and append \fB-dirty\fR when the worktree had uncommitted changes at build time.
 .SH COMMANDS
 .TP
-.B ls [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-e|\-\-safe] [\-u|\-\-unsafe]
+.B ls [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-e|\-\-safe] [\-u|\-\-unsafe] [\-\-metadata] [\-\-sandbox-injectable]
 List effective keys visible from the current domain view. Repeated include patterns widen the match set, and repeated exclude patterns subtract from it.
+.B --metadata
+prints key attributes alongside each key, and
+.B --sandbox-injectable
+keeps only keys whose sandbox injection policy is not
+.B never .
 .TP
-.B list [\-m|\-\-masked] [\-o|\-\-overridden] [\-O|\-\-orphaned] [\-e|\-\-safe] [\-u|\-\-unsafe]
+.B list [\-m|\-\-masked] [\-o|\-\-overridden] [\-O|\-\-orphaned] [\-e|\-\-safe] [\-u|\-\-unsafe] [\-\-sandbox-injectable]
 Inspect current-domain local state. Use
 .B --masked
 for active tombstones,
@@ -58,6 +63,18 @@ for active tombstones,
 for tombstones whose parent-visible value is already gone, and
 .B --overridden
 for local keys that still shadow a parent-visible key.
+.TP
+.B attr KEYREF [\-\-key-visibility always|unlocked] [\-\-value-access unlocked|always] [\-\-sandbox-inject never|explicit|allow]
+Show or update one key's attributes. The current storage format supports only
+.B key_visibility=always ;
+.B key_visibility=unlocked
+is reserved for a future format that encrypts key names.
+.B value_access=unlocked
+is encrypted-at-rest and unlock-gated, while
+.B value_access=always
+is plaintext-at-rest and readable while locked.
+.B sandbox_inject
+marks whether future scoped sandbox imports may include the key.
 .TP
 .B mask KEYREF
 Create a local tombstone to hide one inherited key in the current domain.
@@ -77,10 +94,14 @@ and
 .B unlock
 follow-up commands for that domain.
 .TP
-.B set KEYREF [\-u|\-\-unsafe] [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
+.B set KEYREF [\-u|\-\-unsafe|\-\-public-value|\-\-secret-value] [\-\-sandbox-inject never|explicit|allow] [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
 Store or update one key in the resolved current domain. Use
 .B --unsafe
-to write a plaintext entry that remains readable while locked.
+or
+.B --public-value
+to write a plaintext entry that remains readable while locked. Use
+.B --sandbox-inject
+to mark whether the key can be included in future scoped sandbox import flows.
 .TP
 .B rm [\-f|\-\-ignore-missing] KEYREF
 Remove one key locally or create a tombstone for an inherited key. With

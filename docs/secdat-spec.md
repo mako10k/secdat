@@ -25,9 +25,10 @@ Bindings for higher-level languages should prefer this C ABI over reimplementing
 The intended command set is:
 
 ```text
-secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [-e|--safe] [-u|--unsafe] [--canonical|--canonical-domain|--canonical-store]
+secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--sandbox-injectable] [--canonical|--canonical-domain|--canonical-store]
 
-secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe] [-u|--unsafe]
+secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--sandbox-injectable]
+secdat [--dir DIR] [--store STORE] attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|allow]
 
 secdat [--dir DIR] [--store STORE] exists KEYREF
 
@@ -43,6 +44,7 @@ secdat [--dir DIR] [--store STORE] get [-w|--on-demand-unlock] [-t SECONDS|--unl
 secdat [--dir DIR] [--store STORE] set KEYREF
 secdat [--dir DIR] [--store STORE] set KEYREF VALUE
 secdat [--dir DIR] [--store STORE] set KEYREF [-u|--unsafe] VALUE
+secdat [--dir DIR] [--store STORE] set KEYREF [--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|allow] VALUE
 secdat [--dir DIR] [--store STORE] set KEYREF [--stdin|-i]
 secdat [--dir DIR] [--store STORE] set KEYREF [--env|-e] ENVNAME
 secdat [--dir DIR] [--store STORE] set KEYREF [--value|-v] VALUE
@@ -92,6 +94,9 @@ To make the requested behavior implementable, the following are treated as norma
 - `set KEYREF VALUE` is equivalent to `set KEYREF --value VALUE`
 - `set KEYREF` is equivalent to `set KEYREF --stdin`
 - `set KEYREF --unsafe ...` explicitly opts into plaintext-at-rest storage that remains readable while locked
+- `set KEYREF --public-value ...` is the clearer alias for plaintext-at-rest values that remain readable while locked
+- per-secret attributes include `key_visibility`, `value_access`, and `sandbox_inject`
+- `sandbox_inject` controls whether a key may be included in a future scoped sandbox import flow
 - `exec` injects matched keys into the child process environment
 - `secdat --help SUBCOMMAND` and `secdat SUBCOMMAND --help` are equivalent for command-local usage output
 - unique long-option abbreviations are accepted when they resolve unambiguously within the current command
@@ -257,6 +262,27 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat list --safe` lists current-domain concrete entries stored encrypted at rest
 - `secdat list --unsafe` lists current-domain concrete entries stored plaintext at rest
 - combining multiple `list` filters returns the union of the selected current-domain categories
+
+#### FR-3ab Secret Attributes
+
+- `secdat attr KEYREF` prints the effective attributes for the resolved key without printing the secret value
+- `secdat attr KEYREF --key-visibility MODE` updates the key-name visibility attribute for a current-domain local entry
+- `secdat attr KEYREF --value-access MODE` updates whether the value is encrypted-at-rest and unlock-gated or plaintext-at-rest and always readable
+- `secdat attr KEYREF --sandbox-inject MODE` updates whether the key can be included in scoped sandbox import bundles
+- `key_visibility` accepts `always` and `unlocked`
+- `value_access` accepts `unlocked` and `always`
+- `sandbox_inject` accepts `never`, `explicit`, and `allow`
+- the current storage format supports only `key_visibility=always`; `key_visibility=unlocked` requires a future storage format that encrypts key names and is rejected for now
+- `value_access=unlocked` stores the value encrypted-at-rest and requires the master key or an active session for reads
+- `value_access=always` stores the value plaintext-at-rest and permits reads while locked; it is equivalent to the current unsafe/public-value storage mode
+- `sandbox_inject=never` excludes the key from sandbox import selection
+- `sandbox_inject=explicit` allows future sandbox import only when the key is named explicitly
+- `sandbox_inject=allow` allows future sandbox import from explicit key selection and from allowlisted pattern selection
+- attribute updates are allowed only for current-domain local entries; inherited entries must be materialized locally before their attributes can be changed
+- `cp` and `mv` preserve source key attributes
+- `ls --metadata` prints key attributes alongside visible keys
+- `ls --sandbox-injectable` lists visible keys whose `sandbox_inject` is not `never`
+- `list --sandbox-injectable` lists current-domain local entries whose `sandbox_inject` is not `never`
 
 #### FR-7c Shell Export
 

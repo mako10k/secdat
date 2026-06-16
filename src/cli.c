@@ -394,6 +394,7 @@ static int secdat_cli_completion_is_command_with_key_operand(const char *command
 {
     return command != NULL
         && (strcmp(command, "get") == 0 || strcmp(command, "exists") == 0
+            || strcmp(command, "attr") == 0
             || strcmp(command, "rm") == 0 || strcmp(command, "mask") == 0
             || strcmp(command, "unmask") == 0 || strcmp(command, "set") == 0
             || strcmp(command, "cp") == 0 || strcmp(command, "mv") == 0);
@@ -556,7 +557,18 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
         }
     } else if (strcmp(command, "set") == 0) {
         if (strcmp(previous, "--env") == 0 || strcmp(previous, "-e") == 0
-            || strcmp(previous, "--value") == 0 || strcmp(previous, "-v") == 0) {
+            || strcmp(previous, "--value") == 0 || strcmp(previous, "-v") == 0
+            || strcmp(previous, "--key-visibility") == 0
+            || strcmp(previous, "--value-access") == 0
+            || strcmp(previous, "--sandbox-inject") == 0
+            || strcmp(previous, "--inject") == 0) {
+            return "none";
+        }
+    } else if (strcmp(command, "attr") == 0) {
+        if (strcmp(previous, "--key-visibility") == 0
+            || strcmp(previous, "--value-access") == 0
+            || strcmp(previous, "--sandbox-inject") == 0
+            || strcmp(previous, "--inject") == 0) {
             return "none";
         }
     } else if (strcmp(command, "exec") == 0) {
@@ -697,16 +709,22 @@ int secdat_cli_complete(int argc, char **argv)
     };
     static const char *const ls_options[] = {
         "--pattern", "-p", "--pattern-exclude", "-x", "--safe", "-e", "--unsafe", "-u",
+        "--public-value", "--secret-value", "--sandbox-injectable", "--metadata",
         "--canonical", "-c", "--canonical-domain", "-D", "--canonical-store", "-S", "--help", "-h", NULL,
     };
     static const char *const list_options[] = {
-        "--masked", "-m", "--overridden", "-o", "--orphaned", "-O", "--safe", "-e", "--unsafe", "-u", "--help", "-h", NULL,
+        "--masked", "-m", "--overridden", "-o", "--orphaned", "-O", "--safe", "-e", "--unsafe", "-u",
+        "--public-value", "--secret-value", "--sandbox-injectable", "--help", "-h", NULL,
+    };
+    static const char *const attr_options[] = {
+        "--key-visibility", "--value-access", "--sandbox-inject", "--inject", "--help", "-h", NULL,
     };
     static const char *const get_options[] = {
         "--on-demand-unlock", "-w", "--unlock-timeout", "-t", "--stdout", "-o", "--shellescaped", "-e", "--help", "-h", NULL,
     };
     static const char *const set_options[] = {
-        "--unsafe", "-u", "--stdin", "-i", "--env", "-e", "--value", "-v", "--help", "-h", NULL,
+        "--unsafe", "-u", "--public-value", "--secret-value", "--stdin", "-i", "--env", "-e", "--value", "-v",
+        "--key-visibility", "--value-access", "--sandbox-inject", "--inject", "--help", "-h", NULL,
     };
     static const char *const rm_options[] = {
         "--ignore-missing", "-f", "--help", "-h", NULL,
@@ -785,6 +803,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, ls_options);
     } else if (strcmp(command, "list") == 0) {
         secdat_cli_completion_print_candidates(current, list_options);
+    } else if (strcmp(command, "attr") == 0) {
+        secdat_cli_completion_print_candidates(current, attr_options);
     } else if (strcmp(command, "get") == 0) {
         secdat_cli_completion_print_candidates(current, get_options);
     } else if (strcmp(command, "set") == 0) {
@@ -819,6 +839,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     }
     if (strcmp(name, "list") == 0) {
         return SECDAT_COMMAND_LIST;
+    }
+    if (strcmp(name, "attr") == 0) {
+        return SECDAT_COMMAND_ATTR;
     }
     if (strcmp(name, "mask") == 0) {
         return SECDAT_COMMAND_MASK;
@@ -890,10 +913,13 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
 {
     switch (command) {
     case SECDAT_COMMAND_LS:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe] [-u|--unsafe] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--sandbox-injectable] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]");
         break;
     case SECDAT_COMMAND_LIST:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "list", "[-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe] [-u|--unsafe]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "list", "[-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--sandbox-injectable]");
+        break;
+    case SECDAT_COMMAND_ATTR:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "attr", "KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|allow]");
         break;
     case SECDAT_COMMAND_MASK:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mask", "KEYREF");
@@ -908,7 +934,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "get", "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [-o|--stdout|-e|--shellescaped]");
         break;
     case SECDAT_COMMAND_SET:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "KEYREF [-u|--unsafe] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "KEYREF [-u|--unsafe|--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|allow] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
         break;
     case SECDAT_COMMAND_RM:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "rm", "[-f|--ignore-missing] KEYREF");
@@ -1061,7 +1087,8 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("\nCommands:\n"));
     secdat_cli_print_detail_line(_("  help: show global help or detailed help for one command\n"));
     secdat_cli_print_detail_line(_("  ls: list effective keys visible from the current domain view, optionally filtered by safe or unsafe storage\n"));
-    secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, or unsafe local state\n"));
+    secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe, or sandbox-injectable local state\n"));
+    secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and sandbox injection attributes\n"));
     secdat_cli_print_detail_line(_("  mask: create a local tombstone to hide one inherited key\n"));
     secdat_cli_print_detail_line(_("  unmask: remove one local tombstone from the current domain\n"));
     secdat_cli_print_detail_line(_("  exists: check whether one resolved key is visible from the current domain view\n"));
@@ -1102,7 +1129,11 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "list") == 0) {
-        secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, or unsafe local state\n"));
+        secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe, or sandbox-injectable local state\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "attr") == 0) {
+        secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and sandbox injection attributes\n"));
         return;
     }
     if (target != NULL && strcmp(target, "mask") == 0) {
@@ -1386,6 +1417,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
     } else if (strcmp(argv[index], "list") == 0) {
         cli->command = SECDAT_COMMAND_LIST;
         index += 1;
+    } else if (strcmp(argv[index], "attr") == 0) {
+        cli->command = SECDAT_COMMAND_ATTR;
+        index += 1;
     } else if (strcmp(argv[index], "mask") == 0) {
         cli->command = SECDAT_COMMAND_MASK;
         index += 1;
@@ -1534,7 +1568,8 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
 
     printf(_("Usage:\n"));
     secdat_cli_print_usage_line(program_name, command);
-    if (command == SECDAT_COMMAND_LS || command == SECDAT_COMMAND_MASK || command == SECDAT_COMMAND_UNMASK
+    if (command == SECDAT_COMMAND_LS || command == SECDAT_COMMAND_LIST || command == SECDAT_COMMAND_ATTR
+        || command == SECDAT_COMMAND_MASK || command == SECDAT_COMMAND_UNMASK
         || command == SECDAT_COMMAND_EXISTS || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
         || command == SECDAT_COMMAND_RM || command == SECDAT_COMMAND_MV || command == SECDAT_COMMAND_CP) {
         printf(_("\n"));
@@ -1622,6 +1657,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "ls";
     case SECDAT_COMMAND_LIST:
         return "list";
+    case SECDAT_COMMAND_ATTR:
+        return "attr";
     case SECDAT_COMMAND_MASK:
         return "mask";
     case SECDAT_COMMAND_UNMASK:

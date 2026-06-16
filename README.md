@@ -10,6 +10,7 @@ Current status:
 - autotools support is available through `configure.ac` and `Makefile.am`
 - gettext-based localization is wired in for user-facing CLI messages
 - `ls`, `get`, `set`, `rm`, `mv`, `cp`, and `exec` are implemented with encrypted local storage
+- `attr` is implemented for per-secret metadata such as value access and sandbox injection eligibility
 - `export` is implemented for shell-friendly setup without embedding raw secret values
 - `save` and `load` are implemented for passphrase-protected secret bundles scoped to the current view
 - `domain create`, `domain delete`, `domain ls`, and `domain status` are implemented
@@ -210,12 +211,34 @@ If you explicitly need a value to remain readable while `secdat` is locked, `set
 ./src/secdat get PUBLIC_ENDPOINT --stdout
 ```
 
-`--unsafe` is intentionally outside the normal secret workflow. It does not require the master key, remains readable while locked, and should only be used for values you accept storing in plaintext.
+`--unsafe` is intentionally outside the normal secret workflow. It does not require the master key, remains readable while locked, and should only be used for values you accept storing in plaintext. The clearer alias is `--public-value`; encrypted values use `value_access=unlocked`.
 Unsafe values may also be entered from or written to a terminal. Safe values keep the existing terminal I/O refusal.
 Copying or moving a `--unsafe` key preserves that plaintext-at-rest storage mode.
 For simple shell-style assignment input, you can also use `KEY=VALUE` operands directly. `secdat KEY=VALUE ...` is treated as repeated `set`, and `secdat set KEY=VALUE ...` does the same. The split happens on the first `=`, so later `=` characters stay in the stored value.
 If the first operand is not a known subcommand and is not an assignment, `secdat KEY` falls back to `secdat get KEY`.
 Key names are restricted to shell/environment identifier syntax: they must start with a letter or `_`, and the remaining characters may contain only letters, digits, or `_`. `exec --env-map-sed` applies the same rule to generated environment variable names, so empty results or names with unsuitable characters are rejected.
+
+Secret entries now have metadata attributes:
+
+```text
+key_visibility = always | unlocked
+value_access   = unlocked | always
+sandbox_inject = never | explicit | allow
+```
+
+Current storage keeps key names visible on disk, so `key_visibility=unlocked` is reserved for a future storage format and is rejected for now. `value_access=unlocked` is the normal encrypted-at-rest mode; `value_access=always` is the public/plaintext-at-rest mode used by `--unsafe` and `--public-value`. `sandbox_inject` marks whether a future sandbox import flow may include the key: `never` excludes it, `explicit` allows only explicit key selection, and `allow` also allows pattern-based selection.
+
+Use `attr` to inspect or update attributes:
+
+```sh
+./src/secdat set API_TOKEN --value token-123 --sandbox-inject explicit
+./src/secdat attr API_TOKEN
+./src/secdat attr API_TOKEN --sandbox-inject allow
+./src/secdat set PUBLIC_ENDPOINT --public-value --value https://example.invalid/api
+./src/secdat attr PUBLIC_ENDPOINT --value-access unlocked
+./src/secdat ls --metadata
+./src/secdat ls --sandbox-injectable
+```
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
 When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--domain`, then `--dir`, then `--store`, and finally the current defaults are used.

@@ -44,7 +44,7 @@ def assert_contains(values, expected, label):
 mode, values = run_completion("")
 if mode != "plain":
     raise SystemExit(f"FAIL: top-level completion mode mismatch: {mode!r}")
-for expected in ["wait-unlock", "inherit", "store", "domain", "unlock", "version", "--dir", "--domain", "--store", "--help", "--version"]:
+for expected in ["wait-unlock", "inherit", "store", "domain", "unlock", "attr", "version", "--dir", "--domain", "--store", "--help", "--version"]:
     assert_contains(values, expected, "top-level commands")
 
 mode, values = run_completion("help", "")
@@ -62,8 +62,26 @@ for expected in ["create", "delete", "ls", "status"]:
 mode, values = run_completion("ls", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: ls option completion mode mismatch: {mode!r}")
-for expected in ["--pattern-exclude", "--canonical-store", "--safe", "--unsafe"]:
+for expected in ["--pattern-exclude", "--canonical-store", "--safe", "--unsafe", "--metadata", "--sandbox-injectable", "--public-value", "--secret-value"]:
     assert_contains(values, expected, "ls options")
+
+mode, values = run_completion("list", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: list option completion mode mismatch: {mode!r}")
+for expected in ["--masked", "--safe", "--unsafe", "--sandbox-injectable", "--public-value", "--secret-value"]:
+    assert_contains(values, expected, "list options")
+
+mode, values = run_completion("attr", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: attr option completion mode mismatch: {mode!r}")
+for expected in ["--key-visibility", "--value-access", "--sandbox-inject", "--inject"]:
+    assert_contains(values, expected, "attr options")
+
+mode, values = run_completion("set", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: set option completion mode mismatch: {mode!r}")
+for expected in ["--public-value", "--secret-value", "--key-visibility", "--value-access", "--sandbox-inject", "--inject"]:
+    assert_contains(values, expected, "set options")
 
 mode, values = run_completion("cp", "")
 if mode != "plain":
@@ -132,7 +150,7 @@ if mode != "plain":
 assert_contains(values, "COMPLETION_ALPHA", "top-level key completions")
 assert_contains(values, "COMPLETION_ALPHA=", "top-level assignment completions")
 
-for command in ["get", "exists", "rm", "mask", "unmask", "set", "cp", "mv"]:
+for command in ["get", "exists", "attr", "rm", "mask", "unmask", "set", "cp", "mv"]:
     mode, values = run_scoped_completion("--dir", literal_dir, command, "COMPLETION_")
     if mode != "plain":
         raise SystemExit(f"FAIL: {command} key completion mode mismatch: {mode!r}")
