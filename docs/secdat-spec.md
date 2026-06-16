@@ -1060,6 +1060,7 @@ domain/store/domain-ent/<entry-id>.dent
   encrypted area:
     key name, when key_visibility=unlocked
     object data key wrapped by the domain key
+    wrapped_object_key hex payload, when value_access=unlocked (current transitional format)
     link-side private metadata
 
 objects/secret/<secret-id>.sec
@@ -1077,7 +1078,7 @@ objects/secret/<secret-id>.value
     secret-side metadata and secret-side policy flags
 ```
 
-The final binary format is intentionally undecided, but each file must have a magic number, a format version, authenticated encrypted sections, and enough public structure for locked-mode listing of public keys and public values. All encrypted sections must bind the public header as AEAD associated data. The current implementation uses a `.value` sidecar with the existing v1 `SECDAT1` value payload as a compatibility step before the final object file format, and stores hidden key names as `encrypted_key=<hex(SECDAT1)>` in the domain-entry text file before final domain-entry encrypted sections land.
+The final binary format is intentionally undecided, but each file must have a magic number, a format version, authenticated encrypted sections, and enough public structure for locked-mode listing of public keys and public values. All encrypted sections must bind the public header as AEAD associated data. The current implementation uses a `.value` sidecar with the existing v1 `SECDAT1` value payload as a compatibility step before the final object file format, stores hidden key names as `encrypted_key=<hex(SECDAT1)>`, and stores encrypted-object data keys as `wrapped_object_key=<hex(SECDAT1)>` in the domain-entry text file before final domain-entry encrypted sections land. The `.value` sidecar is still encrypted with the domain-derived key until the later object-key payload migration.
 
 #### Attribute Placement
 
@@ -1121,8 +1122,9 @@ secdat fsck [--orphaned] [--dangling] [--refcount] [--repair]
 
 Current and planned semantics:
 
-- `ln SRC_KEYREF DST_KEYREF` creates a new domain entry pointing to the source secret object; the current implementation requires source and destination to be in the same v2 store and requires an unlocked domain so hidden destination collisions can be checked
-- cross-domain `ln` will require object data-key rewrapping before it can be enabled
+- `ln SRC_KEYREF DST_KEYREF` creates a new domain entry pointing to the source secret object; the target behavior is cross-domain linking with the object data key rewrapped into the destination domain entry
+- the current implementation only supports same-domain/same-store links as graph scaffolding; this is not the final reason for `ln`
+- cross-domain `ln` requires two missing pieces before it can be enabled: stable object addressing across domains, and object data-key wrapping in each domain entry
 - `ln --secret-id UUID DST_KEYREF` is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry, or through a future explicit recovery mechanism
 - `id KEYREF` prints the resolved `secret_id` without printing the secret value
 - `secret status UUID` prints non-secret object metadata, link count, and whether the object is orphaned
@@ -1158,7 +1160,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. Cross-domain linked-object key wrapping, `ln --secret-id`, and final migration cleanup are still part of the later v2 write path.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. The implemented same-domain/same-store `ln` is only a graph-behavior checkpoint. Cross-domain `ln` remains the design target and depends on object addressing that is not local to the destination domain plus per-entry object-key wrapping.
 
 #### Implementation Plan
 
@@ -1171,11 +1173,14 @@ The current migration writer creates the v2 domain-entry/object graph side-by-si
 7. Add transitional v2 object-owned value storage and support `set`, `get`, and `attr --value-access` for visible keys.
 8. Add v2 write path for visible-key `rm`, `cp`, and `mv`.
 9. Add hidden-key lookup/storage and enable `key_visibility=unlocked`.
-10. Add same-store `ln` with strict authorization through an existing source entry before allowing `--secret-id` linking.
-11. Replace the transitional `.value` sidecar with the final authenticated object payload format and object data-key wrapping.
-12. Update the future sandbox import/export flow to require both v2 `entry_inject` and `secret_inject`.
-13. Add repair-only fsck operations for rebuildable metadata such as cached refcounts.
-14. Add finalize/cleanup commands only after v2 read/write, migration, fsck, and rollback paths are covered by regression tests.
+10. Add same-domain/same-store `ln` only as a graph checkpoint, not as the final `ln` feature.
+11. Add per-domain-entry `wrapped_object_key` metadata and preserve/backfill it through all v2 domain-entry rewrites.
+12. Move or address secret objects so a destination domain entry can reference a source object without copying value material.
+13. Enable cross-domain `ln` by unwrapping the object key through an authorized source entry and rewrapping it into the destination domain entry.
+14. Replace the transitional `.value` sidecar with the final authenticated object payload format that is encrypted by the object data key.
+15. Update the future sandbox import/export flow to require both v2 `entry_inject` and `secret_inject`.
+16. Add repair-only fsck operations for rebuildable metadata such as cached refcounts.
+17. Add finalize/cleanup commands only after v2 read/write, migration, fsck, and rollback paths are covered by regression tests.
 
 The first implementation should prefer conservative compatibility over removing old paths. The v1 sidecar metadata added for secret attributes should be treated as migration input, not as the final architecture.
 
@@ -1199,10 +1204,12 @@ The v1 implementation covers the initial command surface and the first secret-at
 6. add v2 write compatibility for visible-key `set`, `get`, `attr --sandbox-inject`, and `attr --value-access`
 7. add v2 write compatibility for visible-key `rm`, `cp`, and `mv`
 8. add hidden-key lookup/storage and enable `key_visibility=unlocked`
-9. add same-store `ln` through an authorized source entry
-10. add cross-domain `ln` only after object-key rewrapping and authorization semantics are covered
-11. add fsck repair for rebuildable metadata
-12. add migration finalization once v1 rollback remains tested
+9. add same-domain/same-store `ln` through an authorized source entry only to test shared-object graph behavior
+10. add domain-entry `wrapped_object_key` metadata and make every v2 writer preserve or backfill it
+11. add cross-domain object addressing, then enable cross-domain `ln` with source unwrap and destination rewrap semantics
+12. switch object value encryption from the transitional domain-key sidecar to the object data key
+13. add fsck repair for rebuildable metadata
+14. add migration finalization once v1 rollback remains tested
 
 ## 8. Open Questions
 

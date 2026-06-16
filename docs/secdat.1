@@ -130,9 +130,9 @@ Rename or relocate one key between resolved locations.
 Copy one key into another resolved location.
 .TP
 .B ln SRC_KEYREF DST_KEYREF
-Link another key to the same v2 secret object in the same store. Updating the value through either key updates the shared object. Cross-domain links and direct
+Link another key to the same v2 secret object in the same store. Updating the value through either key updates the shared object. This same-store behavior is a graph checkpoint; cross-domain
 .B --secret-id
-links are reserved for the later object-key rewrapping design.
+links are the target design and require object-key rewrapping plus cross-domain object addressing.
 .TP
 .B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-\-env-map-sed EXPR] [\-\-] CMD [ARGS...]
 Inject resolved keys into a child process environment and execute the command. Repeated include patterns widen the match set, repeated exclude patterns subtract from it, and

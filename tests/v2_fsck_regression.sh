@@ -71,6 +71,23 @@ def write_object(path, sid, refcount):
     )
 
 
+def domain_entries_for_secret(sid):
+    return [
+        path.read_text(encoding="utf-8")
+        for path in domain_entries_dir.glob("*.dent")
+        if f"secret_id={sid}\n" in path.read_text(encoding="utf-8")
+    ]
+
+
+def assert_wrapped_object_key_count(sid, expected_count, label):
+    entry_texts = domain_entries_for_secret(sid)
+    if len(entry_texts) != expected_count:
+        fail(f"{label}: expected {expected_count} domain entries, found {len(entry_texts)}")
+    for entry_text in entry_texts:
+        if "wrapped_object_key=" not in entry_text:
+            fail(f"{label}: missing wrapped_object_key")
+
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "domain", "create"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -118,6 +135,8 @@ entry_text = (domain_entries_dir / f"{entry_id}.dent").read_text(encoding="utf-8
 object_text = (secret_objects_dir / f"{secret_id}.sec").read_text(encoding="utf-8")
 if "entry_inject=never\n" not in entry_text:
     fail("clean v2 attr did not update domain entry inject policy")
+if "wrapped_object_key=" not in entry_text:
+    fail("clean v2 attr did not backfill the wrapped object key")
 if "secret_inject=never\n" not in object_text or "refcount=1\n" not in object_text:
     fail("clean v2 attr did not preserve secret object metadata")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
@@ -156,6 +175,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_SECRET"])
 if rc != 0 or stderr != "":
     fail(f"pure v2 id for APP_SECRET failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 app_secret_id = stdout.strip()
+assert_wrapped_object_key_count(app_secret_id, 1, "pure v2 encrypted set")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "APP_SECRET", "APP_SECRET_LINK"], {"SECDAT_MASTER_KEY": ""})
 if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
@@ -172,6 +192,7 @@ if rc != 0 or stdout != "secret-value" or stderr != "":
 link_object_text = (secret_objects_dir / f"{app_secret_id}.sec").read_text(encoding="utf-8")
 if "refcount=2\n" not in link_object_text:
     fail("pure v2 ln did not increment the linked secret refcount")
+assert_wrapped_object_key_count(app_secret_id, 2, "pure v2 ln")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"pure v2 fsck after ln failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -207,6 +228,7 @@ if rc != 0 or stderr != "":
     fail(f"pure v2 id for copied key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if stdout.strip() == app_secret_id:
     fail("pure v2 cp should create an independent secret object")
+assert_wrapped_object_key_count(stdout.strip(), 1, "pure v2 cp")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "mv", "APP_SECRET_COPY", "APP_SECRET_MOVED"])
 if rc != 0 or stdout != "" or stderr != "":
@@ -254,6 +276,8 @@ if len(hidden_entry_texts) != 1:
 hidden_entry_text = hidden_entry_texts[0]
 if "key_visibility=unlocked\n" not in hidden_entry_text or "encrypted_key=" not in hidden_entry_text:
     fail("pure v2 hidden key domain entry did not use encrypted_key")
+if "wrapped_object_key=" not in hidden_entry_text:
+    fail("pure v2 hidden key domain entry did not include wrapped_object_key")
 if "HIDDEN_TOKEN" in hidden_entry_text or "key=HIDDEN_TOKEN" in hidden_entry_text:
     fail("pure v2 hidden key leaked the key name in the domain entry")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "HIDDEN_TOKEN"])

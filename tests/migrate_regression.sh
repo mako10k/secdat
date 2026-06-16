@@ -51,6 +51,14 @@ def assert_contains(output, expected, label):
         fail(f"{label}: missing [{expected}] in [{output}]")
 
 
+def domain_entries_for_secret(store_root, sid):
+    return [
+        path.read_text(encoding="utf-8")
+        for path in (store_root / "domain-ent").glob("*.dent")
+        if f"secret_id={sid}\n" in path.read_text(encoding="utf-8")
+    ]
+
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "domain", "create"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -182,6 +190,18 @@ if rc != 0 or stderr != "":
 if len(stdout.strip()) != 36 or stdout.count("\n") != 1:
     fail(f"migrated v2 id did not print one UUID: {stdout!r}")
 app_token_secret_id = stdout.strip()
+app_token_entry_texts = domain_entries_for_secret(store_root, app_token_secret_id)
+if len(app_token_entry_texts) != 1 or "wrapped_object_key=" not in app_token_entry_texts[0]:
+    fail("migrated encrypted APP_TOKEN domain entry did not include wrapped_object_key")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "id", "APP_PUBLIC"])
+if rc != 0 or stderr != "":
+    fail(f"migrated v2 public id failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+app_public_entry_texts = domain_entries_for_secret(store_root, stdout.strip())
+if len(app_public_entry_texts) != 1:
+    fail(f"expected one APP_PUBLIC domain entry, found {len(app_public_entry_texts)}")
+if "wrapped_object_key=" in app_public_entry_texts[0]:
+    fail("migrated public APP_PUBLIC domain entry should not include wrapped_object_key")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_PUBLIC"])
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inject=never\n" or stderr != "":
@@ -235,6 +255,8 @@ if len(app_token_entry_texts) != 1:
     fail(f"expected one APP_TOKEN domain entry after hiding key, found {len(app_token_entry_texts)}")
 if "APP_TOKEN" in app_token_entry_texts[0] or "encrypted_key=" not in app_token_entry_texts[0]:
     fail("migrated v2 hidden key update did not hide APP_TOKEN in the domain entry")
+if "wrapped_object_key=" not in app_token_entry_texts[0]:
+    fail("migrated v2 hidden key update did not preserve wrapped_object_key")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "ls", "--metadata"], {"SECDAT_MASTER_KEY": ""})
 if rc != 0 or stderr != "":
     fail(f"migrated v2 locked metadata list after hidden key update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -258,6 +280,8 @@ if len(app_token_entry_texts) != 1:
     fail(f"expected one APP_TOKEN domain entry after visible restore, found {len(app_token_entry_texts)}")
 if "key=APP_TOKEN\n" not in app_token_entry_texts[0] or "encrypted_key=" in app_token_entry_texts[0]:
     fail("migrated v2 key_visibility visible restore did not write a plaintext key entry")
+if "wrapped_object_key=" not in app_token_entry_texts[0]:
+    fail("migrated v2 key_visibility visible restore did not preserve wrapped_object_key")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get", "APP_TOKEN"])
 if rc != 0 or stdout != "secret-token" or stderr != "":
