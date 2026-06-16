@@ -1139,7 +1139,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success\n"));
     secdat_cli_print_detail_line(_("  mv: rename or relocate one key between resolved locations\n"));
     secdat_cli_print_detail_line(_("  cp: copy one key into another resolved location\n"));
-    secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object in the same store\n"));
+    secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object, including cross-domain v2 links\n"));
     secdat_cli_print_detail_line(_("  exec: inject resolved keys into a child process environment\n"));
     secdat_cli_print_detail_line(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
     secdat_cli_print_detail_line(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
@@ -1216,7 +1216,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "ln") == 0) {
-        secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object in the same store\n"));
+        secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object, including cross-domain v2 links\n"));
         return;
     }
     if (target != NULL && strcmp(target, "exec") == 0) {

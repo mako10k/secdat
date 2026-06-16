@@ -208,6 +208,11 @@ remote_entry_id = "66666666-6666-4666-8666-666666666666"
     "entry_inject=explicit\n",
     encoding="utf-8",
 )
+source_public_object_path = secret_objects_dir / f"{secret_id}.sec"
+source_public_object_path.write_text(
+    source_public_object_path.read_text(encoding="utf-8").replace("refcount=1\n", "refcount=2\n"),
+    encoding="utf-8",
+)
 rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"remote object v2 fsck failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -273,6 +278,57 @@ if not (secret_objects_dir / f"{app_secret_id}.sec").exists() or not (secret_obj
 link_object_text = (secret_objects_dir / f"{app_secret_id}.sec").read_text(encoding="utf-8")
 if "refcount=1\n" not in link_object_text:
     fail("pure v2 rm linked key did not decrement the linked secret refcount")
+
+remote_secret_keyref = f"{consumer_domain}/REMOTE_SECRET"
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "APP_SECRET", remote_secret_keyref])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"cross-domain v2 ln failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "id", "REMOTE_SECRET"])
+if rc != 0 or stdout.strip() != app_secret_id or stderr != "":
+    fail(f"cross-domain linked key should share secret id: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "get", "REMOTE_SECRET"])
+if rc != 0 or stdout != "secret-value" or stderr != "":
+    fail(f"cross-domain linked get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+remote_secret_entries = [
+    path.read_text(encoding="utf-8")
+    for path in consumer_domain_entries_dir.glob("*.dent")
+    if f"secret_id={app_secret_id}\n" in path.read_text(encoding="utf-8")
+]
+if len(remote_secret_entries) != 1:
+    fail(f"expected one cross-domain secret entry, found {len(remote_secret_entries)}")
+if "wrapped_object_key=" not in remote_secret_entries[0]:
+    fail("cross-domain v2 ln did not rewrap the object key into the destination entry")
+link_object_text = (secret_objects_dir / f"{app_secret_id}.sec").read_text(encoding="utf-8")
+if "refcount=2\n" not in link_object_text:
+    fail("cross-domain v2 ln did not increment the source secret refcount")
+for fsck_domain, label in ((domain, "source"), (consumer_domain, "consumer")):
+    rc, stdout, stderr = run([bin_path, "--dir", str(fsck_domain), "fsck", "--format", "v2"])
+    if rc != 0 or stdout != "ok\n" or stderr != "":
+        fail(f"cross-domain v2 fsck failed for {label}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "set", "REMOTE_SECRET", "--value", "remote-linked-value", "--sandbox-inject", "explicit"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"cross-domain v2 set through linked key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET"])
+if rc != 0 or stdout != "remote-linked-value" or stderr != "":
+    fail(f"cross-domain v2 linked set should update original key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET", "--value", "secret-value", "--sandbox-inject", "explicit"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"cross-domain v2 restore original value failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "rm", "REMOTE_SECRET"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"cross-domain v2 rm linked key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "exists", "REMOTE_SECRET"])
+if rc == 0:
+    fail("cross-domain v2 rm should remove the destination link")
+if not (secret_objects_dir / f"{app_secret_id}.sec").exists() or not (secret_objects_dir / f"{app_secret_id}.value").exists():
+    fail("cross-domain v2 rm should keep the source object while the source key remains")
+link_object_text = (secret_objects_dir / f"{app_secret_id}.sec").read_text(encoding="utf-8")
+if "refcount=1\n" not in link_object_text:
+    fail("cross-domain v2 rm did not decrement the source secret refcount")
+for fsck_domain, label in ((domain, "source"), (consumer_domain, "consumer")):
+    rc, stdout, stderr = run([bin_path, "--dir", str(fsck_domain), "fsck", "--format", "v2"])
+    if rc != 0 or stdout != "ok\n" or stderr != "":
+        fail(f"cross-domain v2 fsck after rm failed for {label}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "cp", "APP_SECRET", "APP_SECRET_COPY"])
 if rc != 0 or stdout != "" or stderr != "":
@@ -391,7 +447,7 @@ if rc != 1 or "invalid store format marker" not in stderr:
 
 write_entry(domain_entries_dir / f"{missing_entry_id}.dent", missing_entry_id, missing_secret_id, "MISSING")
 (domain_entries_dir / "BROKEN.dent").write_text("not-a-domain-entry\n", encoding="utf-8")
-write_object(secret_objects_dir / f"{secret_id}.sec", secret_id, 2)
+write_object(secret_objects_dir / f"{secret_id}.sec", secret_id, 3)
 write_object(secret_objects_dir / f"{orphan_secret_id}.sec", orphan_secret_id, 0)
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--dangling"])
@@ -408,7 +464,7 @@ assert_contains(stdout, f"orphaned-secret\t{orphan_secret_id}\tmissing-entry\n",
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--refcount"])
 if rc != 1 or stderr != "":
     fail(f"v2 refcount fsck should report issues: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, f"refcount-mismatch\t{secret_id}\texpected=2 actual=1\n", "v2 refcount mismatch")
+assert_contains(stdout, f"refcount-mismatch\t{secret_id}\texpected=3 actual=2\n", "v2 refcount mismatch")
 
 print("PASS v2 fsck regression")
 PY

@@ -1123,10 +1123,9 @@ secdat fsck [--orphaned] [--dangling] [--refcount] [--repair]
 
 Current and planned semantics:
 
-- `ln SRC_KEYREF DST_KEYREF` creates a new domain entry pointing to the source secret object; the target behavior is cross-domain linking with the object data key rewrapped into the destination domain entry
-- the current implementation only supports same-domain/same-store links as graph scaffolding; this is not the final reason for `ln`
-- cross-domain `ln` still requires source unwrap/destination rewrap command semantics, authorization checks, and cross-domain refcount handling before it can be enabled
-- `ln --secret-id UUID DST_KEYREF` is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry, or through a future explicit recovery mechanism
+- `ln SRC_KEYREF DST_KEYREF` creates a new domain entry pointing to the source secret object; cross-domain links unwrap the object data key through the authorized source entry and rewrap it into the destination domain entry
+- cross-domain `ln` is enabled for normal source/destination KEYREFs when both sides resolve through v2 stores; cross-domain refcount checks count all registered v2 domain entries that point at the object domain/store/UUID tuple
+- `ln --secret-id UUID DST_KEYREF` is still planned and is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry, or through a future explicit recovery mechanism
 - `id KEYREF` prints the resolved `secret_id` without printing the secret value
 - `secret status UUID` prints non-secret object metadata, link count, and whether the object is orphaned
 - `fsck --orphaned` lists secret objects with no referencing domain entries
@@ -1161,7 +1160,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. Domain entries now carry explicit object address fields and can resolve object metadata/value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key. The implemented same-domain/same-store `ln` is only a graph-behavior checkpoint. Cross-domain `ln` remains the design target and still depends on source unwrap/destination rewrap command semantics, authorization checks, and cross-domain refcount handling.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. Domain entries now carry explicit object address fields and can resolve object metadata/value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key. Cross-domain `ln` is enabled for normal KEYREF source/destination links by source unwrap and destination rewrap of the object data key; direct `ln --secret-id UUID` remains planned.
 
 #### Implementation Plan
 
@@ -1177,7 +1176,7 @@ The current migration writer creates the v2 domain-entry/object graph side-by-si
 10. Add same-domain/same-store `ln` only as a graph checkpoint, not as the final `ln` feature.
 11. Add per-domain-entry `wrapped_object_key` metadata and preserve/backfill it through all v2 domain-entry rewrites.
 12. Move or address secret objects so a destination domain entry can reference a source object without copying value material.
-13. Enable cross-domain `ln` by unwrapping the object key through an authorized source entry and rewrapping it into the destination domain entry.
+13. Enable cross-domain `ln` by unwrapping the object key through an authorized source entry and rewrapping it into the destination domain entry. This is implemented for normal KEYREF links; direct `ln --secret-id UUID` remains future work.
 14. Replace the transitional `.value` sidecar with the final authenticated object payload format that is encrypted by the object data key.
 15. Update the future sandbox import/export flow to require both v2 `entry_inject` and `secret_inject`.
 16. Add repair-only fsck operations for rebuildable metadata such as cached refcounts.

@@ -1121,6 +1121,21 @@ static int secdat_collect_registered_roots(struct secdat_string_list *roots)
     return 0;
 }
 
+int secdat_collect_registered_domain_roots(struct secdat_domain_root_list *list)
+{
+    struct secdat_string_list roots = {0};
+
+    list->roots = NULL;
+    list->count = 0;
+    if (secdat_collect_registered_roots(&roots) != 0) {
+        secdat_string_list_free(&roots);
+        return 1;
+    }
+    list->roots = roots.items;
+    list->count = roots.count;
+    return 0;
+}
+
 void secdat_domain_chain_free(struct secdat_domain_chain *chain)
 {
     size_t index;
