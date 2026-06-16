@@ -183,6 +183,27 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "att
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inject=never\n" or stderr != "":
     fail(f"migrated v2 attr failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--sandbox-inject", "allow"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"migrated v2 attr inject update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN"])
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=allow\n" or stderr != "":
+    fail(f"migrated v2 attr after inject update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "ls", "--sandbox-injectable"])
+if rc != 0 or stdout != "APP_TOKEN\n" or stderr != "":
+    fail(f"migrated v2 sandbox injectable list failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "fsck", "--format", "v2"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"migrated v2 fsck after attr update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--value-access", "always"])
+if rc != 1 or stdout != "" or "v2 value_access updates are not implemented yet" not in stderr:
+    fail(f"migrated v2 value_access update should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--key-visibility", "unlocked"])
+if rc != 1 or stdout != "" or "v2 key_visibility updates are not implemented yet" not in stderr:
+    fail(f"migrated v2 key_visibility update should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get", "APP_TOKEN"])
 if rc != 0 or stdout != "secret-token" or stderr != "":
     fail(f"v1 read compatibility after migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

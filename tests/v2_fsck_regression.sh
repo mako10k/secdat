@@ -105,6 +105,22 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=explicit\n" or stderr != "":
     fail(f"clean v2 attr failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN", "--sandbox-inject", "never"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"clean v2 attr inject update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=never\n" or stderr != "":
+    fail(f"clean v2 attr after inject update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+entry_text = (domain_entries_dir / f"{entry_id}.dent").read_text(encoding="utf-8")
+object_text = (secret_objects_dir / f"{secret_id}.sec").read_text(encoding="utf-8")
+if "entry_inject=never\n" not in entry_text:
+    fail("clean v2 attr did not update domain entry inject policy")
+if "secret_inject=never\n" not in object_text or "refcount=1\n" not in object_text:
+    fail("clean v2 attr did not preserve secret object metadata")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"clean v2 fsck after attr update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_TOKEN"])
 if rc != 1 or stdout != "" or "v2 secret value storage is not implemented yet" not in stderr:
     fail(f"pure v2 get should reject missing value storage: rc={rc} stdout={stdout!r} stderr={stderr!r}")

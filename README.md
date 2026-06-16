@@ -227,7 +227,7 @@ value_access   = unlocked | always
 sandbox_inject = never | explicit | allow
 ```
 
-Current storage keeps key names visible on disk, so `key_visibility=unlocked` is reserved for a future storage format and is rejected for now. `value_access=unlocked` is the normal encrypted-at-rest mode; `value_access=always` is the public/plaintext-at-rest mode used by `--unsafe` and `--public-value`. `sandbox_inject` marks whether a future sandbox import flow may include the key: `never` excludes it, `explicit` allows only explicit key selection, and `allow` also allows pattern-based selection.
+The v1 storage layout keeps key names visible on disk, so `key_visibility=unlocked` remains reserved and is rejected there. The v2 graph layout currently reads the split domain-entry/secret-object attributes and can update `sandbox_inject`; hidden-key updates and object-owned `value_access` rewrites are still part of the remaining v2 write path. `value_access=unlocked` is the normal encrypted-at-rest mode; `value_access=always` is the public/plaintext-at-rest mode used by `--unsafe` and `--public-value`. `sandbox_inject` marks whether a future sandbox import flow may include the key: `never` excludes it, `explicit` allows only explicit key selection, and `allow` also allows pattern-based selection.
 
 Use `attr` to inspect or update attributes:
 

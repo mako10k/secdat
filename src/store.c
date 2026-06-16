@@ -3202,6 +3202,15 @@ static int secdat_secret_attrs_supported(const struct secdat_secret_attrs *attrs
     return 1;
 }
 
+static int secdat_v2_secret_attrs_supported(const struct secdat_secret_attrs *attrs)
+{
+    if (attrs->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+        fprintf(stderr, _("v2 key_visibility=unlocked is not implemented yet\n"));
+        return 0;
+    }
+    return 1;
+}
+
 static int secdat_secret_attrs_are_default(const struct secdat_secret_attrs *attrs, int unsafe_store)
 {
     struct secdat_secret_attrs defaults;
@@ -9297,6 +9306,8 @@ static int secdat_write_v2_secret_object_file(
     const char *secret_objects_dir,
     const char *secret_id,
     const struct secdat_secret_attrs *attrs,
+    int refcount_present,
+    size_t refcount,
     char *path_out,
     size_t path_out_size
 )
@@ -9308,20 +9319,92 @@ static int secdat_write_v2_secret_object_file(
         fprintf(stderr, _("path is too long\n"));
         return 1;
     }
-    written = snprintf(
-        payload,
-        sizeof(payload),
-        "%s\nsecret_id=%s\nvalue_access=%s\nsecret_inject=%s\nrefcount=1\n",
-        secdat_v2_secret_object_magic,
-        secret_id,
-        secdat_value_access_name(attrs->value_access),
-        secdat_v2_secret_inject_name(attrs->sandbox_inject)
-    );
+    if (refcount_present) {
+        written = snprintf(
+            payload,
+            sizeof(payload),
+            "%s\nsecret_id=%s\nvalue_access=%s\nsecret_inject=%s\nrefcount=%zu\n",
+            secdat_v2_secret_object_magic,
+            secret_id,
+            secdat_value_access_name(attrs->value_access),
+            secdat_v2_secret_inject_name(attrs->sandbox_inject),
+            refcount
+        );
+    } else {
+        written = snprintf(
+            payload,
+            sizeof(payload),
+            "%s\nsecret_id=%s\nvalue_access=%s\nsecret_inject=%s\n",
+            secdat_v2_secret_object_magic,
+            secret_id,
+            secdat_value_access_name(attrs->value_access),
+            secdat_v2_secret_inject_name(attrs->sandbox_inject)
+        );
+    }
     if (written < 0 || (size_t)written >= sizeof(payload)) {
         fprintf(stderr, _("secret metadata is too large\n"));
         return 1;
     }
     return secdat_atomic_write_file(path_out, (const unsigned char *)payload, (size_t)written);
+}
+
+static int secdat_update_v2_secret_attrs(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    const struct secdat_effective_entry *entry,
+    const struct secdat_secret_attrs *attrs
+)
+{
+    char domain_entries_dir[PATH_MAX];
+    char secret_objects_dir[PATH_MAX];
+    char entry_path[PATH_MAX];
+    char object_path[PATH_MAX];
+    struct secdat_v2_domain_entry_info domain_entry;
+    struct secdat_v2_secret_object_info object;
+
+    if (secdat_v2_domain_entries_dir(domain_id, store_name, domain_entries_dir, sizeof(domain_entries_dir)) != 0
+        || secdat_v2_secret_objects_dir(domain_id, store_name, secret_objects_dir, sizeof(secret_objects_dir)) != 0
+        || secdat_build_v2_domain_entry_path(domain_id, store_name, entry->entry_id, entry_path, sizeof(entry_path)) != 0
+        || secdat_read_v2_domain_entry_info(entry_path, entry->entry_id, &domain_entry) != 0) {
+        return 1;
+    }
+    if (strcmp(domain_entry.secret_id, entry->secret_id) != 0
+        || domain_entry.key_visibility != entry->key_visibility
+        || domain_entry.key_visibility != SECDAT_KEY_VISIBILITY_ALWAYS
+        || !domain_entry.has_key
+        || strcmp(domain_entry.key, key) != 0) {
+        fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry->entry_id);
+        return 1;
+    }
+
+    if (secdat_build_v2_secret_object_path(domain_id, store_name, entry->secret_id, object_path, sizeof(object_path)) != 0
+        || secdat_read_v2_secret_object_info(object_path, entry->secret_id, &object) != 0) {
+        fprintf(stderr, _("invalid v2 secret object: %s\n"), entry->secret_id);
+        return 1;
+    }
+
+    if (secdat_write_v2_secret_object_file(
+            secret_objects_dir,
+            entry->secret_id,
+            attrs,
+            object.refcount_present,
+            object.refcount,
+            object_path,
+            sizeof(object_path)
+        ) != 0
+        || secdat_write_v2_domain_entry_file(
+            domain_entries_dir,
+            entry->entry_id,
+            entry->secret_id,
+            key,
+            attrs,
+            entry_path,
+            sizeof(entry_path)
+        ) != 0) {
+        return 1;
+    }
+    return 0;
 }
 
 static int secdat_write_store_format_marker(const char *domain_id, const char *store_name, const char *format, const char *state)
@@ -9661,6 +9744,7 @@ static int secdat_command_attr(const struct secdat_cli *cli)
     struct secdat_domain_chain chain = {0};
     struct secdat_effective_entry entry = {0};
     struct secdat_secret_attrs attrs;
+    struct secdat_secret_attrs original_attrs;
     unsigned char *plaintext = NULL;
     size_t plaintext_length = 0;
     int unsafe_store = 0;
@@ -9691,6 +9775,7 @@ static int secdat_command_attr(const struct secdat_cli *cli)
         secdat_domain_chain_free(&chain);
         return 1;
     }
+    original_attrs = attrs;
     if (!has_changes) {
         secdat_print_secret_attrs(&attrs);
         secdat_effective_entry_reset(&entry);
@@ -9699,10 +9784,54 @@ static int secdat_command_attr(const struct secdat_cli *cli)
     }
 
     if (entry.from_v2) {
-        fprintf(stderr, _("v2 write path is not implemented yet\n"));
+        if (entry.resolved_index != 0) {
+            fprintf(stderr, _("cannot update inherited key attributes: %s\n"), reference.key);
+            secdat_effective_entry_reset(&entry);
+            secdat_domain_chain_free(&chain);
+            return 1;
+        }
+        if (secdat_require_mutable_session_chain(&chain, "attr") != 0
+            || secdat_require_writable_domain_chain(&chain) != 0) {
+            secdat_effective_entry_reset(&entry);
+            secdat_domain_chain_free(&chain);
+            return 1;
+        }
+        if (options.set_key_visibility) {
+            attrs.key_visibility = options.attrs.key_visibility;
+        }
+        if (options.set_sandbox_inject) {
+            attrs.sandbox_inject = options.attrs.sandbox_inject;
+        }
+        if (options.set_value_access) {
+            attrs.value_access = options.attrs.value_access;
+        }
+        if (attrs.key_visibility != original_attrs.key_visibility) {
+            fprintf(stderr, _("v2 key_visibility updates are not implemented yet\n"));
+            secdat_effective_entry_reset(&entry);
+            secdat_domain_chain_free(&chain);
+            return 1;
+        }
+        if (attrs.value_access != original_attrs.value_access) {
+            fprintf(stderr, _("v2 value_access updates are not implemented yet\n"));
+            secdat_effective_entry_reset(&entry);
+            secdat_domain_chain_free(&chain);
+            return 1;
+        }
+        if (!secdat_v2_secret_attrs_supported(&attrs)) {
+            secdat_effective_entry_reset(&entry);
+            secdat_domain_chain_free(&chain);
+            return 1;
+        }
+        status = secdat_update_v2_secret_attrs(
+            chain.count == 0 ? "" : chain.ids[0],
+            reference.store_value,
+            reference.key,
+            &entry,
+            &attrs
+        );
         secdat_effective_entry_reset(&entry);
         secdat_domain_chain_free(&chain);
-        return 1;
+        return status;
     }
     if (entry.from_overlay) {
         fprintf(stderr, _("secret attributes cannot be changed for a volatile session overlay\n"));
@@ -11278,7 +11407,7 @@ static int secdat_store_migrate_write_v2(
         }
         if (snprintf(object_path, sizeof(object_path), "%s/%s.sec", secret_objects_dir, secret_id) >= (int)sizeof(object_path)
             || secdat_key_list_append_duplicate(&written_paths, object_path) != 0
-            || secdat_write_v2_secret_object_file(secret_objects_dir, secret_id, &attrs, object_path, sizeof(object_path)) != 0) {
+            || secdat_write_v2_secret_object_file(secret_objects_dir, secret_id, &attrs, 1, 1, object_path, sizeof(object_path)) != 0) {
             goto rollback;
         }
         if (snprintf(entry_path, sizeof(entry_path), "%s/%s.dent", domain_entries_dir, entry_id) >= (int)sizeof(entry_path)
