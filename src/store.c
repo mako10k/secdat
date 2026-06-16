@@ -181,6 +181,23 @@ struct secdat_store_migrate_v1_plan {
     struct secdat_key_list tombstones;
 };
 
+struct secdat_v2_domain_entry_info {
+    char entry_id[64];
+    char secret_id[64];
+    char key[PATH_MAX];
+    enum secdat_key_visibility key_visibility;
+    enum secdat_sandbox_inject entry_inject;
+    int has_key;
+};
+
+struct secdat_v2_secret_object_info {
+    char secret_id[64];
+    enum secdat_value_access value_access;
+    enum secdat_sandbox_inject secret_inject;
+    int refcount_present;
+    size_t refcount;
+};
+
 struct secdat_key_access_options {
     int allow_on_demand_unlock;
     int timeout_configured;
@@ -224,9 +241,14 @@ struct secdat_effective_entry {
     int found;
     int tombstone;
     int from_overlay;
+    int from_v2;
     int unsafe_store;
     size_t resolved_index;
     char path[PATH_MAX];
+    char entry_id[64];
+    char secret_id[64];
+    enum secdat_key_visibility key_visibility;
+    enum secdat_sandbox_inject entry_inject;
     unsigned char *plaintext;
     size_t plaintext_length;
 };
@@ -366,6 +388,23 @@ static int secdat_store_plaintext_attrs_for_chain(
 static int secdat_write_empty_file(const char *path);
 static int secdat_entry_uses_plaintext_storage(const char *path, int *unsafe_store);
 static int secdat_file_exists(const char *path);
+static int secdat_read_store_format(const char *domain_id, const char *store_name, enum secdat_store_format *format);
+static int secdat_collect_v2_visible_keys(const char *domain_id, const char *store_name, struct secdat_key_list *keys);
+static int secdat_lookup_v2_domain_entry(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    struct secdat_v2_domain_entry_info *info,
+    char *entry_path,
+    size_t entry_path_size
+);
+static int secdat_load_v2_secret_attrs(
+    const char *domain_id,
+    const char *store_name,
+    const struct secdat_effective_entry *entry,
+    struct secdat_secret_attrs *attrs,
+    int *unsafe_store
+);
 static int secdat_read_file(const char *path, unsigned char **data, size_t *length);
 static void secdat_secret_attrs_default(int unsafe_store, struct secdat_secret_attrs *attrs);
 static int secdat_secret_attrs_supported(const struct secdat_secret_attrs *attrs);
@@ -7690,6 +7729,7 @@ static int secdat_collect_visible_keys(
     size_t chain_index;
     size_t key_index;
     int status;
+    enum secdat_store_format format;
 
     for (chain_index = 0; chain_index < chain->count; chain_index += 1) {
         status = secdat_active_overlay_collect_keys(chain, chain->ids[chain_index], store_name, &overlay_entries, &overlay_tombstones);
@@ -7720,13 +7760,28 @@ static int secdat_collect_visible_keys(
         }
         secdat_key_list_free(&domain_keys);
 
-        status = secdat_store_entries_dir(chain->ids[chain_index], store_name, entries_dir, sizeof(entries_dir));
-        if (status != 0) {
+        if (secdat_read_store_format(chain->ids[chain_index], store_name, &format) != 0) {
             goto cleanup;
         }
-        status = secdat_collect_directory_keys(entries_dir, ".sec", &domain_keys);
-        if (status != 0) {
+        if (format == SECDAT_STORE_FORMAT_INVALID) {
+            fprintf(stderr, _("invalid store format marker\n"));
+            status = 1;
             goto cleanup;
+        }
+        if (format == SECDAT_STORE_FORMAT_V2) {
+            status = secdat_collect_v2_visible_keys(chain->ids[chain_index], store_name, &domain_keys);
+            if (status != 0) {
+                goto cleanup;
+            }
+        } else {
+            status = secdat_store_entries_dir(chain->ids[chain_index], store_name, entries_dir, sizeof(entries_dir));
+            if (status != 0) {
+                goto cleanup;
+            }
+            status = secdat_collect_directory_keys(entries_dir, ".sec", &domain_keys);
+            if (status != 0) {
+                goto cleanup;
+            }
         }
 
         for (key_index = 0; key_index < overlay_entries.count; key_index += 1) {
@@ -7790,9 +7845,12 @@ static int secdat_resolve_effective_entry(
 )
 {
     char entry_path[PATH_MAX];
+    char v2_entry_path[PATH_MAX];
     char tombstone_path[PATH_MAX];
     struct secdat_overlay_lookup_result overlay = {0};
+    struct secdat_v2_domain_entry_info v2_info;
     size_t index;
+    enum secdat_store_format format;
 
     secdat_effective_entry_reset(entry);
     for (index = 0; index < chain->count; index += 1) {
@@ -7822,6 +7880,45 @@ static int secdat_resolve_effective_entry(
             return 0;
         }
 
+        if (secdat_read_store_format(chain->ids[index], store_name, &format) != 0) {
+            return 1;
+        }
+        if (format == SECDAT_STORE_FORMAT_INVALID) {
+            fprintf(stderr, _("invalid store format marker\n"));
+            return 1;
+        }
+        if (format == SECDAT_STORE_FORMAT_V2) {
+            int v2_lookup_status;
+
+            v2_lookup_status = secdat_lookup_v2_domain_entry(chain->ids[index], store_name, key, &v2_info, v2_entry_path, sizeof(v2_entry_path));
+            if (v2_lookup_status > 1) {
+                return 1;
+            }
+            if (v2_lookup_status == 0) {
+                entry->found = 1;
+                entry->from_v2 = 1;
+                entry->resolved_index = index;
+                entry->key_visibility = v2_info.key_visibility;
+                entry->entry_inject = v2_info.entry_inject;
+                if (secdat_copy_string(entry->entry_id, sizeof(entry->entry_id), v2_info.entry_id) != 0
+                    || secdat_copy_string(entry->secret_id, sizeof(entry->secret_id), v2_info.secret_id) != 0) {
+                    return 1;
+                }
+                if (secdat_build_entry_path(chain->ids[index], store_name, key, entry_path, sizeof(entry_path)) != 0) {
+                    return 1;
+                }
+                if (secdat_file_exists(entry_path)) {
+                    if (strlen(entry_path) >= sizeof(entry->path)) {
+                        fprintf(stderr, _("path is too long\n"));
+                        return 1;
+                    }
+                    strcpy(entry->path, entry_path);
+                }
+                return 0;
+            }
+            goto check_tombstone;
+        }
+
         if (secdat_build_entry_path(chain->ids[index], store_name, key, entry_path, sizeof(entry_path)) != 0) {
             return 1;
         }
@@ -7836,6 +7933,7 @@ static int secdat_resolve_effective_entry(
             return 0;
         }
 
+check_tombstone:
         if (secdat_build_tombstone_path(chain->ids[index], store_name, key, tombstone_path, sizeof(tombstone_path)) != 0) {
             return 1;
         }
@@ -8065,6 +8163,11 @@ static int secdat_load_resolved_plaintext(
         secdat_effective_entry_reset(&entry);
         return 0;
     }
+    if (entry.from_v2 && entry.path[0] == '\0') {
+        fprintf(stderr, _("v2 secret value storage is not implemented yet\n"));
+        secdat_effective_entry_reset(&entry);
+        return 1;
+    }
 
     if (secdat_read_file(entry.path, &encrypted, &encrypted_length) != 0) {
         secdat_effective_entry_reset(&entry);
@@ -8167,6 +8270,17 @@ static int secdat_load_resolved_secret_attrs(
         secdat_effective_entry_reset(&entry);
         return 0;
     }
+    if (entry.from_v2) {
+        if (secdat_load_v2_secret_attrs(chain->ids[entry.resolved_index], store_name, &entry, attrs, &entry_is_unsafe) != 0) {
+            secdat_effective_entry_reset(&entry);
+            return 1;
+        }
+        if (unsafe_store != NULL) {
+            *unsafe_store = entry_is_unsafe;
+        }
+        secdat_effective_entry_reset(&entry);
+        return 0;
+    }
 
     if (secdat_entry_uses_plaintext_storage(entry.path, &entry_is_unsafe) != 0) {
         secdat_effective_entry_reset(&entry);
@@ -8237,6 +8351,15 @@ static int secdat_command_ls(const struct secdat_cli *cli)
         if (entry.from_overlay) {
             entry_is_unsafe = entry.unsafe_store;
             secdat_secret_attrs_default(entry_is_unsafe, &attrs);
+        } else if (entry.from_v2) {
+            if (secdat_load_v2_secret_attrs(chain.ids[entry.resolved_index], cli->store, &entry, &attrs, &entry_is_unsafe) != 0) {
+                secdat_effective_entry_reset(&entry);
+                secdat_key_list_free(&options.include_patterns);
+                secdat_key_list_free(&options.exclude_patterns);
+                secdat_domain_chain_free(&chain);
+                secdat_key_list_free(&visible_keys);
+                return 1;
+            }
         } else if (secdat_entry_uses_plaintext_storage(entry.path, &entry_is_unsafe) != 0
             || secdat_read_secret_attrs(chain.ids[entry.resolved_index], cli->store, visible_keys.items[index], entry_is_unsafe, &attrs) != 0) {
             secdat_effective_entry_reset(&entry);
@@ -8759,20 +8882,20 @@ static int secdat_read_v2_text_file(const char *path, const char *magic, char **
     return 0;
 }
 
-static int secdat_validate_v2_domain_entry_file(const char *path, const char *file_entry_id, char *secret_id, size_t secret_id_size)
+static int secdat_read_v2_domain_entry_info(const char *path, const char *file_entry_id, struct secdat_v2_domain_entry_info *info)
 {
     char *text = NULL;
     char *line;
     char *saveptr = NULL;
+    char *decoded_key = NULL;
     size_t length = 0;
     int seen_entry_id = 0;
     int seen_secret_id = 0;
     int seen_key_visibility = 0;
-    int key_visibility_always = 0;
-    int seen_key = 0;
     int seen_entry_inject = 0;
     int valid = 0;
 
+    memset(info, 0, sizeof(*info));
     if (!secdat_uuid_is_valid(file_entry_id)
         || secdat_read_v2_text_file(path, secdat_v2_domain_entry_magic, &text, &length) != 0) {
         return 1;
@@ -8792,14 +8915,16 @@ static int secdat_validate_v2_domain_entry_file(const char *path, const char *fi
         *separator = '\0';
         separator += 1;
         if (strcmp(line, "entry_id") == 0) {
-            if (seen_entry_id || !secdat_uuid_is_valid(separator) || strcmp(separator, file_entry_id) != 0) {
+            if (seen_entry_id || !secdat_uuid_is_valid(separator) || strcmp(separator, file_entry_id) != 0
+                || secdat_copy_string(info->entry_id, sizeof(info->entry_id), separator) != 0) {
                 goto cleanup;
             }
             seen_entry_id = 1;
             continue;
         }
         if (strcmp(line, "secret_id") == 0) {
-            if (seen_secret_id || !secdat_uuid_is_valid(separator) || secdat_copy_string(secret_id, secret_id_size, separator) != 0) {
+            if (seen_secret_id || !secdat_uuid_is_valid(separator)
+                || secdat_copy_string(info->secret_id, sizeof(info->secret_id), separator) != 0) {
                 goto cleanup;
             }
             seen_secret_id = 1;
@@ -8811,22 +8936,37 @@ static int secdat_validate_v2_domain_entry_file(const char *path, const char *fi
             }
             seen_key_visibility = 1;
             if (strcmp(separator, "always") == 0) {
-                key_visibility_always = 1;
-            } else if (strcmp(separator, "unlocked") != 0) {
+                info->key_visibility = SECDAT_KEY_VISIBILITY_ALWAYS;
+            } else if (strcmp(separator, "unlocked") == 0) {
+                info->key_visibility = SECDAT_KEY_VISIBILITY_UNLOCKED;
+            } else {
                 goto cleanup;
             }
             continue;
         }
         if (strcmp(line, "key") == 0) {
-            if (seen_key || separator[0] == '\0') {
+            if (info->has_key || separator[0] == '\0' || secdat_unescape_component(separator, &decoded_key) != 0) {
                 goto cleanup;
             }
-            seen_key = 1;
+            if (decoded_key[0] == '\0' || secdat_copy_string(info->key, sizeof(info->key), decoded_key) != 0) {
+                goto cleanup;
+            }
+            free(decoded_key);
+            decoded_key = NULL;
+            info->has_key = 1;
             continue;
         }
         if (strcmp(line, "entry_inject") == 0) {
-            if (seen_entry_inject
-                || (strcmp(separator, "never") != 0 && strcmp(separator, "explicit") != 0 && strcmp(separator, "allow") != 0)) {
+            if (seen_entry_inject) {
+                goto cleanup;
+            }
+            if (strcmp(separator, "never") == 0) {
+                info->entry_inject = SECDAT_SANDBOX_INJECT_NEVER;
+            } else if (strcmp(separator, "explicit") == 0) {
+                info->entry_inject = SECDAT_SANDBOX_INJECT_EXPLICIT;
+            } else if (strcmp(separator, "allow") == 0) {
+                info->entry_inject = SECDAT_SANDBOX_INJECT_ALLOW;
+            } else {
                 goto cleanup;
             }
             seen_entry_inject = 1;
@@ -8836,15 +8976,16 @@ static int secdat_validate_v2_domain_entry_file(const char *path, const char *fi
     }
 
     valid = seen_entry_id && seen_secret_id && seen_key_visibility && seen_entry_inject
-        && (!key_visibility_always || seen_key);
+        && (info->key_visibility != SECDAT_KEY_VISIBILITY_ALWAYS || info->has_key);
 
 cleanup:
+    free(decoded_key);
     secdat_secure_clear(text, length);
     free(text);
     return valid ? 0 : 1;
 }
 
-static int secdat_validate_v2_secret_object_file(const char *path, const char *file_secret_id, int *refcount_present, size_t *refcount)
+static int secdat_read_v2_secret_object_info(const char *path, const char *file_secret_id, struct secdat_v2_secret_object_info *info)
 {
     char *text = NULL;
     char *line;
@@ -8855,8 +8996,7 @@ static int secdat_validate_v2_secret_object_file(const char *path, const char *f
     int seen_secret_inject = 0;
     int valid = 0;
 
-    *refcount_present = 0;
-    *refcount = 0;
+    memset(info, 0, sizeof(*info));
     if (!secdat_uuid_is_valid(file_secret_id)
         || secdat_read_v2_text_file(path, secdat_v2_secret_object_magic, &text, &length) != 0) {
         return 1;
@@ -8876,31 +9016,46 @@ static int secdat_validate_v2_secret_object_file(const char *path, const char *f
         *separator = '\0';
         separator += 1;
         if (strcmp(line, "secret_id") == 0) {
-            if (seen_secret_id || !secdat_uuid_is_valid(separator) || strcmp(separator, file_secret_id) != 0) {
+            if (seen_secret_id || !secdat_uuid_is_valid(separator) || strcmp(separator, file_secret_id) != 0
+                || secdat_copy_string(info->secret_id, sizeof(info->secret_id), separator) != 0) {
                 goto cleanup;
             }
             seen_secret_id = 1;
             continue;
         }
         if (strcmp(line, "value_access") == 0) {
-            if (seen_value_access || (strcmp(separator, "unlocked") != 0 && strcmp(separator, "always") != 0)) {
+            if (seen_value_access) {
+                goto cleanup;
+            }
+            if (strcmp(separator, "unlocked") == 0) {
+                info->value_access = SECDAT_VALUE_ACCESS_UNLOCKED;
+            } else if (strcmp(separator, "always") == 0) {
+                info->value_access = SECDAT_VALUE_ACCESS_ALWAYS;
+            } else {
                 goto cleanup;
             }
             seen_value_access = 1;
             continue;
         }
         if (strcmp(line, "secret_inject") == 0) {
-            if (seen_secret_inject || (strcmp(separator, "never") != 0 && strcmp(separator, "allow") != 0)) {
+            if (seen_secret_inject) {
+                goto cleanup;
+            }
+            if (strcmp(separator, "never") == 0) {
+                info->secret_inject = SECDAT_SANDBOX_INJECT_NEVER;
+            } else if (strcmp(separator, "allow") == 0) {
+                info->secret_inject = SECDAT_SANDBOX_INJECT_ALLOW;
+            } else {
                 goto cleanup;
             }
             seen_secret_inject = 1;
             continue;
         }
         if (strcmp(line, "refcount") == 0) {
-            if (*refcount_present || secdat_parse_size_value(separator, refcount) != 0) {
+            if (info->refcount_present || secdat_parse_size_value(separator, &info->refcount) != 0) {
                 goto cleanup;
             }
-            *refcount_present = 1;
+            info->refcount_present = 1;
             continue;
         }
         goto cleanup;
@@ -8912,6 +9067,168 @@ cleanup:
     secdat_secure_clear(text, length);
     free(text);
     return valid ? 0 : 1;
+}
+
+static int secdat_validate_v2_domain_entry_file(const char *path, const char *file_entry_id, char *secret_id, size_t secret_id_size)
+{
+    struct secdat_v2_domain_entry_info info;
+
+    if (secdat_read_v2_domain_entry_info(path, file_entry_id, &info) != 0) {
+        return 1;
+    }
+    return secdat_copy_string(secret_id, secret_id_size, info.secret_id);
+}
+
+static int secdat_validate_v2_secret_object_file(const char *path, const char *file_secret_id, int *refcount_present, size_t *refcount)
+{
+    struct secdat_v2_secret_object_info info;
+
+    if (secdat_read_v2_secret_object_info(path, file_secret_id, &info) != 0) {
+        return 1;
+    }
+    *refcount_present = info.refcount_present;
+    *refcount = info.refcount;
+    return 0;
+}
+
+static int secdat_build_v2_domain_entry_path(const char *domain_id, const char *store_name, const char *entry_id, char *buffer, size_t size)
+{
+    char domain_entries_dir[PATH_MAX];
+
+    if (secdat_v2_domain_entries_dir(domain_id, store_name, domain_entries_dir, sizeof(domain_entries_dir)) != 0) {
+        return 1;
+    }
+    if (snprintf(buffer, size, "%s/%s.dent", domain_entries_dir, entry_id) >= (int)size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_build_v2_secret_object_path(const char *domain_id, const char *store_name, const char *secret_id, char *buffer, size_t size)
+{
+    char secret_objects_dir[PATH_MAX];
+
+    if (secdat_v2_secret_objects_dir(domain_id, store_name, secret_objects_dir, sizeof(secret_objects_dir)) != 0) {
+        return 1;
+    }
+    if (snprintf(buffer, size, "%s/%s.sec", secret_objects_dir, secret_id) >= (int)size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_collect_v2_visible_keys(const char *domain_id, const char *store_name, struct secdat_key_list *keys)
+{
+    char domain_entries_dir[PATH_MAX];
+    char entry_path[PATH_MAX];
+    struct secdat_key_list entry_ids = {0};
+    struct secdat_v2_domain_entry_info info;
+    size_t index;
+    int status = 1;
+
+    if (secdat_v2_domain_entries_dir(domain_id, store_name, domain_entries_dir, sizeof(domain_entries_dir)) != 0
+        || secdat_collect_directory_keys(domain_entries_dir, ".dent", &entry_ids) != 0) {
+        goto cleanup;
+    }
+    if (entry_ids.count > 1) {
+        qsort(entry_ids.items, entry_ids.count, sizeof(*entry_ids.items), secdat_compare_strings);
+    }
+
+    for (index = 0; index < entry_ids.count; index += 1) {
+        if (secdat_build_v2_domain_entry_path(domain_id, store_name, entry_ids.items[index], entry_path, sizeof(entry_path)) != 0) {
+            goto cleanup;
+        }
+        if (secdat_read_v2_domain_entry_info(entry_path, entry_ids.items[index], &info) != 0) {
+            fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry_ids.items[index]);
+            goto cleanup;
+        }
+        if (info.key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS && info.has_key
+            && secdat_key_list_append(keys, info.key) != 0) {
+            goto cleanup;
+        }
+    }
+
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&entry_ids);
+    return status;
+}
+
+static int secdat_lookup_v2_domain_entry(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    struct secdat_v2_domain_entry_info *info,
+    char *entry_path,
+    size_t entry_path_size
+)
+{
+    char domain_entries_dir[PATH_MAX];
+    struct secdat_key_list entry_ids = {0};
+    size_t index;
+    int found = 0;
+    int status = 2;
+
+    if (secdat_v2_domain_entries_dir(domain_id, store_name, domain_entries_dir, sizeof(domain_entries_dir)) != 0
+        || secdat_collect_directory_keys(domain_entries_dir, ".dent", &entry_ids) != 0) {
+        goto cleanup;
+    }
+    if (entry_ids.count > 1) {
+        qsort(entry_ids.items, entry_ids.count, sizeof(*entry_ids.items), secdat_compare_strings);
+    }
+
+    for (index = 0; index < entry_ids.count; index += 1) {
+        if (secdat_build_v2_domain_entry_path(domain_id, store_name, entry_ids.items[index], entry_path, entry_path_size) != 0) {
+            goto cleanup;
+        }
+        if (secdat_read_v2_domain_entry_info(entry_path, entry_ids.items[index], info) != 0) {
+            fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry_ids.items[index]);
+            goto cleanup;
+        }
+        if (info->key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS && info->has_key && strcmp(info->key, key) == 0) {
+            found = 1;
+            break;
+        }
+    }
+
+    status = found ? 0 : 1;
+
+cleanup:
+    secdat_key_list_free(&entry_ids);
+    return status;
+}
+
+static int secdat_load_v2_secret_attrs(
+    const char *domain_id,
+    const char *store_name,
+    const struct secdat_effective_entry *entry,
+    struct secdat_secret_attrs *attrs,
+    int *unsafe_store
+)
+{
+    char object_path[PATH_MAX];
+    struct secdat_v2_secret_object_info object;
+
+    if (secdat_build_v2_secret_object_path(domain_id, store_name, entry->secret_id, object_path, sizeof(object_path)) != 0) {
+        return 1;
+    }
+    if (secdat_read_v2_secret_object_info(object_path, entry->secret_id, &object) != 0) {
+        fprintf(stderr, _("invalid v2 secret object: %s\n"), entry->secret_id);
+        return 1;
+    }
+
+    attrs->key_visibility = entry->key_visibility;
+    attrs->value_access = object.value_access;
+    attrs->sandbox_inject = object.secret_inject == SECDAT_SANDBOX_INJECT_NEVER
+        ? SECDAT_SANDBOX_INJECT_NEVER
+        : entry->entry_inject;
+    if (unsafe_store != NULL) {
+        *unsafe_store = object.value_access == SECDAT_VALUE_ACCESS_ALWAYS;
+    }
+    return 0;
 }
 
 static size_t secdat_v2_count_secret_references(const struct secdat_key_list *references, const char *secret_id)
@@ -9381,6 +9698,12 @@ static int secdat_command_attr(const struct secdat_cli *cli)
         return 0;
     }
 
+    if (entry.from_v2) {
+        fprintf(stderr, _("v2 write path is not implemented yet\n"));
+        secdat_effective_entry_reset(&entry);
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
     if (entry.from_overlay) {
         fprintf(stderr, _("secret attributes cannot be changed for a volatile session overlay\n"));
         secdat_effective_entry_reset(&entry);
@@ -9475,6 +9798,51 @@ static int secdat_command_exists(const struct secdat_cli *cli)
         return 0;
     }
     return 1;
+}
+
+static int secdat_command_id(const struct secdat_cli *cli)
+{
+    struct secdat_key_reference reference;
+    struct secdat_domain_chain chain = {0};
+    struct secdat_effective_entry entry = {0};
+    int status;
+
+    if (cli->argc == 0) {
+        fprintf(stderr, _("missing key for id\n"));
+        secdat_cli_print_try_help(cli, "id");
+        return 2;
+    }
+    if (cli->argc != 1) {
+        fprintf(stderr, _("invalid arguments for id\n"));
+        secdat_cli_print_try_help(cli, "id");
+        return 2;
+    }
+
+    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
+        return 1;
+    }
+    if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
+        return 1;
+    }
+
+    status = secdat_resolve_effective_entry(&chain, reference.store_value, reference.key, 0, &entry);
+    if (status != 0) {
+        fprintf(stderr, _("key not found: %s\n"), reference.key);
+        fprintf(stderr, _("Hint: check secdat status, --dir, and --store to confirm the lookup context\n"));
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+    if (!entry.from_v2) {
+        fprintf(stderr, _("secret id is available only for store format v2\n"));
+        secdat_effective_entry_reset(&entry);
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+
+    puts(entry.secret_id);
+    secdat_effective_entry_reset(&entry);
+    secdat_domain_chain_free(&chain);
+    return 0;
 }
 
 static void secdat_write_shell_quoted(FILE *stream, const char *value);
@@ -11689,6 +12057,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_unmask(cli);
     case SECDAT_COMMAND_EXISTS:
         return secdat_command_exists(cli);
+    case SECDAT_COMMAND_ID:
+        return secdat_command_id(cli);
     case SECDAT_COMMAND_GET:
         return secdat_command_get(cli);
     case SECDAT_COMMAND_SET:

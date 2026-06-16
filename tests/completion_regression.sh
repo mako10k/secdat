@@ -44,13 +44,13 @@ def assert_contains(values, expected, label):
 mode, values = run_completion("")
 if mode != "plain":
     raise SystemExit(f"FAIL: top-level completion mode mismatch: {mode!r}")
-for expected in ["wait-unlock", "inherit", "store", "domain", "unlock", "attr", "fsck", "version", "--dir", "--domain", "--store", "--help", "--version"]:
+for expected in ["wait-unlock", "inherit", "store", "domain", "unlock", "attr", "fsck", "id", "version", "--dir", "--domain", "--store", "--help", "--version"]:
     assert_contains(values, expected, "top-level commands")
 
 mode, values = run_completion("help", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: help completion mode mismatch: {mode!r}")
-for expected in ["usecases", "concepts", "wait-unlock", "store", "domain"]:
+for expected in ["usecases", "concepts", "wait-unlock", "store", "domain", "id"]:
     assert_contains(values, expected, "help targets")
 
 mode, values = run_completion("domain", "")

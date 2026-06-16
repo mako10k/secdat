@@ -32,6 +32,7 @@ secdat [--dir DIR] [--store STORE] attr KEYREF [--key-visibility always|unlocked
 secdat [--dir DIR] [--store STORE] fsck [--orphaned] [--dangling] [--refcount] [--format v1|v2]
 
 secdat [--dir DIR] [--store STORE] exists KEYREF
+secdat [--dir DIR] [--store STORE] id KEYREF
 
 secdat [--dir DIR] [--store STORE] mask KEYREF
 secdat [--dir DIR] [--store STORE] unmask KEYREF
@@ -403,6 +404,9 @@ To make the requested behavior implementable, the following are treated as norma
 - migration output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, `injectable_entries`, and `issues`
 - migration refuses invalid v1 entries, invalid sidecars, orphaned sidecars, orphaned tombstones, and pre-existing v2 migration artifacts
 - `store` management never creates, deletes, or lists stores in parent or child domains
+- stores marked with the v2 format marker use the v2 domain-entry/object graph for `ls`, `exists`, `attr`, and `id`
+- migrated v2 stores keep v1 value files readable by `get` until v2 object-owned value storage is implemented
+- `secdat id KEYREF` prints the resolved v2 `secret_id` and does not read the secret value
 
 #### FR-10 Domain Management
 
@@ -1145,7 +1149,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. The current v2 object file records graph metadata only; moving value bytes into v2 object-owned encrypted/public areas is part of the later v2 read/write path.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 read support resolves `ls`, `exists`, `attr`, and `id` through that graph. `get` can read migrated stores through the preserved v1 value file, but pure v2 object-owned encrypted/public value storage is still part of the later v2 write path.
 
 #### Implementation Plan
 

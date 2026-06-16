@@ -89,6 +89,26 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"clean v2 fsck failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--metadata"])
+if rc != 0 or stdout != "APP_TOKEN\tkey_visibility=always\tvalue_access=unlocked\tsandbox_inject=explicit\n" or stderr != "":
+    fail(f"clean v2 ls metadata failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "exists", "APP_TOKEN"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"clean v2 exists failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_TOKEN"])
+if rc != 0 or stdout != f"{secret_id}\n" or stderr != "":
+    fail(f"clean v2 id failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=explicit\n" or stderr != "":
+    fail(f"clean v2 attr failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_TOKEN"])
+if rc != 1 or stdout != "" or "v2 secret value storage is not implemented yet" not in stderr:
+    fail(f"pure v2 get should reject missing value storage: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck"])
 if rc != 2 or "store format is v2; use --format v2" not in stderr:
     fail(f"v1 fsck should reject v2 marker: rc={rc} stdout={stdout!r} stderr={stderr!r}")

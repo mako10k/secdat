@@ -76,6 +76,9 @@ is plaintext-at-rest and readable while locked.
 .B sandbox_inject
 marks whether future scoped sandbox imports may include the key.
 .TP
+.B id KEYREF
+Print the resolved v2 secret object UUID for one key without reading its value. This requires a store marked with the v2 format marker.
+.TP
 .B fsck [\-\-orphaned] [\-\-dangling] [\-\-refcount] [\-\-format v1|v2]
 Check the current-domain local store namespace without decrypting secret values. Clean v1 output is
 .B ok .

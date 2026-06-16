@@ -403,6 +403,7 @@ for args, marker in [
     ([bin_path, "help", "mask"], "mask KEYREF"),
     ([bin_path, "help", "unmask"], "unmask KEYREF"),
     ([bin_path, "help", "exists"], "exists KEYREF"),
+    ([bin_path, "help", "id"], "id KEYREF"),
     ([bin_path, "help", "ls"], "[-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--sandbox-injectable]"),
     ([bin_path, "help", "get"], "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF"),
     ([bin_path, "help", "wait-unlock"], "wait-unlock [-t SECONDS|--timeout SECONDS] [-q|--quiet]"),

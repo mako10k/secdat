@@ -167,6 +167,22 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "fsc
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"migrated v2 fsck failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "ls", "--metadata"])
+if rc != 0 or stderr != "":
+    fail(f"migrated v2 ls metadata failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "APP_TOKEN\tkey_visibility=always\tvalue_access=unlocked\tsandbox_inject=explicit\n", "migrated APP_TOKEN metadata")
+assert_contains(stdout, "APP_PUBLIC\tkey_visibility=always\tvalue_access=always\tsandbox_inject=never\n", "migrated APP_PUBLIC metadata")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "id", "APP_TOKEN"])
+if rc != 0 or stderr != "":
+    fail(f"migrated v2 id failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if len(stdout.strip()) != 36 or stdout.count("\n") != 1:
+    fail(f"migrated v2 id did not print one UUID: {stdout!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_PUBLIC"])
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inject=never\n" or stderr != "":
+    fail(f"migrated v2 attr failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get", "APP_TOKEN"])
 if rc != 0 or stdout != "secret-token" or stderr != "":
     fail(f"v1 read compatibility after migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

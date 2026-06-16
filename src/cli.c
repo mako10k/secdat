@@ -393,7 +393,7 @@ static int secdat_cli_completion_is_help_target(const char *value)
 static int secdat_cli_completion_is_command_with_key_operand(const char *command)
 {
     return command != NULL
-        && (strcmp(command, "get") == 0 || strcmp(command, "exists") == 0
+        && (strcmp(command, "get") == 0 || strcmp(command, "exists") == 0 || strcmp(command, "id") == 0
             || strcmp(command, "attr") == 0
             || strcmp(command, "rm") == 0 || strcmp(command, "mask") == 0
             || strcmp(command, "unmask") == 0 || strcmp(command, "set") == 0
@@ -874,6 +874,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     if (strcmp(name, "exists") == 0) {
         return SECDAT_COMMAND_EXISTS;
     }
+    if (strcmp(name, "id") == 0) {
+        return SECDAT_COMMAND_ID;
+    }
     if (strcmp(name, "help") == 0) {
         return SECDAT_COMMAND_HELP;
     }
@@ -954,6 +957,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_EXISTS:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exists", "KEYREF");
+        break;
+    case SECDAT_COMMAND_ID:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "id", "KEYREF");
         break;
     case SECDAT_COMMAND_GET:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "get", "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [-o|--stdout|-e|--shellescaped]");
@@ -1121,6 +1127,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  mask: create a local tombstone to hide one inherited key\n"));
     secdat_cli_print_detail_line(_("  unmask: remove one local tombstone from the current domain\n"));
     secdat_cli_print_detail_line(_("  exists: check whether one resolved key is visible from the current domain view\n"));
+    secdat_cli_print_detail_line(_("  id: print the v2 secret object UUID for one resolved key without reading its value\n"));
     secdat_cli_print_detail_line(_("  get: decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock\n"));
     secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
     secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success\n"));
@@ -1465,6 +1472,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
     } else if (strcmp(argv[index], "exists") == 0) {
         cli->command = SECDAT_COMMAND_EXISTS;
         index += 1;
+    } else if (strcmp(argv[index], "id") == 0) {
+        cli->command = SECDAT_COMMAND_ID;
+        index += 1;
     } else if (strcmp(argv[index], "get") == 0) {
         cli->command = SECDAT_COMMAND_GET;
         index += 1;
@@ -1609,7 +1619,7 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
     secdat_cli_print_usage_line(program_name, command);
     if (command == SECDAT_COMMAND_LS || command == SECDAT_COMMAND_LIST || command == SECDAT_COMMAND_ATTR
         || command == SECDAT_COMMAND_MASK || command == SECDAT_COMMAND_UNMASK
-        || command == SECDAT_COMMAND_EXISTS || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
+        || command == SECDAT_COMMAND_EXISTS || command == SECDAT_COMMAND_ID || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
         || command == SECDAT_COMMAND_RM || command == SECDAT_COMMAND_MV || command == SECDAT_COMMAND_CP) {
         printf(_("\n"));
         secdat_cli_print_detail_line(_("  KEYREF syntax: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
@@ -1707,6 +1717,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "unmask";
     case SECDAT_COMMAND_EXISTS:
         return "exists";
+    case SECDAT_COMMAND_ID:
+        return "id";
     case SECDAT_COMMAND_GET:
         return "get";
     case SECDAT_COMMAND_SET:
