@@ -439,6 +439,39 @@ if rc != 0 or stdout != "secret-token" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"v2 fsck after finalize-migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "list", "--safe"])
+if rc != 0 or stdout != "APP_TOKEN\n" or stderr != "":
+    fail(f"v2 list --safe after finalize-migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "list", "--sandbox-injectable"])
+if rc != 0 or stdout != "APP_TOKEN\n" or stderr != "":
+    fail(f"v2 list --sandbox-injectable after finalize-migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "list", "--unsafe"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"v2 list --unsafe after finalize-migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+child_domain = domain / "child"
+child_domain.mkdir()
+rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "domain", "create"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"child domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "--store", "app", "get", "APP_TOKEN"])
+if rc != 0 or stdout != "secret-token" or stderr != "":
+    fail(f"child should inherit finalized v2 key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "--store", "app", "mask", "APP_TOKEN"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"child mask should hide inherited finalized v2 key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "--store", "app", "list", "--masked"])
+if rc != 0 or stdout != "APP_TOKEN\n" or stderr != "":
+    fail(f"child list --masked should show finalized v2 tombstone: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "--store", "app", "get", "APP_TOKEN"])
+if rc == 0 or stdout != "":
+    fail(f"child mask should hide finalized v2 key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "--store", "app", "unmask", "APP_TOKEN"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"child unmask finalized v2 key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "--store", "app", "get", "APP_TOKEN"])
+if rc != 0 or stdout != "secret-token" or stderr != "":
+    fail(f"child unmask should restore finalized v2 key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "finalize-migration", "app", "--from-format", "v1", "--dry-run"])
 if rc != 0 or stderr != "":

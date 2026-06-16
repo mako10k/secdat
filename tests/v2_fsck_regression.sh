@@ -35,6 +35,7 @@ domain.mkdir(parents=True)
 
 entry_id = "11111111-1111-4111-8111-111111111111"
 secret_id = "22222222-2222-4222-8222-222222222222"
+duplicate_entry_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 missing_entry_id = "33333333-3333-4333-8333-333333333333"
 missing_secret_id = "44444444-4444-4444-8444-444444444444"
 orphan_secret_id = "55555555-5555-4555-8555-555555555555"
@@ -149,6 +150,17 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"clean v2 fsck failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+write_entry(domain_entries_dir / f"{duplicate_entry_id}.dent", duplicate_entry_id, secret_id, "APP_TOKEN")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
+if rc != 1 or stderr != "":
+    fail(f"duplicate v2 key fsck should report issues: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "duplicate-key\tAPP_TOKEN\tmultiple-entries\n", "v2 duplicate key")
+(domain_entries_dir / f"{duplicate_entry_id}.dent").unlink()
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"clean v2 fsck after duplicate removal failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--metadata"])
 if rc != 0 or stdout != "APP_TOKEN\tkey_visibility=always\tvalue_access=unlocked\tsandbox_inject=explicit\n" or stderr != "":
     fail(f"clean v2 ls metadata failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -205,16 +217,22 @@ if "object_domain=" not in entry_text or "object_store=default\n" not in entry_t
     fail("clean v2 attr did not write object location metadata")
 if "wrapped_object_key=" not in entry_text:
     fail("clean v2 attr did not backfill the wrapped object key")
-if "secret_inject=never\n" not in object_text or "refcount=1\n" not in object_text:
+if "secret_inject=allow\n" not in object_text or "refcount=1\n" not in object_text:
     fail("clean v2 attr did not preserve secret object metadata")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN", "--sandbox-inject", "bulk"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"entry-level inject bulk re-enable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=bulk\n" or stderr != "":
+    fail(f"v2 attr after entry bulk re-enable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+object_text = read_object_header_text(secret_objects_dir / f"{secret_id}.sec")
+(secret_objects_dir / f"{secret_id}.sec").write_text(object_text.replace("secret_inject=allow\n", "secret_inject=never\n"), encoding="utf-8")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN", "--sandbox-inject", "bulk"])
 if rc == 0 or "secret object forbids sandbox injection: APP_TOKEN" not in stderr:
     fail(f"object-level inject deny should reject bulk re-enable: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=never\n" or stderr != "":
     fail(f"v2 attr after rejected bulk re-enable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-entry_text = (domain_entries_dir / f"{entry_id}.dent").read_text(encoding="utf-8")
-(domain_entries_dir / f"{entry_id}.dent").write_text(entry_text.replace("entry_inject=never\n", "entry_inject=bulk\n"), encoding="utf-8")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=never\n" or stderr != "":
     fail(f"object-level inject deny should override entry bulk: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -376,6 +394,17 @@ assert_wrapped_object_key_count(app_secret_id, 2, "pure v2 ln")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"pure v2 fsck after ln failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_SECRET", "--sandbox-inject", "bulk"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 linked source attr bulk failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_SECRET_LINK", "--sandbox-inject", "never"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 linked target attr never failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--sandbox-injectable", "--pattern", "APP_SECRET*"])
+if rc != 0 or stderr != "":
+    fail(f"pure v2 linked sandbox attr isolation ls failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if stdout != "APP_SECRET\n":
+    fail(f"pure v2 linked sandbox attr should remain per entry: {stdout!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET_LINK", "--value", "linked-value", "--sandbox-inject", "explicit"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 set through linked key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

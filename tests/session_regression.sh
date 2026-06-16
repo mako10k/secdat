@@ -342,6 +342,29 @@ rc, stdout, stderr = run(scoped(["get", "UNSAFE_VISIBLE_KEY", "-o"], domain=chil
 if rc != 0 or stdout != "visible-while-locked" or stderr != "":
     fail(f"inherited key should remain visible after child volatile lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+repair_guard_store = "repairguard"
+rc, stdout, stderr = run(scoped(["store", "create", repair_guard_store]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"readonly repair guard store create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["--store", repair_guard_store, "set", "REPAIR_GUARD_KEY", "--unsafe", "--value", "repair-guard-value"]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"readonly repair guard set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["store", "migrate", repair_guard_store, "--to-format", "v2"]))
+if rc != 0 or stderr != "":
+    fail(f"readonly repair guard migrate failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["--store", repair_guard_store, "id", "REPAIR_GUARD_KEY"]))
+if rc != 0 or stderr != "":
+    fail(f"readonly repair guard id failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+repair_guard_secret_id = stdout.strip()
+repair_guard_object_paths = list(Path(env["XDG_DATA_HOME"]).rglob(f"{repair_guard_secret_id}.sec"))
+if len(repair_guard_object_paths) != 1:
+    fail(f"expected one repair guard object, found {repair_guard_object_paths!r}")
+repair_guard_object_path = repair_guard_object_paths[0]
+repair_guard_object_path.write_text(
+    repair_guard_object_path.read_text(encoding="utf-8").replace("refcount=1\n", "refcount=5\n"),
+    encoding="utf-8",
+)
+
 readonly_env = {"SECDAT_MASTER_KEY": "readonly-master-key-for-tests"}
 
 rc, stdout, stderr = run(scoped(["unlock", "--readonly"]), extra_env=readonly_env)
@@ -355,6 +378,16 @@ if rc != 0 or "access: readonly\n" not in stdout or stderr != "":
 rc, stdout, stderr = run(scoped(["set", "READONLY_BLOCKED_KEY", "--value", "blocked"]))
 if rc == 0 or "current session is readonly and cannot run set" not in stderr or f"unlock writable session: secdat --dir {root_domain} unlock" not in stderr:
     fail(f"readonly set should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["store", "migrate", "default", "--to-format", "v2"]))
+if rc == 0 or stdout != "" or "current session is readonly and cannot run store migrate" not in stderr or f"unlock writable session: secdat --dir {root_domain} unlock" not in stderr:
+    fail(f"readonly store migrate should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["--store", repair_guard_store, "fsck", "--format", "v2", "--refcount", "--repair"]))
+if rc == 0 or stdout != "" or "current session is readonly and cannot run fsck --repair" not in stderr or f"unlock writable session: secdat --dir {root_domain} unlock" not in stderr:
+    fail(f"readonly fsck repair should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if "refcount=5\n" not in repair_guard_object_path.read_text(encoding="utf-8"):
+    fail("readonly fsck repair mutated cached refcount")
 
 rc, stdout, stderr = run(scoped(["lock", "--save"]))
 if rc == 0 or "lock --save requires a local volatile session" not in stderr:

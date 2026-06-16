@@ -5,6 +5,7 @@
 - Treat GitHub issues as the source of truth for implementation work.
 - Capture new implementation requests as issues before changing code.
 - Prefer the highest-priority open issue unless the user explicitly redirects the order.
+- For problem-solving work, use the `.codex/agents/rca-shortest-path-solver.toml` agent before choosing an implementation path. Prefer root-cause shortest-path resolution over the shortest-looking local patch.
 - Require review before every non-WIP commit. Only WIP commits may bypass review, and they must be clearly labeled as WIP.
 - After implementation, verify the change, comment on the issue with the result, and close it when the accepted scope is complete.
 - If new ideas appear while closing an issue, move them into a new issue instead of stretching the current one.
