@@ -10714,15 +10714,173 @@ static int secdat_write_empty_file(const char *path)
     return secdat_atomic_write_file(path, (const unsigned char *)"", 0);
 }
 
+static int secdat_local_key_exists_in_store(const char *domain_id, const char *store_name, const char *key, int *exists)
+{
+    char entry_path[PATH_MAX];
+    struct secdat_v2_domain_entry_info v2_entry;
+    enum secdat_store_format format;
+    int lookup_status;
+
+    *exists = 0;
+    if (secdat_read_store_format(domain_id, store_name, &format) != 0) {
+        return 1;
+    }
+    if (format == SECDAT_STORE_FORMAT_INVALID) {
+        fprintf(stderr, _("invalid store format marker\n"));
+        return 1;
+    }
+    if (format == SECDAT_STORE_FORMAT_V2) {
+        lookup_status = secdat_lookup_v2_domain_entry(domain_id, store_name, key, &v2_entry, entry_path, sizeof(entry_path));
+        if (lookup_status > 1) {
+            return 1;
+        }
+        *exists = lookup_status == 0;
+        return 0;
+    }
+
+    if (secdat_build_entry_path(domain_id, store_name, key, entry_path, sizeof(entry_path)) != 0) {
+        return 1;
+    }
+    *exists = secdat_file_exists(entry_path);
+    return 0;
+}
+
+static int secdat_count_v2_secret_references_in_store(
+    const char *domain_id,
+    const char *store_name,
+    const char *secret_id,
+    size_t *count
+)
+{
+    char domain_entries_dir[PATH_MAX];
+    char entry_path[PATH_MAX];
+    struct secdat_key_list entry_ids = {0};
+    struct secdat_v2_domain_entry_info entry;
+    size_t index;
+    int status = 1;
+
+    *count = 0;
+    if (secdat_v2_domain_entries_dir(domain_id, store_name, domain_entries_dir, sizeof(domain_entries_dir)) != 0
+        || secdat_collect_directory_keys(domain_entries_dir, ".dent", &entry_ids) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < entry_ids.count; index += 1) {
+        if (secdat_build_v2_domain_entry_path(domain_id, store_name, entry_ids.items[index], entry_path, sizeof(entry_path)) != 0) {
+            goto cleanup;
+        }
+        if (secdat_read_v2_domain_entry_info(entry_path, entry_ids.items[index], &entry) != 0) {
+            fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry_ids.items[index]);
+            goto cleanup;
+        }
+        if (strcmp(entry.secret_id, secret_id) == 0) {
+            *count += 1;
+        }
+    }
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&entry_ids);
+    return status;
+}
+
+static int secdat_update_v2_secret_refcount(
+    const char *domain_id,
+    const char *store_name,
+    const char *secret_id,
+    size_t refcount
+)
+{
+    char secret_objects_dir[PATH_MAX];
+    char object_path[PATH_MAX];
+    struct secdat_v2_secret_object_info object;
+    struct secdat_secret_attrs attrs;
+
+    if (secdat_v2_secret_objects_dir(domain_id, store_name, secret_objects_dir, sizeof(secret_objects_dir)) != 0
+        || secdat_build_v2_secret_object_path(domain_id, store_name, secret_id, object_path, sizeof(object_path)) != 0
+        || secdat_read_v2_secret_object_info(object_path, secret_id, &object) != 0) {
+        fprintf(stderr, _("invalid v2 secret object: %s\n"), secret_id);
+        return 1;
+    }
+    if (!object.refcount_present) {
+        return 0;
+    }
+    attrs.key_visibility = SECDAT_KEY_VISIBILITY_ALWAYS;
+    attrs.value_access = object.value_access;
+    attrs.sandbox_inject = object.secret_inject == SECDAT_SANDBOX_INJECT_NEVER
+        ? SECDAT_SANDBOX_INJECT_NEVER
+        : SECDAT_SANDBOX_INJECT_ALLOW;
+    return secdat_write_v2_secret_object_file(secret_objects_dir, secret_id, &attrs, 1, refcount, object_path, sizeof(object_path));
+}
+
+static int secdat_remove_v2_local_key(const char *domain_id, const char *store_name, const char *key, int *removed)
+{
+    char entry_path[PATH_MAX];
+    char object_path[PATH_MAX];
+    char value_path[PATH_MAX];
+    char tombstone_path[PATH_MAX];
+    char legacy_entry_path[PATH_MAX];
+    struct secdat_v2_domain_entry_info entry;
+    struct secdat_v2_secret_object_info object;
+    size_t references = 0;
+    int lookup_status;
+    int object_is_valid = 0;
+
+    *removed = 0;
+    lookup_status = secdat_lookup_v2_domain_entry(domain_id, store_name, key, &entry, entry_path, sizeof(entry_path));
+    if (lookup_status > 1) {
+        return 1;
+    }
+    if (lookup_status != 0) {
+        return 0;
+    }
+
+    if (secdat_count_v2_secret_references_in_store(domain_id, store_name, entry.secret_id, &references) != 0) {
+        return 1;
+    }
+    if (secdat_build_v2_secret_object_path(domain_id, store_name, entry.secret_id, object_path, sizeof(object_path)) != 0
+        || secdat_build_v2_secret_value_path(domain_id, store_name, entry.secret_id, value_path, sizeof(value_path)) != 0
+        || secdat_build_tombstone_path(domain_id, store_name, key, tombstone_path, sizeof(tombstone_path)) != 0
+        || secdat_build_entry_path(domain_id, store_name, key, legacy_entry_path, sizeof(legacy_entry_path)) != 0) {
+        return 1;
+    }
+    if (secdat_read_v2_secret_object_info(object_path, entry.secret_id, &object) == 0) {
+        object_is_valid = 1;
+    }
+
+    if (unlink(entry_path) != 0) {
+        fprintf(stderr, _("failed to remove key: %s\n"), key);
+        return 1;
+    }
+    if (secdat_remove_if_exists(legacy_entry_path) != 0
+        || secdat_remove_secret_attrs(domain_id, store_name, key) != 0
+        || secdat_remove_if_exists(tombstone_path) != 0) {
+        return 1;
+    }
+    if (object_is_valid) {
+        if (references <= 1) {
+            if (secdat_remove_if_exists(value_path) != 0
+                || secdat_remove_if_exists(object_path) != 0) {
+                return 1;
+            }
+        } else if (secdat_update_v2_secret_refcount(domain_id, store_name, entry.secret_id, references - 1) != 0) {
+            return 1;
+        }
+    }
+
+    *removed = 1;
+    return 0;
+}
+
 static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, const char *store_name, const char *key, int ignore_missing)
 {
     char current_domain_id[PATH_MAX];
     char entry_path[PATH_MAX];
     char tombstone_path[PATH_MAX];
     struct secdat_overlay_lookup_result overlay = {0};
-    size_t index;
+    enum secdat_store_format format;
     int found_inherited = 0;
     int local_file_exists = 0;
+    int removed_v2 = 0;
 
     if (secdat_require_mutable_session_chain(chain, "rm") != 0) {
         return 1;
@@ -10741,8 +10899,9 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
         if (secdat_active_overlay_lookup(chain, current_domain_id, store_name, key, &overlay) != 0) {
             goto overlay_cleanup_error;
         }
-        if (current_domain_id[0] != '\0' && secdat_build_entry_path(current_domain_id, store_name, key, entry_path, sizeof(entry_path)) == 0) {
-            local_file_exists = secdat_file_exists(entry_path);
+        if (current_domain_id[0] != '\0'
+            && secdat_local_key_exists_in_store(current_domain_id, store_name, key, &local_file_exists) != 0) {
+            goto overlay_cleanup_error;
         }
         found_inherited = secdat_parent_has_visible_key(chain, store_name, key);
         if (found_inherited < 0) {
@@ -10787,6 +10946,22 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
         return 1;
     }
 
+    if (secdat_read_store_format(current_domain_id, store_name, &format) != 0) {
+        return 1;
+    }
+    if (format == SECDAT_STORE_FORMAT_INVALID) {
+        fprintf(stderr, _("invalid store format marker\n"));
+        return 1;
+    }
+    if (format == SECDAT_STORE_FORMAT_V2) {
+        if (secdat_remove_v2_local_key(current_domain_id, store_name, key, &removed_v2) != 0) {
+            return 1;
+        }
+        if (removed_v2) {
+            return 0;
+        }
+    }
+
     if (secdat_file_exists(entry_path)) {
         if (unlink(entry_path) != 0) {
             fprintf(stderr, _("failed to remove key: %s\n"), key);
@@ -10798,23 +10973,10 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
         return secdat_remove_if_exists(tombstone_path);
     }
 
-    for (index = 1; index < chain->count; index += 1) {
-        if (secdat_build_entry_path(chain->ids[index], store_name, key, entry_path, sizeof(entry_path)) != 0) {
-            return 1;
-        }
-        if (secdat_file_exists(entry_path)) {
-            found_inherited = 1;
-            break;
-        }
-
-        if (secdat_build_tombstone_path(chain->ids[index], store_name, key, tombstone_path, sizeof(tombstone_path)) != 0) {
-            return 1;
-        }
-        if (secdat_file_exists(tombstone_path)) {
-            break;
-        }
+    found_inherited = secdat_parent_has_visible_key(chain, store_name, key);
+    if (found_inherited < 0) {
+        return 1;
     }
-
     if (!found_inherited) {
         if (ignore_missing) {
             return 0;
@@ -11160,10 +11322,7 @@ static int secdat_command_mv(const struct secdat_cli *cli)
 
     status = secdat_remove_key_in_chain(&source_chain, source_reference.store_value, source_reference.key, 0);
     if (status != 0) {
-        if (secdat_build_entry_path(destination_domain_id, destination_reference.store_value, destination_reference.key, destination_path, sizeof(destination_path)) == 0) {
-            unlink(destination_path);
-        }
-        (void)secdat_remove_secret_attrs(destination_domain_id, destination_reference.store_value, destination_reference.key);
+        (void)secdat_remove_key_in_chain(&destination_chain, destination_reference.store_value, destination_reference.key, 1);
     }
 
     secdat_domain_chain_free(&source_chain);

@@ -151,6 +151,45 @@ if rc != 0 or stdout != "secret-value" or stderr != "":
     fail(f"pure v2 encrypted get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if (entries_dirs[0] / "APP_SECRET.sec").exists():
     fail("pure v2 set should not create a v1 value file")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_SECRET"])
+if rc != 0 or stderr != "":
+    fail(f"pure v2 id for APP_SECRET failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+app_secret_id = stdout.strip()
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "cp", "APP_SECRET", "APP_SECRET_COPY"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 cp failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET_COPY"])
+if rc != 0 or stdout != "secret-value" or stderr != "":
+    fail(f"pure v2 copied get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_SECRET_COPY"])
+if rc != 0 or stderr != "":
+    fail(f"pure v2 id for copied key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if stdout.strip() == app_secret_id:
+    fail("pure v2 cp should create an independent secret object")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "mv", "APP_SECRET_COPY", "APP_SECRET_MOVED"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 mv failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "exists", "APP_SECRET_COPY"])
+if rc == 0:
+    fail("pure v2 mv should remove the source key")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET_MOVED"])
+if rc != 0 or stdout != "secret-value" or stderr != "":
+    fail(f"pure v2 moved get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_SECRET_MOVED"])
+if rc != 0 or stderr != "":
+    fail(f"pure v2 id for moved key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+moved_secret_id = stdout.strip()
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "rm", "APP_SECRET_MOVED"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 rm failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "exists", "APP_SECRET_MOVED"])
+if rc == 0:
+    fail("pure v2 rm should remove the moved key")
+if (secret_objects_dir / f"{moved_secret_id}.sec").exists() or (secret_objects_dir / f"{moved_secret_id}.value").exists():
+    fail("pure v2 rm did not remove the unreferenced secret object")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"pure v2 fsck after value writes failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

@@ -227,6 +227,21 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get
 if rc != 0 or stdout != "secret-token" or stderr != "":
     fail(f"v1 read compatibility after migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+app_public_files = list(Path(env["XDG_DATA_HOME"]).rglob("APP_PUBLIC.sec"))
+if len(app_public_files) != 1:
+    fail(f"expected v1 APP_PUBLIC.sec to remain before rm, found {app_public_files!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "rm", "APP_PUBLIC"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"migrated v2 rm failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "exists", "APP_PUBLIC"])
+if rc == 0:
+    fail("migrated v2 rm should remove APP_PUBLIC")
+if app_public_files[0].exists():
+    fail("migrated v2 rm did not remove the legacy v1 value file")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "fsck", "--format", "v2"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"migrated v2 fsck after rm failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "migrate", "app", "--to-format", "v2", "--dry-run"])
 if rc != 2 or "store format is v2; migration is not needed" not in stderr:
     fail(f"already migrated store should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")

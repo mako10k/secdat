@@ -284,6 +284,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `sandbox_inject=allow` allows future sandbox import from explicit key selection and from allowlisted pattern selection
 - attribute updates are allowed only for current-domain local entries; inherited entries must be materialized locally before their attributes can be changed
 - v2 stores can update visible-key `sandbox_inject` and object-owned `value_access` through the domain-entry/object graph; v2 `key_visibility=unlocked` is still pending
+- generic user-defined attributes are intentionally not part of `attr`; policy/storage attributes must stay explicit so authorization, migration, and sandbox export semantics remain auditable
 - `cp` and `mv` preserve source key attributes
 - `ls --metadata` prints key attributes alongside visible keys
 - `ls --sandbox-injectable` lists visible keys whose `sandbox_inject` is not `never`
@@ -405,7 +406,7 @@ To make the requested behavior implementable, the following are treated as norma
 - migration output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, `injectable_entries`, and `issues`
 - migration refuses invalid v1 entries, invalid sidecars, orphaned sidecars, orphaned tombstones, and pre-existing v2 migration artifacts
 - `store` management never creates, deletes, or lists stores in parent or child domains
-- stores marked with the v2 format marker use the v2 domain-entry/object graph for visible-key `ls`, `exists`, `attr`, `set`, `get`, and `id`
+- stores marked with the v2 format marker use the v2 domain-entry/object graph for visible-key `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, and `id`
 - migrated v2 stores keep v1 value files readable by `get` until a value is rewritten into v2 object-owned value storage
 - `secdat id KEYREF` prints the resolved v2 `secret_id` and does not read the secret value
 
@@ -1153,7 +1154,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, and `id` through that graph for visible keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. Hidden-key lookup, linked-object key wrapping, and the remaining mutating commands are still part of the later v2 write path.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, and `id` through that graph for visible keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. Hidden-key lookup, linked-object key wrapping, `ln`, and final migration cleanup are still part of the later v2 write path.
 
 #### Implementation Plan
 
@@ -1164,8 +1165,8 @@ The current migration writer creates the v2 domain-entry/object graph side-by-si
 5. Add v2 read path for `ls`, `get`, `exists`, `attr`, and `id`, while preserving v1 read compatibility.
 6. Add the first v2 write path slice for `attr --sandbox-inject`, preserving object `refcount` metadata.
 7. Add transitional v2 object-owned value storage and support `set`, `get`, and `attr --value-access` for visible keys.
-8. Add hidden-key lookup/storage and enable `key_visibility=unlocked`.
-9. Add v2 write path for `rm`, `cp`, and `mv`.
+8. Add v2 write path for visible-key `rm`, `cp`, and `mv`.
+9. Add hidden-key lookup/storage and enable `key_visibility=unlocked`.
 10. Add `ln` with strict authorization through an existing source entry before allowing `--secret-id` linking.
 11. Replace the transitional `.value` sidecar with the final authenticated object payload format and object data-key wrapping.
 12. Update the future sandbox import/export flow to require both v2 `entry_inject` and `secret_inject`.
@@ -1192,8 +1193,8 @@ The v1 implementation now covers the initial command surface and the first secre
 4. add v2 side-by-side migration writer with rollback
 5. add v2 read compatibility for `ls`, `get`, `exists`, `attr`, and `id`
 6. add v2 write compatibility for visible-key `set`, `get`, `attr --sandbox-inject`, and `attr --value-access`
-7. add hidden-key lookup/storage before enabling `key_visibility=unlocked`
-8. add v2 write compatibility for `rm`, `cp`, and `mv`
+7. add v2 write compatibility for visible-key `rm`, `cp`, and `mv`
+8. add hidden-key lookup/storage before enabling `key_visibility=unlocked`
 9. add `ln` only after object-key rewrapping and authorization semantics are covered
 10. add fsck repair for rebuildable metadata
 11. add migration finalization once v1 rollback remains tested
