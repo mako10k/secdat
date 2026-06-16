@@ -59,6 +59,12 @@ if mode != "plain":
 for expected in ["create", "delete", "ls", "status"]:
     assert_contains(values, expected, "domain subcommands")
 
+mode, values = run_completion("store", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: store completion mode mismatch: {mode!r}")
+for expected in ["create", "delete", "ls", "migrate"]:
+    assert_contains(values, expected, "store subcommands")
+
 mode, values = run_completion("ls", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: ls option completion mode mismatch: {mode!r}")
@@ -82,6 +88,16 @@ if mode != "plain":
     raise SystemExit(f"FAIL: fsck option completion mode mismatch: {mode!r}")
 for expected in ["--orphaned", "--dangling", "--refcount", "--format"]:
     assert_contains(values, expected, "fsck options")
+
+mode, values = run_completion("store", "migrate", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: store migrate option completion mode mismatch: {mode!r}")
+for expected in ["--to-format", "--dry-run"]:
+    assert_contains(values, expected, "store migrate options")
+
+mode, values = run_completion("store", "migrate", "--to-format", "")
+if mode != "none" or values:
+    raise SystemExit(f"FAIL: store migrate --to-format completion mode mismatch: mode={mode!r} values={values!r}")
 
 mode, values = run_completion("set", "--")
 if mode != "plain":

@@ -594,9 +594,14 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
             return "none";
         }
     } else if (strcmp(command, "store") == 0) {
-        if (subcommand != NULL && strcmp(subcommand, "ls") == 0
-            && (strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0)) {
-            return "none";
+        if (subcommand != NULL) {
+            if (strcmp(subcommand, "ls") == 0
+                && (strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0)) {
+                return "none";
+            }
+            if (strcmp(subcommand, "migrate") == 0 && strcmp(previous, "--to-format") == 0) {
+                return "none";
+            }
         }
     } else if (strcmp(command, "domain") == 0) {
         if (subcommand != NULL && strcmp(subcommand, "ls") == 0
@@ -758,6 +763,9 @@ int secdat_cli_complete(int argc, char **argv)
     static const char *const store_ls_options[] = {
         "--pattern", "-p", "--help", "-h", NULL,
     };
+    static const char *const store_migrate_options[] = {
+        "--to-format", "--dry-run", "--help", "-h", NULL,
+    };
     static const char *const domain_ls_options[] = {
         "--long", "-l", "--inherited", "-a", "--ancestors", "-A", "--descendants", "-R", "--pattern", "-p", "--help", "-h", NULL,
     };
@@ -834,6 +842,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, wait_unlock_options);
     } else if (strcmp(command, "store") == 0 && subcommand != NULL && strcmp(subcommand, "ls") == 0) {
         secdat_cli_completion_print_candidates(current, store_ls_options);
+    } else if (strcmp(command, "store") == 0 && subcommand != NULL && strcmp(subcommand, "migrate") == 0) {
+        secdat_cli_completion_print_candidates(current, store_migrate_options);
     } else if (strcmp(command, "domain") == 0 && subcommand != NULL && strcmp(subcommand, "ls") == 0) {
         secdat_cli_completion_print_candidates(current, domain_ls_options);
     }
@@ -998,6 +1008,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_STORE_LS:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]");
+        break;
+    case SECDAT_COMMAND_STORE_MIGRATE:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store migrate", "STORE --to-format v2 --dry-run");
         break;
     case SECDAT_COMMAND_DOMAIN_CREATE:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain create", "");
@@ -1520,6 +1533,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         } else if (strcmp(argv[index], "ls") == 0) {
             cli->command = SECDAT_COMMAND_STORE_LS;
             index += 1;
+        } else if (strcmp(argv[index], "migrate") == 0) {
+            cli->command = SECDAT_COMMAND_STORE_MIGRATE;
+            index += 1;
         } else {
             fprintf(stderr, _("unknown store subcommand: %s\n"), argv[index]);
             secdat_cli_print_try_help(cli, "store");
@@ -1630,6 +1646,7 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_CREATE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_DELETE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_LS);
+        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_MIGRATE);
         secdat_cli_print_help_routes(program_name, target);
         secdat_cli_print_target_meaning(target);
         secdat_cli_print_target_use_cases(program_name, target);
@@ -1726,6 +1743,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "store delete";
     case SECDAT_COMMAND_STORE_LS:
         return "store ls";
+    case SECDAT_COMMAND_STORE_MIGRATE:
+        return "store migrate";
     case SECDAT_COMMAND_DOMAIN_CREATE:
         return "domain create";
     case SECDAT_COMMAND_DOMAIN_DELETE:

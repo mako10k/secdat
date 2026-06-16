@@ -15,7 +15,7 @@ Current status:
 - `export` is implemented for shell-friendly setup without embedding raw secret values
 - `save` and `load` are implemented for passphrase-protected secret bundles scoped to the current view
 - `domain create`, `domain delete`, `domain ls`, and `domain status` are implemented
-- `store create`, `store delete`, and `store ls` are implemented
+- `store create`, `store delete`, `store ls`, and `store migrate --dry-run` are implemented
 - `unlock`, `lock`, and `status` are implemented with domain-scoped session agents and a wrapped persistent master key
 - normal store commands resolve the current domain from `--dir` or the working directory and fall back through parent domains
 - stores are domain-local namespaces, not global objects shared across all domains
@@ -250,9 +250,11 @@ For migration preparation, `fsck` performs read-only checks on the current v1 do
 ./src/secdat fsck --orphaned
 ./src/secdat fsck --dangling
 ./src/secdat fsck --refcount
+./src/secdat store migrate default --to-format v2 --dry-run
 ```
 
 Clean output is `ok`. Issues are tab-separated rows such as `orphaned-metadata	KEY	missing-entry`, `orphaned-tombstone	KEY	missing-parent`, `dangling-entry	KEY	invalid-entry`, or `dangling-metadata	KEY	invalid-metadata`. `--refcount` is currently a clean no-op for v1 because secret objects and hard links arrive with store v2.
+`store migrate STORE --to-format v2 --dry-run` does not write v2 data yet; it validates the selected v1 store and prints the number of domain entries, secret objects, metadata sidecars, tombstones, public values, encrypted values, and sandbox-injectable entries that would be created or preserved by the v2 migration path.
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
 When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--domain`, then `--dir`, then `--store`, and finally the current defaults are used.
@@ -268,6 +270,7 @@ mkdir -p ~/example/project
 ./src/secdat --dir ~/example/project store create app
 ./src/secdat --dir ~/example/project --store app set API_TOKEN --value token-123
 ./src/secdat --dir ~/example/project store ls
+./src/secdat --dir ~/example/project store migrate app --to-format v2 --dry-run
 ```
 
 `domain ls` is scoped by directory. Without `--dir`, it behaves like `--dir .`, so it lists only ancestor/self/descendant domains around the current working directory. Use `--ancestors` to keep only the current domain and its ancestor side, `--descendants` to keep only the current domain and its descendant side, `-a` or `--inherited` to add the effective inherited parent chain for the current scope, and `-l` or `--long` to add the `domain status` summary columns for each listed domain. When that inherited chain reaches the user-global fallback scope, `domain ls -a` includes a presentation row labeled `*default*`. A wider base such as `--dir ~` gives you a broader registered-domain listing. The long format now includes `EFFECTIVE`, `REMAINING`, and `STATE_SOURCE` so shadowed descendants can be distinguished from local unlocks, inherited unlocks, local locks, inherited locks, and orphaned registered domains whose root directories have already been removed. `REMAINING` shows a session lifetime such as `1h59m` or `1m32s`, and `-` when no runtime session is active.

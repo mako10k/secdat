@@ -411,6 +411,7 @@ for args, marker in [
     ([bin_path, "help", "set"], "set KEYREF [-u|--unsafe|--public-value|--secret-value]"),
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN]"),
     ([bin_path, "help", "passwd"], "passwd"),
+    ([bin_path, "help", "store"], "store migrate STORE --to-format v2 --dry-run"),
     ([bin_path, "help", "domain"], "domain ls [-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants]"),
     ([bin_path, "store", "--help"], "store create STORE"),
     ([bin_path, "store", "-h"], "store create STORE"),

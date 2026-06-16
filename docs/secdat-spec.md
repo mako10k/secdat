@@ -66,6 +66,7 @@ secdat [--dir DIR] wait-unlock [-t SECONDS|--timeout SECONDS] [-q|--quiet]
 secdat [--dir DIR] store create STORE
 secdat [--dir DIR] store delete STORE
 secdat [--dir DIR] store ls [GLOBPATTERN]
+secdat [--dir DIR] store migrate STORE --to-format v2 --dry-run
 
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
@@ -392,6 +393,10 @@ To make the requested behavior implementable, the following are treated as norma
 - deleting a store fails if the store still contains local entries or tombstones
 - `secdat [--dir DIR] store ls` lists store names defined in the resolved current domain
 - `secdat [--dir DIR] store ls PATTERN` and `secdat [--dir DIR] store ls --pattern PATTERN` are equivalent
+- `secdat [--dir DIR] store migrate STORE --to-format v2 --dry-run` validates one v1 store and reports the v2 migration plan without writing v2 files
+- migration dry-run output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, `injectable_entries`, and `issues`
+- migration dry-run refuses invalid v1 entries, invalid sidecars, orphaned sidecars, and orphaned tombstones with `cannot-migrate` issue rows
+- migration writes without `--dry-run` are rejected until the v2 writer and rollback/finalization path are implemented
 - `store` management never creates, deletes, or lists stores in parent or child domains
 
 #### FR-10 Domain Management
@@ -428,7 +433,7 @@ To make the requested behavior implementable, the following are treated as norma
 - if no ancestor domain exists, commands that need fallback session context use an explicit per-user global scope instead of a domain string sentinel
 - `get`, `ls`, and `exec` resolve values from the current domain and then fall back through parent domains
 - `set`, `mv`, `cp`, and `rm` apply changes to the current domain only
-- `store create`, `store delete`, and `store ls` apply to the current domain only
+- `store create`, `store delete`, `store ls`, and `store migrate` apply to the current domain only
 - for `domain create` and `domain delete`, `--dir` identifies the target directory
 - for `domain ls`, `--dir` identifies the directory that constrains the listing scope; when omitted, that scope starts at the current working directory
 
@@ -1130,12 +1135,12 @@ Migration requirements:
 Suggested migration commands:
 
 ```text
-secdat store migrate --to-format v2 [--dry-run]
+secdat store migrate STORE --to-format v2 [--dry-run]
 secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The implementation should keep a format marker per store and reject mixed writes unless the store is in an explicit migration state.
+The current implementation accepts only `--dry-run`. The future writer should keep a format marker per store and reject mixed writes unless the store is in an explicit migration state.
 
 #### Implementation Plan
 

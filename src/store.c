@@ -145,6 +145,23 @@ struct secdat_fsck_report {
     size_t issues;
 };
 
+struct secdat_store_migrate_options {
+    const char *store_name;
+    const char *to_format;
+    int dry_run;
+};
+
+struct secdat_store_migrate_report {
+    size_t domain_entries;
+    size_t secret_objects;
+    size_t metadata_sidecars;
+    size_t tombstones;
+    size_t public_values;
+    size_t encrypted_values;
+    size_t injectable_entries;
+    size_t issues;
+};
+
 struct secdat_key_access_options {
     int allow_on_demand_unlock;
     int timeout_configured;
@@ -2533,6 +2550,67 @@ static int secdat_parse_fsck_options(const struct secdat_cli *cli, struct secdat
         options->refcount = 1;
     }
 
+    return 0;
+}
+
+static int secdat_parse_store_migrate_options(const struct secdat_cli *cli, struct secdat_store_migrate_options *options)
+{
+    static const struct option long_options[] = {
+        {"to-format", required_argument, NULL, 1000},
+        {"dry-run", no_argument, NULL, 1001},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+
+    memset(options, 0, sizeof(*options));
+
+    secdat_prepare_option_argv(cli, "store migrate", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":", long_options, NULL)) != -1) {
+        switch (option) {
+        case 1000:
+            if (strcmp(optarg, "v2") != 0) {
+                fprintf(stderr, _("invalid migration target format: %s\n"), optarg);
+                return 2;
+            }
+            options->to_format = optarg;
+            break;
+        case 1001:
+            options->dry_run = 1;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for store migrate\n"));
+            secdat_cli_print_try_help(cli, "store");
+            return 2;
+        }
+    }
+
+    if (optind >= argc) {
+        fprintf(stderr, _("missing store name for store migrate\n"));
+        secdat_cli_print_try_help(cli, "store");
+        return 2;
+    }
+    if (optind + 1 != argc) {
+        fprintf(stderr, _("invalid arguments for store migrate\n"));
+        secdat_cli_print_try_help(cli, "store");
+        return 2;
+    }
+    if (options->to_format == NULL) {
+        fprintf(stderr, _("store migrate requires --to-format v2\n"));
+        secdat_cli_print_try_help(cli, "store");
+        return 2;
+    }
+    if (!options->dry_run) {
+        fprintf(stderr, _("store migrate currently requires --dry-run\n"));
+        secdat_cli_print_try_help(cli, "store");
+        return 2;
+    }
+
+    options->store_name = argv[optind];
     return 0;
 }
 
@@ -9885,6 +9963,164 @@ static int secdat_store_command_ls(const struct secdat_cli *cli)
     return 0;
 }
 
+static void secdat_store_migrate_report_issue(
+    struct secdat_store_migrate_report *report,
+    const char *kind,
+    const char *key,
+    const char *detail
+)
+{
+    printf("cannot-migrate\t%s\t%s\t%s\n", kind, key, detail);
+    report->issues += 1;
+}
+
+static int secdat_store_migrate_dry_run_v2(
+    const struct secdat_domain_chain *chain,
+    const struct secdat_store_migrate_options *options,
+    struct secdat_store_migrate_report *report
+)
+{
+    char store_root[PATH_MAX];
+    char entries_dir[PATH_MAX];
+    char tombstones_dir[PATH_MAX];
+    char entry_path[PATH_MAX];
+    char metadata_path[PATH_MAX];
+    struct secdat_key_list entries = {0};
+    struct secdat_key_list metadata = {0};
+    struct secdat_key_list tombstones = {0};
+    struct stat store_status;
+    struct secdat_secret_attrs attrs;
+    const char *current_domain_id;
+    size_t index;
+    int unsafe_store = 0;
+    int status = 1;
+
+    memset(report, 0, sizeof(*report));
+    if (chain->count == 0) {
+        fprintf(stderr, _("store migrate requires a registered current domain\n"));
+        return 1;
+    }
+    current_domain_id = chain->ids[0];
+
+    if (secdat_store_root(current_domain_id, options->store_name, store_root, sizeof(store_root)) != 0
+        || secdat_store_entries_dir(current_domain_id, options->store_name, entries_dir, sizeof(entries_dir)) != 0
+        || secdat_store_tombstones_dir(current_domain_id, options->store_name, tombstones_dir, sizeof(tombstones_dir)) != 0) {
+        return 1;
+    }
+    if (stat(store_root, &store_status) != 0 || !S_ISDIR(store_status.st_mode)) {
+        fprintf(stderr, _("store not found: %s\n"), options->store_name);
+        return 1;
+    }
+    if (secdat_collect_directory_keys(entries_dir, ".sec", &entries) != 0
+        || secdat_collect_directory_keys(entries_dir, ".meta", &metadata) != 0
+        || secdat_collect_directory_keys(tombstones_dir, ".tomb", &tombstones) != 0) {
+        goto cleanup;
+    }
+
+    if (entries.count > 1) {
+        qsort(entries.items, entries.count, sizeof(*entries.items), secdat_compare_strings);
+    }
+    if (metadata.count > 1) {
+        qsort(metadata.items, metadata.count, sizeof(*metadata.items), secdat_compare_strings);
+    }
+    if (tombstones.count > 1) {
+        qsort(tombstones.items, tombstones.count, sizeof(*tombstones.items), secdat_compare_strings);
+    }
+
+    report->domain_entries = entries.count;
+    report->secret_objects = entries.count;
+    report->metadata_sidecars = metadata.count;
+    report->tombstones = tombstones.count;
+
+    for (index = 0; index < entries.count; index += 1) {
+        if (secdat_build_entry_path(current_domain_id, options->store_name, entries.items[index], entry_path, sizeof(entry_path)) != 0
+            || secdat_build_entry_metadata_path(current_domain_id, options->store_name, entries.items[index], metadata_path, sizeof(metadata_path)) != 0) {
+            goto cleanup;
+        }
+        if (secdat_fsck_validate_v1_entry_file(entry_path, &unsafe_store) != 0) {
+            secdat_store_migrate_report_issue(report, "dangling-entry", entries.items[index], "invalid-entry");
+            continue;
+        }
+        if (secdat_fsck_validate_v1_metadata_file(metadata_path, unsafe_store) != 0) {
+            secdat_store_migrate_report_issue(report, "dangling-metadata", entries.items[index], "invalid-metadata");
+            continue;
+        }
+        if (secdat_read_secret_attrs(current_domain_id, options->store_name, entries.items[index], unsafe_store, &attrs) != 0) {
+            goto cleanup;
+        }
+        if (unsafe_store) {
+            report->public_values += 1;
+        } else {
+            report->encrypted_values += 1;
+        }
+        if (attrs.sandbox_inject != SECDAT_SANDBOX_INJECT_NEVER) {
+            report->injectable_entries += 1;
+        }
+    }
+
+    for (index = 0; index < metadata.count; index += 1) {
+        if (!secdat_key_list_contains(&entries, metadata.items[index])) {
+            secdat_store_migrate_report_issue(report, "orphaned-metadata", metadata.items[index], "missing-entry");
+        }
+    }
+    for (index = 0; index < tombstones.count; index += 1) {
+        if (!secdat_parent_has_visible_key(chain, options->store_name, tombstones.items[index])) {
+            secdat_store_migrate_report_issue(report, "orphaned-tombstone", tombstones.items[index], "missing-parent");
+        }
+    }
+
+    if (report->issues > 0) {
+        printf("issues=%zu\n", report->issues);
+        status = 1;
+        goto cleanup;
+    }
+
+    puts("format=v1");
+    printf("target_format=%s\n", options->to_format);
+    puts("dry_run=yes");
+    printf("store=%s\n", options->store_name);
+    printf("domain_entries=%zu\n", report->domain_entries);
+    printf("secret_objects=%zu\n", report->secret_objects);
+    printf("metadata_sidecars=%zu\n", report->metadata_sidecars);
+    printf("tombstones=%zu\n", report->tombstones);
+    printf("public_values=%zu\n", report->public_values);
+    printf("encrypted_values=%zu\n", report->encrypted_values);
+    printf("injectable_entries=%zu\n", report->injectable_entries);
+    puts("issues=0");
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&entries);
+    secdat_key_list_free(&metadata);
+    secdat_key_list_free(&tombstones);
+    return status;
+}
+
+static int secdat_store_command_migrate(const struct secdat_cli *cli)
+{
+    struct secdat_store_migrate_options options;
+    struct secdat_store_migrate_report report;
+    struct secdat_domain_chain chain = {0};
+    int status;
+
+    if (cli->store != NULL) {
+        fprintf(stderr, _("--store is not valid with store commands\n"));
+        secdat_cli_print_try_help(cli, "store");
+        return 2;
+    }
+    status = secdat_parse_store_migrate_options(cli, &options);
+    if (status != 0) {
+        return status;
+    }
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
+        return 1;
+    }
+
+    status = secdat_store_migrate_dry_run_v2(&chain, &options, &report);
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
 static int secdat_store_command_create(const struct secdat_cli *cli)
 {
     char current_domain_id[PATH_MAX];
@@ -10620,6 +10856,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_store_command_delete(cli);
     case SECDAT_COMMAND_STORE_LS:
         return secdat_store_command_ls(cli);
+    case SECDAT_COMMAND_STORE_MIGRATE:
+        return secdat_store_command_migrate(cli);
     case SECDAT_COMMAND_DOMAIN_CREATE:
     case SECDAT_COMMAND_DOMAIN_DELETE:
     case SECDAT_COMMAND_DOMAIN_LS:
