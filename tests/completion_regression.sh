@@ -127,6 +127,18 @@ if mode != "plain":
 for expected in ["--public-value", "--secret-value", "--key-visibility", "--value-access", "--sandbox-inject", "--inject"]:
     assert_contains(values, expected, "set options")
 
+mode, values = run_completion("exec", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: exec option completion mode mismatch: {mode!r}")
+for expected in ["--pattern", "--pattern-exclude", "--env-map-sed", "--sandbox-injectable"]:
+    assert_contains(values, expected, "exec options")
+
+mode, values = run_completion("export", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: export option completion mode mismatch: {mode!r}")
+for expected in ["--pattern", "--sandbox-injectable"]:
+    assert_contains(values, expected, "export options")
+
 mode, values = run_completion("cp", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: cp completion mode mismatch: {mode!r}")

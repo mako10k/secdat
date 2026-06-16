@@ -18,6 +18,7 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
 python3 - "$bin_path" "$work_root" <<'PY'
 import os
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -212,6 +213,20 @@ if rc == 0 or "secret object forbids sandbox injection: APP_TOKEN" not in stderr
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=never\n" or stderr != "":
     fail(f"v2 attr after rejected bulk re-enable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+entry_text = (domain_entries_dir / f"{entry_id}.dent").read_text(encoding="utf-8")
+(domain_entries_dir / f"{entry_id}.dent").write_text(entry_text.replace("entry_inject=never\n", "entry_inject=bulk\n"), encoding="utf-8")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=never\n" or stderr != "":
+    fail(f"object-level inject deny should override entry bulk: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec", "--sandbox-injectable",
+    "python3", "-c", "import os; print('APP_TOKEN' in os.environ)",
+])
+if rc != 0 or stdout != "False\n" or stderr != "":
+    fail(f"object-level inject deny should exclude sandbox exec: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "export", "--sandbox-injectable"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"object-level inject deny should exclude sandbox export: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"clean v2 fsck after attr update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -303,6 +318,28 @@ assert_object_payload_magic(secret_objects_dir / f"{app_secret_id}.sec", b"SECDO
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET"], {"SECDAT_MASTER_KEY": ""})
 if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
     fail(f"pure v2 encrypted object-key get while locked should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_BULK", "--value", "bulk-value", "--sandbox-inject", "bulk"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 set bulk injectable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_EXPLICIT", "--value", "explicit-value", "--sandbox-inject", "explicit"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 set explicit injectable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec", "--sandbox-injectable", "--pattern", "APP_*",
+    "python3", "-c", "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k in ('APP_BULK', 'APP_EXPLICIT', 'APP_SECRET'))}, sort_keys=True))",
+])
+if rc != 0 or stderr != "":
+    fail(f"pure v2 sandbox-injectable exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if json.loads(stdout) != {"APP_BULK": "bulk-value"}:
+    fail(f"pure v2 sandbox-injectable exec payload mismatch: {stdout!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "export", "--sandbox-injectable", "--pattern", "APP_*"])
+if rc != 0 or stderr != "":
+    fail(f"pure v2 sandbox-injectable export failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "get 'APP_BULK' --shellescaped)\"", "pure v2 sandbox export bulk key")
+for unexpected in ["APP_EXPLICIT", "APP_SECRET"]:
+    if unexpected in stdout:
+        fail(f"pure v2 sandbox-injectable export unexpectedly included {unexpected}: {stdout!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "APP_SECRET", "APP_SECRET_LINK"], {"SECDAT_MASTER_KEY": ""})
 if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:

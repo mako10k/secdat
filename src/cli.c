@@ -748,10 +748,10 @@ int secdat_cli_complete(int argc, char **argv)
         "--ignore-missing", "-f", "--help", "-h", NULL,
     };
     static const char *const exec_options[] = {
-        "--pattern", "-p", "--pattern-exclude", "-x", "--env-map-sed", "--help", "-h", NULL,
+        "--pattern", "-p", "--pattern-exclude", "-x", "--env-map-sed", "--sandbox-injectable", "--help", "-h", NULL,
     };
     static const char *const export_options[] = {
-        "--pattern", "-p", "--help", "-h", NULL,
+        "--pattern", "-p", "--sandbox-injectable", "--help", "-h", NULL,
     };
     static const char *const unlock_options[] = {
         "--duration", "-t", "--until", "--inherit", "-i", "--volatile", "-v", "--readonly", "-r",
@@ -1015,10 +1015,10 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "SRC_KEYREF|@UUID DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--] CMD [ARGS...]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--sandbox-injectable] [--] CMD [ARGS...]");
         break;
     case SECDAT_COMMAND_EXPORT:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "export", "[-p GLOBPATTERN|--pattern GLOBPATTERN]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "export", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [--sandbox-injectable]");
         break;
     case SECDAT_COMMAND_SAVE:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "save", "FILE");

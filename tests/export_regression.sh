@@ -67,7 +67,7 @@ def normalize_spaces(text):
 
 
 for args, marker in [
-    ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN]"),
+    ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--sandbox-injectable]"),
     ([bin_path, "export", "--help"], "emit shell-ready export lines"),
     ([bin_path, "help", "get"], "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [-o|--stdout|-e|--shellescaped]"),
     ([bin_path, "help", "usecases"], "inject secrets into one subprocess only:"),
@@ -100,6 +100,8 @@ for args in [
     [bin_path, "--dir", str(child_dir), "set", "HOSTILE_TOKEN", "--value", hostile_payload],
     [bin_path, "--dir", str(child_dir), "set", "LONG_TOKEN", "--value", long_payload],
     [bin_path, "--dir", str(child_dir), "set", "CONTROL_TOKEN", "--value", control_payload],
+    [bin_path, "--dir", str(child_dir), "set", "BULK_TOKEN", "--value", "bulk-secret", "--sandbox-inject", "bulk"],
+    [bin_path, "--dir", str(child_dir), "set", "EXPLICIT_TOKEN", "--value", "explicit-secret", "--sandbox-inject", "explicit"],
 ]:
     rc, stdout, stderr = run(args)
     if rc != 0 or stdout != "" or stderr != "":
@@ -125,9 +127,18 @@ if "child secret's value" in stdout or "root-secret" in stdout:
     fail(f"export leaked raw secrets: {stdout!r}")
 if hostile_payload in stdout or long_payload in stdout or control_payload in stdout:
     fail("export leaked hostile, long, or control payloads")
+export_stdout = stdout
+
+rc, stdout, stderr = run([bin_path, "--dir", str(child_dir), "export", "--sandbox-injectable"])
+if rc != 0 or stderr != "":
+    fail(f"sandbox-injectable export failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "get 'BULK_TOKEN' --shellescaped)\"", "bulk export key line")
+for unexpected in ["EXPLICIT_TOKEN", "CHILD_TOKEN", "ROOT_TOKEN", "HOSTILE_TOKEN", "CONTROL_TOKEN"]:
+    if unexpected in stdout:
+        fail(f"sandbox-injectable export unexpectedly included {unexpected}: {stdout!r}")
 
 cmd = (
-    stdout
+    export_stdout
     + "python3 -c \"import json, os; print(json.dumps({"
     + "'CHILD_TOKEN': os.environ['CHILD_TOKEN'], "
     + "'ROOT_TOKEN': os.environ['ROOT_TOKEN'], "
@@ -245,6 +256,21 @@ if rc != 0 or stderr != "":
     fail(f"compatible exec parsing failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if json.loads(stdout) != {"CONTROL_TOKEN": control_payload}:
     fail(f"compatible exec payload mismatch: {stdout!r}")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--sandbox-injectable",
+    "python3",
+    "-c",
+    "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k in ('BULK_TOKEN', 'EXPLICIT_TOKEN', 'CHILD_TOKEN', 'ROOT_TOKEN'))}, sort_keys=True))",
+])
+if rc != 0 or stderr != "":
+    fail(f"sandbox-injectable exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if json.loads(stdout) != {"BULK_TOKEN": "bulk-secret"}:
+    fail(f"sandbox-injectable exec payload mismatch: {stdout!r}")
 
 rc, stdout, stderr = run([
     bin_path,

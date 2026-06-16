@@ -57,7 +57,7 @@ secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] ln SRC_KEYREF|@UUID DST_KEYREF
 
-secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [--] CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] [--sandbox-injectable] [--] CMD [ARGS...]
 
 secdat [--dir DIR] unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]
 secdat [--dir DIR] inherit
@@ -81,7 +81,7 @@ secdat [--dir DIR|--domain DIR] domain status [--quiet]
 
 secdat [--dir DIR] [--store STORE] save FILE
 secdat [--dir DIR] [--store STORE] load FILE
-secdat [--dir DIR] [--store STORE] export [--pattern GLOBPATTERN]
+secdat [--dir DIR] [--store STORE] export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--sandbox-injectable]
 ```
 
 ### 2.2 Explicitly Stated Requirements
@@ -104,7 +104,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `set KEYREF --unsafe ...` explicitly opts into plaintext-at-rest storage that remains readable while locked
 - `set KEYREF --public-value ...` is the clearer alias for plaintext-at-rest values that remain readable while locked
 - per-secret attributes include `key_visibility`, `value_access`, and `sandbox_inject`
-- `sandbox_inject` controls whether a key may be included in a future scoped sandbox import flow
+- `sandbox_inject` controls whether a key may be included in scoped sandbox injection/export selection
 - `fsck` performs non-destructive store consistency checks used by the migration path
 - `gc` explicitly removes unreachable or dangling v2 graph files after review
 - `exec` injects matched keys into the child process environment
@@ -278,24 +278,26 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat attr KEYREF` prints the effective attributes for the resolved key without printing the secret value
 - `secdat attr KEYREF --key-visibility MODE` updates the key-name visibility attribute for a current-domain local entry
 - `secdat attr KEYREF --value-access MODE` updates whether the value is encrypted-at-rest and unlock-gated or plaintext-at-rest and always readable
-- `secdat attr KEYREF --sandbox-inject MODE` updates whether the key can be included in scoped sandbox import bundles
+- `secdat attr KEYREF --sandbox-inject MODE` updates whether the key can be included in scoped sandbox injection/export selection
 - `key_visibility` accepts `always` and `unlocked`
 - `value_access` accepts `unlocked` and `always`
 - `sandbox_inject` accepts `never`, `explicit`, and `bulk`
 - v1 storage supports only `key_visibility=always`; `key_visibility=unlocked` is supported only by v2 stores
 - `value_access=unlocked` stores the value encrypted-at-rest and requires the master key or an active session for reads
 - `value_access=always` stores the value plaintext-at-rest and permits reads while locked; it is equivalent to the current unsafe/public-value storage mode
-- `sandbox_inject=never` excludes the key from sandbox import selection
-- `sandbox_inject=explicit` allows future sandbox import only when the key is named explicitly
-- `sandbox_inject=bulk` allows future sandbox import from explicit key selection and from selector, pattern, or profile based selection
+- `sandbox_inject=never` excludes the key from sandbox injection/export selection
+- `sandbox_inject=explicit` allows sandbox injection/export only when the key is named explicitly by a future explicit-key flow
+- `sandbox_inject=bulk` allows sandbox injection/export from explicit key selection and from selector, pattern, or profile based selection
 - attribute updates are allowed only for current-domain local entries; inherited entries must be materialized locally before their attributes can be changed
 - v2 stores can update `key_visibility`, domain-entry `sandbox_inject`, and object-owned `value_access` through the domain-entry/object graph
 - v2 `key_visibility=unlocked` encrypts the key name in the domain entry; locked list/lookup operations skip hidden keys
 - generic user-defined attributes are intentionally not part of `attr`; policy/storage attributes must stay explicit so authorization, migration, and sandbox export semantics remain auditable
 - `cp` and `mv` preserve source key attributes
 - `ls --metadata` prints key attributes alongside visible keys
-- `ls --sandbox-injectable` lists visible keys whose effective `sandbox_inject` allows bulk selector, pattern, or profile based sandbox import selection
-- `list --sandbox-injectable` lists current-domain local entries whose effective `sandbox_inject` allows bulk selector, pattern, or profile based sandbox import selection
+- `ls --sandbox-injectable` lists visible keys whose effective `sandbox_inject` allows bulk selector, pattern, or profile based sandbox selection
+- `list --sandbox-injectable` lists current-domain local entries whose effective `sandbox_inject` allows bulk selector, pattern, or profile based sandbox selection
+- `exec --sandbox-injectable` injects only keys whose effective `sandbox_inject` allows bulk selector, pattern, or profile based selection
+- `export --sandbox-injectable` emits only keys whose effective `sandbox_inject` allows bulk selector, pattern, or profile based selection
 
 #### FR-3ac Store Consistency Checks
 
@@ -331,6 +333,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat export` emits bash-oriented `export ...` lines for the currently visible keys in the current `--dir` and `--store` view
 - emitted lines must reference `secdat get ... --shellescaped` command substitutions rather than embedding raw secret values directly
 - `secdat export --pattern GLOBPATTERN` limits output to matched keys
+- `secdat export --sandbox-injectable` further limits output to keys whose effective `sandbox_inject` allows bulk sandbox selection
 - emitted lines use `eval "export ...=$(...)"` so the `--shellescaped` payload is interpreted as shell syntax at assignment time
 - output uses shell quoting for the command path and arguments, and currently requires keys to already be valid shell identifiers
 - keys that are not valid shell identifiers cause the command to fail rather than guessing a normalization rule
@@ -686,12 +689,13 @@ secdat [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY
 ### 4.8 `exec`
 
 ```text
-secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] [--sandbox-injectable] [--] CMD [ARGS...]
 ```
 
-- without `--pattern`, all effective visible keys are injected
+- without `--pattern`, all effective visible keys are injected unless further restricted by `--sandbox-injectable`
 - repeated `--pattern` options are ORed together
 - repeated `--pattern-exclude` options subtract matches after include filtering
+- `--sandbox-injectable` injects only keys whose effective `sandbox_inject` allows bulk sandbox selection
 - `--env-map-sed EXPR` accepts one sed-style substitution for exec-time environment names; when present, only matched keys are injected
 - the initial subset accepts `s/REGEX/REPLACEMENT/` with an optional leading `/ADDRESS/`; replacement supports `&` and `\1` through `\9`, and the delimiter after `s` may be any non-alphanumeric, non-backslash character
 - the parent process environment is unchanged
@@ -1111,12 +1115,12 @@ The final binary format is intentionally undecided, but each file must have a ma
 | `sandbox_inject` | split policy | a domain entry controls whether that link/name may be selected; a secret object controls whether that value may leave the store at all |
 | refcount | secret object cache plus fsck result | the authoritative count is derived from domain entries; any stored count is only a consistency cache |
 
-For injection, v2 should replace the single v1 `sandbox_inject` field with two checks:
+For injection, v2 replaces the single v1 `sandbox_inject` field with two checks:
 
 - `entry_inject = never | explicit | bulk` on the domain entry
 - `secret_inject = never | allow` on the secret object
 
-An injection import/export is permitted only when both checks allow it. This prevents a permissive link from exporting a value that the secret object itself forbids, and prevents a permissive secret object from bypassing a restrictive domain entry.
+An injection/export selection is permitted only when both checks allow it. This prevents a permissive link from exporting a value that the secret object itself forbids, and prevents a permissive secret object from bypassing a restrictive domain entry.
 `secret_inject` intentionally remains a boolean object-level authorization (`never|allow`) and does not mirror entry-side selector granularity.
 
 #### Domain Key and Object Key Handling
@@ -1201,7 +1205,7 @@ The current migration writer creates the v2 domain-entry/object graph side-by-si
 12. Move or address secret objects so a destination domain entry can reference a source object without copying value material.
 13. Enable cross-domain `ln` by unwrapping the object key through an authorized source entry and rewrapping it into the destination domain entry. This is implemented for normal KEYREF links and direct `ln @UUID DST_KEYREF` links authorized by the current context.
 14. Replace the transitional `.value` sidecar with the final authenticated object payload format that is encrypted by the object data key. This is implemented for new or rewritten values by storing the value payload inside the `.sec` object file; legacy sidecars remain readable for compatibility.
-15. Update the future sandbox import/export flow to require both v2 `entry_inject` and `secret_inject`.
+15. Update sandbox-oriented listing, execution, and export selection to require both v2 `entry_inject` and `secret_inject`. This is implemented by the effective `sandbox_inject` filter used by `ls/list/exec/export --sandbox-injectable`.
 16. Add repair-only fsck operations for rebuildable metadata such as cached refcounts. This is implemented for v2 cached object refcounts.
 17. Add `secret status UUID` for read-only v2 secret-object metadata inspection without reading secret values.
 18. Add v2 graph garbage collection for orphaned and dangling artifacts. This is implemented as explicit `gc --format v2`, with `--dry-run`.
@@ -1260,6 +1264,6 @@ The recommended direction is:
 - preserve Linux-oriented POSIX implementation assumptions
 - continue using authenticated encryption through the existing crypto backend unless a separate dependency decision is made
 - keep mandatory TTY rejection for secret-value input/output in encrypted workflows
-- require both entry-side and secret-side authorization for future sandbox import/export flows
+- require both entry-side and secret-side authorization for sandbox-oriented injection/export flows
 
 This approach preserves current users while creating a clean boundary between key visibility and value visibility.

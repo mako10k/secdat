@@ -75,7 +75,7 @@ is encrypted-at-rest and unlock-gated, while
 .B value_access=always
 is plaintext-at-rest and readable while locked.
 .B sandbox_inject
-marks whether future scoped sandbox imports may include the key.
+marks whether scoped sandbox injection/export selection may include the key.
 .TP
 .B id KEYREF
 Print the resolved v2 secret object UUID for one key without reading its value. This requires a store marked with the v2 format marker.
@@ -135,7 +135,7 @@ or
 .B --public-value
 to write a plaintext entry that remains readable while locked. Use
 .B --sandbox-inject
-to mark whether the key can be included in future scoped sandbox import flows.
+to mark whether the key can be included in scoped sandbox injection/export selection.
 .TP
 .B rm [\-f|\-\-ignore-missing] KEYREF
 Remove one key locally or create a tombstone for an inherited key. With
@@ -154,13 +154,17 @@ Direct source-object links such as
 .B ln @UUID DST_KEYREF
 are allowed only when the current context can authorize the UUID through an existing visible or unlocked domain entry; object UUID syntax is not a destination operand.
 .TP
-.B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-\-env-map-sed EXPR] [\-\-] CMD [ARGS...]
+.B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-\-env-map-sed EXPR] [\-\-sandbox-injectable] [\-\-] CMD [ARGS...]
 Inject resolved keys into a child process environment and execute the command. Repeated include patterns widen the match set, repeated exclude patterns subtract from it, and
+.B --sandbox-injectable
+keeps only keys whose effective sandbox injection policy allows bulk sandbox selection.
 .B --env-map-sed
 applies one sed-style key-to-environment-name mapping. In the current minimal subset, only keys matched by that substitution are injected.
 .TP
-.B export [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]
-Emit bash-oriented export lines for the current visible keys.
+.B export [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-sandbox-injectable]
+Emit bash-oriented export lines for the current visible keys. The
+.B --sandbox-injectable
+option limits output to keys whose effective sandbox injection policy allows bulk sandbox selection.
 .TP
 .B save FILE
 Write the current visible secrets into a passphrase-protected bundle.

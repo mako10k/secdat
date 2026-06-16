@@ -99,7 +99,13 @@ struct secdat_exec_options {
     char *env_map_replacement;
     int env_map_configured;
     int env_map_has_address;
+    int sandbox_injectable;
     size_t command_index;
+};
+
+struct secdat_export_options {
+    const char *pattern;
+    int sandbox_injectable;
 };
 
 struct secdat_list_options {
@@ -2371,6 +2377,7 @@ static int secdat_parse_exec_options(const struct secdat_cli *cli, struct secdat
         {"pattern", required_argument, NULL, 'p'},
         {"pattern-exclude", required_argument, NULL, 'x'},
         {"env-map-sed", required_argument, NULL, 1000},
+        {"sandbox-injectable", no_argument, NULL, 1001},
         {NULL, 0, NULL, 0},
     };
     char *argv[cli->argc + 2];
@@ -2557,6 +2564,9 @@ static int secdat_parse_exec_options(const struct secdat_cli *cli, struct secdat
                 options->env_map_configured = 1;
             }
             break;
+        case 1001:
+            options->sandbox_injectable = 1;
+            break;
         case '?':
         case ':':
         default:
@@ -2570,6 +2580,52 @@ static int secdat_parse_exec_options(const struct secdat_cli *cli, struct secdat
     if (optind >= argc) {
         fprintf(stderr, _("invalid arguments for exec\n"));
         secdat_exec_options_reset(options);
+        return 2;
+    }
+
+    return 0;
+}
+
+static int secdat_parse_export_options(const struct secdat_cli *cli, struct secdat_export_options *options)
+{
+    static const struct option long_options[] = {
+        {"pattern", required_argument, NULL, 'p'},
+        {"sandbox-injectable", no_argument, NULL, 1000},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+
+    memset(options, 0, sizeof(*options));
+    secdat_prepare_option_argv(cli, "export", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":p:", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'p':
+            if (options->pattern != NULL) {
+                fprintf(stderr, _("invalid arguments for export\n"));
+                return 2;
+            }
+            options->pattern = optarg;
+            break;
+        case 1000:
+            options->sandbox_injectable = 1;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for export\n"));
+            return 2;
+        }
+    }
+
+    if (optind + 1 == argc && options->pattern == NULL) {
+        options->pattern = argv[optind];
+        return 0;
+    }
+    if (optind != argc) {
+        fprintf(stderr, _("invalid arguments for export\n"));
         return 2;
     }
 
@@ -14430,6 +14486,23 @@ static int secdat_plaintext_to_env_value(
     return 0;
 }
 
+static int secdat_key_allows_bulk_sandbox_injection(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    int *allowed
+)
+{
+    struct secdat_secret_attrs attrs;
+
+    *allowed = 0;
+    if (secdat_load_resolved_secret_attrs(chain, store_name, key, &attrs, NULL) != 0) {
+        return 1;
+    }
+    *allowed = secdat_sandbox_inject_allows_bulk_selection(&attrs);
+    return 0;
+}
+
 static int secdat_is_valid_env_name(const char *value)
 {
     size_t index;
@@ -14604,11 +14677,11 @@ static int secdat_command_export(const struct secdat_cli *cli)
     struct secdat_domain_chain chain = {0};
     struct secdat_key_list visible_keys = {0};
     struct secdat_key_list include_patterns = {0};
-    const char *pattern = NULL;
+    struct secdat_export_options options;
     char canonical_dir[PATH_MAX];
     size_t key_index;
 
-    if (secdat_parse_simple_ls_pattern(cli, "export", &pattern) != 0) {
+    if (secdat_parse_export_options(cli, &options) != 0) {
         secdat_cli_print_try_help(cli, "export");
         return 2;
     }
@@ -14619,7 +14692,7 @@ static int secdat_command_export(const struct secdat_cli *cli)
     if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
         return 1;
     }
-    if (pattern != NULL && secdat_key_list_append(&include_patterns, pattern) != 0) {
+    if (options.pattern != NULL && secdat_key_list_append(&include_patterns, options.pattern) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;
     }
@@ -14631,6 +14704,19 @@ static int secdat_command_export(const struct secdat_cli *cli)
     }
 
     for (key_index = 0; key_index < visible_keys.count; key_index += 1) {
+        if (options.sandbox_injectable) {
+            int allowed = 0;
+
+            if (secdat_key_allows_bulk_sandbox_injection(&chain, cli->store, visible_keys.items[key_index], &allowed) != 0) {
+                secdat_key_list_free(&include_patterns);
+                secdat_domain_chain_free(&chain);
+                secdat_key_list_free(&visible_keys);
+                return 1;
+            }
+            if (!allowed) {
+                continue;
+            }
+        }
         if (!secdat_is_valid_env_name(visible_keys.items[key_index])) {
             fprintf(stderr, _("key is not a valid shell identifier: %s\n"), visible_keys.items[key_index]);
             secdat_key_list_free(&include_patterns);
@@ -14700,6 +14786,26 @@ static int secdat_command_exec(const struct secdat_cli *cli)
         int include_key = 0;
         size_t compare_index;
 
+        if (options.sandbox_injectable) {
+            int allowed = 0;
+
+            status = secdat_key_allows_bulk_sandbox_injection(&chain, cli->store, visible_keys.items[key_index], &allowed);
+            if (status != 0) {
+                size_t free_index;
+
+                for (free_index = 0; free_index < visible_keys.count; free_index += 1) {
+                    free(env_names[free_index]);
+                }
+                free(env_names);
+                secdat_exec_options_reset(&options);
+                secdat_domain_chain_free(&chain);
+                secdat_key_list_free(&visible_keys);
+                return 1;
+            }
+            if (!allowed) {
+                continue;
+            }
+        }
         status = secdat_exec_env_name_from_key(&options, visible_keys.items[key_index], &env_names[key_index], &include_key);
         if (status != 0) {
             size_t free_index;
