@@ -217,8 +217,27 @@ if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"migrated v2 fsck failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "finalize-migration", "app", "--from-format", "v1"])
-if rc != 2 or stdout != "" or "store finalize-migration currently requires --dry-run\n" not in stderr:
-    fail(f"store finalize-migration write should be gated: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if rc != 1 or stderr != "":
+    fail(f"initial finalize-migration write should be blocked: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for expected in [
+    "cannot-finalize\tlegacy-entry\tAPP_PUBLIC\tmissing-object-payload\n",
+    "cannot-finalize\tlegacy-entry\tAPP_TOKEN\tmissing-object-payload\n",
+    "format=v2\n",
+    "from_format=v1\n",
+    "dry_run=no\n",
+    "legacy_entries=2\n",
+    "metadata_sidecars=1\n",
+    "removable_legacy_entries=0\n",
+    "removable_metadata_sidecars=1\n",
+    "removed_legacy_entries=0\n",
+    "removed_metadata_sidecars=0\n",
+    "blocking_legacy_entries=2\n",
+    "blocking_metadata_sidecars=0\n",
+    "issues=2\n",
+]:
+    assert_contains(stdout, expected, "initial finalize-migration write block")
+if len(list(Path(env["XDG_DATA_HOME"]).rglob("APP_TOKEN.sec"))) != 1:
+    fail("blocked finalize-migration write removed APP_TOKEN unexpectedly")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "finalize-migration", "app", "--from-format", "v1", "--dry-run"])
 if rc != 1 or stderr != "":
@@ -235,6 +254,8 @@ for expected in [
     "metadata_sidecars=1\n",
     "removable_legacy_entries=0\n",
     "removable_metadata_sidecars=1\n",
+    "removed_legacy_entries=0\n",
+    "removed_metadata_sidecars=0\n",
     "blocking_legacy_entries=2\n",
     "blocking_metadata_sidecars=0\n",
     "issues=2\n",
@@ -382,11 +403,57 @@ for expected in [
     "metadata_sidecars=1\n",
     "removable_legacy_entries=1\n",
     "removable_metadata_sidecars=1\n",
+    "removed_legacy_entries=0\n",
+    "removed_metadata_sidecars=0\n",
     "blocking_legacy_entries=0\n",
     "blocking_metadata_sidecars=0\n",
     "issues=0\n",
 ]:
     assert_contains(stdout, expected, "final finalize-migration dry-run")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "finalize-migration", "app", "--from-format", "v1"])
+if rc != 0 or stderr != "":
+    fail(f"final finalize-migration write should remove legacy fallback: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for expected in [
+    "removed-legacy-entry\tAPP_TOKEN\tobject-payload\n",
+    "removed-legacy-metadata\tAPP_TOKEN\tv2-metadata\n",
+    "dry_run=no\n",
+    "legacy_entries=1\n",
+    "metadata_sidecars=1\n",
+    "removable_legacy_entries=1\n",
+    "removable_metadata_sidecars=1\n",
+    "removed_legacy_entries=1\n",
+    "removed_metadata_sidecars=1\n",
+    "blocking_legacy_entries=0\n",
+    "blocking_metadata_sidecars=0\n",
+    "issues=0\n",
+]:
+    assert_contains(stdout, expected, "final finalize-migration write")
+if app_token_files[0].exists():
+    fail("finalize-migration write did not remove APP_TOKEN legacy value file")
+if (store_root / "entries" / "APP_TOKEN.meta").exists():
+    fail("finalize-migration write did not remove APP_TOKEN legacy metadata file")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get", "APP_TOKEN"])
+if rc != 0 or stdout != "secret-token" or stderr != "":
+    fail(f"v2 read after finalize-migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "fsck", "--format", "v2"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"v2 fsck after finalize-migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "finalize-migration", "app", "--from-format", "v1", "--dry-run"])
+if rc != 0 or stderr != "":
+    fail(f"post-finalize dry-run should be empty: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for expected in [
+    "dry_run=yes\n",
+    "legacy_entries=0\n",
+    "metadata_sidecars=0\n",
+    "removable_legacy_entries=0\n",
+    "removable_metadata_sidecars=0\n",
+    "removed_legacy_entries=0\n",
+    "removed_metadata_sidecars=0\n",
+    "issues=0\n",
+]:
+    assert_contains(stdout, expected, "post-finalize dry-run")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "migrate", "app", "--to-format", "v2", "--dry-run"])
 if rc != 2 or "store format is v2; migration is not needed" not in stderr:

@@ -242,7 +242,9 @@ Inspect legacy v1 fallback files left in a migrated v2 store. The dry-run prints
 .B would-remove-*
 rows for legacy entry or metadata files that are no longer needed, and
 .B cannot-finalize
-rows for legacy entry files that still provide the only value material because the v2 secret object has not yet been rewritten with an object-owned payload. The destructive finalize path is not enabled yet.
+rows for legacy entry files that still provide the only value material because the v2 secret object has not yet been rewritten with an object-owned payload. Without
+.B --dry-run ,
+remove removable legacy fallback files only when no blockers remain; if any blocker is present, report it and remove nothing.
 .TP
 .B domain create|delete|status
 Manage domain roots and resolution state.

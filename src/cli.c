@@ -1432,6 +1432,8 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  inspect legacy fallback files after v2 values have been rewritten: %s store finalize-migration app --from-format v1 --dry-run\n"), program_name);
         secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  remove removable legacy fallback files after review: %s store finalize-migration app --from-format v1\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
         return;
     }
     if (strcmp(target, "secret") == 0 || strcmp(target, "secret status") == 0) {

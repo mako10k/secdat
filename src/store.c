@@ -208,6 +208,8 @@ struct secdat_store_finalize_migration_report {
     size_t metadata_sidecars;
     size_t removable_legacy_entries;
     size_t removable_metadata_sidecars;
+    size_t removed_legacy_entries;
+    size_t removed_metadata_sidecars;
     size_t blocking_legacy_entries;
     size_t blocking_metadata_sidecars;
     size_t issues;
@@ -13937,7 +13939,65 @@ static int secdat_store_finalize_migration_metadata_status(
     return 0;
 }
 
-static int secdat_store_finalize_migration_dry_run_v1(
+static int secdat_store_finalize_migration_remove_legacy_entry(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    const char *detail,
+    struct secdat_store_finalize_migration_report *report
+)
+{
+    char entry_path[PATH_MAX];
+
+    if (secdat_build_entry_path(domain_id, store_name, key, entry_path, sizeof(entry_path)) != 0
+        || secdat_remove_if_exists(entry_path) != 0) {
+        return 1;
+    }
+    printf("removed-legacy-entry\t%s\t%s\n", key, detail);
+    report->removed_legacy_entries += 1;
+    return 0;
+}
+
+static int secdat_store_finalize_migration_remove_metadata(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    const char *detail,
+    struct secdat_store_finalize_migration_report *report
+)
+{
+    char metadata_path[PATH_MAX];
+
+    if (secdat_build_entry_metadata_path(domain_id, store_name, key, metadata_path, sizeof(metadata_path)) != 0
+        || secdat_remove_if_exists(metadata_path) != 0) {
+        return 1;
+    }
+    printf("removed-legacy-metadata\t%s\t%s\n", key, detail);
+    report->removed_metadata_sidecars += 1;
+    return 0;
+}
+
+static void secdat_store_finalize_migration_print_summary(
+    const struct secdat_store_finalize_migration_options *options,
+    const struct secdat_store_finalize_migration_report *report
+)
+{
+    puts("format=v2");
+    printf("from_format=%s\n", options->from_format);
+    printf("dry_run=%s\n", options->dry_run ? "yes" : "no");
+    printf("store=%s\n", options->store_name);
+    printf("legacy_entries=%zu\n", report->legacy_entries);
+    printf("metadata_sidecars=%zu\n", report->metadata_sidecars);
+    printf("removable_legacy_entries=%zu\n", report->removable_legacy_entries);
+    printf("removable_metadata_sidecars=%zu\n", report->removable_metadata_sidecars);
+    printf("removed_legacy_entries=%zu\n", report->removed_legacy_entries);
+    printf("removed_metadata_sidecars=%zu\n", report->removed_metadata_sidecars);
+    printf("blocking_legacy_entries=%zu\n", report->blocking_legacy_entries);
+    printf("blocking_metadata_sidecars=%zu\n", report->blocking_metadata_sidecars);
+    printf("issues=%zu\n", report->issues);
+}
+
+static int secdat_store_finalize_migration_run_v1(
     const struct secdat_domain_chain *chain,
     const struct secdat_store_finalize_migration_options *options,
     struct secdat_store_finalize_migration_report *report
@@ -14005,7 +14065,9 @@ static int secdat_store_finalize_migration_dry_run_v1(
             goto cleanup;
         }
         if (strcmp(detail, "object-payload") == 0 || strcmp(detail, "object-value-sidecar") == 0) {
-            printf("would-remove-legacy-entry\t%s\t%s\n", legacy_entries.items[index], detail);
+            if (options->dry_run) {
+                printf("would-remove-legacy-entry\t%s\t%s\n", legacy_entries.items[index], detail);
+            }
             report->removable_legacy_entries += 1;
         } else {
             secdat_store_finalize_migration_report_issue(report, "legacy-entry", legacy_entries.items[index], detail);
@@ -14025,7 +14087,9 @@ static int secdat_store_finalize_migration_dry_run_v1(
             goto cleanup;
         }
         if (strcmp(detail, "v2-metadata") == 0) {
-            printf("would-remove-legacy-metadata\t%s\t%s\n", metadata.items[index], detail);
+            if (options->dry_run) {
+                printf("would-remove-legacy-metadata\t%s\t%s\n", metadata.items[index], detail);
+            }
             report->removable_metadata_sidecars += 1;
         } else {
             secdat_store_finalize_migration_report_issue(report, "legacy-metadata", metadata.items[index], detail);
@@ -14033,18 +14097,56 @@ static int secdat_store_finalize_migration_dry_run_v1(
         }
     }
 
-    puts("format=v2");
-    printf("from_format=%s\n", options->from_format);
-    puts("dry_run=yes");
-    printf("store=%s\n", options->store_name);
-    printf("legacy_entries=%zu\n", report->legacy_entries);
-    printf("metadata_sidecars=%zu\n", report->metadata_sidecars);
-    printf("removable_legacy_entries=%zu\n", report->removable_legacy_entries);
-    printf("removable_metadata_sidecars=%zu\n", report->removable_metadata_sidecars);
-    printf("blocking_legacy_entries=%zu\n", report->blocking_legacy_entries);
-    printf("blocking_metadata_sidecars=%zu\n", report->blocking_metadata_sidecars);
-    printf("issues=%zu\n", report->issues);
+    if (!options->dry_run && report->issues == 0) {
+        for (index = 0; index < legacy_entries.count; index += 1) {
+            const char *detail = NULL;
 
+            if (secdat_store_finalize_migration_legacy_entry_status(
+                    current_domain_id,
+                    options->store_name,
+                    legacy_entries.items[index],
+                    &detail
+                ) != 0) {
+                goto cleanup;
+            }
+            if (strcmp(detail, "object-payload") == 0 || strcmp(detail, "object-value-sidecar") == 0) {
+                if (secdat_store_finalize_migration_remove_legacy_entry(
+                        current_domain_id,
+                        options->store_name,
+                        legacy_entries.items[index],
+                        detail,
+                        report
+                    ) != 0) {
+                    goto cleanup;
+                }
+            }
+        }
+        for (index = 0; index < metadata.count; index += 1) {
+            const char *detail = NULL;
+
+            if (secdat_store_finalize_migration_metadata_status(
+                    current_domain_id,
+                    options->store_name,
+                    metadata.items[index],
+                    &detail
+                ) != 0) {
+                goto cleanup;
+            }
+            if (strcmp(detail, "v2-metadata") == 0) {
+                if (secdat_store_finalize_migration_remove_metadata(
+                        current_domain_id,
+                        options->store_name,
+                        metadata.items[index],
+                        detail,
+                        report
+                    ) != 0) {
+                    goto cleanup;
+                }
+            }
+        }
+    }
+
+    secdat_store_finalize_migration_print_summary(options, report);
     status = report->issues == 0 ? 0 : 1;
 
 cleanup:
@@ -14069,16 +14171,17 @@ static int secdat_store_command_finalize_migration(const struct secdat_cli *cli)
     if (status != 0) {
         return status;
     }
-    if (!options.dry_run) {
-        fprintf(stderr, _("store finalize-migration currently requires --dry-run\n"));
-        secdat_cli_print_try_help(cli, "store");
-        return 2;
-    }
     if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
         return 1;
     }
+    if (!options.dry_run
+        && (secdat_require_mutable_session_chain(&chain, "store finalize-migration") != 0
+            || secdat_require_writable_domain_chain(&chain) != 0)) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
 
-    status = secdat_store_finalize_migration_dry_run_v1(&chain, &options, &report);
+    status = secdat_store_finalize_migration_run_v1(&chain, &options, &report);
     secdat_domain_chain_free(&chain);
     return status;
 }
