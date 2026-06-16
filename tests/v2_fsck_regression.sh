@@ -160,6 +160,28 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_TOKEN"])
 if rc != 0 or stdout != f"{secret_id}\n" or stderr != "":
     fail(f"clean v2 id failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "secret", "status", secret_id])
+if rc != 0 or stderr != "":
+    fail(f"clean v2 secret status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for expected in (
+    f"secret_id={secret_id}\n",
+    "object_domain=",
+    "object_store=default\n",
+    "value_access=unlocked\n",
+    "secret_inject=allow\n",
+    "refcount_cached=1\n",
+    "refcount_actual=1\n",
+    "orphaned=no\n",
+    "object_payload=no\n",
+    "object_payload_length=0\n",
+    "legacy_value_sidecar=no\n",
+):
+    assert_contains(stdout, expected, "clean v2 secret status")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "secret", "status", "not-a-uuid"])
+if rc != 2 or stdout != "" or "invalid UUID for secret status: not-a-uuid\n" not in stderr:
+    fail(f"secret status invalid UUID should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=explicit\n" or stderr != "":
     fail(f"clean v2 attr failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -288,6 +310,22 @@ if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "APP_SECRET", "APP_SECRET_LINK"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 ln failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "secret", "status", app_secret_id])
+if rc != 0 or stderr != "":
+    fail(f"linked v2 secret status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for expected in (
+    f"secret_id={app_secret_id}\n",
+    "object_domain=",
+    "object_store=default\n",
+    "value_access=unlocked\n",
+    "secret_inject=allow\n",
+    "refcount_cached=2\n",
+    "refcount_actual=2\n",
+    "orphaned=no\n",
+    "object_payload=yes\n",
+    "legacy_value_sidecar=no\n",
+):
+    assert_contains(stdout, expected, "linked v2 secret status")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_SECRET_LINK"])
 if rc != 0 or stdout.strip() != app_secret_id or stderr != "":
     fail(f"pure v2 linked key should share secret id: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -321,6 +359,11 @@ if not (secret_objects_dir / f"{app_secret_id}.sec").exists() or (secret_objects
 link_object_text = read_object_header_text(secret_objects_dir / f"{app_secret_id}.sec")
 if "refcount=1\n" not in link_object_text:
     fail("pure v2 rm linked key did not decrement the linked secret refcount")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "secret", "status", app_secret_id])
+if rc != 0 or stderr != "":
+    fail(f"unlinked v2 secret status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "refcount_cached=1\n", "unlinked v2 secret status cached refcount")
+assert_contains(stdout, "refcount_actual=1\n", "unlinked v2 secret status actual refcount")
 
 remote_secret_keyref = f"{consumer_domain}/REMOTE_SECRET"
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "APP_SECRET", remote_secret_keyref])

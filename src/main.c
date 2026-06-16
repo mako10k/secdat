@@ -214,7 +214,9 @@ int main(int argc, char **argv)
         if (cli.help_target != NULL) {
             help_command = secdat_cli_parse_command_name(cli.help_target);
             if (help_command != SECDAT_COMMAND_HELP) {
-                if (strcmp(cli.help_target, "store") == 0 || strcmp(cli.help_target, "domain") == 0) {
+                if (strcmp(cli.help_target, "store") == 0
+                    || strcmp(cli.help_target, "secret") == 0
+                    || strcmp(cli.help_target, "domain") == 0) {
                     secdat_cli_print_help_target(argv[0], cli.help_target);
                 } else {
                     secdat_cli_print_command_usage(argv[0], help_command);

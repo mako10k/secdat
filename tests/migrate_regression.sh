@@ -123,6 +123,13 @@ rc, stdout, stderr = run(
 if rc != 1 or stdout != "" or "secret id is available only for store format v2\n" not in stderr or "store migrate app --to-format v2 --dry-run" in stderr:
     fail(f"migration hint suppression failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "--store", "app", "secret", "status",
+    "11111111-1111-4111-8111-111111111111",
+])
+if rc != 1 or stdout != "" or "secret status is available only for store format v2\n" not in stderr or "store migrate app --to-format v2 --dry-run" not in stderr:
+    fail(f"v1 secret status should include migration hint: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "migrate", "app", "--to-format", "v3", "--dry-run"])
 if rc != 2 or "invalid migration target format: v3" not in stderr:
     fail(f"store migrate invalid target should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")

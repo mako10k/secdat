@@ -539,6 +539,7 @@ static int secdat_command_ln(const struct secdat_cli *cli);
 static int secdat_command_mask(const struct secdat_cli *cli);
 static int secdat_command_unmask(const struct secdat_cli *cli);
 static int secdat_command_rm(const struct secdat_cli *cli);
+static int secdat_command_secret_status(const struct secdat_cli *cli);
 
 struct secdat_unlock_options {
     time_t duration_seconds;
@@ -11672,6 +11673,98 @@ static int secdat_command_id(const struct secdat_cli *cli)
     return 0;
 }
 
+static int secdat_command_secret_status(const struct secdat_cli *cli)
+{
+    const char *secret_id;
+    const char *store_name = secdat_effective_store_name(cli->store);
+    struct secdat_domain_chain chain = {0};
+    enum secdat_store_format format;
+    struct secdat_v2_secret_object_info object;
+    char object_path[PATH_MAX];
+    char value_path[PATH_MAX];
+    size_t actual_refcount = 0;
+    int legacy_value_sidecar;
+    int status = 1;
+
+    if (cli->argc == 0) {
+        fprintf(stderr, _("missing UUID for secret status\n"));
+        secdat_cli_print_try_help(cli, "secret");
+        return 2;
+    }
+    if (cli->argc != 1) {
+        fprintf(stderr, _("invalid arguments for secret status\n"));
+        secdat_cli_print_try_help(cli, "secret");
+        return 2;
+    }
+
+    secret_id = cli->argv[0];
+    if (!secdat_uuid_is_valid(secret_id)) {
+        fprintf(stderr, _("invalid UUID for secret status: %s\n"), secret_id);
+        return 2;
+    }
+
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
+        return 1;
+    }
+    if (chain.count == 0) {
+        fprintf(stderr, _("secret status requires a registered current domain\n"));
+        goto cleanup;
+    }
+
+    if (secdat_read_store_format(chain.ids[0], store_name, &format) != 0) {
+        goto cleanup;
+    }
+    if (format == SECDAT_STORE_FORMAT_INVALID) {
+        fprintf(stderr, _("invalid store format marker\n"));
+        goto cleanup;
+    }
+    if (format != SECDAT_STORE_FORMAT_V2) {
+        fprintf(stderr, _("secret status is available only for store format v2\n"));
+        secdat_print_store_migration_hint(cli->program_name, store_name);
+        goto cleanup;
+    }
+
+    if (secdat_build_v2_secret_object_path(chain.ids[0], store_name, secret_id, object_path, sizeof(object_path)) != 0
+        || secdat_build_v2_secret_value_path(chain.ids[0], store_name, secret_id, value_path, sizeof(value_path)) != 0) {
+        goto cleanup;
+    }
+    if (!secdat_file_exists(object_path)) {
+        fprintf(stderr, _("secret object not found: %s\n"), secret_id);
+        goto cleanup;
+    }
+    if (secdat_read_v2_secret_object_info(object_path, secret_id, &object) != 0) {
+        fprintf(stderr, _("invalid secret object: %s\n"), secret_id);
+        goto cleanup;
+    }
+    if (secdat_count_v2_secret_references_to_object(chain.ids[0], store_name, secret_id, &actual_refcount) != 0) {
+        goto cleanup;
+    }
+
+    legacy_value_sidecar = secdat_file_exists(value_path);
+
+    printf("secret_id=%s\n", object.secret_id);
+    printf("object_domain=%s\n", chain.ids[0]);
+    printf("object_store=%s\n", store_name);
+    printf("value_access=%s\n", secdat_value_access_name(object.value_access));
+    printf("secret_inject=%s\n", secdat_v2_secret_inject_name(object.secret_inject));
+    if (object.refcount_present) {
+        printf("refcount_cached=%zu\n", object.refcount);
+    } else {
+        printf("refcount_cached=missing\n");
+    }
+    printf("refcount_actual=%zu\n", actual_refcount);
+    printf("orphaned=%s\n", actual_refcount == 0 ? "yes" : "no");
+    printf("object_payload=%s\n", object.has_value_payload ? "yes" : "no");
+    printf("object_payload_length=%zu\n", object.has_value_payload ? object.value_payload_length : 0);
+    printf("legacy_value_sidecar=%s\n", legacy_value_sidecar ? "yes" : "no");
+
+    status = 0;
+
+cleanup:
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
 static void secdat_write_shell_quoted(FILE *stream, const char *value);
 
 static int secdat_write_shell_quoted_bytes(FILE *stream, const char *key, const unsigned char *value, size_t value_length)
@@ -14414,6 +14507,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_store_command_ls(cli);
     case SECDAT_COMMAND_STORE_MIGRATE:
         return secdat_store_command_migrate(cli);
+    case SECDAT_COMMAND_SECRET_STATUS:
+        return secdat_command_secret_status(cli);
     case SECDAT_COMMAND_DOMAIN_CREATE:
     case SECDAT_COMMAND_DOMAIN_DELETE:
     case SECDAT_COMMAND_DOMAIN_LS:

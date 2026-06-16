@@ -44,13 +44,13 @@ def assert_contains(values, expected, label):
 mode, values = run_completion("")
 if mode != "plain":
     raise SystemExit(f"FAIL: top-level completion mode mismatch: {mode!r}")
-for expected in ["wait-unlock", "inherit", "store", "domain", "unlock", "attr", "fsck", "gc", "id", "ln", "version", "--dir", "--domain", "--store", "--help", "--version"]:
+for expected in ["wait-unlock", "inherit", "store", "secret", "domain", "unlock", "attr", "fsck", "gc", "id", "ln", "version", "--dir", "--domain", "--store", "--help", "--version"]:
     assert_contains(values, expected, "top-level commands")
 
 mode, values = run_completion("help", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: help completion mode mismatch: {mode!r}")
-for expected in ["usecases", "concepts", "wait-unlock", "store", "domain", "gc", "id"]:
+for expected in ["usecases", "concepts", "wait-unlock", "store", "secret", "domain", "gc", "id"]:
     assert_contains(values, expected, "help targets")
 
 mode, values = run_completion("domain", "")
@@ -64,6 +64,12 @@ if mode != "plain":
     raise SystemExit(f"FAIL: store completion mode mismatch: {mode!r}")
 for expected in ["create", "delete", "ls", "migrate"]:
     assert_contains(values, expected, "store subcommands")
+
+mode, values = run_completion("secret", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: secret completion mode mismatch: {mode!r}")
+for expected in ["status"]:
+    assert_contains(values, expected, "secret subcommands")
 
 mode, values = run_completion("ls", "--")
 if mode != "plain":

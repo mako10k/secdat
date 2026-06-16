@@ -80,6 +80,9 @@ marks whether future scoped sandbox imports may include the key.
 .B id KEYREF
 Print the resolved v2 secret object UUID for one key without reading its value. This requires a store marked with the v2 format marker.
 .TP
+.B secret status UUID
+Print one v2 secret object's non-secret metadata in the current domain/store without reading its value. Output includes the object domain/store address, value-access and injection policy, cached and actual refcounts, orphaned state, object payload presence, and legacy value sidecar presence.
+.TP
 .B fsck [\-\-orphaned] [\-\-dangling] [\-\-refcount] [\-\-repair] [\-\-format v1|v2]
 Check the current-domain local store namespace without decrypting secret values. Clean v1 output is
 .B ok .
@@ -222,6 +225,9 @@ Report whether secret material is available from the current domain scope.
 .TP
 .B store create|delete|ls|migrate
 Manage store namespaces and v1 to v2 migration inside the resolved current domain.
+.TP
+.B secret status
+Inspect v2 secret-object metadata by UUID without reading secret values.
 .TP
 .B store migrate STORE \-\-to-format v2 [\-\-dry-run]
 Validate one v1 store and print the v2 migration plan. Without

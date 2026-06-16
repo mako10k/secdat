@@ -387,7 +387,7 @@ static int secdat_cli_completion_is_help_target(const char *value)
 {
     return value != NULL && (strcmp(value, "help") == 0 || strcmp(value, "version") == 0
         || strcmp(value, "usecases") == 0 || strcmp(value, "concepts") == 0
-        || strcmp(value, "store") == 0 || strcmp(value, "domain") == 0);
+        || strcmp(value, "store") == 0 || strcmp(value, "secret") == 0 || strcmp(value, "domain") == 0);
 }
 
 static int secdat_cli_completion_is_command_with_key_operand(const char *command)
@@ -811,6 +811,10 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_group_subcommands("domain", current);
         return 0;
     }
+    if (strcmp(command, "secret") == 0 && subcommand == NULL) {
+        secdat_cli_completion_print_group_subcommands("secret", current);
+        return 0;
+    }
 
     if (secdat_cli_completion_is_command_with_key_operand(command)
         && secdat_cli_completion_positional_count(argc, argv, command, subcommand) == 0) {
@@ -939,6 +943,12 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     if (strcmp(name, "store") == 0) {
         return SECDAT_COMMAND_STORE_LS;
     }
+    if (strcmp(name, "secret") == 0) {
+        return SECDAT_COMMAND_SECRET_STATUS;
+    }
+    if (strcmp(name, "secret status") == 0) {
+        return SECDAT_COMMAND_SECRET_STATUS;
+    }
     if (strcmp(name, "domain") == 0) {
         return SECDAT_COMMAND_DOMAIN_LS;
     }
@@ -1035,6 +1045,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
     case SECDAT_COMMAND_STORE_MIGRATE:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store migrate", "STORE --to-format v2 [--dry-run]");
         break;
+    case SECDAT_COMMAND_SECRET_STATUS:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "secret status", "UUID");
+        break;
     case SECDAT_COMMAND_DOMAIN_CREATE:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain create", "");
         break;
@@ -1130,6 +1143,7 @@ static void secdat_cli_print_group_meanings(void)
 {
     printf(_("\nGroups:\n"));
     secdat_cli_print_detail_line(_("  store: manage store namespaces and v1 to v2 migration inside the resolved current domain\n"));
+    secdat_cli_print_detail_line(_("  secret: inspect v2 secret-object metadata by UUID without reading secret values\n"));
     secdat_cli_print_detail_line(_("  domain: manage domain roots and domain discovery scope\n"));
 }
 
@@ -1162,6 +1176,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  lock: return the current domain to a locked local state, or do nothing when it is already locked\n"));
     secdat_cli_print_detail_line(_("  status: report whether secret material is available from the current domain scope\n"));
     secdat_cli_print_detail_line(_("  wait-unlock: wait until the current domain scope becomes unlocked, or fail on timeout\n"));
+    secdat_cli_print_detail_line(_("  secret status: print one v2 secret object's non-secret metadata and reference counts\n"));
     secdat_cli_print_detail_line(_("  version: print the secdat version\n"));
 }
 
@@ -1291,6 +1306,14 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  store: manage store namespaces and migrate v1 stores to the v2 domain-entry/object layout\n"));
         return;
     }
+    if (target != NULL && strcmp(target, "secret") == 0) {
+        secdat_cli_print_detail_line(_("  secret: inspect v2 secret-object metadata by UUID without reading secret values\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "secret status") == 0) {
+        secdat_cli_print_detail_line(_("  secret status: print one v2 secret object's non-secret metadata and reference counts\n"));
+        return;
+    }
     if (target != NULL && strcmp(target, "domain") == 0) {
         secdat_cli_print_detail_line(_("  domain: manage domain roots and domain discovery scope\n"));
         return;
@@ -1387,6 +1410,14 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         snprintf(buffer, sizeof(buffer), _("  inspect a v1 to v2 migration before writing: %s store migrate app --to-format v2 --dry-run\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  write the v2 domain-entry/object graph after review: %s store migrate app --to-format v2\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        return;
+    }
+    if (strcmp(target, "secret") == 0 || strcmp(target, "secret status") == 0) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  inspect one v2 secret object by UUID without reading its value: %s secret status 01234567-89ab-4def-8123-456789abcdef\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  resolve a key to its UUID first: %s id API_TOKEN\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         return;
     }
@@ -1597,6 +1628,28 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
             secdat_cli_print_try_help(cli, "store");
             return 2;
         }
+    } else if (strcmp(argv[index], "secret") == 0) {
+        index += 1;
+        if (index >= argc) {
+            cli->show_help = 1;
+            cli->help_target = "secret";
+            return 0;
+        }
+
+        if (strcmp(argv[index], "--help") == 0 || strcmp(argv[index], "-h") == 0) {
+            cli->show_help = 1;
+            cli->help_target = "secret";
+            return 0;
+        }
+
+        if (strcmp(argv[index], "status") == 0) {
+            cli->command = SECDAT_COMMAND_SECRET_STATUS;
+            index += 1;
+        } else {
+            fprintf(stderr, _("unknown secret subcommand: %s\n"), argv[index]);
+            secdat_cli_print_try_help(cli, "secret");
+            return 2;
+        }
     } else if (strcmp(argv[index], "domain") == 0) {
         index += 1;
         if (index >= argc) {
@@ -1711,6 +1764,17 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         return;
     }
 
+    if (target != NULL && strcmp(target, "secret") == 0) {
+        printf(_("Usage:\n"));
+        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_SECRET_STATUS);
+        secdat_cli_print_help_routes(program_name, target);
+        secdat_cli_print_target_meaning(target);
+        secdat_cli_print_target_use_cases(program_name, target);
+        secdat_cli_print_support_routes();
+        secdat_cli_print_semantics();
+        return;
+    }
+
     if (target != NULL && strcmp(target, "domain") == 0) {
         printf(_("Usage:\n"));
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_CREATE);
@@ -1807,6 +1871,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "store ls";
     case SECDAT_COMMAND_STORE_MIGRATE:
         return "store migrate";
+    case SECDAT_COMMAND_SECRET_STATUS:
+        return "secret status";
     case SECDAT_COMMAND_DOMAIN_CREATE:
         return "domain create";
     case SECDAT_COMMAND_DOMAIN_DELETE:
