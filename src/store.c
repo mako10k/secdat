@@ -468,6 +468,7 @@ static int secdat_secret_attrs_are_default(const struct secdat_secret_attrs *att
 static const char *secdat_key_visibility_name(enum secdat_key_visibility value);
 static const char *secdat_value_access_name(enum secdat_value_access value);
 static const char *secdat_sandbox_inject_name(enum secdat_sandbox_inject value);
+static int secdat_sandbox_inject_allows_bulk_selection(const struct secdat_secret_attrs *attrs);
 static int secdat_parse_key_visibility(const char *value, enum secdat_key_visibility *parsed);
 static int secdat_parse_value_access(const char *value, enum secdat_value_access *parsed);
 static int secdat_parse_sandbox_inject_token(const char *value, enum secdat_sandbox_inject *parsed, int accept_allow_alias);
@@ -8541,7 +8542,7 @@ static int secdat_collect_list_keys(
                     goto cleanup;
                 }
             }
-            if (options->sandbox_injectable && attrs.sandbox_inject != SECDAT_SANDBOX_INJECT_NEVER) {
+            if (options->sandbox_injectable && secdat_sandbox_inject_allows_bulk_selection(&attrs)) {
                 if (secdat_key_list_append(keys, local_entries.items[index]) != 0) {
                     goto cleanup;
                 }
@@ -8901,7 +8902,7 @@ static int secdat_command_ls(const struct secdat_cli *cli)
                 continue;
             }
         }
-        if (options.sandbox_injectable && attrs.sandbox_inject == SECDAT_SANDBOX_INJECT_NEVER) {
+        if (options.sandbox_injectable && !secdat_sandbox_inject_allows_bulk_selection(&attrs)) {
             secdat_effective_entry_reset(&entry);
             continue;
         }
@@ -10128,6 +10129,11 @@ static const char *secdat_v2_secret_inject_name(enum secdat_secret_inject value)
     return value == SECDAT_SECRET_INJECT_NEVER ? "never" : "allow";
 }
 
+static int secdat_sandbox_inject_allows_bulk_selection(const struct secdat_secret_attrs *attrs)
+{
+    return attrs->sandbox_inject == SECDAT_SANDBOX_INJECT_BULK;
+}
+
 static int secdat_v2_generate_object_key(unsigned char object_key[SECDAT_V2_OBJECT_KEY_LEN])
 {
     if (RAND_bytes(object_key, SECDAT_V2_OBJECT_KEY_LEN) != 1) {
@@ -10366,10 +10372,11 @@ cleanup:
     return status;
 }
 
-static int secdat_write_v2_secret_object_file(
+static int secdat_write_v2_secret_object_file_with_inject(
     const char *secret_objects_dir,
     const char *secret_id,
     const struct secdat_secret_attrs *attrs,
+    enum secdat_secret_inject secret_inject,
     int refcount_present,
     size_t refcount,
     const unsigned char *payload,
@@ -10398,7 +10405,7 @@ static int secdat_write_v2_secret_object_file(
             secdat_v2_secret_object_magic,
             secret_id,
             secdat_value_access_name(attrs->value_access),
-            secdat_v2_secret_inject_name(secdat_secret_inject_from_attrs(attrs)),
+            secdat_v2_secret_inject_name(secret_inject),
             refcount,
             payload_length
         );
@@ -10412,7 +10419,7 @@ static int secdat_write_v2_secret_object_file(
             secdat_v2_secret_object_magic,
             secret_id,
             secdat_value_access_name(attrs->value_access),
-            secdat_v2_secret_inject_name(secdat_secret_inject_from_attrs(attrs)),
+            secdat_v2_secret_inject_name(secret_inject),
             payload_length
         );
     }
@@ -10444,6 +10451,32 @@ static int secdat_write_v2_secret_object_file(
     return written;
 }
 
+static int secdat_write_v2_secret_object_file(
+    const char *secret_objects_dir,
+    const char *secret_id,
+    const struct secdat_secret_attrs *attrs,
+    int refcount_present,
+    size_t refcount,
+    const unsigned char *payload,
+    size_t payload_length,
+    char *path_out,
+    size_t path_out_size
+)
+{
+    return secdat_write_v2_secret_object_file_with_inject(
+        secret_objects_dir,
+        secret_id,
+        attrs,
+        secdat_secret_inject_from_attrs(attrs),
+        refcount_present,
+        refcount,
+        payload,
+        payload_length,
+        path_out,
+        path_out_size
+    );
+}
+
 static int secdat_update_v2_secret_attrs(
     const char *domain_id,
     const char *store_name,
@@ -10464,6 +10497,7 @@ static int secdat_update_v2_secret_attrs(
     const unsigned char *object_key_ptr = NULL;
     const char *object_domain_id = entry->object_domain[0] == '\0' ? domain_id : entry->object_domain;
     const char *object_store_name = entry->object_domain[0] == '\0' ? store_name : secdat_effective_entry_object_store(entry);
+    enum secdat_secret_inject target_secret_inject = secdat_secret_inject_from_attrs(attrs);
     size_t payload_length = 0;
     int has_payload = 0;
     int key_matches = 0;
@@ -10492,6 +10526,10 @@ static int secdat_update_v2_secret_attrs(
         fprintf(stderr, _("invalid v2 secret object: %s\n"), entry->secret_id);
         return 1;
     }
+    if (object.secret_inject == SECDAT_SECRET_INJECT_NEVER && target_secret_inject != SECDAT_SECRET_INJECT_NEVER) {
+        fprintf(stderr, _("secret object forbids sandbox injection: %s\n"), key);
+        goto cleanup;
+    }
     if (attrs->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
         if (secdat_v2_encrypt_domain_entry_key(domain_id, key, &encrypted_key_probe) != 0) {
             goto cleanup;
@@ -10511,10 +10549,11 @@ static int secdat_update_v2_secret_attrs(
         object_key_ptr = object_key;
     }
 
-    if (secdat_write_v2_secret_object_file(
+    if (secdat_write_v2_secret_object_file_with_inject(
             secret_objects_dir,
             entry->secret_id,
             attrs,
+            target_secret_inject,
             object.refcount_present,
             object.refcount,
             has_payload ? payload : NULL,
@@ -10577,6 +10616,7 @@ static int secdat_store_v2_plaintext_with_attrs(
     size_t encrypted_length = 0;
     const char *object_domain_id = domain_id;
     const char *object_store_name = store_name;
+    enum secdat_secret_inject target_secret_inject;
     int refcount_present = 1;
     size_t refcount = 1;
     int lookup_status;
@@ -10590,6 +10630,7 @@ static int secdat_store_v2_plaintext_with_attrs(
     if (!secdat_v2_secret_attrs_supported(&write_attrs)) {
         return 1;
     }
+    target_secret_inject = secdat_secret_inject_from_attrs(&write_attrs);
     if ((write_attrs.value_access == SECDAT_VALUE_ACCESS_ALWAYS) != (unsafe_store != 0)) {
         fprintf(stderr, _("secret value_access does not match storage mode\n"));
         return 1;
@@ -10618,6 +10659,10 @@ static int secdat_store_v2_plaintext_with_attrs(
         }
         refcount_present = object.refcount_present;
         refcount = object.refcount;
+        if (object.secret_inject == SECDAT_SECRET_INJECT_NEVER && target_secret_inject != SECDAT_SECRET_INJECT_NEVER) {
+            fprintf(stderr, _("secret object forbids sandbox injection: %s\n"), key);
+            return 1;
+        }
         if (write_attrs.value_access == SECDAT_VALUE_ACCESS_UNLOCKED) {
             if (entry.has_wrapped_object_key) {
                 if (secdat_v2_unwrap_object_key(domain_id, &entry, object_key) != 0) {
@@ -10661,10 +10706,11 @@ static int secdat_store_v2_plaintext_with_attrs(
     encrypted_key_probe = NULL;
 
     if (secdat_remove_if_exists(tombstone_path) != 0
-        || secdat_write_v2_secret_object_file(
+        || secdat_write_v2_secret_object_file_with_inject(
             secret_objects_dir,
             secret_id,
             &write_attrs,
+            target_secret_inject,
             refcount_present,
             refcount,
             encrypted,
@@ -12015,10 +12061,11 @@ static int secdat_update_v2_secret_refcount(
     attrs.sandbox_inject = object.secret_inject == SECDAT_SECRET_INJECT_NEVER
         ? SECDAT_SANDBOX_INJECT_NEVER
         : SECDAT_SANDBOX_INJECT_BULK;
-    status = secdat_write_v2_secret_object_file(
+    status = secdat_write_v2_secret_object_file_with_inject(
         secret_objects_dir,
         secret_id,
         &attrs,
+        object.secret_inject,
         1,
         refcount,
         has_payload ? payload : NULL,
@@ -13042,7 +13089,7 @@ static int secdat_store_migrate_prepare_v2(
         } else {
             report->encrypted_values += 1;
         }
-        if (attrs.sandbox_inject != SECDAT_SANDBOX_INJECT_NEVER) {
+        if (secdat_sandbox_inject_allows_bulk_selection(&attrs)) {
             report->injectable_entries += 1;
         }
     }

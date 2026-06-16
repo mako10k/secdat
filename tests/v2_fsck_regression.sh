@@ -164,6 +164,10 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=explicit\n" or stderr != "":
     fail(f"clean v2 attr failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--sandbox-injectable"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"explicit v2 key should be excluded from bulk sandbox-injectable list: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN", "--sandbox-inject", "never"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"clean v2 attr inject update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -180,6 +184,12 @@ if "wrapped_object_key=" not in entry_text:
     fail("clean v2 attr did not backfill the wrapped object key")
 if "secret_inject=never\n" not in object_text or "refcount=1\n" not in object_text:
     fail("clean v2 attr did not preserve secret object metadata")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN", "--sandbox-inject", "bulk"])
+if rc == 0 or "secret object forbids sandbox injection: APP_TOKEN" not in stderr:
+    fail(f"object-level inject deny should reject bulk re-enable: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=never\n" or stderr != "":
+    fail(f"v2 attr after rejected bulk re-enable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"clean v2 fsck after attr update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

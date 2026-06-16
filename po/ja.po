@@ -1250,6 +1250,11 @@ msgstr "value access が不正です: %s\n"
 msgid "invalid sandbox inject policy: %s\n"
 msgstr "sandbox inject policy が不正です: %s\n"
 
+#: src/store.c:10529 src/store.c:10662
+#, c-format
+msgid "secret object forbids sandbox injection: %s\n"
+msgstr "secret object が sandbox injection を禁止しています: %s\n"
+
 #: src/store.c:3297
 #, c-format
 msgid ""

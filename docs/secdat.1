@@ -52,8 +52,9 @@ List effective keys visible from the current domain view. Repeated include patte
 .B --metadata
 prints key attributes alongside each key, and
 .B --sandbox-injectable
-keeps only keys whose sandbox injection policy is not
-.B never .
+keeps only keys whose sandbox injection policy allows
+.B bulk
+selector, pattern, or profile based selection.
 .TP
 .B list [\-m|\-\-masked] [\-o|\-\-overridden] [\-O|\-\-orphaned] [\-e|\-\-safe] [\-u|\-\-unsafe] [\-\-sandbox-injectable]
 Inspect current-domain local state. Use
@@ -210,7 +211,7 @@ Manage store namespaces and v1 to v2 migration inside the resolved current domai
 .B store migrate STORE \-\-to-format v2 [\-\-dry-run]
 Validate one v1 store and print the v2 migration plan. Without
 .B --dry-run ,
-write side-by-side v2 domain-entry/object graph files, verify them with v2 fsck, mark the store as v2, and leave v1 value files in place. Output includes domain-entry, secret-object, sidecar, tombstone, public-value, encrypted-value, sandbox-injectable, and issue counts.
+write side-by-side v2 domain-entry/object graph files, verify them with v2 fsck, mark the store as v2, and leave v1 value files in place. Output includes domain-entry, secret-object, sidecar, tombstone, public-value, encrypted-value, bulk-injectable, and issue counts.
 Some v2-only errors print this dry-run command as a hint; set
 .B SECDAT_SUPPRESS_MIGRATION_HINTS=1
 to hide those hints.

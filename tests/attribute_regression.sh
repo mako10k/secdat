@@ -88,7 +88,7 @@ assert_contains(stdout, "API_TOKEN\tkey_visibility=always\tvalue_access=unlocked
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--sandbox-injectable"])
 if rc != 0 or stderr != "":
     fail(f"ls --sandbox-injectable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, "API_TOKEN\n", "sandbox-injectable list")
+assert_eq(stdout, "", "explicit inject excluded from bulk sandbox-injectable list")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "NO_INJECT", "--value", "nope"])
 if rc != 0 or stdout != "" or stderr != "":
@@ -96,7 +96,7 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--sandbox-injectable"])
 if rc != 0 or stderr != "":
     fail(f"ls sandbox-injectable after non-inject failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, "API_TOKEN\n", "non-inject key excluded")
+assert_eq(stdout, "", "non-bulk keys excluded")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--sandbox-inject", "bulk"])
 if rc != 0 or stdout != "" or stderr != "":
@@ -104,8 +104,9 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "list", "--sandbox-injectable"])
 if rc != 0 or stderr != "":
     fail(f"list sandbox-injectable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "API_TOKEN\n", "list includes explicit key")
 assert_contains(stdout, "NO_INJECT\n", "list includes bulk key")
+if "API_TOKEN\n" in stdout:
+    fail(f"list sandbox-injectable unexpectedly included explicit key: {stdout!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--sandbox-inject", "allow"])
 if rc == 0 or "invalid sandbox inject policy: allow" not in stderr:
@@ -122,6 +123,9 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT"])
 if rc != 0 or stderr != "":
     fail(f"legacy allow metadata readback failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "sandbox_inject=bulk\n", "legacy allow metadata normalizes to bulk")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--sandbox-injectable"])
+if rc != 0 or stdout != "NO_INJECT\n" or stderr != "":
+    fail(f"legacy allow metadata should remain bulk-injectable: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "PUBLIC_ENDPOINT", "--public-value", "--value", "https://example.invalid"])
 if rc != 0 or stdout != "" or stderr != "":

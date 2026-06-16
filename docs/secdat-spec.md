@@ -289,8 +289,8 @@ To make the requested behavior implementable, the following are treated as norma
 - generic user-defined attributes are intentionally not part of `attr`; policy/storage attributes must stay explicit so authorization, migration, and sandbox export semantics remain auditable
 - `cp` and `mv` preserve source key attributes
 - `ls --metadata` prints key attributes alongside visible keys
-- `ls --sandbox-injectable` lists visible keys whose `sandbox_inject` is not `never`
-- `list --sandbox-injectable` lists current-domain local entries whose `sandbox_inject` is not `never`
+- `ls --sandbox-injectable` lists visible keys whose effective `sandbox_inject` allows bulk selector, pattern, or profile based sandbox import selection
+- `list --sandbox-injectable` lists current-domain local entries whose effective `sandbox_inject` allows bulk selector, pattern, or profile based sandbox import selection
 
 #### FR-3ac Store Consistency Checks
 
@@ -405,7 +405,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] store ls PATTERN` and `secdat [--dir DIR] store ls --pattern PATTERN` are equivalent
 - `secdat [--dir DIR] store migrate STORE --to-format v2 --dry-run` validates one v1 store and reports the v2 migration plan without writing v2 files
 - `secdat [--dir DIR] store migrate STORE --to-format v2` writes side-by-side v2 domain-entry/object graph files, verifies them with v2 fsck, marks the store as v2, and leaves v1 value files in place
-- migration output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, `injectable_entries`, and `issues`
+- migration output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, bulk `injectable_entries`, and `issues`
 - migration refuses invalid v1 entries, invalid sidecars, orphaned sidecars, orphaned tombstones, and pre-existing v2 migration artifacts
 - `store` management never creates, deletes, or lists stores in parent or child domains
 - stores marked with the v2 format marker use the v2 domain-entry/object graph for `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id`; hidden keys participate only while unlocked

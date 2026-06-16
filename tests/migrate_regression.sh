@@ -108,7 +108,7 @@ for expected in [
     "tombstones=0\n",
     "public_values=1\n",
     "encrypted_values=1\n",
-    "injectable_entries=1\n",
+    "injectable_entries=0\n",
     "issues=0\n",
 ]:
     assert_contains(stdout, expected, "store migrate dry-run output")
@@ -180,7 +180,7 @@ for expected in [
     "tombstones=0\n",
     "public_values=1\n",
     "encrypted_values=1\n",
-    "injectable_entries=1\n",
+    "injectable_entries=0\n",
     "issues=0\n",
     "verified=yes\n",
 ]:
