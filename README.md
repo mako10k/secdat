@@ -11,6 +11,7 @@ Current status:
 - gettext-based localization is wired in for user-facing CLI messages
 - `ls`, `get`, `set`, `rm`, `mv`, `cp`, and `exec` are implemented with encrypted local storage
 - `attr` is implemented for per-secret metadata such as value access and sandbox injection eligibility
+- `fsck` is implemented for non-destructive v1 store metadata checks used by the v2 migration path
 - `export` is implemented for shell-friendly setup without embedding raw secret values
 - `save` and `load` are implemented for passphrase-protected secret bundles scoped to the current view
 - `domain create`, `domain delete`, `domain ls`, and `domain status` are implemented
@@ -241,6 +242,17 @@ Use `attr` to inspect or update attributes:
 ```
 
 The planned storage v2 moves from one domain-local file per key to a directory/inode-like split between domain entries and secret objects. Domain entries will own key names and key visibility; secret objects will own values and value access. That plan also adds linked secrets (`ln`), secret UUID references, refcount/orphan checks, and a migration-first compatibility path from the current v1 store. See [docs/secdat-spec.md](docs/secdat-spec.md#510-planned-store-v2-domain-entries-and-secret-objects).
+
+For migration preparation, `fsck` performs read-only checks on the current v1 domain/store:
+
+```sh
+./src/secdat fsck
+./src/secdat fsck --orphaned
+./src/secdat fsck --dangling
+./src/secdat fsck --refcount
+```
+
+Clean output is `ok`. Issues are tab-separated rows such as `orphaned-metadata	KEY	missing-entry`, `orphaned-tombstone	KEY	missing-parent`, `dangling-entry	KEY	invalid-entry`, or `dangling-metadata	KEY	invalid-metadata`. `--refcount` is currently a clean no-op for v1 because secret objects and hard links arrive with store v2.
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
 When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--domain`, then `--dir`, then `--store`, and finally the current defaults are used.

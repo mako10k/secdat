@@ -44,7 +44,7 @@ def assert_contains(values, expected, label):
 mode, values = run_completion("")
 if mode != "plain":
     raise SystemExit(f"FAIL: top-level completion mode mismatch: {mode!r}")
-for expected in ["wait-unlock", "inherit", "store", "domain", "unlock", "attr", "version", "--dir", "--domain", "--store", "--help", "--version"]:
+for expected in ["wait-unlock", "inherit", "store", "domain", "unlock", "attr", "fsck", "version", "--dir", "--domain", "--store", "--help", "--version"]:
     assert_contains(values, expected, "top-level commands")
 
 mode, values = run_completion("help", "")
@@ -76,6 +76,12 @@ if mode != "plain":
     raise SystemExit(f"FAIL: attr option completion mode mismatch: {mode!r}")
 for expected in ["--key-visibility", "--value-access", "--sandbox-inject", "--inject"]:
     assert_contains(values, expected, "attr options")
+
+mode, values = run_completion("fsck", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: fsck option completion mode mismatch: {mode!r}")
+for expected in ["--orphaned", "--dangling", "--refcount", "--format"]:
+    assert_contains(values, expected, "fsck options")
 
 mode, values = run_completion("set", "--")
 if mode != "plain":

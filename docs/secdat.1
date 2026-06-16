@@ -76,6 +76,16 @@ is plaintext-at-rest and readable while locked.
 .B sandbox_inject
 marks whether future scoped sandbox imports may include the key.
 .TP
+.B fsck [\-\-orphaned] [\-\-dangling] [\-\-refcount] [\-\-format v1|v2]
+Check the current-domain local store namespace without decrypting secret values. Clean v1 output is
+.B ok .
+.B --orphaned
+reports leftover metadata or tombstones without an authoritative counterpart,
+.B --dangling
+reports invalid entries or attribute sidecars, and
+.B --refcount
+is currently a clean no-op for v1 because shared secret objects arrive with store v2.
+.TP
 .B mask KEYREF
 Create a local tombstone to hide one inherited key in the current domain.
 .TP
@@ -94,7 +104,7 @@ and
 .B unlock
 follow-up commands for that domain.
 .TP
-.B set KEYREF [\-u|\-\-unsafe|\-\-public-value|\-\-secret-value] [\-\-sandbox-inject never|explicit|allow] [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
+.B set KEYREF [\-u|\-\-unsafe|\-\-public-value|\-\-secret-value] [\-\-key-visibility always|unlocked] [\-\-value-access unlocked|always] [\-\-sandbox-inject never|explicit|allow] [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
 Store or update one key in the resolved current domain. Use
 .B --unsafe
 or

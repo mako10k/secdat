@@ -571,6 +571,10 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
             || strcmp(previous, "--inject") == 0) {
             return "none";
         }
+    } else if (strcmp(command, "fsck") == 0) {
+        if (strcmp(previous, "--format") == 0) {
+            return "none";
+        }
     } else if (strcmp(command, "exec") == 0) {
         if (strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0
             || strcmp(previous, "--pattern-exclude") == 0 || strcmp(previous, "-x") == 0
@@ -719,6 +723,9 @@ int secdat_cli_complete(int argc, char **argv)
     static const char *const attr_options[] = {
         "--key-visibility", "--value-access", "--sandbox-inject", "--inject", "--help", "-h", NULL,
     };
+    static const char *const fsck_options[] = {
+        "--orphaned", "--dangling", "--refcount", "--format", "--help", "-h", NULL,
+    };
     static const char *const get_options[] = {
         "--on-demand-unlock", "-w", "--unlock-timeout", "-t", "--stdout", "-o", "--shellescaped", "-e", "--help", "-h", NULL,
     };
@@ -805,6 +812,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, list_options);
     } else if (strcmp(command, "attr") == 0) {
         secdat_cli_completion_print_candidates(current, attr_options);
+    } else if (strcmp(command, "fsck") == 0) {
+        secdat_cli_completion_print_candidates(current, fsck_options);
     } else if (strcmp(command, "get") == 0) {
         secdat_cli_completion_print_candidates(current, get_options);
     } else if (strcmp(command, "set") == 0) {
@@ -842,6 +851,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     }
     if (strcmp(name, "attr") == 0) {
         return SECDAT_COMMAND_ATTR;
+    }
+    if (strcmp(name, "fsck") == 0) {
+        return SECDAT_COMMAND_FSCK;
     }
     if (strcmp(name, "mask") == 0) {
         return SECDAT_COMMAND_MASK;
@@ -920,6 +932,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_ATTR:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "attr", "KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|allow]");
+        break;
+    case SECDAT_COMMAND_FSCK:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "fsck", "[--orphaned] [--dangling] [--refcount] [--format v1|v2]");
         break;
     case SECDAT_COMMAND_MASK:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mask", "KEYREF");
@@ -1089,6 +1104,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  ls: list effective keys visible from the current domain view, optionally filtered by safe or unsafe storage\n"));
     secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe, or sandbox-injectable local state\n"));
     secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and sandbox injection attributes\n"));
+    secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and repair planning\n"));
     secdat_cli_print_detail_line(_("  mask: create a local tombstone to hide one inherited key\n"));
     secdat_cli_print_detail_line(_("  unmask: remove one local tombstone from the current domain\n"));
     secdat_cli_print_detail_line(_("  exists: check whether one resolved key is visible from the current domain view\n"));
@@ -1134,6 +1150,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "attr") == 0) {
         secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and sandbox injection attributes\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "fsck") == 0) {
+        secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and repair planning\n"));
         return;
     }
     if (target != NULL && strcmp(target, "mask") == 0) {
@@ -1420,6 +1440,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
     } else if (strcmp(argv[index], "attr") == 0) {
         cli->command = SECDAT_COMMAND_ATTR;
         index += 1;
+    } else if (strcmp(argv[index], "fsck") == 0) {
+        cli->command = SECDAT_COMMAND_FSCK;
+        index += 1;
     } else if (strcmp(argv[index], "mask") == 0) {
         cli->command = SECDAT_COMMAND_MASK;
         index += 1;
@@ -1659,6 +1682,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "list";
     case SECDAT_COMMAND_ATTR:
         return "attr";
+    case SECDAT_COMMAND_FSCK:
+        return "fsck";
     case SECDAT_COMMAND_MASK:
         return "mask";
     case SECDAT_COMMAND_UNMASK:

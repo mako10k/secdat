@@ -29,6 +29,7 @@ secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GL
 
 secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--sandbox-injectable]
 secdat [--dir DIR] [--store STORE] attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|allow]
+secdat [--dir DIR] [--store STORE] fsck [--orphaned] [--dangling] [--refcount] [--format v1|v2]
 
 secdat [--dir DIR] [--store STORE] exists KEYREF
 
@@ -97,6 +98,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `set KEYREF --public-value ...` is the clearer alias for plaintext-at-rest values that remain readable while locked
 - per-secret attributes include `key_visibility`, `value_access`, and `sandbox_inject`
 - `sandbox_inject` controls whether a key may be included in a future scoped sandbox import flow
+- `fsck` performs non-destructive store consistency checks used by the migration path
 - `exec` injects matched keys into the child process environment
 - `secdat --help SUBCOMMAND` and `secdat SUBCOMMAND --help` are equivalent for command-local usage output
 - unique long-option abbreviations are accepted when they resolve unambiguously within the current command
@@ -283,6 +285,24 @@ To make the requested behavior implementable, the following are treated as norma
 - `ls --metadata` prints key attributes alongside visible keys
 - `ls --sandbox-injectable` lists visible keys whose `sandbox_inject` is not `never`
 - `list --sandbox-injectable` lists current-domain local entries whose `sandbox_inject` is not `never`
+
+#### FR-3ac Store Consistency Checks
+
+- `secdat fsck` checks the current-domain local store namespace without decrypting secret values
+- the current implementation checks the v1 store format by default
+- `secdat fsck --format v1` explicitly selects v1 checks
+- `secdat fsck --format v2` is reserved for store v2 and is rejected until v2 files exist
+- without a filter, `fsck` runs orphaned, dangling, and refcount checks
+- `--orphaned` reports derived or leftover state that no longer has its authoritative counterpart
+- `--dangling` reports entries or metadata that point at invalid local data
+- `--refcount` is a clean no-op for v1 because v1 has no shared secret objects
+- clean output is `ok`
+- issue output is tab-separated and stable enough for scripts
+- v1 orphan checks report `.meta` sidecars without matching `.sec` entries as `orphaned-metadata	KEY	missing-entry`
+- v1 orphan checks report tombstones without a parent-visible key as `orphaned-tombstone	KEY	missing-parent`
+- v1 dangling checks report invalid `.sec` entry files as `dangling-entry	KEY	invalid-entry`
+- v1 dangling checks report invalid or unsupported attribute sidecars as `dangling-metadata	KEY	invalid-metadata`
+- `fsck` must not repair or delete data until explicit repair flags are implemented
 
 #### FR-7c Shell Export
 
