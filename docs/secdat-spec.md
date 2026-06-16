@@ -66,7 +66,7 @@ secdat [--dir DIR] wait-unlock [-t SECONDS|--timeout SECONDS] [-q|--quiet]
 secdat [--dir DIR] store create STORE
 secdat [--dir DIR] store delete STORE
 secdat [--dir DIR] store ls [GLOBPATTERN]
-secdat [--dir DIR] store migrate STORE --to-format v2 --dry-run
+secdat [--dir DIR] store migrate STORE --to-format v2 [--dry-run]
 
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
@@ -399,9 +399,9 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] store ls` lists store names defined in the resolved current domain
 - `secdat [--dir DIR] store ls PATTERN` and `secdat [--dir DIR] store ls --pattern PATTERN` are equivalent
 - `secdat [--dir DIR] store migrate STORE --to-format v2 --dry-run` validates one v1 store and reports the v2 migration plan without writing v2 files
-- migration dry-run output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, `injectable_entries`, and `issues`
-- migration dry-run refuses invalid v1 entries, invalid sidecars, orphaned sidecars, and orphaned tombstones with `cannot-migrate` issue rows
-- migration writes without `--dry-run` are rejected until the v2 writer and rollback/finalization path are implemented
+- `secdat [--dir DIR] store migrate STORE --to-format v2` writes side-by-side v2 domain-entry/object graph files, verifies them with v2 fsck, marks the store as v2, and leaves v1 value files in place
+- migration output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, `injectable_entries`, and `issues`
+- migration refuses invalid v1 entries, invalid sidecars, orphaned sidecars, orphaned tombstones, and pre-existing v2 migration artifacts
 - `store` management never creates, deletes, or lists stores in parent or child domains
 
 #### FR-10 Domain Management
@@ -1145,7 +1145,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The current migration implementation accepts only `--dry-run`. The read-only v2 scanner already honors a per-store `format` marker, and the future writer should keep that marker authoritative and reject mixed writes unless the store is in an explicit migration state.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. The current v2 object file records graph metadata only; moving value bytes into v2 object-owned encrypted/public areas is part of the later v2 read/write path.
 
 #### Implementation Plan
 

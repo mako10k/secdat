@@ -172,6 +172,15 @@ struct secdat_store_migrate_report {
     size_t issues;
 };
 
+struct secdat_store_migrate_v1_plan {
+    char store_root[PATH_MAX];
+    char entries_dir[PATH_MAX];
+    char tombstones_dir[PATH_MAX];
+    struct secdat_key_list entries;
+    struct secdat_key_list metadata;
+    struct secdat_key_list tombstones;
+};
+
 struct secdat_key_access_options {
     int allow_on_demand_unlock;
     int timeout_configured;
@@ -2640,12 +2649,6 @@ static int secdat_parse_store_migrate_options(const struct secdat_cli *cli, stru
         secdat_cli_print_try_help(cli, "store");
         return 2;
     }
-    if (!options->dry_run) {
-        fprintf(stderr, _("store migrate currently requires --dry-run\n"));
-        secdat_cli_print_try_help(cli, "store");
-        return 2;
-    }
-
     options->store_name = argv[optind];
     return 0;
 }
@@ -8665,6 +8668,45 @@ static int secdat_uuid_is_valid(const char *value)
     return 1;
 }
 
+static int secdat_generate_uuid_v4(char *buffer, size_t size)
+{
+    unsigned char raw[16];
+
+    if (size < 37) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    if (RAND_bytes(raw, sizeof(raw)) != 1) {
+        fprintf(stderr, _("failed to generate random bytes\n"));
+        return 1;
+    }
+    raw[6] = (unsigned char)((raw[6] & 0x0f) | 0x40);
+    raw[8] = (unsigned char)((raw[8] & 0x3f) | 0x80);
+    snprintf(
+        buffer,
+        size,
+        "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+        raw[0],
+        raw[1],
+        raw[2],
+        raw[3],
+        raw[4],
+        raw[5],
+        raw[6],
+        raw[7],
+        raw[8],
+        raw[9],
+        raw[10],
+        raw[11],
+        raw[12],
+        raw[13],
+        raw[14],
+        raw[15]
+    );
+    secdat_secure_clear(raw, sizeof(raw));
+    return 0;
+}
+
 static int secdat_parse_size_value(const char *value, size_t *parsed)
 {
     char *endptr = NULL;
@@ -8883,6 +8925,103 @@ static size_t secdat_v2_count_secret_references(const struct secdat_key_list *re
         }
     }
     return count;
+}
+
+static const char *secdat_v2_secret_inject_name(enum secdat_sandbox_inject value)
+{
+    return value == SECDAT_SANDBOX_INJECT_NEVER ? "never" : "allow";
+}
+
+static int secdat_write_v2_domain_entry_file(
+    const char *domain_entries_dir,
+    const char *entry_id,
+    const char *secret_id,
+    const char *key,
+    const struct secdat_secret_attrs *attrs,
+    char *path_out,
+    size_t path_out_size
+)
+{
+    char payload[PATH_MAX + 256];
+    char *encoded_key = NULL;
+    int written;
+    int status = 1;
+
+    if (snprintf(path_out, path_out_size, "%s/%s.dent", domain_entries_dir, entry_id) >= (int)path_out_size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    if (secdat_escape_component(key, &encoded_key) != 0) {
+        return 1;
+    }
+    written = snprintf(
+        payload,
+        sizeof(payload),
+        "%s\nentry_id=%s\nsecret_id=%s\nkey_visibility=%s\nkey=%s\nentry_inject=%s\n",
+        secdat_v2_domain_entry_magic,
+        entry_id,
+        secret_id,
+        secdat_key_visibility_name(attrs->key_visibility),
+        encoded_key,
+        secdat_sandbox_inject_name(attrs->sandbox_inject)
+    );
+    if (written < 0 || (size_t)written >= sizeof(payload)) {
+        fprintf(stderr, _("secret metadata is too large\n"));
+        goto cleanup;
+    }
+    status = secdat_atomic_write_file(path_out, (const unsigned char *)payload, (size_t)written);
+
+cleanup:
+    free(encoded_key);
+    return status;
+}
+
+static int secdat_write_v2_secret_object_file(
+    const char *secret_objects_dir,
+    const char *secret_id,
+    const struct secdat_secret_attrs *attrs,
+    char *path_out,
+    size_t path_out_size
+)
+{
+    char payload[512];
+    int written;
+
+    if (snprintf(path_out, path_out_size, "%s/%s.sec", secret_objects_dir, secret_id) >= (int)path_out_size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    written = snprintf(
+        payload,
+        sizeof(payload),
+        "%s\nsecret_id=%s\nvalue_access=%s\nsecret_inject=%s\nrefcount=1\n",
+        secdat_v2_secret_object_magic,
+        secret_id,
+        secdat_value_access_name(attrs->value_access),
+        secdat_v2_secret_inject_name(attrs->sandbox_inject)
+    );
+    if (written < 0 || (size_t)written >= sizeof(payload)) {
+        fprintf(stderr, _("secret metadata is too large\n"));
+        return 1;
+    }
+    return secdat_atomic_write_file(path_out, (const unsigned char *)payload, (size_t)written);
+}
+
+static int secdat_write_store_format_marker(const char *domain_id, const char *store_name, const char *format, const char *state)
+{
+    char format_path[PATH_MAX];
+    char payload[128];
+    int written;
+
+    if (secdat_store_format_path(domain_id, store_name, format_path, sizeof(format_path)) != 0) {
+        return 1;
+    }
+    written = snprintf(payload, sizeof(payload), "%s\nformat=%s\nstate=%s\n", secdat_store_format_magic, format, state);
+    if (written < 0 || (size_t)written >= sizeof(payload)) {
+        fprintf(stderr, _("secret metadata is too large\n"));
+        return 1;
+    }
+    return secdat_atomic_write_file(format_path, (const unsigned char *)payload, (size_t)written);
 }
 
 static void secdat_fsck_report_issue(struct secdat_fsck_report *report, const char *kind, const char *key, const char *detail)
@@ -10533,20 +10672,22 @@ static void secdat_store_migrate_report_issue(
     report->issues += 1;
 }
 
-static int secdat_store_migrate_dry_run_v2(
+static void secdat_store_migrate_v1_plan_free(struct secdat_store_migrate_v1_plan *plan)
+{
+    secdat_key_list_free(&plan->entries);
+    secdat_key_list_free(&plan->metadata);
+    secdat_key_list_free(&plan->tombstones);
+}
+
+static int secdat_store_migrate_prepare_v2(
     const struct secdat_domain_chain *chain,
     const struct secdat_store_migrate_options *options,
-    struct secdat_store_migrate_report *report
+    struct secdat_store_migrate_report *report,
+    struct secdat_store_migrate_v1_plan *plan
 )
 {
-    char store_root[PATH_MAX];
-    char entries_dir[PATH_MAX];
-    char tombstones_dir[PATH_MAX];
     char entry_path[PATH_MAX];
     char metadata_path[PATH_MAX];
-    struct secdat_key_list entries = {0};
-    struct secdat_key_list metadata = {0};
-    struct secdat_key_list tombstones = {0};
     struct stat store_status;
     struct secdat_secret_attrs attrs;
     const char *current_domain_id;
@@ -10556,18 +10697,19 @@ static int secdat_store_migrate_dry_run_v2(
     int status = 1;
 
     memset(report, 0, sizeof(*report));
+    memset(plan, 0, sizeof(*plan));
     if (chain->count == 0) {
         fprintf(stderr, _("store migrate requires a registered current domain\n"));
         return 1;
     }
     current_domain_id = chain->ids[0];
 
-    if (secdat_store_root(current_domain_id, options->store_name, store_root, sizeof(store_root)) != 0
-        || secdat_store_entries_dir(current_domain_id, options->store_name, entries_dir, sizeof(entries_dir)) != 0
-        || secdat_store_tombstones_dir(current_domain_id, options->store_name, tombstones_dir, sizeof(tombstones_dir)) != 0) {
+    if (secdat_store_root(current_domain_id, options->store_name, plan->store_root, sizeof(plan->store_root)) != 0
+        || secdat_store_entries_dir(current_domain_id, options->store_name, plan->entries_dir, sizeof(plan->entries_dir)) != 0
+        || secdat_store_tombstones_dir(current_domain_id, options->store_name, plan->tombstones_dir, sizeof(plan->tombstones_dir)) != 0) {
         return 1;
     }
-    if (stat(store_root, &store_status) != 0 || !S_ISDIR(store_status.st_mode)) {
+    if (stat(plan->store_root, &store_status) != 0 || !S_ISDIR(store_status.st_mode)) {
         fprintf(stderr, _("store not found: %s\n"), options->store_name);
         return 1;
     }
@@ -10582,42 +10724,42 @@ static int secdat_store_migrate_dry_run_v2(
         fprintf(stderr, _("store format is v2; migration is not needed\n"));
         return 2;
     }
-    if (secdat_collect_directory_keys(entries_dir, ".sec", &entries) != 0
-        || secdat_collect_directory_keys(entries_dir, ".meta", &metadata) != 0
-        || secdat_collect_directory_keys(tombstones_dir, ".tomb", &tombstones) != 0) {
-        goto cleanup;
+    if (secdat_collect_directory_keys(plan->entries_dir, ".sec", &plan->entries) != 0
+        || secdat_collect_directory_keys(plan->entries_dir, ".meta", &plan->metadata) != 0
+        || secdat_collect_directory_keys(plan->tombstones_dir, ".tomb", &plan->tombstones) != 0) {
+        return 1;
     }
 
-    if (entries.count > 1) {
-        qsort(entries.items, entries.count, sizeof(*entries.items), secdat_compare_strings);
+    if (plan->entries.count > 1) {
+        qsort(plan->entries.items, plan->entries.count, sizeof(*plan->entries.items), secdat_compare_strings);
     }
-    if (metadata.count > 1) {
-        qsort(metadata.items, metadata.count, sizeof(*metadata.items), secdat_compare_strings);
+    if (plan->metadata.count > 1) {
+        qsort(plan->metadata.items, plan->metadata.count, sizeof(*plan->metadata.items), secdat_compare_strings);
     }
-    if (tombstones.count > 1) {
-        qsort(tombstones.items, tombstones.count, sizeof(*tombstones.items), secdat_compare_strings);
+    if (plan->tombstones.count > 1) {
+        qsort(plan->tombstones.items, plan->tombstones.count, sizeof(*plan->tombstones.items), secdat_compare_strings);
     }
 
-    report->domain_entries = entries.count;
-    report->secret_objects = entries.count;
-    report->metadata_sidecars = metadata.count;
-    report->tombstones = tombstones.count;
+    report->domain_entries = plan->entries.count;
+    report->secret_objects = plan->entries.count;
+    report->metadata_sidecars = plan->metadata.count;
+    report->tombstones = plan->tombstones.count;
 
-    for (index = 0; index < entries.count; index += 1) {
-        if (secdat_build_entry_path(current_domain_id, options->store_name, entries.items[index], entry_path, sizeof(entry_path)) != 0
-            || secdat_build_entry_metadata_path(current_domain_id, options->store_name, entries.items[index], metadata_path, sizeof(metadata_path)) != 0) {
-            goto cleanup;
+    for (index = 0; index < plan->entries.count; index += 1) {
+        if (secdat_build_entry_path(current_domain_id, options->store_name, plan->entries.items[index], entry_path, sizeof(entry_path)) != 0
+            || secdat_build_entry_metadata_path(current_domain_id, options->store_name, plan->entries.items[index], metadata_path, sizeof(metadata_path)) != 0) {
+            return 1;
         }
         if (secdat_fsck_validate_v1_entry_file(entry_path, &unsafe_store) != 0) {
-            secdat_store_migrate_report_issue(report, "dangling-entry", entries.items[index], "invalid-entry");
+            secdat_store_migrate_report_issue(report, "dangling-entry", plan->entries.items[index], "invalid-entry");
             continue;
         }
         if (secdat_fsck_validate_v1_metadata_file(metadata_path, unsafe_store) != 0) {
-            secdat_store_migrate_report_issue(report, "dangling-metadata", entries.items[index], "invalid-metadata");
+            secdat_store_migrate_report_issue(report, "dangling-metadata", plan->entries.items[index], "invalid-metadata");
             continue;
         }
-        if (secdat_read_secret_attrs(current_domain_id, options->store_name, entries.items[index], unsafe_store, &attrs) != 0) {
-            goto cleanup;
+        if (secdat_read_secret_attrs(current_domain_id, options->store_name, plan->entries.items[index], unsafe_store, &attrs) != 0) {
+            return 1;
         }
         if (unsafe_store) {
             report->public_values += 1;
@@ -10629,20 +10771,37 @@ static int secdat_store_migrate_dry_run_v2(
         }
     }
 
-    for (index = 0; index < metadata.count; index += 1) {
-        if (!secdat_key_list_contains(&entries, metadata.items[index])) {
-            secdat_store_migrate_report_issue(report, "orphaned-metadata", metadata.items[index], "missing-entry");
+    for (index = 0; index < plan->metadata.count; index += 1) {
+        if (!secdat_key_list_contains(&plan->entries, plan->metadata.items[index])) {
+            secdat_store_migrate_report_issue(report, "orphaned-metadata", plan->metadata.items[index], "missing-entry");
         }
     }
-    for (index = 0; index < tombstones.count; index += 1) {
-        if (!secdat_parent_has_visible_key(chain, options->store_name, tombstones.items[index])) {
-            secdat_store_migrate_report_issue(report, "orphaned-tombstone", tombstones.items[index], "missing-parent");
+    for (index = 0; index < plan->tombstones.count; index += 1) {
+        if (!secdat_parent_has_visible_key(chain, options->store_name, plan->tombstones.items[index])) {
+            secdat_store_migrate_report_issue(report, "orphaned-tombstone", plan->tombstones.items[index], "missing-parent");
         }
     }
 
     if (report->issues > 0) {
         printf("issues=%zu\n", report->issues);
-        status = 1;
+        return 1;
+    }
+
+    status = 0;
+    return status;
+}
+
+static int secdat_store_migrate_dry_run_v2(
+    const struct secdat_domain_chain *chain,
+    const struct secdat_store_migrate_options *options,
+    struct secdat_store_migrate_report *report
+)
+{
+    struct secdat_store_migrate_v1_plan plan = {0};
+    int status;
+
+    status = secdat_store_migrate_prepare_v2(chain, options, report, &plan);
+    if (status != 0) {
         goto cleanup;
     }
 
@@ -10661,9 +10820,144 @@ static int secdat_store_migrate_dry_run_v2(
     status = 0;
 
 cleanup:
-    secdat_key_list_free(&entries);
-    secdat_key_list_free(&metadata);
-    secdat_key_list_free(&tombstones);
+    secdat_store_migrate_v1_plan_free(&plan);
+    return status;
+}
+
+static void secdat_store_migrate_rollback_v2(
+    const char *domain_id,
+    const char *store_name,
+    int had_format_marker,
+    int marker_written,
+    const struct secdat_key_list *written_paths
+)
+{
+    char format_path[PATH_MAX];
+    size_t index;
+
+    for (index = written_paths->count; index > 0; index -= 1) {
+        (void)secdat_remove_if_exists(written_paths->items[index - 1]);
+    }
+    if (!marker_written) {
+        return;
+    }
+    if (had_format_marker) {
+        (void)secdat_write_store_format_marker(domain_id, store_name, "v1", "ready");
+        return;
+    }
+    if (secdat_store_format_path(domain_id, store_name, format_path, sizeof(format_path)) == 0) {
+        (void)secdat_remove_if_exists(format_path);
+    }
+}
+
+static int secdat_store_migrate_write_v2(
+    const struct secdat_domain_chain *chain,
+    const struct secdat_store_migrate_options *options,
+    struct secdat_store_migrate_report *report
+)
+{
+    struct secdat_store_migrate_v1_plan plan = {0};
+    struct secdat_key_list written_paths = {0};
+    struct secdat_fsck_options fsck_options = {"v2", 1, 1, 1};
+    struct secdat_fsck_report fsck_report;
+    char domain_entries_dir[PATH_MAX];
+    char secret_objects_dir[PATH_MAX];
+    char entry_path[PATH_MAX];
+    char metadata_path[PATH_MAX];
+    char object_path[PATH_MAX];
+    char entry_id[37];
+    char secret_id[37];
+    struct secdat_secret_attrs attrs;
+    const char *current_domain_id;
+    size_t index;
+    int unsafe_store;
+    int had_format_marker = 0;
+    int marker_written = 0;
+    int status = 1;
+
+    status = secdat_store_migrate_prepare_v2(chain, options, report, &plan);
+    if (status != 0) {
+        goto cleanup;
+    }
+    status = 1;
+    current_domain_id = chain->ids[0];
+
+    if (secdat_v2_domain_entries_dir(current_domain_id, options->store_name, domain_entries_dir, sizeof(domain_entries_dir)) != 0
+        || secdat_v2_secret_objects_dir(current_domain_id, options->store_name, secret_objects_dir, sizeof(secret_objects_dir)) != 0) {
+        goto cleanup;
+    }
+    if (!secdat_directory_is_empty(domain_entries_dir) || !secdat_directory_is_empty(secret_objects_dir)) {
+        fprintf(stderr, _("v2 migration artifacts already exist\n"));
+        goto cleanup;
+    }
+    if (secdat_ensure_directory(domain_entries_dir, 0700) != 0
+        || secdat_ensure_directory(secret_objects_dir, 0700) != 0) {
+        goto cleanup;
+    }
+
+    for (index = 0; index < plan.entries.count; index += 1) {
+        if (secdat_build_entry_path(current_domain_id, options->store_name, plan.entries.items[index], entry_path, sizeof(entry_path)) != 0
+            || secdat_build_entry_metadata_path(current_domain_id, options->store_name, plan.entries.items[index], metadata_path, sizeof(metadata_path)) != 0) {
+            goto rollback;
+        }
+        if (secdat_fsck_validate_v1_entry_file(entry_path, &unsafe_store) != 0
+            || secdat_read_secret_attrs(current_domain_id, options->store_name, plan.entries.items[index], unsafe_store, &attrs) != 0) {
+            goto rollback;
+        }
+        if (secdat_generate_uuid_v4(entry_id, sizeof(entry_id)) != 0
+            || secdat_generate_uuid_v4(secret_id, sizeof(secret_id)) != 0) {
+            goto rollback;
+        }
+        if (snprintf(object_path, sizeof(object_path), "%s/%s.sec", secret_objects_dir, secret_id) >= (int)sizeof(object_path)
+            || secdat_key_list_append_duplicate(&written_paths, object_path) != 0
+            || secdat_write_v2_secret_object_file(secret_objects_dir, secret_id, &attrs, object_path, sizeof(object_path)) != 0) {
+            goto rollback;
+        }
+        if (snprintf(entry_path, sizeof(entry_path), "%s/%s.dent", domain_entries_dir, entry_id) >= (int)sizeof(entry_path)
+            || secdat_key_list_append_duplicate(&written_paths, entry_path) != 0
+            || secdat_write_v2_domain_entry_file(domain_entries_dir, entry_id, secret_id, plan.entries.items[index], &attrs, entry_path, sizeof(entry_path)) != 0) {
+            goto rollback;
+        }
+    }
+
+    if (secdat_store_format_path(current_domain_id, options->store_name, entry_path, sizeof(entry_path)) != 0) {
+        goto rollback;
+    }
+    had_format_marker = secdat_file_exists(entry_path);
+    if (secdat_write_store_format_marker(current_domain_id, options->store_name, "v2", "ready") != 0) {
+        goto rollback;
+    }
+    marker_written = 1;
+
+    memset(&fsck_report, 0, sizeof(fsck_report));
+    if (secdat_fsck_v2_store(chain, options->store_name, &fsck_options, &fsck_report) != 0 || fsck_report.issues != 0) {
+        fprintf(stderr, _("v2 migration verification failed\n"));
+        goto rollback;
+    }
+
+    puts("format=v1");
+    printf("target_format=%s\n", options->to_format);
+    puts("dry_run=no");
+    printf("store=%s\n", options->store_name);
+    printf("domain_entries=%zu\n", report->domain_entries);
+    printf("secret_objects=%zu\n", report->secret_objects);
+    printf("metadata_sidecars=%zu\n", report->metadata_sidecars);
+    printf("tombstones=%zu\n", report->tombstones);
+    printf("public_values=%zu\n", report->public_values);
+    printf("encrypted_values=%zu\n", report->encrypted_values);
+    printf("injectable_entries=%zu\n", report->injectable_entries);
+    puts("issues=0");
+    puts("verified=yes");
+    status = 0;
+    goto cleanup;
+
+rollback:
+    secdat_store_migrate_rollback_v2(current_domain_id, options->store_name, had_format_marker, marker_written, &written_paths);
+    status = 1;
+
+cleanup:
+    secdat_key_list_free(&written_paths);
+    secdat_store_migrate_v1_plan_free(&plan);
     return status;
 }
 
@@ -10687,7 +10981,11 @@ static int secdat_store_command_migrate(const struct secdat_cli *cli)
         return 1;
     }
 
-    status = secdat_store_migrate_dry_run_v2(&chain, &options, &report);
+    if (options.dry_run) {
+        status = secdat_store_migrate_dry_run_v2(&chain, &options, &report);
+    } else {
+        status = secdat_store_migrate_write_v2(&chain, &options, &report);
+    }
     secdat_domain_chain_free(&chain);
     return status;
 }

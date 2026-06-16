@@ -1010,7 +1010,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]");
         break;
     case SECDAT_COMMAND_STORE_MIGRATE:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store migrate", "STORE --to-format v2 --dry-run");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store migrate", "STORE --to-format v2 [--dry-run]");
         break;
     case SECDAT_COMMAND_DOMAIN_CREATE:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain create", "");

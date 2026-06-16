@@ -198,8 +198,10 @@ Report whether secret material is available from the current domain scope.
 .B store create|delete|ls|migrate
 Manage store namespaces inside the resolved current domain.
 .TP
-.B store migrate STORE \-\-to-format v2 \-\-dry-run
-Validate one v1 store and print the v2 migration plan without writing v2 files. Output includes domain-entry, secret-object, sidecar, tombstone, public-value, encrypted-value, sandbox-injectable, and issue counts. Migration writes are rejected until the v2 writer is implemented.
+.B store migrate STORE \-\-to-format v2 [\-\-dry-run]
+Validate one v1 store and print the v2 migration plan. Without
+.B --dry-run ,
+write side-by-side v2 domain-entry/object graph files, verify them with v2 fsck, mark the store as v2, and leave v1 value files in place. Output includes domain-entry, secret-object, sidecar, tombstone, public-value, encrypted-value, sandbox-injectable, and issue counts.
 .TP
 .B domain create|delete|status
 Manage domain roots and resolution state.

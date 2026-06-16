@@ -11,11 +11,11 @@ Current status:
 - gettext-based localization is wired in for user-facing CLI messages
 - `ls`, `get`, `set`, `rm`, `mv`, `cp`, and `exec` are implemented with encrypted local storage
 - `attr` is implemented for per-secret metadata such as value access and sandbox injection eligibility
-- `fsck` is implemented for non-destructive v1 store metadata checks used by the v2 migration path
+- `fsck` is implemented for non-destructive v1/v2 store metadata checks used by the v2 migration path
 - `export` is implemented for shell-friendly setup without embedding raw secret values
 - `save` and `load` are implemented for passphrase-protected secret bundles scoped to the current view
 - `domain create`, `domain delete`, `domain ls`, and `domain status` are implemented
-- `store create`, `store delete`, `store ls`, and `store migrate --dry-run` are implemented
+- `store create`, `store delete`, `store ls`, and `store migrate` are implemented
 - `unlock`, `lock`, and `status` are implemented with domain-scoped session agents and a wrapped persistent master key
 - normal store commands resolve the current domain from `--dir` or the working directory and fall back through parent domains
 - stores are domain-local namespaces, not global objects shared across all domains
@@ -251,10 +251,11 @@ For migration preparation, `fsck` performs read-only checks on the current domai
 ./src/secdat fsck --dangling
 ./src/secdat fsck --refcount
 ./src/secdat store migrate default --to-format v2 --dry-run
+./src/secdat store migrate default --to-format v2
 ```
 
 Clean output is `ok`. v1 issues are tab-separated rows such as `orphaned-metadata	KEY	missing-entry`, `orphaned-tombstone	KEY	missing-parent`, `dangling-entry	KEY	invalid-entry`, or `dangling-metadata	KEY	invalid-metadata`. `--refcount` is currently a clean no-op for v1 because secret objects and hard links arrive with store v2. Stores marked with the v2 format marker can also be checked with `fsck --format v2`, which reports domain-entry/object graph issues such as `orphaned-secret	UUID	missing-entry`, `dangling-entry	ENTRY_ID	missing-secret`, and `refcount-mismatch	SECRET_ID	expected=N actual=M`.
-`store migrate STORE --to-format v2 --dry-run` does not write v2 data yet; it validates the selected v1 store and prints the number of domain entries, secret objects, metadata sidecars, tombstones, public values, encrypted values, and sandbox-injectable entries that would be created or preserved by the v2 migration path.
+`store migrate STORE --to-format v2 --dry-run` validates the selected v1 store and prints the number of domain entries, secret objects, metadata sidecars, tombstones, public values, encrypted values, and sandbox-injectable entries that would be created or preserved by the v2 migration path. Without `--dry-run`, migration writes side-by-side v2 domain-entry/object graph files, verifies them with `fsck --format v2`, marks the store as v2, and leaves the v1 value files in place for compatibility.
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
 When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--domain`, then `--dir`, then `--store`, and finally the current defaults are used.
