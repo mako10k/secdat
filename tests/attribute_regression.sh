@@ -98,14 +98,30 @@ if rc != 0 or stderr != "":
     fail(f"ls sandbox-injectable after non-inject failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_eq(stdout, "API_TOKEN\n", "non-inject key excluded")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--sandbox-inject", "allow"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--sandbox-inject", "bulk"])
 if rc != 0 or stdout != "" or stderr != "":
-    fail(f"attr allow failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"attr bulk failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "list", "--sandbox-injectable"])
 if rc != 0 or stderr != "":
     fail(f"list sandbox-injectable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "API_TOKEN\n", "list includes explicit key")
-assert_contains(stdout, "NO_INJECT\n", "list includes allow key")
+assert_contains(stdout, "NO_INJECT\n", "list includes bulk key")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--sandbox-inject", "allow"])
+if rc == 0 or "invalid sandbox inject policy: allow" not in stderr:
+    fail(f"legacy allow CLI input should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+legacy_meta_files = list(Path(env["XDG_DATA_HOME"]).rglob("NO_INJECT.meta"))
+if len(legacy_meta_files) != 1:
+    fail(f"expected one NO_INJECT.meta, found {legacy_meta_files!r}")
+legacy_meta_files[0].write_text(
+    "SECDATATTR1\nkey_visibility=always\nvalue_access=unlocked\nsandbox_inject=allow\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT"])
+if rc != 0 or stderr != "":
+    fail(f"legacy allow metadata readback failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "sandbox_inject=bulk\n", "legacy allow metadata normalizes to bulk")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "PUBLIC_ENDPOINT", "--public-value", "--value", "https://example.invalid"])
 if rc != 0 or stdout != "" or stderr != "":

@@ -124,7 +124,12 @@ enum secdat_value_access {
 enum secdat_sandbox_inject {
     SECDAT_SANDBOX_INJECT_NEVER = 0,
     SECDAT_SANDBOX_INJECT_EXPLICIT,
-    SECDAT_SANDBOX_INJECT_ALLOW,
+    SECDAT_SANDBOX_INJECT_BULK,
+};
+
+enum secdat_secret_inject {
+    SECDAT_SECRET_INJECT_NEVER = 0,
+    SECDAT_SECRET_INJECT_ALLOW,
 };
 
 struct secdat_secret_attrs {
@@ -208,7 +213,7 @@ struct secdat_v2_domain_entry_info {
 struct secdat_v2_secret_object_info {
     char secret_id[64];
     enum secdat_value_access value_access;
-    enum secdat_sandbox_inject secret_inject;
+    enum secdat_secret_inject secret_inject;
     int refcount_present;
     int has_value_payload;
     size_t refcount;
@@ -465,7 +470,9 @@ static const char *secdat_value_access_name(enum secdat_value_access value);
 static const char *secdat_sandbox_inject_name(enum secdat_sandbox_inject value);
 static int secdat_parse_key_visibility(const char *value, enum secdat_key_visibility *parsed);
 static int secdat_parse_value_access(const char *value, enum secdat_value_access *parsed);
+static int secdat_parse_sandbox_inject_token(const char *value, enum secdat_sandbox_inject *parsed, int accept_allow_alias);
 static int secdat_parse_sandbox_inject(const char *value, enum secdat_sandbox_inject *parsed);
+static int secdat_parse_sandbox_inject_metadata(const char *value, enum secdat_sandbox_inject *parsed);
 static int secdat_load_resolved_secret_attrs(
     const struct secdat_domain_chain *chain,
     const char *store_name,
@@ -3231,8 +3238,8 @@ static const char *secdat_sandbox_inject_name(enum secdat_sandbox_inject value)
         return "never";
     case SECDAT_SANDBOX_INJECT_EXPLICIT:
         return "explicit";
-    case SECDAT_SANDBOX_INJECT_ALLOW:
-        return "allow";
+    case SECDAT_SANDBOX_INJECT_BULK:
+        return "bulk";
     default:
         return "unknown";
     }
@@ -3266,7 +3273,7 @@ static int secdat_parse_value_access(const char *value, enum secdat_value_access
     return 1;
 }
 
-static int secdat_parse_sandbox_inject(const char *value, enum secdat_sandbox_inject *parsed)
+static int secdat_parse_sandbox_inject_token(const char *value, enum secdat_sandbox_inject *parsed, int accept_allow_alias)
 {
     if (strcmp(value, "never") == 0) {
         *parsed = SECDAT_SANDBOX_INJECT_NEVER;
@@ -3276,8 +3283,29 @@ static int secdat_parse_sandbox_inject(const char *value, enum secdat_sandbox_in
         *parsed = SECDAT_SANDBOX_INJECT_EXPLICIT;
         return 0;
     }
-    if (strcmp(value, "allow") == 0) {
-        *parsed = SECDAT_SANDBOX_INJECT_ALLOW;
+    if (strcmp(value, "bulk") == 0) {
+        *parsed = SECDAT_SANDBOX_INJECT_BULK;
+        return 0;
+    }
+    if (accept_allow_alias && strcmp(value, "allow") == 0) {
+        *parsed = SECDAT_SANDBOX_INJECT_BULK;
+        return 0;
+    }
+    return 1;
+}
+
+static int secdat_parse_sandbox_inject(const char *value, enum secdat_sandbox_inject *parsed)
+{
+    if (secdat_parse_sandbox_inject_token(value, parsed, 0) == 0) {
+        return 0;
+    }
+    fprintf(stderr, _("invalid sandbox inject policy: %s\n"), value);
+    return 1;
+}
+
+static int secdat_parse_sandbox_inject_metadata(const char *value, enum secdat_sandbox_inject *parsed)
+{
+    if (secdat_parse_sandbox_inject_token(value, parsed, 1) == 0) {
         return 0;
     }
     fprintf(stderr, _("invalid sandbox inject policy: %s\n"), value);
@@ -3338,7 +3366,7 @@ static int secdat_parse_secret_attr_line(char *line, struct secdat_secret_attrs 
         return secdat_parse_value_access(separator, &attrs->value_access);
     }
     if (strcmp(line, "sandbox_inject") == 0) {
-        return secdat_parse_sandbox_inject(separator, &attrs->sandbox_inject);
+        return secdat_parse_sandbox_inject_metadata(separator, &attrs->sandbox_inject);
     }
 
     fprintf(stderr, _("unsupported secret metadata field: %s\n"), line);
@@ -9122,6 +9150,7 @@ static int secdat_fsck_validate_v1_metadata_file(const char *metadata_path, int 
         if (strcmp(line, "sandbox_inject") == 0) {
             if (strcmp(separator, "never") != 0
                 && strcmp(separator, "explicit") != 0
+                && strcmp(separator, "bulk") != 0
                 && strcmp(separator, "allow") != 0) {
                 valid = 0;
                 break;
@@ -9549,8 +9578,8 @@ static int secdat_read_v2_domain_entry_info(const char *path, const char *file_e
                 info->entry_inject = SECDAT_SANDBOX_INJECT_NEVER;
             } else if (strcmp(separator, "explicit") == 0) {
                 info->entry_inject = SECDAT_SANDBOX_INJECT_EXPLICIT;
-            } else if (strcmp(separator, "allow") == 0) {
-                info->entry_inject = SECDAT_SANDBOX_INJECT_ALLOW;
+            } else if (strcmp(separator, "bulk") == 0 || strcmp(separator, "allow") == 0) {
+                info->entry_inject = SECDAT_SANDBOX_INJECT_BULK;
             } else {
                 goto cleanup;
             }
@@ -9636,9 +9665,9 @@ static int secdat_parse_v2_secret_object_info_text(char *text, const char *file_
                 goto cleanup;
             }
             if (strcmp(separator, "never") == 0) {
-                info->secret_inject = SECDAT_SANDBOX_INJECT_NEVER;
+                info->secret_inject = SECDAT_SECRET_INJECT_NEVER;
             } else if (strcmp(separator, "allow") == 0) {
-                info->secret_inject = SECDAT_SANDBOX_INJECT_ALLOW;
+                info->secret_inject = SECDAT_SECRET_INJECT_ALLOW;
             } else {
                 goto cleanup;
             }
@@ -10078,7 +10107,7 @@ static int secdat_load_v2_secret_attrs(
 
     attrs->key_visibility = entry->key_visibility;
     attrs->value_access = object.value_access;
-    attrs->sandbox_inject = object.secret_inject == SECDAT_SANDBOX_INJECT_NEVER
+    attrs->sandbox_inject = object.secret_inject == SECDAT_SECRET_INJECT_NEVER
         ? SECDAT_SANDBOX_INJECT_NEVER
         : entry->entry_inject;
     if (unsafe_store != NULL) {
@@ -10087,9 +10116,16 @@ static int secdat_load_v2_secret_attrs(
     return 0;
 }
 
-static const char *secdat_v2_secret_inject_name(enum secdat_sandbox_inject value)
+static enum secdat_secret_inject secdat_secret_inject_from_attrs(const struct secdat_secret_attrs *attrs)
 {
-    return value == SECDAT_SANDBOX_INJECT_NEVER ? "never" : "allow";
+    return attrs->sandbox_inject == SECDAT_SANDBOX_INJECT_NEVER
+        ? SECDAT_SECRET_INJECT_NEVER
+        : SECDAT_SECRET_INJECT_ALLOW;
+}
+
+static const char *secdat_v2_secret_inject_name(enum secdat_secret_inject value)
+{
+    return value == SECDAT_SECRET_INJECT_NEVER ? "never" : "allow";
 }
 
 static int secdat_v2_generate_object_key(unsigned char object_key[SECDAT_V2_OBJECT_KEY_LEN])
@@ -10362,7 +10398,7 @@ static int secdat_write_v2_secret_object_file(
             secdat_v2_secret_object_magic,
             secret_id,
             secdat_value_access_name(attrs->value_access),
-            secdat_v2_secret_inject_name(attrs->sandbox_inject),
+            secdat_v2_secret_inject_name(secdat_secret_inject_from_attrs(attrs)),
             refcount,
             payload_length
         );
@@ -10376,7 +10412,7 @@ static int secdat_write_v2_secret_object_file(
             secdat_v2_secret_object_magic,
             secret_id,
             secdat_value_access_name(attrs->value_access),
-            secdat_v2_secret_inject_name(attrs->sandbox_inject),
+            secdat_v2_secret_inject_name(secdat_secret_inject_from_attrs(attrs)),
             payload_length
         );
     }
@@ -11976,9 +12012,9 @@ static int secdat_update_v2_secret_refcount(
     }
     attrs.key_visibility = SECDAT_KEY_VISIBILITY_ALWAYS;
     attrs.value_access = object.value_access;
-    attrs.sandbox_inject = object.secret_inject == SECDAT_SANDBOX_INJECT_NEVER
+    attrs.sandbox_inject = object.secret_inject == SECDAT_SECRET_INJECT_NEVER
         ? SECDAT_SANDBOX_INJECT_NEVER
-        : SECDAT_SANDBOX_INJECT_ALLOW;
+        : SECDAT_SANDBOX_INJECT_BULK;
     status = secdat_write_v2_secret_object_file(
         secret_objects_dir,
         secret_id,
@@ -12420,7 +12456,7 @@ static int secdat_link_v2_key(
     attrs.key_visibility = source_entry->key_visibility;
     attrs.value_access = object.value_access;
     attrs.sandbox_inject = source_entry->entry_inject;
-    if (object.secret_inject == SECDAT_SANDBOX_INJECT_NEVER) {
+    if (object.secret_inject == SECDAT_SECRET_INJECT_NEVER) {
         attrs.sandbox_inject = SECDAT_SANDBOX_INJECT_NEVER;
     }
     if (object.value_access == SECDAT_VALUE_ACCESS_UNLOCKED) {

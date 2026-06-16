@@ -28,7 +28,7 @@ The intended command set is:
 secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--sandbox-injectable] [--canonical|--canonical-domain|--canonical-store]
 
 secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--sandbox-injectable]
-secdat [--dir DIR] [--store STORE] attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|allow]
+secdat [--dir DIR] [--store STORE] attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|bulk]
 secdat [--dir DIR] [--store STORE] fsck [--orphaned] [--dangling] [--refcount] [--format v1|v2]
 
 secdat [--dir DIR] [--store STORE] exists KEYREF
@@ -46,7 +46,7 @@ secdat [--dir DIR] [--store STORE] get [-w|--on-demand-unlock] [-t SECONDS|--unl
 secdat [--dir DIR] [--store STORE] set KEYREF
 secdat [--dir DIR] [--store STORE] set KEYREF VALUE
 secdat [--dir DIR] [--store STORE] set KEYREF [-u|--unsafe] VALUE
-secdat [--dir DIR] [--store STORE] set KEYREF [--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|allow] VALUE
+secdat [--dir DIR] [--store STORE] set KEYREF [--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|bulk] VALUE
 secdat [--dir DIR] [--store STORE] set KEYREF [--stdin|-i]
 secdat [--dir DIR] [--store STORE] set KEYREF [--env|-e] ENVNAME
 secdat [--dir DIR] [--store STORE] set KEYREF [--value|-v] VALUE
@@ -276,13 +276,13 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat attr KEYREF --sandbox-inject MODE` updates whether the key can be included in scoped sandbox import bundles
 - `key_visibility` accepts `always` and `unlocked`
 - `value_access` accepts `unlocked` and `always`
-- `sandbox_inject` accepts `never`, `explicit`, and `allow`
+- `sandbox_inject` accepts `never`, `explicit`, and `bulk`
 - v1 storage supports only `key_visibility=always`; `key_visibility=unlocked` is supported only by v2 stores
 - `value_access=unlocked` stores the value encrypted-at-rest and requires the master key or an active session for reads
 - `value_access=always` stores the value plaintext-at-rest and permits reads while locked; it is equivalent to the current unsafe/public-value storage mode
 - `sandbox_inject=never` excludes the key from sandbox import selection
 - `sandbox_inject=explicit` allows future sandbox import only when the key is named explicitly
-- `sandbox_inject=allow` allows future sandbox import from explicit key selection and from allowlisted pattern selection
+- `sandbox_inject=bulk` allows future sandbox import from explicit key selection and from selector, pattern, or profile based selection
 - attribute updates are allowed only for current-domain local entries; inherited entries must be materialized locally before their attributes can be changed
 - v2 stores can update `key_visibility`, domain-entry `sandbox_inject`, and object-owned `value_access` through the domain-entry/object graph
 - v2 `key_visibility=unlocked` encrypts the key name in the domain entry; locked list/lookup operations skip hidden keys
@@ -1097,10 +1097,11 @@ The final binary format is intentionally undecided, but each file must have a ma
 
 For injection, v2 should replace the single v1 `sandbox_inject` field with two checks:
 
-- `entry_inject = never | explicit | allow` on the domain entry
+- `entry_inject = never | explicit | bulk` on the domain entry
 - `secret_inject = never | allow` on the secret object
 
 An injection import/export is permitted only when both checks allow it. This prevents a permissive link from exporting a value that the secret object itself forbids, and prevents a permissive secret object from bypassing a restrictive domain entry.
+`secret_inject` intentionally remains a boolean object-level authorization (`never|allow`) and does not mirror entry-side selector granularity.
 
 #### Domain Key and Object Key Handling
 
@@ -1149,7 +1150,7 @@ Migration requirements:
 - migration creates v2 domain entries and secret objects from v1 entries without deleting v1 data first
 - rollback keeps the v1 store usable until the user explicitly finalizes the migration
 - every migrated v1 key becomes one secret object and one domain entry
-- v1 `sandbox_inject` maps to `entry_inject`, while `secret_inject` defaults to `allow` only for previously injectable entries and `never` otherwise
+- v1 `sandbox_inject` maps to `entry_inject`, with legacy metadata value `allow` normalized to `bulk` when encountered, while `secret_inject` defaults to `allow` only for previously injectable entries and `never` otherwise
 - v1 `value_access=always` becomes a secret object with a public value area
 - v1 encrypted entries become secret objects with encrypted value areas
 - v1 `key_visibility=always` maps to public domain-entry key names
@@ -1220,12 +1221,11 @@ The following should be fixed before implementation is finalized:
 
 1. whether hidden-key exact lookup should continue decrypting candidate domain entries, or whether a keyed lookup tag is worth the equality-leakage tradeoff
 2. whether direct `secret_id` references should remain metadata-only unless a source domain entry is also provided
-3. whether `secret_inject` should be only `never|allow` or should mirror `entry_inject=never|explicit|allow`
-4. whether cached refcounts should be stored in the object file or only reported by fsck
-5. whether orphan cleanup should be a separate destructive command instead of `fsck --repair`
-6. how save/load bundles should encode linked objects without accidentally turning hard links into copies
-7. whether explicit locking such as `flock` should become mandatory during v2 migration and fsck repair
-8. whether `domain delete` should fail when child domains or linked secret objects exist, or whether forced recursive deletion should be a separate command
+3. whether cached refcounts should be stored in the object file or only reported by fsck
+4. whether orphan cleanup should be a separate destructive command instead of `fsck --repair`
+5. how save/load bundles should encode linked objects without accidentally turning hard links into copies
+6. whether explicit locking such as `flock` should become mandatory during v2 migration and fsck repair
+7. whether `domain delete` should fail when child domains or linked secret objects exist, or whether forced recursive deletion should be a separate command
 
 ## 9. Recommended Direction
 

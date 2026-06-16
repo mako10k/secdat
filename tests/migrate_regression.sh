@@ -235,11 +235,11 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "att
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inject=never\n" or stderr != "":
     fail(f"migrated v2 attr failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--sandbox-inject", "allow"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--sandbox-inject", "bulk"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"migrated v2 attr inject update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=allow\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=bulk\n" or stderr != "":
     fail(f"migrated v2 attr after inject update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "ls", "--sandbox-injectable"])
 if rc != 0 or stdout != "APP_TOKEN\n" or stderr != "":
@@ -252,7 +252,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "att
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"migrated v2 value_access public update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inject=allow\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inject=bulk\n" or stderr != "":
     fail(f"migrated v2 attr after value_access public update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get", "APP_TOKEN"], {"SECDAT_MASTER_KEY": ""})
 if rc != 0 or stdout != "secret-token" or stderr != "":
@@ -274,7 +274,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "att
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"migrated v2 key_visibility hidden update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=unlocked\nvalue_access=unlocked\nsandbox_inject=allow\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=unlocked\nvalue_access=unlocked\nsandbox_inject=bulk\n" or stderr != "":
     fail(f"migrated v2 attr after key_visibility hidden update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 app_token_entry_texts = [
     path.read_text(encoding="utf-8")
@@ -299,7 +299,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "att
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"migrated v2 key_visibility visible restore failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=allow\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=bulk\n" or stderr != "":
     fail(f"migrated v2 attr after key_visibility visible restore failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 app_token_entry_texts = [
     path.read_text(encoding="utf-8")

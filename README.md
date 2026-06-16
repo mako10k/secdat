@@ -224,17 +224,17 @@ Secret entries now have metadata attributes:
 ```text
 key_visibility = always | unlocked
 value_access   = unlocked | always
-sandbox_inject = never | explicit | allow
+sandbox_inject = never | explicit | bulk
 ```
 
-The v1 storage layout keeps key names visible on disk, so `key_visibility=unlocked` is rejected there. The v2 graph layout reads and writes split domain-entry/secret-object attributes, including hidden key names: `key_visibility=always` stores a plaintext domain-entry key name, while `key_visibility=unlocked` stores the key name as an encrypted `encrypted_key` field and requires the master key or an active session to list or resolve that key. `value_access=unlocked` is the normal encrypted-at-rest mode; `value_access=always` is the public/plaintext-at-rest mode used by `--unsafe` and `--public-value`. `sandbox_inject` marks whether a future sandbox import flow may include the key: `never` excludes it, `explicit` allows only explicit key selection, and `allow` also allows pattern-based selection.
+The v1 storage layout keeps key names visible on disk, so `key_visibility=unlocked` is rejected there. The v2 graph layout reads and writes split domain-entry/secret-object attributes, including hidden key names: `key_visibility=always` stores a plaintext domain-entry key name, while `key_visibility=unlocked` stores the key name as an encrypted `encrypted_key` field and requires the master key or an active session to list or resolve that key. `value_access=unlocked` is the normal encrypted-at-rest mode; `value_access=always` is the public/plaintext-at-rest mode used by `--unsafe` and `--public-value`. `sandbox_inject` marks whether a future sandbox import flow may include the key: `never` excludes it, `explicit` allows only explicit key selection, and `bulk` also allows selector, pattern, or profile based selection.
 
 Use `attr` to inspect or update attributes:
 
 ```sh
 ./src/secdat set API_TOKEN --value token-123 --sandbox-inject explicit
 ./src/secdat attr API_TOKEN
-./src/secdat attr API_TOKEN --sandbox-inject allow
+./src/secdat attr API_TOKEN --sandbox-inject bulk
 ./src/secdat set PUBLIC_ENDPOINT --public-value --value https://example.invalid/api
 ./src/secdat attr PUBLIC_ENDPOINT --value-access unlocked
 ./src/secdat ls --metadata
