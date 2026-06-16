@@ -398,6 +398,13 @@ static int secdat_lookup_v2_domain_entry(
     char *entry_path,
     size_t entry_path_size
 );
+static int secdat_build_v2_secret_value_path(
+    const char *domain_id,
+    const char *store_name,
+    const char *secret_id,
+    char *buffer,
+    size_t size
+);
 static int secdat_load_v2_secret_attrs(
     const char *domain_id,
     const char *store_name,
@@ -7613,6 +7620,38 @@ cleanup:
     return status;
 }
 
+static int secdat_encode_value_for_storage(
+    const char *domain_id,
+    unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store,
+    unsigned char **encrypted,
+    size_t *encrypted_length
+)
+{
+    unsigned char *buffer;
+
+    if (unsafe_store) {
+        *encrypted_length = SECDAT_HEADER_LEN + plaintext_length;
+        buffer = calloc(1, *encrypted_length == 0 ? 1 : *encrypted_length);
+        if (buffer == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        memcpy(buffer, secdat_entry_magic, sizeof(secdat_entry_magic));
+        buffer[8] = SECDAT_ENTRY_VERSION;
+        buffer[9] = SECDAT_ENTRY_ALGORITHM_PLAINTEXT;
+        buffer[10] = 0;
+        buffer[11] = 0;
+        secdat_write_be32(buffer + 12, (uint32_t)plaintext_length);
+        memcpy(buffer + SECDAT_HEADER_LEN, plaintext, plaintext_length);
+        *encrypted = buffer;
+        return 0;
+    }
+
+    return secdat_encrypt_value(domain_id, plaintext, plaintext_length, encrypted, encrypted_length);
+}
+
 static int secdat_read_stdin(unsigned char **buffer, size_t *length)
 {
     unsigned char chunk[4096];
@@ -7855,6 +7894,7 @@ static int secdat_resolve_effective_entry(
 {
     char entry_path[PATH_MAX];
     char v2_entry_path[PATH_MAX];
+    char v2_value_path[PATH_MAX];
     char tombstone_path[PATH_MAX];
     struct secdat_overlay_lookup_result overlay = {0};
     struct secdat_v2_domain_entry_info v2_info;
@@ -7913,15 +7953,26 @@ static int secdat_resolve_effective_entry(
                     || secdat_copy_string(entry->secret_id, sizeof(entry->secret_id), v2_info.secret_id) != 0) {
                     return 1;
                 }
-                if (secdat_build_entry_path(chain->ids[index], store_name, key, entry_path, sizeof(entry_path)) != 0) {
+                if (secdat_build_v2_secret_value_path(chain->ids[index], store_name, entry->secret_id, v2_value_path, sizeof(v2_value_path)) != 0) {
                     return 1;
                 }
-                if (secdat_file_exists(entry_path)) {
-                    if (strlen(entry_path) >= sizeof(entry->path)) {
+                if (secdat_file_exists(v2_value_path)) {
+                    if (strlen(v2_value_path) >= sizeof(entry->path)) {
                         fprintf(stderr, _("path is too long\n"));
                         return 1;
                     }
-                    strcpy(entry->path, entry_path);
+                    strcpy(entry->path, v2_value_path);
+                } else {
+                    if (secdat_build_entry_path(chain->ids[index], store_name, key, entry_path, sizeof(entry_path)) != 0) {
+                        return 1;
+                    }
+                    if (secdat_file_exists(entry_path)) {
+                        if (strlen(entry_path) >= sizeof(entry->path)) {
+                            fprintf(stderr, _("path is too long\n"));
+                            return 1;
+                        }
+                        strcpy(entry->path, entry_path);
+                    }
                 }
                 return 0;
             }
@@ -9128,6 +9179,20 @@ static int secdat_build_v2_secret_object_path(const char *domain_id, const char 
     return 0;
 }
 
+static int secdat_build_v2_secret_value_path(const char *domain_id, const char *store_name, const char *secret_id, char *buffer, size_t size)
+{
+    char secret_objects_dir[PATH_MAX];
+
+    if (secdat_v2_secret_objects_dir(domain_id, store_name, secret_objects_dir, sizeof(secret_objects_dir)) != 0) {
+        return 1;
+    }
+    if (snprintf(buffer, size, "%s/%s.value", secret_objects_dir, secret_id) >= (int)size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    return 0;
+}
+
 static int secdat_collect_v2_visible_keys(const char *domain_id, const char *store_name, struct secdat_key_list *keys)
 {
     char domain_entries_dir[PATH_MAX];
@@ -9405,6 +9470,116 @@ static int secdat_update_v2_secret_attrs(
         return 1;
     }
     return 0;
+}
+
+static int secdat_store_v2_plaintext_with_attrs(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store,
+    const struct secdat_secret_attrs *attrs
+)
+{
+    char domain_entries_dir[PATH_MAX];
+    char secret_objects_dir[PATH_MAX];
+    char entry_path[PATH_MAX];
+    char object_path[PATH_MAX];
+    char value_path[PATH_MAX];
+    char tombstone_path[PATH_MAX];
+    char entry_id[37];
+    char secret_id[37];
+    struct secdat_secret_attrs write_attrs;
+    struct secdat_v2_domain_entry_info entry;
+    struct secdat_v2_secret_object_info object;
+    unsigned char *encrypted = NULL;
+    size_t encrypted_length = 0;
+    int refcount_present = 1;
+    size_t refcount = 1;
+    int lookup_status;
+    int status = 1;
+
+    if (attrs != NULL) {
+        write_attrs = *attrs;
+    } else {
+        secdat_secret_attrs_default(unsafe_store, &write_attrs);
+    }
+    if (!secdat_v2_secret_attrs_supported(&write_attrs)) {
+        return 1;
+    }
+    if ((write_attrs.value_access == SECDAT_VALUE_ACCESS_ALWAYS) != (unsafe_store != 0)) {
+        fprintf(stderr, _("secret value_access does not match storage mode\n"));
+        return 1;
+    }
+    if (secdat_ensure_store_dirs(domain_id, store_name) != 0
+        || secdat_v2_domain_entries_dir(domain_id, store_name, domain_entries_dir, sizeof(domain_entries_dir)) != 0
+        || secdat_v2_secret_objects_dir(domain_id, store_name, secret_objects_dir, sizeof(secret_objects_dir)) != 0
+        || secdat_ensure_directory(domain_entries_dir, 0700) != 0
+        || secdat_ensure_directory(secret_objects_dir, 0700) != 0) {
+        return 1;
+    }
+
+    lookup_status = secdat_lookup_v2_domain_entry(domain_id, store_name, key, &entry, entry_path, sizeof(entry_path));
+    if (lookup_status > 1) {
+        return 1;
+    }
+    if (lookup_status == 0) {
+        if (secdat_copy_string(entry_id, sizeof(entry_id), entry.entry_id) != 0
+            || secdat_copy_string(secret_id, sizeof(secret_id), entry.secret_id) != 0
+            || secdat_build_v2_secret_object_path(domain_id, store_name, secret_id, object_path, sizeof(object_path)) != 0
+            || secdat_read_v2_secret_object_info(object_path, secret_id, &object) != 0) {
+            fprintf(stderr, _("invalid v2 secret object: %s\n"), entry.secret_id);
+            return 1;
+        }
+        refcount_present = object.refcount_present;
+        refcount = object.refcount;
+    } else {
+        if (secdat_generate_uuid_v4(entry_id, sizeof(entry_id)) != 0
+            || secdat_generate_uuid_v4(secret_id, sizeof(secret_id)) != 0) {
+            return 1;
+        }
+        if (snprintf(entry_path, sizeof(entry_path), "%s/%s.dent", domain_entries_dir, entry_id) >= (int)sizeof(entry_path)
+            || snprintf(object_path, sizeof(object_path), "%s/%s.sec", secret_objects_dir, secret_id) >= (int)sizeof(object_path)) {
+            fprintf(stderr, _("path is too long\n"));
+            return 1;
+        }
+    }
+
+    if (secdat_build_v2_secret_value_path(domain_id, store_name, secret_id, value_path, sizeof(value_path)) != 0
+        || secdat_build_tombstone_path(domain_id, store_name, key, tombstone_path, sizeof(tombstone_path)) != 0
+        || secdat_encode_value_for_storage(domain_id, plaintext, plaintext_length, unsafe_store, &encrypted, &encrypted_length) != 0) {
+        goto cleanup;
+    }
+
+    if (secdat_remove_if_exists(tombstone_path) != 0
+        || secdat_atomic_write_file(value_path, encrypted, encrypted_length) != 0
+        || secdat_write_v2_secret_object_file(
+            secret_objects_dir,
+            secret_id,
+            &write_attrs,
+            refcount_present,
+            refcount,
+            object_path,
+            sizeof(object_path)
+        ) != 0
+        || secdat_write_v2_domain_entry_file(
+            domain_entries_dir,
+            entry_id,
+            secret_id,
+            key,
+            &write_attrs,
+            entry_path,
+            sizeof(entry_path)
+        ) != 0) {
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(encrypted, encrypted_length);
+    free(encrypted);
+    return status;
 }
 
 static int secdat_write_store_format_marker(const char *domain_id, const char *store_name, const char *format, const char *state)
@@ -9811,24 +9986,40 @@ static int secdat_command_attr(const struct secdat_cli *cli)
             secdat_domain_chain_free(&chain);
             return 1;
         }
-        if (attrs.value_access != original_attrs.value_access) {
-            fprintf(stderr, _("v2 value_access updates are not implemented yet\n"));
-            secdat_effective_entry_reset(&entry);
-            secdat_domain_chain_free(&chain);
-            return 1;
-        }
         if (!secdat_v2_secret_attrs_supported(&attrs)) {
             secdat_effective_entry_reset(&entry);
             secdat_domain_chain_free(&chain);
             return 1;
         }
-        status = secdat_update_v2_secret_attrs(
-            chain.count == 0 ? "" : chain.ids[0],
-            reference.store_value,
-            reference.key,
-            &entry,
-            &attrs
-        );
+        if (attrs.value_access != original_attrs.value_access) {
+            target_unsafe_store = attrs.value_access == SECDAT_VALUE_ACCESS_ALWAYS;
+            if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, NULL, NULL) != 0) {
+                secdat_effective_entry_reset(&entry);
+                secdat_domain_chain_free(&chain);
+                return 1;
+            }
+            status = secdat_store_v2_plaintext_with_attrs(
+                chain.count == 0 ? "" : chain.ids[0],
+                reference.store_value,
+                reference.key,
+                plaintext,
+                plaintext_length,
+                target_unsafe_store,
+                &attrs
+            );
+            secdat_secure_clear(plaintext, plaintext_length);
+            free(plaintext);
+            plaintext = NULL;
+            plaintext_length = 0;
+        } else {
+            status = secdat_update_v2_secret_attrs(
+                chain.count == 0 ? "" : chain.ids[0],
+                reference.store_value,
+                reference.key,
+                &entry,
+                &attrs
+            );
+        }
         secdat_effective_entry_reset(&entry);
         secdat_domain_chain_free(&chain);
         return status;
@@ -10102,6 +10293,7 @@ static int secdat_store_plaintext_with_attrs(
     char tombstone_path[PATH_MAX];
     unsigned char *encrypted = NULL;
     size_t encrypted_length = 0;
+    enum secdat_store_format format;
     int status;
 
     if (secdat_require_writable_domain_id(domain_id) != 0) {
@@ -10111,6 +10303,17 @@ static int secdat_store_plaintext_with_attrs(
     status = secdat_ensure_store_dirs(domain_id, store_name);
     if (status != 0) {
         return status;
+    }
+
+    if (secdat_read_store_format(domain_id, store_name, &format) != 0) {
+        return 1;
+    }
+    if (format == SECDAT_STORE_FORMAT_INVALID) {
+        fprintf(stderr, _("invalid store format marker\n"));
+        return 1;
+    }
+    if (format == SECDAT_STORE_FORMAT_V2) {
+        return secdat_store_v2_plaintext_with_attrs(domain_id, store_name, key, plaintext, plaintext_length, unsafe_store, attrs);
     }
 
     status = secdat_build_entry_path(domain_id, store_name, key, entry_path, sizeof(entry_path));
@@ -10131,21 +10334,7 @@ static int secdat_store_plaintext_with_attrs(
         return 1;
     }
 
-    if (unsafe_store) {
-        encrypted_length = SECDAT_HEADER_LEN + plaintext_length;
-        encrypted = calloc(1, encrypted_length == 0 ? 1 : encrypted_length);
-        if (encrypted == NULL) {
-            fprintf(stderr, _("out of memory\n"));
-            return 1;
-        }
-        memcpy(encrypted, secdat_entry_magic, sizeof(secdat_entry_magic));
-        encrypted[8] = SECDAT_ENTRY_VERSION;
-        encrypted[9] = SECDAT_ENTRY_ALGORITHM_PLAINTEXT;
-        encrypted[10] = 0;
-        encrypted[11] = 0;
-        secdat_write_be32(encrypted + 12, (uint32_t)plaintext_length);
-        memcpy(encrypted + SECDAT_HEADER_LEN, plaintext, plaintext_length);
-    } else if (secdat_encrypt_value(domain_id, plaintext, plaintext_length, &encrypted, &encrypted_length) != 0) {
+    if (secdat_encode_value_for_storage(domain_id, plaintext, plaintext_length, unsafe_store, &encrypted, &encrypted_length) != 0) {
         return 1;
     }
 

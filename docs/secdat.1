@@ -69,9 +69,7 @@ Show or update one key's attributes. The current storage format supports only
 .B key_visibility=always ;
 .B key_visibility=unlocked
 is reserved for a future format that encrypts key names.
-For v2 stores, the current write path can update
-.B sandbox_inject
-only; hidden-key updates and object-owned value access rewrites are not implemented yet.
+For v2 stores, visible-key attribute updates write through the domain-entry/object graph; hidden-key updates are not implemented yet.
 .B value_access=unlocked
 is encrypted-at-rest and unlock-gated, while
 .B value_access=always

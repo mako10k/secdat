@@ -44,8 +44,11 @@ def fail(message):
     sys.exit(1)
 
 
-def run(args):
-    completed = subprocess.run(args, text=True, capture_output=True, env=env)
+def run(args, extra_env=None):
+    run_env = env.copy()
+    if extra_env:
+        run_env.update(extra_env)
+    completed = subprocess.run(args, text=True, capture_output=True, env=run_env)
     return completed.returncode, completed.stdout, completed.stderr
 
 
@@ -124,6 +127,33 @@ if rc != 0 or stdout != "ok\n" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_TOKEN"])
 if rc != 1 or stdout != "" or "v2 secret value storage is not implemented yet" not in stderr:
     fail(f"pure v2 get should reject missing value storage: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_TOKEN", "--public-value", "--value", "public-token"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 set existing public value failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_TOKEN"])
+if rc != 0 or stdout != f"{secret_id}\n" or stderr != "":
+    fail(f"pure v2 set should preserve existing secret id: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inject=never\n" or stderr != "":
+    fail(f"pure v2 attr after public set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_TOKEN"], {"SECDAT_MASTER_KEY": ""})
+if rc != 0 or stdout != "public-token" or stderr != "":
+    fail(f"pure v2 public get while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if not (secret_objects_dir / f"{secret_id}.value").exists():
+    fail("pure v2 set did not create object value storage")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET", "--value", "secret-value", "--sandbox-inject", "explicit"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 set new encrypted value failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET"])
+if rc != 0 or stdout != "secret-value" or stderr != "":
+    fail(f"pure v2 encrypted get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if (entries_dirs[0] / "APP_SECRET.sec").exists():
+    fail("pure v2 set should not create a v1 value file")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"pure v2 fsck after value writes failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck"])
 if rc != 2 or "store format is v2; use --format v2" not in stderr:

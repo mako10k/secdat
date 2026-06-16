@@ -38,8 +38,11 @@ def fail(message):
     sys.exit(1)
 
 
-def run(args):
-    completed = subprocess.run(args, text=True, capture_output=True, env=env)
+def run(args, extra_env=None):
+    run_env = env.copy()
+    if extra_env:
+        run_env.update(extra_env)
+    completed = subprocess.run(args, text=True, capture_output=True, env=run_env)
     return completed.returncode, completed.stdout, completed.stderr
 
 
@@ -197,8 +200,24 @@ if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"migrated v2 fsck after attr update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--value-access", "always"])
-if rc != 1 or stdout != "" or "v2 value_access updates are not implemented yet" not in stderr:
-    fail(f"migrated v2 value_access update should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"migrated v2 value_access public update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN"])
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inject=allow\n" or stderr != "":
+    fail(f"migrated v2 attr after value_access public update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get", "APP_TOKEN"], {"SECDAT_MASTER_KEY": ""})
+if rc != 0 or stdout != "secret-token" or stderr != "":
+    fail(f"migrated v2 public get while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+value_files = list((store_root / "objects" / "secret").glob("*.value"))
+if len(value_files) != 1:
+    fail(f"expected one migrated v2 object value file, found {value_files!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--value-access", "unlocked"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"migrated v2 value_access encrypted update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get", "APP_TOKEN"], {"SECDAT_MASTER_KEY": ""})
+if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
+    fail(f"migrated v2 encrypted get while locked should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--key-visibility", "unlocked"])
 if rc != 1 or stdout != "" or "v2 key_visibility updates are not implemented yet" not in stderr:
