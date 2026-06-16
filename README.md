@@ -240,6 +240,8 @@ Use `attr` to inspect or update attributes:
 ./src/secdat ls --sandbox-injectable
 ```
 
+The planned storage v2 moves from one domain-local file per key to a directory/inode-like split between domain entries and secret objects. Domain entries will own key names and key visibility; secret objects will own values and value access. That plan also adds linked secrets (`ln`), secret UUID references, refcount/orphan checks, and a migration-first compatibility path from the current v1 store. See [docs/secdat-spec.md](docs/secdat-spec.md#510-planned-store-v2-domain-entries-and-secret-objects).
+
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
 When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--domain`, then `--dir`, then `--store`, and finally the current defaults are used.
 Write commands must still resolve to a registered domain. If resolution would fall back to the implicit `*default*` scope, the command fails instead of creating unreachable local state there.

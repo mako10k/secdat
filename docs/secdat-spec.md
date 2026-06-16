@@ -994,6 +994,144 @@ Representative error messages:
 - if needed, `SECDAT_DEBUG=1` may enable minimal debug logging
 - even in debug mode, logs must stop at key names and never include values
 
+### 5.10 Planned Store v2: Domain Entries and Secret Objects
+
+The current v1 store keeps one domain-local file per key. That is simple, but it couples key visibility, value storage, copy semantics, and metadata too tightly. Store v2 should move to a directory/inode-like model:
+
+- a **domain entry** (`domain-ent`) is like a directory entry: it lives in one domain/store namespace and maps one key name to one secret object ID
+- a **secret object** is like an inode: it owns the secret value, value-side attributes, object metadata, and object identity
+- `cp` creates a new secret object by copying value material
+- `ln` creates another domain entry pointing at the same secret object
+- `rm` removes one domain entry; the secret object becomes orphaned when no entries reference it
+- `fsck`-style commands report dangling entries, orphaned secret objects, and refcount inconsistencies
+
+This split is required to separate key visibility from value visibility safely. A key name is a property of the domain entry; a value and its access policy are properties of the secret object.
+
+#### Object Model
+
+```text
+domain/store/domain-ent/<entry-id>.dent
+  public area:
+    magic/version
+    entry_id
+    secret_id
+    key_visibility
+    public key name or public lookup tag, when key_visibility=always
+    link-side policy flags
+  encrypted area:
+    key name, when key_visibility=unlocked
+    object data key wrapped by the domain key
+    link-side private metadata
+
+objects/secret/<secret-id>.sec
+  public area:
+    magic/version
+    secret_id
+    value_access
+    public value bytes, when value_access=always
+    cached refcount, optional and rebuildable
+  encrypted area:
+    encrypted value bytes, when value_access=unlocked
+    secret-side metadata and secret-side policy flags
+```
+
+The exact binary format is intentionally undecided, but each file must have a magic number, a format version, authenticated encrypted sections, and enough public structure for locked-mode listing of public keys and public values. All encrypted sections must bind the public header as AEAD associated data.
+
+#### Attribute Placement
+
+| Attribute | Owner | Rationale |
+| --- | --- | --- |
+| `key_visibility` | domain entry | the same secret object can be linked under a visible key in one domain and a hidden key in another |
+| key name | domain entry | key names are directory-entry metadata, not value metadata |
+| `value_access` | secret object | linked entries share the same value and therefore the same value access policy |
+| value bytes | secret object | `ln` must share the value while `cp` duplicates it |
+| `sandbox_inject` | split policy | a domain entry controls whether that link/name may be selected; a secret object controls whether that value may leave the store at all |
+| refcount | secret object cache plus fsck result | the authoritative count is derived from domain entries; any stored count is only a consistency cache |
+
+For injection, v2 should replace the single v1 `sandbox_inject` field with two checks:
+
+- `entry_inject = never | explicit | allow` on the domain entry
+- `secret_inject = never | allow` on the secret object
+
+An injection import/export is permitted only when both checks allow it. This prevents a permissive link from exporting a value that the secret object itself forbids, and prevents a permissive secret object from bypassing a restrictive domain entry.
+
+#### Domain Key and Object Key Handling
+
+Each domain entry should be encrypted with keys derived from the active master key and the domain ID. A secret object should have its own object data key. Each domain entry stores the object data key wrapped by the domain key so that:
+
+- unlocking the domain can reveal hidden key names and unwrap object keys for entries in that domain view
+- the same secret object can be linked from multiple domains without giving one domain the other domain's entry key
+- direct knowledge of a `secret_id` is not enough to decrypt a value without an authorized domain entry or an explicit recovery path
+
+The object ID is an address, not authority. Commands that accept a `secret_id` must still prove that the current operation is authorized by a visible/unlocked domain entry, or must be explicitly limited to metadata/fsck operations.
+
+#### CLI Additions
+
+Store v2 should add these command surfaces:
+
+```text
+secdat ln SRC_KEYREF DST_KEYREF
+secdat ln --secret-id UUID DST_KEYREF
+secdat id KEYREF
+secdat secret status UUID
+secdat fsck [--orphaned] [--dangling] [--refcount] [--repair]
+```
+
+Planned semantics:
+
+- `ln SRC_KEYREF DST_KEYREF` creates a new domain entry pointing to the source secret object and rewraps the object data key for the destination domain
+- `ln --secret-id UUID DST_KEYREF` is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry, or through a future explicit recovery mechanism
+- `id KEYREF` prints the resolved `secret_id` without printing the secret value
+- `secret status UUID` prints non-secret object metadata, link count, and whether the object is orphaned
+- `fsck --orphaned` lists secret objects with no referencing domain entries
+- `fsck --dangling` lists domain entries pointing to missing or unreadable secret objects
+- `fsck --refcount` compares cached object refcounts with counts rebuilt from domain entries
+- `fsck --repair` may repair derived metadata, but must not delete orphaned values without an explicit destructive option
+
+`cp` and `ln` must remain deliberately different. `cp` produces an independent secret object and can later diverge. `ln` shares one secret object, so changing the value through any link changes the value observed through all links.
+
+#### Migration and Compatibility
+
+This is a large store-layout change and must be treated as a migration, not an in-place mutation of v1 files.
+
+Migration requirements:
+
+- v1 stores remain readable until v2 is stable
+- v2 writes are gated behind an explicit store format upgrade command or configuration flag
+- migration creates v2 domain entries and secret objects from v1 entries without deleting v1 data first
+- rollback keeps the v1 store usable until the user explicitly finalizes the migration
+- every migrated v1 key becomes one secret object and one domain entry
+- v1 `sandbox_inject` maps to `entry_inject`, while `secret_inject` defaults to `allow` only for previously injectable entries and `never` otherwise
+- v1 `value_access=always` becomes a secret object with a public value area
+- v1 encrypted entries become secret objects with encrypted value areas
+- v1 `key_visibility=always` maps to public domain-entry key names
+- v1 `key_visibility=unlocked` has no existing persisted instances and remains a v2-only feature
+
+Suggested migration commands:
+
+```text
+secdat store migrate --to-format v2 [--dry-run]
+secdat store fsck [--format v1|v2]
+secdat store finalize-migration --from-format v1
+```
+
+The implementation should keep a format marker per store and reject mixed writes unless the store is in an explicit migration state.
+
+#### Implementation Plan
+
+1. Add read-only v2 data structures and parsers for domain entries, secret objects, UUID handling, and format markers.
+2. Add fsck scanners that can build the domain-entry graph and report orphaned objects, dangling entries, and refcount mismatches without mutating data.
+3. Add migration dry-run that maps current v1 entries into the proposed v2 graph and reports the exact object/entry count.
+4. Add migration writer that creates v2 files alongside v1 files, verifies the graph with fsck, and leaves v1 untouched.
+5. Add v2 read path for `ls`, `get`, `exists`, `attr`, and `id`, while preserving v1 read compatibility.
+6. Add v2 write path for `set`, `attr`, `rm`, `cp`, and `mv`.
+7. Add `ln` with strict authorization through an existing source entry before allowing `--secret-id` linking.
+8. Split v1 `sandbox_inject` into v2 `entry_inject` and `secret_inject`, then update the future sandbox import/export flow to require both.
+9. Add repair-only fsck operations for rebuildable metadata such as cached refcounts.
+10. Add finalize/cleanup commands only after v2 read/write, migration, fsck, and rollback paths are covered by regression tests.
+
+The first implementation should prefer conservative compatibility over removing old paths. The v1 sidecar metadata added for secret attributes should be treated as migration input, not as the final architecture.
+
 ## 6. Security Notes
 
 - `set --value` can leak through shell history and process listings, so `--stdin` is operationally preferred
@@ -1004,34 +1142,45 @@ Representative error messages:
 
 ## 7. Recommended Implementation Order
 
-1. path resolution and domain initialization
-2. `set`, `get`, `rm`, and `ls`
-3. encrypted persistence and decryption
-4. `mv` and `cp`
-5. `exec`
-6. exit-code cleanup and error-message refinement
+The v1 implementation now covers the initial command surface and the first secret-attribute metadata layer. The next implementation sequence should focus on store v2 while keeping v1 readable:
+
+1. keep v1 stable and use the current attribute metadata as migration input
+2. introduce v2 parsers, UUIDs, and fsck graph scanning without changing write behavior
+3. add migration dry-run and graph verification
+4. add v2 side-by-side migration writer with rollback
+5. add v2 read compatibility for `ls`, `get`, `exists`, `attr`, and `id`
+6. add v2 write compatibility for `set`, `attr`, `rm`, `cp`, and `mv`
+7. add `ln` only after object-key rewrapping and authorization semantics are covered
+8. split injection policy into entry-side and secret-side checks
+9. add fsck repair for rebuildable metadata
+10. add migration finalization once v1 rollback remains tested
 
 ## 8. Open Questions
 
 The following should be fixed before implementation is finalized:
 
-1. how master key material is provided
-2. whether the proposed environment variable normalization for `exec` is final
-3. whether libsodium or OpenSSL is the initial dependency choice
-4. whether binary-value support is officially in scope for v1
-5. whether explicit locking such as `flock` should be part of v1
-6. whether `domain delete` should fail when child domains exist, or whether forced recursive deletion should be a separate command
+1. whether hidden-key exact lookup should require decrypting all domain entries, or whether a keyed lookup tag is worth the equality-leakage tradeoff
+2. whether direct `secret_id` references should remain metadata-only unless a source domain entry is also provided
+3. whether `secret_inject` should be only `never|allow` or should mirror `entry_inject=never|explicit|allow`
+4. whether cached refcounts should be stored in the object file or only reported by fsck
+5. whether orphan cleanup should be a separate destructive command instead of `fsck --repair`
+6. how save/load bundles should encode linked objects without accidentally turning hard links into copies
+7. whether explicit locking such as `flock` should become mandatory during v2 migration and fsck repair
+8. whether `domain delete` should fail when child domains or linked secret objects exist, or whether forced recursive deletion should be a separate command
 
 ## 9. Recommended Direction
 
-The recommended initial implementation direction is:
+The recommended direction is:
 
-- file-based storage with one file per key
-- directory-based domains with parent-domain inheritance
-- Linux-oriented POSIX implementation
-- libsodium-based AEAD encryption
-- mandatory TTY rejection for `get` and `set --stdin`
-- `exec` injection via `SECDAT_`-prefixed environment variables
-- key acquisition abstracted behind an interface, with persistence deferred
+- keep v1 file-based storage readable for compatibility
+- move new development toward store v2 with domain entries and secret objects
+- treat domain entries as the only authority for key names and link-level policy
+- treat secret objects as the only authority for value bytes and value-level policy
+- make `secret_id` useful for diagnostics and linking, but not sufficient by itself to decrypt a value
+- implement migration as side-by-side conversion with dry-run, fsck verification, rollback, and explicit finalization
+- preserve Linux-oriented POSIX implementation assumptions
+- continue using authenticated encryption through the existing crypto backend unless a separate dependency decision is made
+- keep mandatory TTY rejection for secret-value input/output in encrypted workflows
+- require both entry-side and secret-side authorization for future sandbox import/export flows
 
-This approach keeps the system simple enough for a C implementation while preserving the requested security properties and the intended domain semantics.
+This approach preserves current users while creating a clean boundary between key visibility and value visibility.
