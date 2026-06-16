@@ -88,6 +88,12 @@ def assert_wrapped_object_key_count(sid, expected_count, label):
             fail(f"{label}: missing wrapped_object_key")
 
 
+def assert_value_magic(path, magic, label):
+    data = path.read_bytes()
+    if not data.startswith(magic):
+        fail(f"{label}: expected value magic {magic!r}, found {data[:8]!r}")
+
+
 def read_field(text, field):
     prefix = f"{field}="
     for line in text.splitlines():
@@ -171,6 +177,7 @@ if rc != 0 or stdout != "public-token" or stderr != "":
     fail(f"pure v2 public get while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if not (secret_objects_dir / f"{secret_id}.value").exists():
     fail("pure v2 set did not create object value storage")
+assert_value_magic(secret_objects_dir / f"{secret_id}.value", b"SECDAT1\0", "pure v2 public value")
 
 source_entry_text = (domain_entries_dir / f"{entry_id}.dent").read_text(encoding="utf-8")
 source_object_domain = read_field(source_entry_text, "object_domain")
@@ -222,6 +229,10 @@ if rc != 0 or stderr != "":
     fail(f"pure v2 id for APP_SECRET failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 app_secret_id = stdout.strip()
 assert_wrapped_object_key_count(app_secret_id, 1, "pure v2 encrypted set")
+assert_value_magic(secret_objects_dir / f"{app_secret_id}.value", b"SECDVAL2", "pure v2 encrypted value")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET"], {"SECDAT_MASTER_KEY": ""})
+if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
+    fail(f"pure v2 encrypted object-key get while locked should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "APP_SECRET", "APP_SECRET_LINK"], {"SECDAT_MASTER_KEY": ""})
 if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:

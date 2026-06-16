@@ -34,6 +34,7 @@
 #define SECDAT_USER_GLOBAL_SCOPE_ID "secdat:user-global-scope"
 
 #define SECDAT_ENTRY_VERSION 1
+#define SECDAT_V2_VALUE_VERSION 1
 #define SECDAT_ENTRY_ALGORITHM_PLAINTEXT 1
 #define SECDAT_ENTRY_ALGORITHM_AES_256_GCM 2
 #define SECDAT_NONCE_LEN 12
@@ -54,6 +55,7 @@
 #define SECDAT_V2_OBJECT_KEY_LEN 32
 
 static const unsigned char secdat_entry_magic[8] = {'S', 'E', 'C', 'D', 'A', 'T', '1', '\0'};
+static const unsigned char secdat_v2_value_magic[8] = {'S', 'E', 'C', 'D', 'V', 'A', 'L', '2'};
 static const unsigned char secdat_wrapped_key_magic[8] = {'S', 'E', 'C', 'D', 'W', 'R', 'P', '\0'};
 static const unsigned char secdat_bundle_magic[8] = {'S', 'E', 'C', 'D', 'B', 'N', 'D', 'L'};
 static const char secdat_attrs_magic[] = "SECDATATTR1";
@@ -259,8 +261,10 @@ struct secdat_effective_entry {
     char secret_id[64];
     char object_domain[PATH_MAX];
     char object_store[PATH_MAX];
+    char wrapped_object_key[SECDAT_V2_TEXT_FILE_MAX];
     enum secdat_key_visibility key_visibility;
     enum secdat_sandbox_inject entry_inject;
+    int has_wrapped_object_key;
     unsigned char *plaintext;
     size_t plaintext_length;
 };
@@ -7656,6 +7660,243 @@ cleanup:
     return status;
 }
 
+static int secdat_encrypt_v2_object_value(
+    const unsigned char object_key[SECDAT_V2_OBJECT_KEY_LEN],
+    const unsigned char *plaintext,
+    size_t plaintext_length,
+    unsigned char **encrypted,
+    size_t *encrypted_length
+)
+{
+    EVP_CIPHER_CTX *context = NULL;
+    unsigned char nonce[SECDAT_NONCE_LEN];
+    unsigned char tag[SECDAT_TAG_LEN];
+    unsigned char *buffer = NULL;
+    int ciphertext_length;
+    int final_length;
+    size_t total_ciphertext_length;
+    size_t total_length;
+    int status = 1;
+
+    if (RAND_bytes(nonce, sizeof(nonce)) != 1) {
+        fprintf(stderr, _("failed to generate nonce\n"));
+        return 1;
+    }
+
+    total_ciphertext_length = plaintext_length + SECDAT_TAG_LEN;
+    total_length = SECDAT_HEADER_LEN + sizeof(nonce) + total_ciphertext_length;
+    buffer = calloc(1, total_length);
+    if (buffer == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+
+    memcpy(buffer, secdat_v2_value_magic, sizeof(secdat_v2_value_magic));
+    buffer[8] = SECDAT_V2_VALUE_VERSION;
+    buffer[9] = SECDAT_ENTRY_ALGORITHM_AES_256_GCM;
+    buffer[10] = SECDAT_NONCE_LEN;
+    buffer[11] = 0;
+    secdat_write_be32(buffer + 12, (uint32_t)total_ciphertext_length);
+    memcpy(buffer + SECDAT_HEADER_LEN, nonce, sizeof(nonce));
+
+    context = EVP_CIPHER_CTX_new();
+    if (context == NULL) {
+        fprintf(stderr, _("failed to create encryption context\n"));
+        goto cleanup;
+    }
+    if (EVP_EncryptInit_ex(context, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1
+        || EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, sizeof(nonce), NULL) != 1
+        || EVP_EncryptInit_ex(context, NULL, NULL, object_key, nonce) != 1) {
+        fprintf(stderr, _("failed to initialize encryption\n"));
+        goto cleanup;
+    }
+    if (EVP_EncryptUpdate(context, NULL, &ciphertext_length, buffer, SECDAT_HEADER_LEN) != 1) {
+        fprintf(stderr, _("failed to encrypt value\n"));
+        goto cleanup;
+    }
+    if (EVP_EncryptUpdate(
+            context,
+            buffer + SECDAT_HEADER_LEN + sizeof(nonce),
+            &ciphertext_length,
+            plaintext,
+            (int)plaintext_length
+        ) != 1) {
+        fprintf(stderr, _("failed to encrypt value\n"));
+        goto cleanup;
+    }
+    if (EVP_EncryptFinal_ex(context, buffer + SECDAT_HEADER_LEN + sizeof(nonce) + ciphertext_length, &final_length) != 1) {
+        fprintf(stderr, _("failed to finalize encryption\n"));
+        goto cleanup;
+    }
+    ciphertext_length += final_length;
+    if (EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_GET_TAG, sizeof(tag), tag) != 1) {
+        fprintf(stderr, _("failed to obtain authentication tag\n"));
+        goto cleanup;
+    }
+
+    memcpy(buffer + SECDAT_HEADER_LEN + sizeof(nonce) + ciphertext_length, tag, sizeof(tag));
+    *encrypted = buffer;
+    *encrypted_length = total_length;
+    buffer = NULL;
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(tag, sizeof(tag));
+    if (context != NULL) {
+        EVP_CIPHER_CTX_free(context);
+    }
+    if (buffer != NULL) {
+        secdat_secure_clear(buffer, total_length);
+        free(buffer);
+    }
+    return status;
+}
+
+static int secdat_decrypt_v2_object_value_with_key(
+    const unsigned char object_key[SECDAT_V2_OBJECT_KEY_LEN],
+    const unsigned char *encrypted,
+    size_t encrypted_length,
+    unsigned char **plaintext,
+    size_t *plaintext_length
+)
+{
+    EVP_CIPHER_CTX *context = NULL;
+    unsigned char *buffer = NULL;
+    const unsigned char *nonce;
+    const unsigned char *ciphertext;
+    const unsigned char *tag;
+    uint32_t ciphertext_length;
+    size_t header_length;
+    size_t payload_length;
+    size_t decoded_length;
+    int written_length;
+    int final_length;
+    int status = 1;
+
+    if (encrypted_length < SECDAT_HEADER_LEN
+        || memcmp(encrypted, secdat_v2_value_magic, sizeof(secdat_v2_value_magic)) != 0
+        || encrypted[8] != SECDAT_V2_VALUE_VERSION
+        || encrypted[9] != SECDAT_ENTRY_ALGORITHM_AES_256_GCM
+        || encrypted[10] != SECDAT_NONCE_LEN) {
+        fprintf(stderr, _("invalid encrypted entry\n"));
+        return 1;
+    }
+
+    ciphertext_length = secdat_read_be32(encrypted + 12);
+    header_length = SECDAT_HEADER_LEN + encrypted[10];
+    if (encrypted_length < header_length) {
+        fprintf(stderr, _("invalid encrypted entry\n"));
+        return 1;
+    }
+    payload_length = encrypted_length - header_length;
+    if (payload_length != ciphertext_length || ciphertext_length < SECDAT_TAG_LEN) {
+        fprintf(stderr, _("invalid encrypted entry\n"));
+        return 1;
+    }
+
+    decoded_length = ciphertext_length - SECDAT_TAG_LEN;
+    buffer = malloc(decoded_length == 0 ? 1 : decoded_length);
+    if (buffer == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+
+    nonce = encrypted + SECDAT_HEADER_LEN;
+    ciphertext = encrypted + header_length;
+    tag = ciphertext + decoded_length;
+
+    context = EVP_CIPHER_CTX_new();
+    if (context == NULL) {
+        fprintf(stderr, _("failed to create decryption context\n"));
+        goto cleanup;
+    }
+    if (EVP_DecryptInit_ex(context, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1
+        || EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, encrypted[10], NULL) != 1
+        || EVP_DecryptInit_ex(context, NULL, NULL, object_key, nonce) != 1) {
+        fprintf(stderr, _("failed to initialize decryption\n"));
+        goto cleanup;
+    }
+    if (EVP_DecryptUpdate(context, NULL, &written_length, encrypted, SECDAT_HEADER_LEN) != 1) {
+        fprintf(stderr, _("failed to decrypt value\n"));
+        goto cleanup;
+    }
+    if (EVP_DecryptUpdate(context, buffer, &written_length, ciphertext, (int)decoded_length) != 1) {
+        fprintf(stderr, _("failed to decrypt value\n"));
+        goto cleanup;
+    }
+    if (EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_TAG, SECDAT_TAG_LEN, (void *)tag) != 1) {
+        fprintf(stderr, _("failed to set authentication tag\n"));
+        goto cleanup;
+    }
+    if (EVP_DecryptFinal_ex(context, buffer + written_length, &final_length) != 1) {
+        fprintf(stderr, _("failed to authenticate encrypted value\n"));
+        goto cleanup;
+    }
+
+    *plaintext = buffer;
+    *plaintext_length = (size_t)(written_length + final_length);
+    buffer = NULL;
+    status = 0;
+
+cleanup:
+    if (context != NULL) {
+        EVP_CIPHER_CTX_free(context);
+    }
+    if (buffer != NULL) {
+        secdat_secure_clear(buffer, decoded_length);
+        free(buffer);
+    }
+    return status;
+}
+
+static int secdat_value_payload_is_v2_object_value(const unsigned char *data, size_t length)
+{
+    return length >= SECDAT_HEADER_LEN
+        && memcmp(data, secdat_v2_value_magic, sizeof(secdat_v2_value_magic)) == 0
+        && data[8] == SECDAT_V2_VALUE_VERSION;
+}
+
+static int secdat_unwrap_object_key_hex(
+    const char *domain_id,
+    const char *wrapped_object_key,
+    unsigned char object_key[SECDAT_V2_OBJECT_KEY_LEN]
+)
+{
+    struct secdat_domain_chain chain = {0};
+    unsigned char *encrypted = NULL;
+    unsigned char *plaintext = NULL;
+    size_t encrypted_length = 0;
+    size_t plaintext_length = 0;
+    int status = 1;
+
+    if (wrapped_object_key == NULL || wrapped_object_key[0] == '\0') {
+        return 1;
+    }
+    if (secdat_hex_decode_bytes(wrapped_object_key, &encrypted, &encrypted_length) != 0) {
+        return 1;
+    }
+    if (secdat_domain_chain_from_id(domain_id, &chain) != 0) {
+        goto cleanup;
+    }
+    if (secdat_decrypt_value(&chain, encrypted, encrypted_length, &plaintext, &plaintext_length, NULL) != 0) {
+        goto cleanup;
+    }
+    if (plaintext_length != SECDAT_V2_OBJECT_KEY_LEN) {
+        goto cleanup;
+    }
+
+    memcpy(object_key, plaintext, SECDAT_V2_OBJECT_KEY_LEN);
+    status = 0;
+
+cleanup:
+    secdat_domain_chain_free(&chain);
+    secdat_secure_clear(plaintext, plaintext_length);
+    free(plaintext);
+    secdat_secure_clear(encrypted, encrypted_length);
+    free(encrypted);
+    return status;
+}
+
 static int secdat_encode_value_for_storage(
     const char *domain_id,
     unsigned char *plaintext,
@@ -7686,6 +7927,25 @@ static int secdat_encode_value_for_storage(
     }
 
     return secdat_encrypt_value(domain_id, plaintext, plaintext_length, encrypted, encrypted_length);
+}
+
+static int secdat_encode_v2_value_for_storage(
+    const unsigned char *object_key,
+    unsigned char *plaintext,
+    size_t plaintext_length,
+    int unsafe_store,
+    unsigned char **encrypted,
+    size_t *encrypted_length
+)
+{
+    if (unsafe_store) {
+        return secdat_encode_value_for_storage("", plaintext, plaintext_length, 1, encrypted, encrypted_length);
+    }
+    if (object_key == NULL) {
+        fprintf(stderr, _("invalid v2 domain entry: %s\n"), "missing-object-key");
+        return 1;
+    }
+    return secdat_encrypt_v2_object_value(object_key, plaintext, plaintext_length, encrypted, encrypted_length);
 }
 
 static int secdat_read_stdin(unsigned char **buffer, size_t *length)
@@ -7995,6 +8255,12 @@ static int secdat_resolve_effective_entry(
                     || secdat_copy_string(entry->object_store, sizeof(entry->object_store), object_store_name == NULL ? "" : object_store_name) != 0) {
                     return 1;
                 }
+                if (v2_info.has_wrapped_object_key) {
+                    if (secdat_copy_string(entry->wrapped_object_key, sizeof(entry->wrapped_object_key), v2_info.wrapped_object_key) != 0) {
+                        return 1;
+                    }
+                    entry->has_wrapped_object_key = 1;
+                }
                 if (secdat_build_v2_secret_value_path(entry->object_domain, secdat_effective_entry_object_store(entry), entry->secret_id, v2_value_path, sizeof(v2_value_path)) != 0) {
                     return 1;
                 }
@@ -8241,8 +8507,10 @@ static int secdat_load_resolved_plaintext(
     struct secdat_domain_chain object_chain = {0};
     const struct secdat_domain_chain *decrypt_chain = chain;
     unsigned char *encrypted = NULL;
+    unsigned char object_key[SECDAT_V2_OBJECT_KEY_LEN];
     size_t encrypted_length = 0;
     size_t chain_index;
+    int v2_object_value = 0;
     int status;
 
     status = secdat_resolve_effective_entry(chain, store_name, key, 1, &entry);
@@ -8283,17 +8551,49 @@ static int secdat_load_resolved_plaintext(
             free(encrypted);
             return 1;
         }
-        if (memcmp(encrypted, secdat_entry_magic, sizeof(secdat_entry_magic)) != 0 || encrypted[8] != SECDAT_ENTRY_VERSION) {
+        if (secdat_value_payload_is_v2_object_value(encrypted, encrypted_length)) {
+            *unsafe_store = 0;
+        } else if (memcmp(encrypted, secdat_entry_magic, sizeof(secdat_entry_magic)) != 0 || encrypted[8] != SECDAT_ENTRY_VERSION) {
             fprintf(stderr, _("unsupported encrypted entry format\n"));
             free(encrypted);
             return 1;
-        }
-        if (encrypted[9] != SECDAT_ENTRY_ALGORITHM_PLAINTEXT && encrypted[9] != SECDAT_ENTRY_ALGORITHM_AES_256_GCM) {
+        } else if (encrypted[9] != SECDAT_ENTRY_ALGORITHM_PLAINTEXT && encrypted[9] != SECDAT_ENTRY_ALGORITHM_AES_256_GCM) {
             fprintf(stderr, _("unsupported encryption algorithm\n"));
             free(encrypted);
             return 1;
+        } else {
+            *unsafe_store = encrypted[9] == SECDAT_ENTRY_ALGORITHM_PLAINTEXT;
         }
-        *unsafe_store = encrypted[9] == SECDAT_ENTRY_ALGORITHM_PLAINTEXT;
+    }
+
+    v2_object_value = entry.from_v2 && secdat_value_payload_is_v2_object_value(encrypted, encrypted_length);
+    if (v2_object_value) {
+        const char *unwrap_domain_id;
+
+        if (!entry.has_wrapped_object_key || entry.resolved_index >= chain->count) {
+            fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry.entry_id);
+            free(encrypted);
+            secdat_effective_entry_reset(&entry);
+            return 1;
+        }
+        unwrap_domain_id = chain->ids[entry.resolved_index];
+        for (chain_index = 0; chain_index < entry.resolved_index; chain_index += 1) {
+            if (secdat_domain_has_explicit_lock(chain->ids[chain_index])) {
+                unwrap_domain_id = chain->ids[0];
+                break;
+            }
+        }
+        if (secdat_unwrap_object_key_hex(unwrap_domain_id, entry.wrapped_object_key, object_key) != 0) {
+            fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry.entry_id);
+            free(encrypted);
+            secdat_effective_entry_reset(&entry);
+            return 1;
+        }
+        status = secdat_decrypt_v2_object_value_with_key(object_key, encrypted, encrypted_length, plaintext, plaintext_length);
+        secdat_secure_clear(object_key, sizeof(object_key));
+        free(encrypted);
+        secdat_effective_entry_reset(&entry);
+        return status;
     }
 
     if (entry.resolved_index > 0) {
@@ -9619,39 +9919,10 @@ static int secdat_v2_unwrap_object_key(
     unsigned char object_key[SECDAT_V2_OBJECT_KEY_LEN]
 )
 {
-    struct secdat_domain_chain chain = {0};
-    unsigned char *encrypted = NULL;
-    unsigned char *plaintext = NULL;
-    size_t encrypted_length = 0;
-    size_t plaintext_length = 0;
-    int status = 1;
-
     if (!info->has_wrapped_object_key) {
         return 1;
     }
-    if (secdat_hex_decode_bytes(info->wrapped_object_key, &encrypted, &encrypted_length) != 0) {
-        return 1;
-    }
-    if (secdat_domain_chain_from_id(domain_id, &chain) != 0) {
-        goto cleanup;
-    }
-    if (secdat_decrypt_value(&chain, encrypted, encrypted_length, &plaintext, &plaintext_length, NULL) != 0) {
-        goto cleanup;
-    }
-    if (plaintext_length != SECDAT_V2_OBJECT_KEY_LEN) {
-        goto cleanup;
-    }
-
-    memcpy(object_key, plaintext, SECDAT_V2_OBJECT_KEY_LEN);
-    status = 0;
-
-cleanup:
-    secdat_domain_chain_free(&chain);
-    secdat_secure_clear(plaintext, plaintext_length);
-    free(plaintext);
-    secdat_secure_clear(encrypted, encrypted_length);
-    free(encrypted);
-    return status;
+    return secdat_unwrap_object_key_hex(domain_id, info->wrapped_object_key, object_key);
 }
 
 static int secdat_find_v2_object_key_in_store(
@@ -10086,7 +10357,7 @@ static int secdat_store_v2_plaintext_with_attrs(
     if (secdat_v2_secret_objects_dir(object_domain_id, object_store_name, secret_objects_dir, sizeof(secret_objects_dir)) != 0
         || secdat_build_v2_secret_value_path(object_domain_id, object_store_name, secret_id, value_path, sizeof(value_path)) != 0
         || secdat_build_tombstone_path(domain_id, store_name, key, tombstone_path, sizeof(tombstone_path)) != 0
-        || secdat_encode_value_for_storage(object_domain_id, plaintext, plaintext_length, unsafe_store, &encrypted, &encrypted_length) != 0) {
+        || secdat_encode_v2_value_for_storage(object_key_ptr, plaintext, plaintext_length, unsafe_store, &encrypted, &encrypted_length) != 0) {
         goto cleanup;
     }
     if (write_attrs.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED

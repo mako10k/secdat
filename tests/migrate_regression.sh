@@ -59,6 +59,12 @@ def domain_entries_for_secret(store_root, sid):
     ]
 
 
+def assert_value_magic(path, magic, label):
+    data = path.read_bytes()
+    if not data.startswith(magic):
+        fail(f"{label}: expected value magic {magic!r}, found {data[:8]!r}")
+
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "domain", "create"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -236,10 +242,12 @@ if rc != 0 or stdout != "secret-token" or stderr != "":
 value_files = list((store_root / "objects" / "secret").glob("*.value"))
 if len(value_files) != 1:
     fail(f"expected one migrated v2 object value file, found {value_files!r}")
+assert_value_magic(value_files[0], b"SECDAT1\0", "migrated public value")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--value-access", "unlocked"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"migrated v2 value_access encrypted update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_value_magic(value_files[0], b"SECDVAL2", "migrated encrypted value")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get", "APP_TOKEN"], {"SECDAT_MASTER_KEY": ""})
 if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
     fail(f"migrated v2 encrypted get while locked should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
