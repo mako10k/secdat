@@ -571,7 +571,7 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
             || strcmp(previous, "--inject") == 0) {
             return "none";
         }
-    } else if (strcmp(command, "fsck") == 0) {
+    } else if (strcmp(command, "fsck") == 0 || strcmp(command, "gc") == 0) {
         if (strcmp(previous, "--format") == 0) {
             return "none";
         }
@@ -731,6 +731,9 @@ int secdat_cli_complete(int argc, char **argv)
     static const char *const fsck_options[] = {
         "--orphaned", "--dangling", "--refcount", "--repair", "--format", "--help", "-h", NULL,
     };
+    static const char *const gc_options[] = {
+        "--orphaned", "--dangling", "--dry-run", "--format", "--help", "-h", NULL,
+    };
     static const char *const get_options[] = {
         "--on-demand-unlock", "-w", "--unlock-timeout", "-t", "--stdout", "-o", "--shellescaped", "-e", "--help", "-h", NULL,
     };
@@ -822,6 +825,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, attr_options);
     } else if (strcmp(command, "fsck") == 0) {
         secdat_cli_completion_print_candidates(current, fsck_options);
+    } else if (strcmp(command, "gc") == 0) {
+        secdat_cli_completion_print_candidates(current, gc_options);
     } else if (strcmp(command, "get") == 0) {
         secdat_cli_completion_print_candidates(current, get_options);
     } else if (strcmp(command, "set") == 0) {
@@ -864,6 +869,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     }
     if (strcmp(name, "fsck") == 0) {
         return SECDAT_COMMAND_FSCK;
+    }
+    if (strcmp(name, "gc") == 0) {
+        return SECDAT_COMMAND_GC;
     }
     if (strcmp(name, "mask") == 0) {
         return SECDAT_COMMAND_MASK;
@@ -951,6 +959,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_FSCK:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "fsck", "[--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]");
+        break;
+    case SECDAT_COMMAND_GC:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "gc", "[--orphaned] [--dangling] [--dry-run] [--format v2]");
         break;
     case SECDAT_COMMAND_MASK:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mask", "KEYREF");
@@ -1130,6 +1141,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe, or sandbox-injectable local state\n"));
     secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and sandbox injection attributes\n"));
     secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and limited repair\n"));
+    secdat_cli_print_detail_line(_("  gc: remove unreachable or dangling v2 graph files after review\n"));
     secdat_cli_print_detail_line(_("  mask: create a local tombstone to hide one inherited key\n"));
     secdat_cli_print_detail_line(_("  unmask: remove one local tombstone from the current domain\n"));
     secdat_cli_print_detail_line(_("  exists: check whether one resolved key is visible from the current domain view\n"));
@@ -1181,6 +1193,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "fsck") == 0) {
         secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and limited repair\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "gc") == 0) {
+        secdat_cli_print_detail_line(_("  gc: remove unreachable or dangling v2 graph files after review\n"));
         return;
     }
     if (target != NULL && strcmp(target, "mask") == 0) {
@@ -1487,6 +1503,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
     } else if (strcmp(argv[index], "fsck") == 0) {
         cli->command = SECDAT_COMMAND_FSCK;
         index += 1;
+    } else if (strcmp(argv[index], "gc") == 0) {
+        cli->command = SECDAT_COMMAND_GC;
+        index += 1;
     } else if (strcmp(argv[index], "mask") == 0) {
         cli->command = SECDAT_COMMAND_MASK;
         index += 1;
@@ -1738,6 +1757,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "attr";
     case SECDAT_COMMAND_FSCK:
         return "fsck";
+    case SECDAT_COMMAND_GC:
+        return "gc";
     case SECDAT_COMMAND_MASK:
         return "mask";
     case SECDAT_COMMAND_UNMASK:

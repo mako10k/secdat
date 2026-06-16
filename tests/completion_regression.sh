@@ -44,13 +44,13 @@ def assert_contains(values, expected, label):
 mode, values = run_completion("")
 if mode != "plain":
     raise SystemExit(f"FAIL: top-level completion mode mismatch: {mode!r}")
-for expected in ["wait-unlock", "inherit", "store", "domain", "unlock", "attr", "fsck", "id", "ln", "version", "--dir", "--domain", "--store", "--help", "--version"]:
+for expected in ["wait-unlock", "inherit", "store", "domain", "unlock", "attr", "fsck", "gc", "id", "ln", "version", "--dir", "--domain", "--store", "--help", "--version"]:
     assert_contains(values, expected, "top-level commands")
 
 mode, values = run_completion("help", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: help completion mode mismatch: {mode!r}")
-for expected in ["usecases", "concepts", "wait-unlock", "store", "domain", "id"]:
+for expected in ["usecases", "concepts", "wait-unlock", "store", "domain", "gc", "id"]:
     assert_contains(values, expected, "help targets")
 
 mode, values = run_completion("domain", "")
@@ -88,6 +88,12 @@ if mode != "plain":
     raise SystemExit(f"FAIL: fsck option completion mode mismatch: {mode!r}")
 for expected in ["--orphaned", "--dangling", "--refcount", "--repair", "--format"]:
     assert_contains(values, expected, "fsck options")
+
+mode, values = run_completion("gc", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: gc option completion mode mismatch: {mode!r}")
+for expected in ["--orphaned", "--dangling", "--dry-run", "--format"]:
+    assert_contains(values, expected, "gc options")
 
 mode, values = run_completion("store", "migrate", "--")
 if mode != "plain":

@@ -96,6 +96,17 @@ is supported with
 .B --format v2 --refcount
 and rewrites only cached object refcounts that can be rebuilt from domain entries. It does not delete orphaned secrets, dangling entries, values, or tombstones.
 .TP
+.B gc [\-\-orphaned] [\-\-dangling] [\-\-dry-run] [\-\-format v2]
+Remove unreachable or dangling v2 graph files from the current-domain local store namespace. Without a filter,
+.B gc
+targets both orphaned and dangling v2 graph artifacts.
+.B --dry-run
+prints
+.B would-remove-*
+rows without deleting files. Actual removal prints
+.B removed-*
+rows. The command removes v2 domain-entry files, orphaned secret-object files, and object value sidecars, but does not touch legacy v1 key/value fallback files.
+.TP
 .B mask KEYREF
 Create a local tombstone to hide one inherited key in the current domain.
 .TP

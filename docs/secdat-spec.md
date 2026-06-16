@@ -30,6 +30,7 @@ secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GL
 secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--sandbox-injectable]
 secdat [--dir DIR] [--store STORE] attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|bulk]
 secdat [--dir DIR] [--store STORE] fsck [--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]
+secdat [--dir DIR] [--store STORE] gc [--orphaned] [--dangling] [--dry-run] [--format v2]
 
 secdat [--dir DIR] [--store STORE] exists KEYREF
 secdat [--dir DIR] [--store STORE] id KEYREF
@@ -102,6 +103,7 @@ To make the requested behavior implementable, the following are treated as norma
 - per-secret attributes include `key_visibility`, `value_access`, and `sandbox_inject`
 - `sandbox_inject` controls whether a key may be included in a future scoped sandbox import flow
 - `fsck` performs non-destructive store consistency checks used by the migration path
+- `gc` explicitly removes unreachable or dangling v2 graph files after review
 - `exec` injects matched keys into the child process environment
 - `secdat --help SUBCOMMAND` and `secdat SUBCOMMAND --help` are equivalent for command-local usage output
 - unique long-option abbreviations are accepted when they resolve unambiguously within the current command
@@ -315,6 +317,11 @@ To make the requested behavior implementable, the following are treated as norma
 - v2 refcount checks report cached object refcount mismatches as `refcount-mismatch	SECRET_ID	expected=N actual=M`
 - `fsck --format v2 --refcount --repair` rewrites only rebuildable cached object refcounts and reports `repaired-refcount	SECRET_ID	expected=N actual=M`
 - `fsck --repair` must not delete orphaned secrets, dangling entries, values, tombstones, or any non-derived data
+- `secdat gc --format v2 [--orphaned] [--dangling]` is the explicit destructive cleanup path for v2 graph garbage
+- without a filter, `gc` targets both orphaned and dangling v2 graph artifacts
+- `gc --dry-run` reports `would-remove-*` rows without deleting files
+- actual `gc` reports `removed-*` rows and removes v2 domain-entry files, orphaned secret-object files, invalid secret-object files, and object value sidecars
+- `gc` must not touch legacy v1 key/value fallback files preserved for migration compatibility
 
 #### FR-7c Shell Export
 
@@ -340,7 +347,7 @@ To make the requested behavior implementable, the following are treated as norma
 - reads, listing, export-like operations, and bundle save/load must prefer the active volatile overlay before consulting persisted store files
 - when no wrapped persistent master key exists, `unlock --volatile` may generate an ephemeral in-memory master key without writing the wrapped-key file
 - the current implementation removes only tombstones created in the active volatile overlay; removing persisted tombstones still requires a normal writable session
-- `unlock --readonly` reuses an existing master key but must reject mutating commands while keeping reads, listing, export-like operations, and status available
+- `unlock --readonly` reuses an existing master key but must reject mutating commands, including `gc` without `--dry-run`, while keeping reads, listing, export-like operations, dry-run cleanup review, and status available
 - `--readonly` and `--volatile` are mutually exclusive, and neither may be combined with `unlock --inherit`
 - if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `unlock`
@@ -1124,6 +1131,7 @@ secdat ln @UUID DST_KEYREF
 secdat id KEYREF
 secdat secret status UUID
 secdat fsck [--orphaned] [--dangling] [--refcount] [--repair]
+secdat gc [--orphaned] [--dangling] [--dry-run]
 ```
 
 Current and planned semantics:
@@ -1137,6 +1145,8 @@ Current and planned semantics:
 - `fsck --dangling` lists domain entries pointing to missing or unreadable secret objects
 - `fsck --refcount` compares cached object refcounts with counts rebuilt from domain entries
 - `fsck --repair` repairs only derived metadata currently supported by the implementation, starting with cached v2 refcounts; it must not delete orphaned values without an explicit destructive option
+- `gc --dry-run` lists v2 graph files that would be deleted
+- `gc` without `--dry-run` deletes only explicit v2 graph garbage: orphaned secret objects, object value sidecars, invalid secret objects, invalid domain entries, and domain entries pointing to missing or unreadable objects
 
 `cp` and `ln` must remain deliberately different. `cp` produces an independent secret object and can later diverge. `ln` shares one secret object, so changing the value through any link changes the value observed through all links.
 
@@ -1165,7 +1175,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links by source unwrap and destination rewrap of the object data key. `fsck --format v2 --refcount --repair` can rebuild cached object refcounts without deleting graph data; direct source-object syntax such as `ln @UUID DST_KEYREF` remains planned.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links by source unwrap and destination rewrap of the object data key. `fsck --format v2 --refcount --repair` can rebuild cached object refcounts without deleting graph data. `gc --format v2` can delete orphaned or dangling v2 graph files after dry-run review; direct source-object syntax such as `ln @UUID DST_KEYREF` remains planned.
 
 #### Implementation Plan
 
@@ -1185,7 +1195,8 @@ The current migration writer creates the v2 domain-entry/object graph side-by-si
 14. Replace the transitional `.value` sidecar with the final authenticated object payload format that is encrypted by the object data key. This is implemented for new or rewritten values by storing the value payload inside the `.sec` object file; legacy sidecars remain readable for compatibility.
 15. Update the future sandbox import/export flow to require both v2 `entry_inject` and `secret_inject`.
 16. Add repair-only fsck operations for rebuildable metadata such as cached refcounts. This is implemented for v2 cached object refcounts.
-17. Add finalize/cleanup commands only after v2 read/write, migration, fsck, and rollback paths are covered by regression tests.
+17. Add v2 graph garbage collection for orphaned and dangling artifacts. This is implemented as explicit `gc --format v2`, with `--dry-run`.
+18. Add finalize/cleanup commands for legacy v1 fallback files only after v2 read/write, migration, fsck, gc, and rollback paths are covered by regression tests.
 
 The first implementation should prefer conservative compatibility over removing old paths. The v1 sidecar metadata added for secret attributes should be treated as migration input, not as the final architecture.
 
@@ -1214,7 +1225,8 @@ The v1 implementation covers the initial command surface and the first secret-at
 11. add cross-domain object addressing, then enable cross-domain `ln` with source unwrap and destination rewrap semantics
 12. switch object value encryption from the transitional domain-key sidecar to the object data key
 13. add fsck repair for rebuildable metadata; current support repairs v2 cached object refcounts
-14. add migration finalization once v1 rollback remains tested
+14. add explicit v2 graph garbage collection for orphaned and dangling artifacts
+15. add migration finalization once v1 rollback remains tested
 
 ## 8. Open Questions
 
@@ -1222,10 +1234,9 @@ The following should be fixed before implementation is finalized:
 
 1. whether hidden-key exact lookup should continue decrypting candidate domain entries, or whether a keyed lookup tag is worth the equality-leakage tradeoff
 2. whether direct `secret_id` references should remain metadata-only unless a source domain entry is also provided
-3. whether orphan cleanup should be a separate destructive command instead of `fsck --repair`
-4. how save/load bundles should encode linked objects without accidentally turning hard links into copies
-5. whether explicit locking such as `flock` should become mandatory during v2 migration and fsck repair
-6. whether `domain delete` should fail when child domains or linked secret objects exist, or whether forced recursive deletion should be a separate command
+3. how save/load bundles should encode linked objects without accidentally turning hard links into copies
+4. whether explicit locking such as `flock` should become mandatory during v2 migration, fsck repair, and gc
+5. whether `domain delete` should fail when child domains or linked secret objects exist, or whether forced recursive deletion should be a separate command
 
 ## 9. Recommended Direction
 

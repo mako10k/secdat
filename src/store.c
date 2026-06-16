@@ -163,6 +163,17 @@ struct secdat_fsck_report {
     size_t repairs;
 };
 
+struct secdat_gc_options {
+    const char *format;
+    int orphaned;
+    int dangling;
+    int dry_run;
+};
+
+struct secdat_gc_report {
+    size_t removals;
+};
+
 enum secdat_store_format {
     SECDAT_STORE_FORMAT_INVALID = 0,
     SECDAT_STORE_FORMAT_V1,
@@ -2743,6 +2754,64 @@ static int secdat_parse_fsck_options(const struct secdat_cli *cli, struct secdat
             fprintf(stderr, _("fsck --repair currently requires --refcount\n"));
             return 2;
         }
+    }
+
+    return 0;
+}
+
+static int secdat_parse_gc_options(const struct secdat_cli *cli, struct secdat_gc_options *options)
+{
+    static const struct option long_options[] = {
+        {"orphaned", no_argument, NULL, 1000},
+        {"dangling", no_argument, NULL, 1001},
+        {"dry-run", no_argument, NULL, 1002},
+        {"format", required_argument, NULL, 1003},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+
+    memset(options, 0, sizeof(*options));
+    options->format = "v2";
+
+    secdat_prepare_option_argv(cli, "gc", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":", long_options, NULL)) != -1) {
+        switch (option) {
+        case 1000:
+            options->orphaned = 1;
+            break;
+        case 1001:
+            options->dangling = 1;
+            break;
+        case 1002:
+            options->dry_run = 1;
+            break;
+        case 1003:
+            if (strcmp(optarg, "v2") != 0) {
+                fprintf(stderr, _("invalid gc format: %s\n"), optarg);
+                return 2;
+            }
+            options->format = optarg;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for gc\n"));
+            secdat_cli_print_try_help(cli, "gc");
+            return 2;
+        }
+    }
+
+    if (optind != argc) {
+        fprintf(stderr, _("invalid arguments for gc\n"));
+        secdat_cli_print_try_help(cli, "gc");
+        return 2;
+    }
+    if (!options->orphaned && !options->dangling) {
+        options->orphaned = 1;
+        options->dangling = 1;
     }
 
     return 0;
@@ -10799,6 +10868,47 @@ static void secdat_fsck_report_repair(struct secdat_fsck_report *report, const c
     report->repairs += 1;
 }
 
+static void secdat_gc_report_removal(struct secdat_gc_report *report, int dry_run, const char *kind, const char *key, const char *detail)
+{
+    printf("%s-%s\t%s\t%s\n", dry_run ? "would-remove" : "removed", kind, key, detail);
+    report->removals += 1;
+}
+
+static int secdat_gc_build_v2_artifact_path(const char *directory, const char *name, const char *suffix, char *buffer, size_t size)
+{
+    if (snprintf(buffer, size, "%s/%s%s", directory, name, suffix) >= (int)size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_gc_remove_v2_domain_entry(const char *domain_entries_dir, const char *entry_id)
+{
+    char entry_path[PATH_MAX];
+
+    if (secdat_gc_build_v2_artifact_path(domain_entries_dir, entry_id, ".dent", entry_path, sizeof(entry_path)) != 0) {
+        return 1;
+    }
+    return secdat_remove_if_exists(entry_path);
+}
+
+static int secdat_gc_remove_v2_secret_artifacts(const char *secret_objects_dir, const char *secret_id)
+{
+    char object_path[PATH_MAX];
+    char value_path[PATH_MAX];
+
+    if (secdat_gc_build_v2_artifact_path(secret_objects_dir, secret_id, ".sec", object_path, sizeof(object_path)) != 0
+        || secdat_gc_build_v2_artifact_path(secret_objects_dir, secret_id, ".value", value_path, sizeof(value_path)) != 0) {
+        return 1;
+    }
+    if (secdat_remove_if_exists(object_path) != 0
+        || secdat_remove_if_exists(value_path) != 0) {
+        return 1;
+    }
+    return 0;
+}
+
 static int secdat_fsck_v1_store(
     const struct secdat_domain_chain *chain,
     const char *store_name,
@@ -11092,6 +11202,189 @@ static int secdat_command_fsck(const struct secdat_cli *cli)
     }
 
     return 1;
+}
+
+static int secdat_gc_v2_store(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const struct secdat_gc_options *options,
+    struct secdat_gc_report *report
+)
+{
+    char domain_entries_dir[PATH_MAX];
+    char secret_objects_dir[PATH_MAX];
+    char entry_path[PATH_MAX];
+    char object_path[PATH_MAX];
+    struct secdat_key_list entries = {0};
+    struct secdat_key_list objects = {0};
+    struct secdat_key_list valid_objects = {0};
+    struct secdat_v2_domain_entry_info entry_info;
+    enum secdat_store_format format;
+    const char *current_domain_id;
+    size_t index;
+    size_t actual_refcount;
+    size_t cached_refcount;
+    int refcount_present;
+    int status = 1;
+
+    memset(report, 0, sizeof(*report));
+    if (chain->count == 0) {
+        fprintf(stderr, _("gc requires a registered current domain\n"));
+        return 1;
+    }
+    if (!options->dry_run && secdat_require_mutable_session_chain(chain, "gc") != 0) {
+        return 1;
+    }
+    current_domain_id = chain->ids[0];
+    if (secdat_read_store_format(current_domain_id, store_name, &format) != 0) {
+        return 1;
+    }
+    if (format == SECDAT_STORE_FORMAT_INVALID) {
+        fprintf(stderr, _("invalid store format marker\n"));
+        return 1;
+    }
+    if (format != SECDAT_STORE_FORMAT_V2) {
+        fprintf(stderr, _("store format is v1; gc requires --format v2\n"));
+        secdat_print_store_migration_hint("secdat", store_name);
+        return 2;
+    }
+
+    if (secdat_v2_domain_entries_dir(current_domain_id, store_name, domain_entries_dir, sizeof(domain_entries_dir)) != 0
+        || secdat_v2_secret_objects_dir(current_domain_id, store_name, secret_objects_dir, sizeof(secret_objects_dir)) != 0) {
+        return 1;
+    }
+    if (secdat_collect_directory_keys(domain_entries_dir, ".dent", &entries) != 0
+        || secdat_collect_directory_keys(secret_objects_dir, ".sec", &objects) != 0) {
+        goto cleanup;
+    }
+    if (entries.count > 1) {
+        qsort(entries.items, entries.count, sizeof(*entries.items), secdat_compare_strings);
+    }
+    if (objects.count > 1) {
+        qsort(objects.items, objects.count, sizeof(*objects.items), secdat_compare_strings);
+    }
+
+    for (index = 0; index < objects.count; index += 1) {
+        int invalid_object = 0;
+
+        if (!secdat_uuid_is_valid(objects.items[index])) {
+            invalid_object = 1;
+        } else if (snprintf(object_path, sizeof(object_path), "%s/%s.sec", secret_objects_dir, objects.items[index]) >= (int)sizeof(object_path)) {
+            fprintf(stderr, _("path is too long\n"));
+            goto cleanup;
+        } else if (secdat_validate_v2_secret_object_file(object_path, objects.items[index], &refcount_present, &cached_refcount) != 0) {
+            invalid_object = 1;
+        }
+
+        if (invalid_object) {
+            if (options->dangling) {
+                secdat_gc_report_removal(report, options->dry_run, "dangling-secret", objects.items[index], "invalid-secret");
+                if (!options->dry_run && secdat_gc_remove_v2_secret_artifacts(secret_objects_dir, objects.items[index]) != 0) {
+                    goto cleanup;
+                }
+            }
+            continue;
+        }
+        if (secdat_key_list_append(&valid_objects, objects.items[index]) != 0) {
+            goto cleanup;
+        }
+    }
+
+    if (options->dangling) {
+        for (index = 0; index < entries.count; index += 1) {
+            int missing_secret = 0;
+
+            if (!secdat_uuid_is_valid(entries.items[index])) {
+                secdat_gc_report_removal(report, options->dry_run, "dangling-entry", entries.items[index], "invalid-entry");
+                if (!options->dry_run && secdat_gc_remove_v2_domain_entry(domain_entries_dir, entries.items[index]) != 0) {
+                    goto cleanup;
+                }
+                continue;
+            }
+            if (snprintf(entry_path, sizeof(entry_path), "%s/%s.dent", domain_entries_dir, entries.items[index]) >= (int)sizeof(entry_path)) {
+                fprintf(stderr, _("path is too long\n"));
+                goto cleanup;
+            }
+            if (secdat_read_v2_domain_entry_info(entry_path, entries.items[index], &entry_info) != 0) {
+                secdat_gc_report_removal(report, options->dry_run, "dangling-entry", entries.items[index], "invalid-entry");
+                if (!options->dry_run && secdat_gc_remove_v2_domain_entry(domain_entries_dir, entries.items[index]) != 0) {
+                    goto cleanup;
+                }
+                continue;
+            }
+            {
+                const char *object_domain_id = secdat_v2_entry_object_domain(current_domain_id, &entry_info);
+                const char *object_store_name = secdat_v2_entry_object_store(store_name, &entry_info);
+                int object_is_local = strcmp(object_domain_id, current_domain_id) == 0
+                    && strcmp(secdat_effective_store_name(object_store_name), secdat_effective_store_name(store_name)) == 0;
+
+                if (object_is_local) {
+                    missing_secret = !secdat_key_list_contains(&valid_objects, entry_info.secret_id);
+                } else if (secdat_build_v2_secret_object_path(object_domain_id, object_store_name, entry_info.secret_id, object_path, sizeof(object_path)) != 0
+                    || secdat_validate_v2_secret_object_file(object_path, entry_info.secret_id, &refcount_present, &cached_refcount) != 0) {
+                    missing_secret = 1;
+                }
+            }
+            if (missing_secret) {
+                secdat_gc_report_removal(report, options->dry_run, "dangling-entry", entries.items[index], "missing-secret");
+                if (!options->dry_run && secdat_gc_remove_v2_domain_entry(domain_entries_dir, entries.items[index]) != 0) {
+                    goto cleanup;
+                }
+            }
+        }
+    }
+
+    if (options->orphaned) {
+        for (index = 0; index < valid_objects.count; index += 1) {
+            if (secdat_count_v2_secret_references_to_object(current_domain_id, store_name, valid_objects.items[index], &actual_refcount) != 0) {
+                goto cleanup;
+            }
+            if (actual_refcount == 0) {
+                secdat_gc_report_removal(report, options->dry_run, "orphaned-secret", valid_objects.items[index], "missing-entry");
+                if (!options->dry_run && secdat_gc_remove_v2_secret_artifacts(secret_objects_dir, valid_objects.items[index]) != 0) {
+                    goto cleanup;
+                }
+            }
+        }
+    }
+
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&entries);
+    secdat_key_list_free(&objects);
+    secdat_key_list_free(&valid_objects);
+    return status;
+}
+
+static int secdat_command_gc(const struct secdat_cli *cli)
+{
+    struct secdat_gc_options options;
+    struct secdat_gc_report report;
+    struct secdat_domain_chain chain = {0};
+    int status;
+
+    status = secdat_parse_gc_options(cli, &options);
+    if (status != 0) {
+        return status;
+    }
+
+    if (strcmp(options.format, "v2") != 0) {
+        fprintf(stderr, _("gc is only supported with --format v2\n"));
+        return 2;
+    }
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
+        return 1;
+    }
+    status = secdat_gc_v2_store(&chain, cli->store, &options, &report);
+    secdat_domain_chain_free(&chain);
+    if (status != 0) {
+        return status;
+    }
+    if (report.removals == 0) {
+        puts("ok");
+    }
+    return 0;
 }
 
 static int secdat_command_list(const struct secdat_cli *cli)
@@ -14071,6 +14364,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_attr(cli);
     case SECDAT_COMMAND_FSCK:
         return secdat_command_fsck(cli);
+    case SECDAT_COMMAND_GC:
+        return secdat_command_gc(cli);
     case SECDAT_COMMAND_MASK:
         return secdat_command_mask(cli);
     case SECDAT_COMMAND_UNMASK:

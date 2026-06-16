@@ -490,14 +490,18 @@ if rc != 1 or "invalid store format marker" not in stderr:
 
 write_entry(domain_entries_dir / f"{missing_entry_id}.dent", missing_entry_id, missing_secret_id, "MISSING")
 (domain_entries_dir / "BROKEN.dent").write_text("not-a-domain-entry\n", encoding="utf-8")
+(secret_objects_dir / "BAD.sec").write_text("not-a-secret-object\n", encoding="utf-8")
+(secret_objects_dir / "BAD.value").write_text("bad-sidecar\n", encoding="utf-8")
 write_object(secret_objects_dir / f"{secret_id}.sec", secret_id, 3)
 write_object(secret_objects_dir / f"{orphan_secret_id}.sec", orphan_secret_id, 0)
+(secret_objects_dir / f"{orphan_secret_id}.value").write_text("orphan-sidecar\n", encoding="utf-8")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--dangling"])
 if rc != 1 or stderr != "":
     fail(f"v2 dangling fsck should report issues: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "dangling-entry\tBROKEN\tinvalid-entry\n", "v2 invalid entry")
 assert_contains(stdout, f"dangling-entry\t{missing_entry_id}\tmissing-secret\n", "v2 missing secret")
+assert_contains(stdout, "dangling-secret\tBAD\tinvalid-secret\n", "v2 invalid secret")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--orphaned"])
 if rc != 1 or stderr != "":
@@ -522,6 +526,52 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v
 if rc != 1 or stderr != "":
     fail(f"v2 refcount repair should not remove orphans: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, f"orphaned-secret\t{orphan_secret_id}\tmissing-entry\n", "v2 orphaned secret after repair")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "gc", "--format", "v2", "--dangling", "--dry-run"])
+if rc != 0 or stderr != "":
+    fail(f"v2 dangling gc dry-run should succeed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "would-remove-dangling-entry\tBROKEN\tinvalid-entry\n", "v2 gc dry-run invalid entry")
+assert_contains(stdout, f"would-remove-dangling-entry\t{missing_entry_id}\tmissing-secret\n", "v2 gc dry-run missing secret")
+assert_contains(stdout, "would-remove-dangling-secret\tBAD\tinvalid-secret\n", "v2 gc dry-run invalid secret")
+if (not (domain_entries_dir / "BROKEN.dent").exists()
+        or not (domain_entries_dir / f"{missing_entry_id}.dent").exists()
+        or not (secret_objects_dir / "BAD.sec").exists()
+        or not (secret_objects_dir / "BAD.value").exists()):
+    fail("v2 gc dry-run should not remove dangling artifacts")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "gc", "--format", "v2", "--dangling"])
+if rc != 0 or stderr != "":
+    fail(f"v2 dangling gc should remove entries: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "removed-dangling-entry\tBROKEN\tinvalid-entry\n", "v2 gc invalid entry removal")
+assert_contains(stdout, f"removed-dangling-entry\t{missing_entry_id}\tmissing-secret\n", "v2 gc missing secret removal")
+assert_contains(stdout, "removed-dangling-secret\tBAD\tinvalid-secret\n", "v2 gc invalid secret removal")
+if ((domain_entries_dir / "BROKEN.dent").exists()
+        or (domain_entries_dir / f"{missing_entry_id}.dent").exists()
+        or (secret_objects_dir / "BAD.sec").exists()
+        or (secret_objects_dir / "BAD.value").exists()):
+    fail("v2 gc did not remove dangling artifacts")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--dangling"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"v2 dangling fsck should be clean after gc: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "gc", "--format", "v2", "--orphaned", "--dry-run"])
+if rc != 0 or stderr != "":
+    fail(f"v2 orphaned gc dry-run should succeed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, f"would-remove-orphaned-secret\t{orphan_secret_id}\tmissing-entry\n", "v2 gc dry-run orphan")
+if not (secret_objects_dir / f"{orphan_secret_id}.sec").exists() or not (secret_objects_dir / f"{orphan_secret_id}.value").exists():
+    fail("v2 gc dry-run should not remove orphaned secret artifacts")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "gc", "--format", "v2", "--orphaned"])
+if rc != 0 or stderr != "":
+    fail(f"v2 orphaned gc should remove artifacts: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, f"removed-orphaned-secret\t{orphan_secret_id}\tmissing-entry\n", "v2 gc orphan removal")
+if (secret_objects_dir / f"{orphan_secret_id}.sec").exists() or (secret_objects_dir / f"{orphan_secret_id}.value").exists():
+    fail("v2 gc did not remove orphaned secret artifacts")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--orphaned"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"v2 orphaned fsck should be clean after gc: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 print("PASS v2 fsck regression")
 PY

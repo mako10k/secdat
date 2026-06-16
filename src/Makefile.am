@@ -26,3 +26,12 @@ secdat_LDADD = libsecdat.la
 secdat_SOURCES = \
 	main.c \
 	i18n.h
+
+secdat_local_headers = \
+	cli.h \
+	domain.h \
+	i18n.h \
+	secdat-sdk.h \
+	store.h
+
+main.o cli.lo domain.lo store.lo: $(secdat_local_headers)

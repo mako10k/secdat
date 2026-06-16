@@ -76,6 +76,10 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v
 if rc != 2 or stdout != "" or "fsck --repair currently requires --refcount" not in stderr:
     fail(f"fsck repair without refcount should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "gc", "--dry-run"])
+if rc != 2 or stdout != "" or "store format is v1; gc requires --format v2" not in stderr:
+    fail(f"v1 gc should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 entry_files = list(Path(env["XDG_DATA_HOME"]).rglob("GOOD.sec"))
 if len(entry_files) != 1:
     fail(f"expected one GOOD.sec, found {entry_files!r}")
