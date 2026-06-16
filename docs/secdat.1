@@ -131,8 +131,9 @@ Copy one key into another resolved location.
 .TP
 .B ln SRC_KEYREF DST_KEYREF
 Link another key to the same v2 secret object. Source and destination may use explicit KEYREF domain/store qualifiers, including different v2 domains or stores. Updating the value through either key updates the shared object.
-.B --secret-id
-links remain planned and still require explicit authorization semantics.
+Direct source-object links such as
+.B ln @UUID DST_KEYREF
+remain planned and still require explicit authorization semantics; object UUID syntax is not a destination operand.
 .TP
 .B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-\-env-map-sed EXPR] [\-\-] CMD [ARGS...]
 Inject resolved keys into a child process environment and execute the command. Repeated include patterns widen the match set, repeated exclude patterns subtract from it, and
@@ -204,12 +205,15 @@ returns success without changing local state.
 Report whether secret material is available from the current domain scope.
 .TP
 .B store create|delete|ls|migrate
-Manage store namespaces inside the resolved current domain.
+Manage store namespaces and v1 to v2 migration inside the resolved current domain.
 .TP
 .B store migrate STORE \-\-to-format v2 [\-\-dry-run]
 Validate one v1 store and print the v2 migration plan. Without
 .B --dry-run ,
 write side-by-side v2 domain-entry/object graph files, verify them with v2 fsck, mark the store as v2, and leave v1 value files in place. Output includes domain-entry, secret-object, sidecar, tombstone, public-value, encrypted-value, sandbox-injectable, and issue counts.
+Some v2-only errors print this dry-run command as a hint; set
+.B SECDAT_SUPPRESS_MIGRATION_HINTS=1
+to hide those hints.
 .TP
 .B domain create|delete|status
 Manage domain roots and resolution state.

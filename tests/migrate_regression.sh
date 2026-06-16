@@ -59,10 +59,17 @@ def domain_entries_for_secret(store_root, sid):
     ]
 
 
-def assert_value_magic(path, magic, label):
+def assert_object_payload_magic(path, magic, label):
     data = path.read_bytes()
-    if not data.startswith(magic):
-        fail(f"{label}: expected value magic {magic!r}, found {data[:8]!r}")
+    separator = data.find(b"\n\n")
+    if separator < 0:
+        fail(f"{label}: missing object payload separator")
+    header = data[:separator].decode("utf-8")
+    payload = data[separator + 2 :]
+    if f"payload_length={len(payload)}\n" not in header + "\n":
+        fail(f"{label}: object payload length metadata mismatch")
+    if not payload.startswith(magic):
+        fail(f"{label}: expected object payload magic {magic!r}, found {payload[:8]!r}")
 
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "domain", "create"])
@@ -105,6 +112,16 @@ for expected in [
     "issues=0\n",
 ]:
     assert_contains(stdout, expected, "store migrate dry-run output")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "id", "APP_TOKEN"])
+if rc != 1 or stdout != "" or "secret id is available only for store format v2\n" not in stderr or "store migrate app --to-format v2 --dry-run" not in stderr:
+    fail(f"v1 id should include migration hint: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(domain), "--store", "app", "id", "APP_TOKEN"],
+    {"SECDAT_SUPPRESS_MIGRATION_HINTS": "1"},
+)
+if rc != 1 or stdout != "" or "secret id is available only for store format v2\n" not in stderr or "store migrate app --to-format v2 --dry-run" in stderr:
+    fail(f"migration hint suppression failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "migrate", "app", "--to-format", "v3", "--dry-run"])
 if rc != 2 or "invalid migration target format: v3" not in stderr:
@@ -196,6 +213,7 @@ if rc != 0 or stderr != "":
 if len(stdout.strip()) != 36 or stdout.count("\n") != 1:
     fail(f"migrated v2 id did not print one UUID: {stdout!r}")
 app_token_secret_id = stdout.strip()
+app_token_object_path = store_root / "objects" / "secret" / f"{app_token_secret_id}.sec"
 app_token_entry_texts = domain_entries_for_secret(store_root, app_token_secret_id)
 if len(app_token_entry_texts) != 1 or "wrapped_object_key=" not in app_token_entry_texts[0]:
     fail("migrated encrypted APP_TOKEN domain entry did not include wrapped_object_key")
@@ -240,14 +258,14 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get
 if rc != 0 or stdout != "secret-token" or stderr != "":
     fail(f"migrated v2 public get while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 value_files = list((store_root / "objects" / "secret").glob("*.value"))
-if len(value_files) != 1:
-    fail(f"expected one migrated v2 object value file, found {value_files!r}")
-assert_value_magic(value_files[0], b"SECDAT1\0", "migrated public value")
+if value_files:
+    fail(f"migrated v2 value rewrite should not create object value sidecars: {value_files!r}")
+assert_object_payload_magic(app_token_object_path, b"SECDAT1\0", "migrated public value")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--value-access", "unlocked"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"migrated v2 value_access encrypted update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_value_magic(value_files[0], b"SECDVAL2", "migrated encrypted value")
+assert_object_payload_magic(app_token_object_path, b"SECDOBJ2", "migrated encrypted value")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get", "APP_TOKEN"], {"SECDAT_MASTER_KEY": ""})
 if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
     fail(f"migrated v2 encrypted get while locked should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")

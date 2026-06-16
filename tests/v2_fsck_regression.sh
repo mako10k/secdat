@@ -88,10 +88,35 @@ def assert_wrapped_object_key_count(sid, expected_count, label):
             fail(f"{label}: missing wrapped_object_key")
 
 
-def assert_value_magic(path, magic, label):
+def assert_object_payload_magic(path, magic, label):
     data = path.read_bytes()
-    if not data.startswith(magic):
-        fail(f"{label}: expected value magic {magic!r}, found {data[:8]!r}")
+    separator = data.find(b"\n\n")
+    if separator < 0:
+        fail(f"{label}: missing object payload separator")
+    header = data[:separator].decode("utf-8")
+    payload = data[separator + 2 :]
+    if f"payload_length={len(payload)}\n" not in header + "\n":
+        fail(f"{label}: object payload length metadata mismatch")
+    if not payload.startswith(magic):
+        fail(f"{label}: expected object payload magic {magic!r}, found {payload[:8]!r}")
+
+
+def read_object_header_text(path):
+    data = path.read_bytes()
+    separator = data.find(b"\n\n")
+    if separator >= 0:
+        return data[:separator].decode("utf-8") + "\n"
+    return data.decode("utf-8")
+
+
+def replace_object_header_text(path, old, new):
+    data = path.read_bytes()
+    separator = data.find(b"\n\n")
+    if separator >= 0:
+        header = data[:separator].decode("utf-8")
+        path.write_bytes(header.replace(old, new).encode("utf-8") + data[separator:])
+        return
+    path.write_text(data.decode("utf-8").replace(old, new), encoding="utf-8")
 
 
 def read_field(text, field):
@@ -146,7 +171,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=never\n" or stderr != "":
     fail(f"clean v2 attr after inject update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 entry_text = (domain_entries_dir / f"{entry_id}.dent").read_text(encoding="utf-8")
-object_text = (secret_objects_dir / f"{secret_id}.sec").read_text(encoding="utf-8")
+object_text = read_object_header_text(secret_objects_dir / f"{secret_id}.sec")
 if "entry_inject=never\n" not in entry_text:
     fail("clean v2 attr did not update domain entry inject policy")
 if "object_domain=" not in entry_text or "object_store=default\n" not in entry_text:
@@ -175,9 +200,9 @@ if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inj
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_TOKEN"], {"SECDAT_MASTER_KEY": ""})
 if rc != 0 or stdout != "public-token" or stderr != "":
     fail(f"pure v2 public get while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-if not (secret_objects_dir / f"{secret_id}.value").exists():
-    fail("pure v2 set did not create object value storage")
-assert_value_magic(secret_objects_dir / f"{secret_id}.value", b"SECDAT1\0", "pure v2 public value")
+if (secret_objects_dir / f"{secret_id}.value").exists():
+    fail("pure v2 set should not create object value sidecar")
+assert_object_payload_magic(secret_objects_dir / f"{secret_id}.sec", b"SECDAT1\0", "pure v2 public value")
 
 source_entry_text = (domain_entries_dir / f"{entry_id}.dent").read_text(encoding="utf-8")
 source_object_domain = read_field(source_entry_text, "object_domain")
@@ -209,10 +234,7 @@ remote_entry_id = "66666666-6666-4666-8666-666666666666"
     encoding="utf-8",
 )
 source_public_object_path = secret_objects_dir / f"{secret_id}.sec"
-source_public_object_path.write_text(
-    source_public_object_path.read_text(encoding="utf-8").replace("refcount=1\n", "refcount=2\n"),
-    encoding="utf-8",
-)
+replace_object_header_text(source_public_object_path, "refcount=1\n", "refcount=2\n")
 rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"remote object v2 fsck failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -234,7 +256,9 @@ if rc != 0 or stderr != "":
     fail(f"pure v2 id for APP_SECRET failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 app_secret_id = stdout.strip()
 assert_wrapped_object_key_count(app_secret_id, 1, "pure v2 encrypted set")
-assert_value_magic(secret_objects_dir / f"{app_secret_id}.value", b"SECDVAL2", "pure v2 encrypted value")
+if (secret_objects_dir / f"{app_secret_id}.value").exists():
+    fail("pure v2 encrypted set should not create object value sidecar")
+assert_object_payload_magic(secret_objects_dir / f"{app_secret_id}.sec", b"SECDOBJ2", "pure v2 encrypted value")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET"], {"SECDAT_MASTER_KEY": ""})
 if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
     fail(f"pure v2 encrypted object-key get while locked should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -251,7 +275,7 @@ if rc != 0 or stdout.strip() != app_secret_id or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET_LINK"])
 if rc != 0 or stdout != "secret-value" or stderr != "":
     fail(f"pure v2 linked get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-link_object_text = (secret_objects_dir / f"{app_secret_id}.sec").read_text(encoding="utf-8")
+link_object_text = read_object_header_text(secret_objects_dir / f"{app_secret_id}.sec")
 if "refcount=2\n" not in link_object_text:
     fail("pure v2 ln did not increment the linked secret refcount")
 assert_wrapped_object_key_count(app_secret_id, 2, "pure v2 ln")
@@ -273,9 +297,9 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "exists", "APP_SECRET_LINK"])
 if rc == 0:
     fail("pure v2 rm should remove only the linked key")
-if not (secret_objects_dir / f"{app_secret_id}.sec").exists() or not (secret_objects_dir / f"{app_secret_id}.value").exists():
+if not (secret_objects_dir / f"{app_secret_id}.sec").exists() or (secret_objects_dir / f"{app_secret_id}.value").exists():
     fail("pure v2 rm linked key should keep the shared secret object")
-link_object_text = (secret_objects_dir / f"{app_secret_id}.sec").read_text(encoding="utf-8")
+link_object_text = read_object_header_text(secret_objects_dir / f"{app_secret_id}.sec")
 if "refcount=1\n" not in link_object_text:
     fail("pure v2 rm linked key did not decrement the linked secret refcount")
 
@@ -298,7 +322,7 @@ if len(remote_secret_entries) != 1:
     fail(f"expected one cross-domain secret entry, found {len(remote_secret_entries)}")
 if "wrapped_object_key=" not in remote_secret_entries[0]:
     fail("cross-domain v2 ln did not rewrap the object key into the destination entry")
-link_object_text = (secret_objects_dir / f"{app_secret_id}.sec").read_text(encoding="utf-8")
+link_object_text = read_object_header_text(secret_objects_dir / f"{app_secret_id}.sec")
 if "refcount=2\n" not in link_object_text:
     fail("cross-domain v2 ln did not increment the source secret refcount")
 for fsck_domain, label in ((domain, "source"), (consumer_domain, "consumer")):
@@ -320,9 +344,9 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "exists", "REMOTE_SECRET"])
 if rc == 0:
     fail("cross-domain v2 rm should remove the destination link")
-if not (secret_objects_dir / f"{app_secret_id}.sec").exists() or not (secret_objects_dir / f"{app_secret_id}.value").exists():
+if not (secret_objects_dir / f"{app_secret_id}.sec").exists() or (secret_objects_dir / f"{app_secret_id}.value").exists():
     fail("cross-domain v2 rm should keep the source object while the source key remains")
-link_object_text = (secret_objects_dir / f"{app_secret_id}.sec").read_text(encoding="utf-8")
+link_object_text = read_object_header_text(secret_objects_dir / f"{app_secret_id}.sec")
 if "refcount=1\n" not in link_object_text:
     fail("cross-domain v2 rm did not decrement the source secret refcount")
 for fsck_domain, label in ((domain, "source"), (consumer_domain, "consumer")):

@@ -1118,7 +1118,7 @@ static void secdat_cli_print_support_routes(void)
 static void secdat_cli_print_group_meanings(void)
 {
     printf(_("\nGroups:\n"));
-    secdat_cli_print_detail_line(_("  store: manage store namespaces inside the resolved current domain\n"));
+    secdat_cli_print_detail_line(_("  store: manage store namespaces and v1 to v2 migration inside the resolved current domain\n"));
     secdat_cli_print_detail_line(_("  domain: manage domain roots and domain discovery scope\n"));
 }
 
@@ -1272,7 +1272,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "store") == 0) {
-        secdat_cli_print_detail_line(_("  store: manage store namespaces inside the resolved current domain\n"));
+        secdat_cli_print_detail_line(_("  store: manage store namespaces and migrate v1 stores to the v2 domain-entry/object layout\n"));
         return;
     }
     if (target != NULL && strcmp(target, "domain") == 0) {
@@ -1320,6 +1320,14 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         secdat_cli_print_detail_line(buffer);
         return;
     }
+    if (strcmp(target, "ln") == 0) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  share one v2 secret object under another key: %s ln APP_TOKEN SERVICE_TOKEN\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  link across explicit domains/stores: %s ln /src/domain/APP_TOKEN:app /dst/domain/APP_TOKEN:ops\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        return;
+    }
     if (strcmp(target, "unlock") == 0) {
         char buffer[512];
         snprintf(buffer, sizeof(buffer), _("  start a session for the current project directory: %s unlock\n"), program_name);
@@ -1359,6 +1367,10 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         snprintf(buffer, sizeof(buffer), _("  create one namespace for app-specific keys: %s store create app\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  inspect available namespaces before selecting one with --store: %s store ls\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  inspect a v1 to v2 migration before writing: %s store migrate app --to-format v2 --dry-run\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  write the v2 domain-entry/object graph after review: %s store migrate app --to-format v2\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         return;
     }
@@ -1421,6 +1433,7 @@ static void secdat_cli_print_semantics(void)
     secdat_cli_print_detail_line(_("  DOMAIN: directory-scoped configuration boundary used for inheritance and tombstones\n"));
     secdat_cli_print_detail_line(_("  STORE: domain-local namespace selected by --store; defaults to the default store\n"));
     secdat_cli_print_detail_line(_("  KEY / KEYREF: logical secret name, optionally qualified as [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
+    secdat_cli_print_detail_line(_("  migration hints: v2-only errors suggest store migrate; set SECDAT_SUPPRESS_MIGRATION_HINTS=1 to hide those hints\n"));
 }
 
 int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)

@@ -1070,16 +1070,19 @@ objects/secret/<secret-id>.sec
     secret_id
     value_access
     cached refcount, optional and rebuildable
+    payload_length, when an object-owned value payload is embedded
+  payload area:
+    binary value payload after a blank line, for new or rewritten v2 values
 objects/secret/<secret-id>.value
-  transitional value sidecar:
+  legacy value sidecar:
     legacy SECDAT1 binary value payload, still readable for migration compatibility
-    plaintext payload, when value_access=always
-    object-key encrypted SECDVAL2 payload, when value_access=unlocked and rewritten by v2
+    legacy plaintext payload, when value_access=always
+    legacy object-key encrypted SECDVAL2 payload, when value_access=unlocked and rewritten by an older v2 implementation
   encrypted area:
     secret-side metadata and secret-side policy flags
 ```
 
-The final binary format is intentionally undecided, but each file must have a magic number, a format version, authenticated encrypted sections, and enough public structure for locked-mode listing of public keys and public values. All encrypted sections must bind the public header as AEAD associated data. The current implementation uses a `.value` sidecar as a compatibility step before the final object file format, stores object address fields as escaped `object_domain` and `object_store` text, stores hidden key names as `encrypted_key=<hex(SECDAT1)>`, and stores encrypted-object data keys as `wrapped_object_key=<hex(SECDAT1)>` in the domain-entry text file before final domain-entry encrypted sections land. Legacy `SECDAT1` value payloads remain readable for migrated data. New or rewritten v2 encrypted values use an object-key encrypted `SECDVAL2` payload.
+The final binary format is intentionally undecided, but each file must have a magic number, a format version, authenticated encrypted sections, and enough public structure for locked-mode listing of public keys and public values. All encrypted sections must bind their public payload header as AEAD associated data. The current implementation keeps `.sec` as a text object header and stores new or rewritten object-owned values as a binary payload after a blank line in that same `.sec` file. It also keeps legacy `.value` sidecars readable for migration compatibility, stores object address fields as escaped `object_domain` and `object_store` text, stores hidden key names as `encrypted_key=<hex(SECDAT1)>`, and stores encrypted-object data keys as `wrapped_object_key=<hex(SECDAT1)>` in the domain-entry text file before final domain-entry encrypted sections land. Legacy `SECDAT1` and `SECDVAL2` value payloads remain readable for migrated or older rewritten data. New or rewritten v2 encrypted values use an object-key encrypted `SECDOBJ2` payload.
 
 #### Attribute Placement
 
@@ -1115,7 +1118,7 @@ Store v2 should add these command surfaces:
 
 ```text
 secdat ln SRC_KEYREF DST_KEYREF
-secdat ln --secret-id UUID DST_KEYREF
+secdat ln @UUID DST_KEYREF
 secdat id KEYREF
 secdat secret status UUID
 secdat fsck [--orphaned] [--dangling] [--refcount] [--repair]
@@ -1125,7 +1128,7 @@ Current and planned semantics:
 
 - `ln SRC_KEYREF DST_KEYREF` creates a new domain entry pointing to the source secret object; cross-domain links unwrap the object data key through the authorized source entry and rewrap it into the destination domain entry
 - cross-domain `ln` is enabled for normal source/destination KEYREFs when both sides resolve through v2 stores; cross-domain refcount checks count all registered v2 domain entries that point at the object domain/store/UUID tuple
-- `ln --secret-id UUID DST_KEYREF` is still planned and is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry, or through a future explicit recovery mechanism
+- `ln @UUID DST_KEYREF` is still planned as a direct source-object link and is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry, or through a future explicit recovery mechanism; `@UUID` is a source operand, not a destination
 - `id KEYREF` prints the resolved `secret_id` without printing the secret value
 - `secret status UUID` prints non-secret object metadata, link count, and whether the object is orphaned
 - `fsck --orphaned` lists secret objects with no referencing domain entries
@@ -1160,7 +1163,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. Domain entries now carry explicit object address fields and can resolve object metadata/value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key. Cross-domain `ln` is enabled for normal KEYREF source/destination links by source unwrap and destination rewrap of the object data key; direct `ln --secret-id UUID` remains planned.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links by source unwrap and destination rewrap of the object data key; direct source-object syntax such as `ln @UUID DST_KEYREF` remains planned.
 
 #### Implementation Plan
 
@@ -1176,8 +1179,8 @@ The current migration writer creates the v2 domain-entry/object graph side-by-si
 10. Add same-domain/same-store `ln` only as a graph checkpoint, not as the final `ln` feature.
 11. Add per-domain-entry `wrapped_object_key` metadata and preserve/backfill it through all v2 domain-entry rewrites.
 12. Move or address secret objects so a destination domain entry can reference a source object without copying value material.
-13. Enable cross-domain `ln` by unwrapping the object key through an authorized source entry and rewrapping it into the destination domain entry. This is implemented for normal KEYREF links; direct `ln --secret-id UUID` remains future work.
-14. Replace the transitional `.value` sidecar with the final authenticated object payload format that is encrypted by the object data key.
+13. Enable cross-domain `ln` by unwrapping the object key through an authorized source entry and rewrapping it into the destination domain entry. This is implemented for normal KEYREF links; direct `ln @UUID DST_KEYREF` remains future work.
+14. Replace the transitional `.value` sidecar with the final authenticated object payload format that is encrypted by the object data key. This is implemented for new or rewritten values by storing the value payload inside the `.sec` object file; legacy sidecars remain readable for compatibility.
 15. Update the future sandbox import/export flow to require both v2 `entry_inject` and `secret_inject`.
 16. Add repair-only fsck operations for rebuildable metadata such as cached refcounts.
 17. Add finalize/cleanup commands only after v2 read/write, migration, fsck, and rollback paths are covered by regression tests.

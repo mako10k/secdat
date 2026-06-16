@@ -145,7 +145,7 @@ if rc == 0 or "cannot update inherited key attributes" not in stderr:
     fail(f"inherited attr update should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "HIDDEN_KEY", "--key-visibility", "unlocked", "--value", "secret"])
-if rc == 0 or "key_visibility=unlocked requires storage format v2" not in stderr:
+if rc == 0 or "key_visibility=unlocked requires store format v2" not in stderr:
     fail(f"hidden key should be rejected for v1 storage: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 print("PASS attribute regression")
