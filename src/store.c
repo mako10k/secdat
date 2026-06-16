@@ -12953,6 +12953,62 @@ static int secdat_unwrap_v2_effective_object_key(
     return secdat_unwrap_object_key_hex(unwrap_domain_id, source_entry->wrapped_object_key, object_key);
 }
 
+static int secdat_ln_arg_is_uuid_reference(const char *raw)
+{
+    return raw != NULL && raw[0] == '@';
+}
+
+static int secdat_parse_ln_uuid_source(const char *raw, const char **secret_id)
+{
+    *secret_id = NULL;
+    if (!secdat_ln_arg_is_uuid_reference(raw)) {
+        return 0;
+    }
+    if (!secdat_uuid_is_valid(raw + 1)) {
+        fprintf(stderr, _("invalid UUID source for ln: %s\n"), raw);
+        return -1;
+    }
+    *secret_id = raw + 1;
+    return 1;
+}
+
+static int secdat_resolve_v2_effective_entry_by_secret_id(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *secret_id,
+    struct secdat_effective_entry *entry
+)
+{
+    struct secdat_key_list visible_keys = {0};
+    size_t index;
+    int status = 1;
+
+    secdat_effective_entry_reset(entry);
+    if (secdat_collect_visible_keys(chain, store_name, NULL, NULL, &visible_keys) != 0) {
+        goto cleanup;
+    }
+
+    for (index = 0; index < visible_keys.count; index += 1) {
+        if (secdat_resolve_effective_entry(chain, store_name, visible_keys.items[index], 0, entry) != 0) {
+            goto cleanup;
+        }
+        if (entry->from_v2 && strcmp(entry->secret_id, secret_id) == 0) {
+            status = 0;
+            goto cleanup;
+        }
+        secdat_effective_entry_reset(entry);
+    }
+
+    fprintf(stderr, _("secret UUID is not authorized in current context: %s\n"), secret_id);
+
+cleanup:
+    if (status != 0) {
+        secdat_effective_entry_reset(entry);
+    }
+    secdat_key_list_free(&visible_keys);
+    return status;
+}
+
 static int secdat_link_v2_key(
     const struct secdat_domain_chain *source_chain,
     const char *destination_domain_id,
@@ -13062,7 +13118,11 @@ static int secdat_command_ln(const struct secdat_cli *cli)
     struct secdat_effective_entry source_entry = {0};
     char destination_domain_id[PATH_MAX];
     char destination_path[PATH_MAX];
+    const char *source_domain_value;
+    const char *source_store_value;
+    const char *source_secret_id = NULL;
     enum secdat_store_format format;
+    int source_is_uuid;
     int status = 1;
 
     if (cli->argc != 2) {
@@ -13070,19 +13130,40 @@ static int secdat_command_ln(const struct secdat_cli *cli)
         secdat_cli_print_try_help(cli, "ln");
         return 2;
     }
-    if (strcmp(cli->argv[0], cli->argv[1]) == 0) {
+
+    source_is_uuid = secdat_parse_ln_uuid_source(cli->argv[0], &source_secret_id);
+    if (source_is_uuid < 0) {
+        secdat_cli_print_try_help(cli, "ln");
+        return 2;
+    }
+    if (secdat_ln_arg_is_uuid_reference(cli->argv[1])) {
+        fprintf(stderr, _("UUID references are only valid as ln source: %s\n"), cli->argv[1]);
+        secdat_cli_print_try_help(cli, "ln");
+        return 2;
+    }
+    if (!source_is_uuid && strcmp(cli->argv[0], cli->argv[1]) == 0) {
         fprintf(stderr, _("source and destination keys must differ\n"));
         return 1;
     }
 
-    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &source_reference) != 0
-        || secdat_parse_key_reference(cli->argv[1], secdat_cli_domain_base(cli), cli->store, &destination_reference) != 0) {
-        return 1;
+    if (source_is_uuid) {
+        source_domain_value = secdat_cli_domain_base(cli);
+        source_store_value = cli->store;
+        if (secdat_parse_key_reference(cli->argv[1], secdat_cli_domain_base(cli), cli->store, &destination_reference) != 0) {
+            return 1;
+        }
+    } else {
+        if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &source_reference) != 0
+            || secdat_parse_key_reference(cli->argv[1], secdat_cli_domain_base(cli), cli->store, &destination_reference) != 0) {
+            return 1;
+        }
+        source_domain_value = source_reference.domain_value;
+        source_store_value = source_reference.store_value;
     }
     if (secdat_domain_resolve_current(destination_reference.domain_value, destination_domain_id, sizeof(destination_domain_id)) != 0) {
         return 1;
     }
-    if (secdat_domain_resolve_chain(source_reference.domain_value, &source_chain) != 0) {
+    if (secdat_domain_resolve_chain(source_domain_value, &source_chain) != 0) {
         return 1;
     }
     if (secdat_domain_resolve_chain(destination_reference.domain_value, &destination_chain) != 0) {
@@ -13115,14 +13196,20 @@ static int secdat_command_ln(const struct secdat_cli *cli)
         goto cleanup;
     }
 
-    if (secdat_resolve_effective_entry(&source_chain, source_reference.store_value, source_reference.key, 0, &source_entry) != 0) {
-        fprintf(stderr, _("key not found: %s\n"), source_reference.key);
-        goto cleanup;
-    }
-    if (!source_entry.from_v2) {
-        fprintf(stderr, _("ln requires source and destination in v2 stores\n"));
-        secdat_print_store_migration_hint(cli->program_name, source_reference.store_value);
-        goto cleanup;
+    if (source_is_uuid) {
+        if (secdat_resolve_v2_effective_entry_by_secret_id(&source_chain, source_store_value, source_secret_id, &source_entry) != 0) {
+            goto cleanup;
+        }
+    } else {
+        if (secdat_resolve_effective_entry(&source_chain, source_store_value, source_reference.key, 0, &source_entry) != 0) {
+            fprintf(stderr, _("key not found: %s\n"), source_reference.key);
+            goto cleanup;
+        }
+        if (!source_entry.from_v2) {
+            fprintf(stderr, _("ln requires source and destination in v2 stores\n"));
+            secdat_print_store_migration_hint(cli->program_name, source_store_value);
+            goto cleanup;
+        }
     }
     if (secdat_resolve_entry_path(&destination_chain, destination_reference.store_value, destination_reference.key, destination_path, sizeof(destination_path)) == 0) {
         fprintf(stderr, _("destination key already exists: %s\n"), destination_reference.key);

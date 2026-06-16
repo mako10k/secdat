@@ -365,6 +365,39 @@ if rc != 0 or stderr != "":
 assert_contains(stdout, "refcount_cached=1\n", "unlinked v2 secret status cached refcount")
 assert_contains(stdout, "refcount_actual=1\n", "unlinked v2 secret status actual refcount")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", f"@{app_secret_id}", "APP_SECRET_UUID_LINK"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"v2 ln by UUID failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_SECRET_UUID_LINK"])
+if rc != 0 or stdout.strip() != app_secret_id or stderr != "":
+    fail(f"v2 UUID linked key should share secret id: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET_UUID_LINK"])
+if rc != 0 or stdout != "secret-value" or stderr != "":
+    fail(f"v2 UUID linked get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "secret", "status", app_secret_id])
+if rc != 0 or stderr != "":
+    fail(f"v2 UUID linked secret status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "refcount_cached=2\n", "v2 UUID linked secret status cached refcount")
+assert_contains(stdout, "refcount_actual=2\n", "v2 UUID linked secret status actual refcount")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "APP_SECRET", f"@{app_secret_id}"])
+if rc != 2 or stdout != "" or "UUID references are only valid as ln source" not in stderr:
+    fail(f"v2 ln should reject UUID destination: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "@not-a-uuid", "APP_SECRET_BAD_UUID"])
+if rc != 2 or stdout != "" or "invalid UUID source for ln: @not-a-uuid\n" not in stderr:
+    fail(f"v2 ln should reject invalid UUID source: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+missing_authorized_id = "99999999-9999-4999-8999-999999999999"
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", f"@{missing_authorized_id}", "APP_SECRET_UNAUTHORIZED_UUID"])
+if rc != 1 or stdout != "" or f"secret UUID is not authorized in current context: {missing_authorized_id}\n" not in stderr:
+    fail(f"v2 ln should reject unauthorized UUID source: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "rm", "APP_SECRET_UUID_LINK"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"v2 rm UUID linked key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "secret", "status", app_secret_id])
+if rc != 0 or stderr != "":
+    fail(f"v2 UUID unlinked secret status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "refcount_cached=1\n", "v2 UUID unlinked secret status cached refcount")
+assert_contains(stdout, "refcount_actual=1\n", "v2 UUID unlinked secret status actual refcount")
+
 remote_secret_keyref = f"{consumer_domain}/REMOTE_SECRET"
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "APP_SECRET", remote_secret_keyref])
 if rc != 0 or stdout != "" or stderr != "":

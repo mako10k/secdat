@@ -1012,7 +1012,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "cp", "SRC_KEYREF DST_KEYREF");
         break;
     case SECDAT_COMMAND_LN:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "SRC_KEYREF DST_KEYREF");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "SRC_KEYREF|@UUID DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--] CMD [ARGS...]");
@@ -1179,7 +1179,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success\n"));
     secdat_cli_print_detail_line(_("  mv: rename or relocate one key between resolved locations\n"));
     secdat_cli_print_detail_line(_("  cp: copy one key into another resolved location\n"));
-    secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object, including cross-domain v2 links\n"));
+    secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object, including cross-domain v2 links and authorized @UUID sources\n"));
     secdat_cli_print_detail_line(_("  exec: inject resolved keys into a child process environment\n"));
     secdat_cli_print_detail_line(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
     secdat_cli_print_detail_line(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
@@ -1262,7 +1262,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "ln") == 0) {
-        secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object, including cross-domain v2 links\n"));
+        secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object, including cross-domain v2 links and authorized @UUID sources\n"));
         return;
     }
     if (target != NULL && strcmp(target, "exec") == 0) {

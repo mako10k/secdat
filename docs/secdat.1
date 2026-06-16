@@ -148,11 +148,11 @@ Rename or relocate one key between resolved locations.
 .B cp SRC_KEYREF DST_KEYREF
 Copy one key into another resolved location.
 .TP
-.B ln SRC_KEYREF DST_KEYREF
+.B ln SRC_KEYREF|@UUID DST_KEYREF
 Link another key to the same v2 secret object. Source and destination may use explicit KEYREF domain/store qualifiers, including different v2 domains or stores. Updating the value through either key updates the shared object.
 Direct source-object links such as
 .B ln @UUID DST_KEYREF
-remain planned and still require explicit authorization semantics; object UUID syntax is not a destination operand.
+are allowed only when the current context can authorize the UUID through an existing visible or unlocked domain entry; object UUID syntax is not a destination operand.
 .TP
 .B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-\-env-map-sed EXPR] [\-\-] CMD [ARGS...]
 Inject resolved keys into a child process environment and execute the command. Repeated include patterns widen the match set, repeated exclude patterns subtract from it, and

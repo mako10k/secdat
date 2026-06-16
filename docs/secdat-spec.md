@@ -55,7 +55,7 @@ secdat [--dir DIR] [--store STORE] set KEYREF [--value|-v] VALUE
 secdat [--dir DIR] [--store STORE] rm [-f|--ignore-missing] KEYREF
 secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
-secdat [--dir DIR] [--store STORE] ln SRC_KEYREF DST_KEYREF
+secdat [--dir DIR] [--store STORE] ln SRC_KEYREF|@UUID DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [--] CMD [ARGS...]
 
@@ -1146,7 +1146,7 @@ Current and planned semantics:
 
 - `ln SRC_KEYREF DST_KEYREF` creates a new domain entry pointing to the source secret object; cross-domain links unwrap the object data key through the authorized source entry and rewrap it into the destination domain entry
 - cross-domain `ln` is enabled for normal source/destination KEYREFs when both sides resolve through v2 stores; cross-domain refcount checks count all registered v2 domain entries that point at the object domain/store/UUID tuple
-- `ln @UUID DST_KEYREF` is still planned as a direct source-object link and is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry, or through a future explicit recovery mechanism; `@UUID` is a source operand, not a destination
+- `ln @UUID DST_KEYREF` is a direct source-object link and is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry; `@UUID` is a source operand, not a destination
 - `id KEYREF` prints the resolved `secret_id` without printing the secret value
 - `secret status UUID` prints non-secret object metadata, link count, and whether the object is orphaned
 - `fsck --orphaned` lists secret objects with no referencing domain entries
@@ -1183,7 +1183,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration STORE --from-format v1 [--dry-run]
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `secret status UUID` can inspect one current-domain/current-store object by UUID without reading its value. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. `store finalize-migration STORE --from-format v1 --dry-run` can inspect which legacy v1 entry and metadata fallback files remain necessary or removable; without `--dry-run`, it removes removable legacy v1 fallback files only when no blockers remain. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links by source unwrap and destination rewrap of the object data key. `fsck --format v2 --refcount --repair` can rebuild cached object refcounts without deleting graph data. `gc --format v2` can delete orphaned or dangling v2 graph files after dry-run review; direct source-object syntax such as `ln @UUID DST_KEYREF` remains planned.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `secret status UUID` can inspect one current-domain/current-store object by UUID without reading its value. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. `store finalize-migration STORE --from-format v1 --dry-run` can inspect which legacy v1 entry and metadata fallback files remain necessary or removable; without `--dry-run`, it removes removable legacy v1 fallback files only when no blockers remain. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links and authorized `ln @UUID DST_KEYREF` links by source unwrap and destination rewrap of the object data key. `fsck --format v2 --refcount --repair` can rebuild cached object refcounts without deleting graph data. `gc --format v2` can delete orphaned or dangling v2 graph files after dry-run review.
 
 #### Implementation Plan
 
@@ -1199,7 +1199,7 @@ The current migration writer creates the v2 domain-entry/object graph side-by-si
 10. Add same-domain/same-store `ln` only as a graph checkpoint, not as the final `ln` feature.
 11. Add per-domain-entry `wrapped_object_key` metadata and preserve/backfill it through all v2 domain-entry rewrites.
 12. Move or address secret objects so a destination domain entry can reference a source object without copying value material.
-13. Enable cross-domain `ln` by unwrapping the object key through an authorized source entry and rewrapping it into the destination domain entry. This is implemented for normal KEYREF links; direct `ln @UUID DST_KEYREF` remains future work.
+13. Enable cross-domain `ln` by unwrapping the object key through an authorized source entry and rewrapping it into the destination domain entry. This is implemented for normal KEYREF links and direct `ln @UUID DST_KEYREF` links authorized by the current context.
 14. Replace the transitional `.value` sidecar with the final authenticated object payload format that is encrypted by the object data key. This is implemented for new or rewritten values by storing the value payload inside the `.sec` object file; legacy sidecars remain readable for compatibility.
 15. Update the future sandbox import/export flow to require both v2 `entry_inject` and `secret_inject`.
 16. Add repair-only fsck operations for rebuildable metadata such as cached refcounts. This is implemented for v2 cached object refcounts.
@@ -1242,7 +1242,7 @@ The v1 implementation covers the initial command surface and the first secret-at
 The following should be fixed before implementation is finalized:
 
 1. whether hidden-key exact lookup should continue decrypting candidate domain entries, or whether a keyed lookup tag is worth the equality-leakage tradeoff
-2. whether direct `secret_id` references should remain metadata-only unless a source domain entry is also provided
+2. which future operations beyond metadata inspection and authorized `ln @UUID DST_KEYREF` should accept direct `secret_id` references
 3. how save/load bundles should encode linked objects without accidentally turning hard links into copies
 4. whether explicit locking such as `flock` should become mandatory during v2 migration, fsck repair, and gc
 5. whether `domain delete` should fail when child domains or linked secret objects exist, or whether forced recursive deletion should be a separate command

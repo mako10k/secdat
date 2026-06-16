@@ -410,7 +410,7 @@ for args, marker in [
     ([bin_path, "help", "wait-unlock"], "wait-unlock [-t SECONDS|--timeout SECONDS] [-q|--quiet]"),
     ([bin_path, "help", "exec"], "[-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--] CMD [ARGS...]"),
     ([bin_path, "help", "rm"], "rm [-f|--ignore-missing] KEYREF"),
-    ([bin_path, "help", "ln"], "ln SRC_KEYREF DST_KEYREF"),
+    ([bin_path, "help", "ln"], "ln SRC_KEYREF|@UUID DST_KEYREF"),
     ([bin_path, "help", "set"], "set KEYREF [-u|--unsafe|--public-value|--secret-value]"),
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN]"),
     ([bin_path, "help", "passwd"], "passwd"),
