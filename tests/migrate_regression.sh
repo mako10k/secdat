@@ -181,6 +181,7 @@ if rc != 0 or stderr != "":
     fail(f"migrated v2 id failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if len(stdout.strip()) != 36 or stdout.count("\n") != 1:
     fail(f"migrated v2 id did not print one UUID: {stdout!r}")
+app_token_secret_id = stdout.strip()
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_PUBLIC"])
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inject=never\n" or stderr != "":
@@ -220,8 +221,43 @@ if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
     fail(f"migrated v2 encrypted get while locked should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--key-visibility", "unlocked"])
-if rc != 1 or stdout != "" or "v2 key_visibility updates are not implemented yet" not in stderr:
-    fail(f"migrated v2 key_visibility update should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"migrated v2 key_visibility hidden update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN"])
+if rc != 0 or stdout != "key_visibility=unlocked\nvalue_access=unlocked\nsandbox_inject=allow\n" or stderr != "":
+    fail(f"migrated v2 attr after key_visibility hidden update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+app_token_entry_texts = [
+    path.read_text(encoding="utf-8")
+    for path in (store_root / "domain-ent").glob("*.dent")
+    if f"secret_id={app_token_secret_id}\n" in path.read_text(encoding="utf-8")
+]
+if len(app_token_entry_texts) != 1:
+    fail(f"expected one APP_TOKEN domain entry after hiding key, found {len(app_token_entry_texts)}")
+if "APP_TOKEN" in app_token_entry_texts[0] or "encrypted_key=" not in app_token_entry_texts[0]:
+    fail("migrated v2 hidden key update did not hide APP_TOKEN in the domain entry")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "ls", "--metadata"], {"SECDAT_MASTER_KEY": ""})
+if rc != 0 or stderr != "":
+    fail(f"migrated v2 locked metadata list after hidden key update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if "APP_TOKEN" in stdout:
+    fail(f"migrated v2 locked metadata list should hide APP_TOKEN: {stdout!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get", "APP_TOKEN"], {"SECDAT_MASTER_KEY": ""})
+if rc == 0 or stdout != "":
+    fail(f"migrated v2 locked hidden key get should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--key-visibility", "always"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"migrated v2 key_visibility visible restore failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN"])
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=allow\n" or stderr != "":
+    fail(f"migrated v2 attr after key_visibility visible restore failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+app_token_entry_texts = [
+    path.read_text(encoding="utf-8")
+    for path in (store_root / "domain-ent").glob("*.dent")
+    if f"secret_id={app_token_secret_id}\n" in path.read_text(encoding="utf-8")
+]
+if len(app_token_entry_texts) != 1:
+    fail(f"expected one APP_TOKEN domain entry after visible restore, found {len(app_token_entry_texts)}")
+if "key=APP_TOKEN\n" not in app_token_entry_texts[0] or "encrypted_key=" in app_token_entry_texts[0]:
+    fail("migrated v2 key_visibility visible restore did not write a plaintext key entry")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get", "APP_TOKEN"])
 if rc != 0 or stdout != "secret-token" or stderr != "":

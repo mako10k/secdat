@@ -194,6 +194,63 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"pure v2 fsck after value writes failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "set", "HIDDEN_TOKEN",
+    "--key-visibility", "unlocked", "--value", "hidden-value", "--sandbox-inject", "explicit",
+])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 hidden key set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "HIDDEN_TOKEN"])
+if rc != 0 or stderr != "":
+    fail(f"pure v2 hidden key id failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+hidden_secret_id = stdout.strip()
+hidden_entry_texts = [
+    path.read_text(encoding="utf-8")
+    for path in domain_entries_dir.glob("*.dent")
+    if f"secret_id={hidden_secret_id}\n" in path.read_text(encoding="utf-8")
+]
+if len(hidden_entry_texts) != 1:
+    fail(f"expected one hidden key domain entry, found {len(hidden_entry_texts)}")
+hidden_entry_text = hidden_entry_texts[0]
+if "key_visibility=unlocked\n" not in hidden_entry_text or "encrypted_key=" not in hidden_entry_text:
+    fail("pure v2 hidden key domain entry did not use encrypted_key")
+if "HIDDEN_TOKEN" in hidden_entry_text or "key=HIDDEN_TOKEN" in hidden_entry_text:
+    fail("pure v2 hidden key leaked the key name in the domain entry")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "HIDDEN_TOKEN"])
+if rc != 0 or stdout != "hidden-value" or stderr != "":
+    fail(f"pure v2 hidden key get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "HIDDEN_TOKEN"])
+if rc != 0 or stdout != "key_visibility=unlocked\nvalue_access=unlocked\nsandbox_inject=explicit\n" or stderr != "":
+    fail(f"pure v2 hidden key attr failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--metadata"])
+if rc != 0 or stderr != "":
+    fail(f"pure v2 hidden key metadata list failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "HIDDEN_TOKEN\tkey_visibility=unlocked\tvalue_access=unlocked\tsandbox_inject=explicit\n", "hidden key metadata")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--metadata"], {"SECDAT_MASTER_KEY": ""})
+if rc != 0 or stderr != "":
+    fail(f"pure v2 locked metadata list failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if "HIDDEN_TOKEN" in stdout:
+    fail(f"pure v2 locked metadata list should hide hidden key: {stdout!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "HIDDEN_TOKEN"], {"SECDAT_MASTER_KEY": ""})
+if rc == 0 or stdout != "":
+    fail(f"pure v2 locked hidden key get should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "HIDDEN_TOKEN", "--key-visibility", "always"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 hidden key visibility restore failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+hidden_entry_texts = [
+    path.read_text(encoding="utf-8")
+    for path in domain_entries_dir.glob("*.dent")
+    if f"secret_id={hidden_secret_id}\n" in path.read_text(encoding="utf-8")
+]
+if len(hidden_entry_texts) != 1:
+    fail(f"expected one restored hidden key domain entry, found {len(hidden_entry_texts)}")
+hidden_entry_text = hidden_entry_texts[0]
+if "key_visibility=always\n" not in hidden_entry_text or "key=HIDDEN_TOKEN\n" not in hidden_entry_text or "encrypted_key=" in hidden_entry_text:
+    fail("pure v2 hidden key visibility restore did not write a plaintext key entry")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"pure v2 fsck after hidden key operations failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck"])
 if rc != 2 or "store format is v2; use --format v2" not in stderr:
     fail(f"v1 fsck should reject v2 marker: rc={rc} stdout={stdout!r} stderr={stderr!r}")

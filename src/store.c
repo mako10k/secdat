@@ -50,6 +50,7 @@
 #define SECDAT_GET_ON_DEMAND_UNLOCK_ENV "SECDAT_GET_ON_DEMAND_UNLOCK"
 #define SECDAT_GET_UNLOCK_TIMEOUT_ENV "SECDAT_GET_UNLOCK_TIMEOUT_SECONDS"
 #define SECDAT_ON_DEMAND_UNLOCK_WAIT_USEC 100000
+#define SECDAT_V2_TEXT_FILE_MAX 16384
 
 static const unsigned char secdat_entry_magic[8] = {'S', 'E', 'C', 'D', 'A', 'T', '1', '\0'};
 static const unsigned char secdat_wrapped_key_magic[8] = {'S', 'E', 'C', 'D', 'W', 'R', 'P', '\0'};
@@ -185,9 +186,11 @@ struct secdat_v2_domain_entry_info {
     char entry_id[64];
     char secret_id[64];
     char key[PATH_MAX];
+    char encrypted_key[SECDAT_V2_TEXT_FILE_MAX];
     enum secdat_key_visibility key_visibility;
     enum secdat_sandbox_inject entry_inject;
     int has_key;
+    int has_encrypted_key;
 };
 
 struct secdat_v2_secret_object_info {
@@ -2884,6 +2887,23 @@ static int secdat_hex_decode_bytes(const char *input, unsigned char **output, si
     return 0;
 }
 
+static int secdat_hex_string_is_valid(const char *input)
+{
+    size_t input_length;
+    size_t index;
+
+    input_length = strlen(input);
+    if (input_length == 0 || input_length % 2 != 0) {
+        return 0;
+    }
+    for (index = 0; index < input_length; index += 1) {
+        if (secdat_hex_value(input[index]) < 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int secdat_unescape_component(const char *input, char **output)
 {
     size_t length = strlen(input);
@@ -3211,10 +3231,7 @@ static int secdat_secret_attrs_supported(const struct secdat_secret_attrs *attrs
 
 static int secdat_v2_secret_attrs_supported(const struct secdat_secret_attrs *attrs)
 {
-    if (attrs->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
-        fprintf(stderr, _("v2 key_visibility=unlocked is not implemented yet\n"));
-        return 0;
-    }
+    (void)attrs;
     return 1;
 }
 
@@ -8916,7 +8933,7 @@ static int secdat_read_v2_text_file(const char *path, const char *magic, char **
     if (secdat_read_file(path, &data, &length) != 0) {
         return 1;
     }
-    if (length > 16384 || memchr(data, '\0', length) != NULL) {
+    if (length > SECDAT_V2_TEXT_FILE_MAX || memchr(data, '\0', length) != NULL) {
         secdat_secure_clear(data, length);
         free(data);
         return 1;
@@ -9016,6 +9033,15 @@ static int secdat_read_v2_domain_entry_info(const char *path, const char *file_e
             info->has_key = 1;
             continue;
         }
+        if (strcmp(line, "encrypted_key") == 0) {
+            if (info->has_encrypted_key || separator[0] == '\0'
+                || !secdat_hex_string_is_valid(separator)
+                || secdat_copy_string(info->encrypted_key, sizeof(info->encrypted_key), separator) != 0) {
+                goto cleanup;
+            }
+            info->has_encrypted_key = 1;
+            continue;
+        }
         if (strcmp(line, "entry_inject") == 0) {
             if (seen_entry_inject) {
                 goto cleanup;
@@ -9036,7 +9062,8 @@ static int secdat_read_v2_domain_entry_info(const char *path, const char *file_e
     }
 
     valid = seen_entry_id && seen_secret_id && seen_key_visibility && seen_entry_inject
-        && (info->key_visibility != SECDAT_KEY_VISIBILITY_ALWAYS || info->has_key);
+        && ((info->key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS && info->has_key && !info->has_encrypted_key)
+            || (info->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED && !info->has_key && info->has_encrypted_key));
 
 cleanup:
     free(decoded_key);
@@ -9193,6 +9220,119 @@ static int secdat_build_v2_secret_value_path(const char *domain_id, const char *
     return 0;
 }
 
+static int secdat_v2_domain_entry_key_access_available(const char *domain_id)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_session_record record = {0};
+    int available = 0;
+
+    if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
+        return 1;
+    }
+    if (secdat_domain_chain_from_id(domain_id, &chain) != 0) {
+        return 0;
+    }
+    available = secdat_session_agent_status(&chain, &record) == 0;
+    secdat_domain_chain_free(&chain);
+    return available;
+}
+
+static int secdat_v2_encrypt_domain_entry_key(const char *domain_id, const char *key, char **encrypted_key)
+{
+    unsigned char *encrypted = NULL;
+    size_t encrypted_length = 0;
+    int status = 1;
+
+    if (secdat_encrypt_value(domain_id, (const unsigned char *)key, strlen(key), &encrypted, &encrypted_length) != 0) {
+        return 1;
+    }
+    if (secdat_hex_encode_bytes(encrypted, encrypted_length, encrypted_key) != 0) {
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(encrypted, encrypted_length);
+    free(encrypted);
+    return status;
+}
+
+static int secdat_v2_decrypt_domain_entry_key(const char *domain_id, struct secdat_v2_domain_entry_info *info)
+{
+    struct secdat_domain_chain chain = {0};
+    unsigned char *encrypted = NULL;
+    unsigned char *plaintext = NULL;
+    size_t encrypted_length = 0;
+    size_t plaintext_length = 0;
+    int status = 1;
+
+    if (info->has_key) {
+        return 0;
+    }
+    if (info->key_visibility != SECDAT_KEY_VISIBILITY_UNLOCKED || !info->has_encrypted_key) {
+        return 1;
+    }
+    if (secdat_hex_decode_bytes(info->encrypted_key, &encrypted, &encrypted_length) != 0) {
+        return 1;
+    }
+    if (secdat_domain_chain_from_id(domain_id, &chain) != 0) {
+        goto cleanup;
+    }
+    if (secdat_decrypt_value(&chain, encrypted, encrypted_length, &plaintext, &plaintext_length, NULL) != 0) {
+        goto cleanup;
+    }
+    if (plaintext_length == 0 || plaintext_length >= sizeof(info->key)
+        || memchr(plaintext, '\0', plaintext_length) != NULL) {
+        goto cleanup;
+    }
+
+    memcpy(info->key, plaintext, plaintext_length);
+    info->key[plaintext_length] = '\0';
+    if (!secdat_is_valid_env_name(info->key)) {
+        info->key[0] = '\0';
+        goto cleanup;
+    }
+    info->has_key = 1;
+    status = 0;
+
+cleanup:
+    secdat_domain_chain_free(&chain);
+    secdat_secure_clear(plaintext, plaintext_length);
+    free(plaintext);
+    secdat_secure_clear(encrypted, encrypted_length);
+    free(encrypted);
+    return status;
+}
+
+static int secdat_v2_domain_entry_key_matches(
+    const char *domain_id,
+    struct secdat_v2_domain_entry_info *info,
+    const char *key,
+    int require_key_access,
+    int *matches
+)
+{
+    *matches = 0;
+    if (info->key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS) {
+        *matches = info->has_key && strcmp(info->key, key) == 0;
+        return 0;
+    }
+    if (info->key_visibility != SECDAT_KEY_VISIBILITY_UNLOCKED) {
+        return 1;
+    }
+    if (!secdat_v2_domain_entry_key_access_available(domain_id)) {
+        if (require_key_access) {
+            return secdat_v2_decrypt_domain_entry_key(domain_id, info);
+        }
+        return 0;
+    }
+    if (secdat_v2_decrypt_domain_entry_key(domain_id, info) != 0) {
+        return 1;
+    }
+    *matches = strcmp(info->key, key) == 0;
+    return 0;
+}
+
 static int secdat_collect_v2_visible_keys(const char *domain_id, const char *store_name, struct secdat_key_list *keys)
 {
     char domain_entries_dir[PATH_MAX];
@@ -9218,9 +9358,19 @@ static int secdat_collect_v2_visible_keys(const char *domain_id, const char *sto
             fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry_ids.items[index]);
             goto cleanup;
         }
-        if (info.key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS && info.has_key
-            && secdat_key_list_append(keys, info.key) != 0) {
-            goto cleanup;
+        if (info.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+            if (!secdat_v2_domain_entry_key_access_available(domain_id)) {
+                continue;
+            }
+            if (secdat_v2_decrypt_domain_entry_key(domain_id, &info) != 0) {
+                fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry_ids.items[index]);
+                goto cleanup;
+            }
+        }
+        if (info.has_key) {
+            if (secdat_key_list_append(keys, info.key) != 0) {
+                goto cleanup;
+            }
         }
     }
 
@@ -9255,6 +9405,8 @@ static int secdat_lookup_v2_domain_entry(
     }
 
     for (index = 0; index < entry_ids.count; index += 1) {
+        int matches = 0;
+
         if (secdat_build_v2_domain_entry_path(domain_id, store_name, entry_ids.items[index], entry_path, entry_path_size) != 0) {
             goto cleanup;
         }
@@ -9262,7 +9414,11 @@ static int secdat_lookup_v2_domain_entry(
             fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry_ids.items[index]);
             goto cleanup;
         }
-        if (info->key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS && info->has_key && strcmp(info->key, key) == 0) {
+        if (secdat_v2_domain_entry_key_matches(domain_id, info, key, 0, &matches) != 0) {
+            fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry_ids.items[index]);
+            goto cleanup;
+        }
+        if (matches) {
             found = 1;
             break;
         }
@@ -9324,6 +9480,7 @@ static const char *secdat_v2_secret_inject_name(enum secdat_sandbox_inject value
 }
 
 static int secdat_write_v2_domain_entry_file(
+    const char *domain_id,
     const char *domain_entries_dir,
     const char *entry_id,
     const char *secret_id,
@@ -9333,8 +9490,12 @@ static int secdat_write_v2_domain_entry_file(
     size_t path_out_size
 )
 {
-    char payload[PATH_MAX + 256];
+    char *payload = NULL;
     char *encoded_key = NULL;
+    char *encrypted_key = NULL;
+    const char *key_field_name = NULL;
+    const char *key_field_value = NULL;
+    size_t payload_size;
     int written;
     int status = 1;
 
@@ -9342,28 +9503,61 @@ static int secdat_write_v2_domain_entry_file(
         fprintf(stderr, _("path is too long\n"));
         return 1;
     }
-    if (secdat_escape_component(key, &encoded_key) != 0) {
+    if (attrs->key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS) {
+        if (secdat_escape_component(key, &encoded_key) != 0) {
+            return 1;
+        }
+        key_field_name = "key";
+        key_field_value = encoded_key;
+    } else if (attrs->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+        if (secdat_v2_encrypt_domain_entry_key(domain_id, key, &encrypted_key) != 0) {
+            return 1;
+        }
+        key_field_name = "encrypted_key";
+        key_field_value = encrypted_key;
+    } else {
+        fprintf(stderr, _("invalid key visibility: %s\n"), secdat_key_visibility_name(attrs->key_visibility));
         return 1;
     }
+    payload_size = strlen(secdat_v2_domain_entry_magic)
+        + strlen(entry_id)
+        + strlen(secret_id)
+        + strlen(secdat_key_visibility_name(attrs->key_visibility))
+        + strlen(key_field_name)
+        + strlen(key_field_value)
+        + strlen(secdat_sandbox_inject_name(attrs->sandbox_inject))
+        + 128;
+    payload = malloc(payload_size);
+    if (payload == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    payload[0] = '\0';
     written = snprintf(
         payload,
-        sizeof(payload),
-        "%s\nentry_id=%s\nsecret_id=%s\nkey_visibility=%s\nkey=%s\nentry_inject=%s\n",
+        payload_size,
+        "%s\nentry_id=%s\nsecret_id=%s\nkey_visibility=%s\n%s=%s\nentry_inject=%s\n",
         secdat_v2_domain_entry_magic,
         entry_id,
         secret_id,
         secdat_key_visibility_name(attrs->key_visibility),
-        encoded_key,
+        key_field_name,
+        key_field_value,
         secdat_sandbox_inject_name(attrs->sandbox_inject)
     );
-    if (written < 0 || (size_t)written >= sizeof(payload)) {
+    if (written < 0 || (size_t)written >= payload_size) {
         fprintf(stderr, _("secret metadata is too large\n"));
         goto cleanup;
     }
     status = secdat_atomic_write_file(path_out, (const unsigned char *)payload, (size_t)written);
 
 cleanup:
+    if (payload != NULL) {
+        secdat_secure_clear(payload, strlen(payload));
+        free(payload);
+    }
     free(encoded_key);
+    free(encrypted_key);
     return status;
 }
 
@@ -9427,6 +9621,8 @@ static int secdat_update_v2_secret_attrs(
     char object_path[PATH_MAX];
     struct secdat_v2_domain_entry_info domain_entry;
     struct secdat_v2_secret_object_info object;
+    char *encrypted_key_probe = NULL;
+    int key_matches = 0;
 
     if (secdat_v2_domain_entries_dir(domain_id, store_name, domain_entries_dir, sizeof(domain_entries_dir)) != 0
         || secdat_v2_secret_objects_dir(domain_id, store_name, secret_objects_dir, sizeof(secret_objects_dir)) != 0
@@ -9436,9 +9632,8 @@ static int secdat_update_v2_secret_attrs(
     }
     if (strcmp(domain_entry.secret_id, entry->secret_id) != 0
         || domain_entry.key_visibility != entry->key_visibility
-        || domain_entry.key_visibility != SECDAT_KEY_VISIBILITY_ALWAYS
-        || !domain_entry.has_key
-        || strcmp(domain_entry.key, key) != 0) {
+        || secdat_v2_domain_entry_key_matches(domain_id, &domain_entry, key, 1, &key_matches) != 0
+        || !key_matches) {
         fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry->entry_id);
         return 1;
     }
@@ -9447,6 +9642,13 @@ static int secdat_update_v2_secret_attrs(
         || secdat_read_v2_secret_object_info(object_path, entry->secret_id, &object) != 0) {
         fprintf(stderr, _("invalid v2 secret object: %s\n"), entry->secret_id);
         return 1;
+    }
+    if (attrs->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+        if (secdat_v2_encrypt_domain_entry_key(domain_id, key, &encrypted_key_probe) != 0) {
+            return 1;
+        }
+        free(encrypted_key_probe);
+        encrypted_key_probe = NULL;
     }
 
     if (secdat_write_v2_secret_object_file(
@@ -9459,6 +9661,7 @@ static int secdat_update_v2_secret_attrs(
             sizeof(object_path)
         ) != 0
         || secdat_write_v2_domain_entry_file(
+            domain_id,
             domain_entries_dir,
             entry->entry_id,
             entry->secret_id,
@@ -9494,6 +9697,7 @@ static int secdat_store_v2_plaintext_with_attrs(
     struct secdat_v2_domain_entry_info entry;
     struct secdat_v2_secret_object_info object;
     unsigned char *encrypted = NULL;
+    char *encrypted_key_probe = NULL;
     size_t encrypted_length = 0;
     int refcount_present = 1;
     size_t refcount = 1;
@@ -9551,6 +9755,12 @@ static int secdat_store_v2_plaintext_with_attrs(
         || secdat_encode_value_for_storage(domain_id, plaintext, plaintext_length, unsafe_store, &encrypted, &encrypted_length) != 0) {
         goto cleanup;
     }
+    if (write_attrs.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED
+        && secdat_v2_encrypt_domain_entry_key(domain_id, key, &encrypted_key_probe) != 0) {
+        goto cleanup;
+    }
+    free(encrypted_key_probe);
+    encrypted_key_probe = NULL;
 
     if (secdat_remove_if_exists(tombstone_path) != 0
         || secdat_atomic_write_file(value_path, encrypted, encrypted_length) != 0
@@ -9564,6 +9774,7 @@ static int secdat_store_v2_plaintext_with_attrs(
             sizeof(object_path)
         ) != 0
         || secdat_write_v2_domain_entry_file(
+            domain_id,
             domain_entries_dir,
             entry_id,
             secret_id,
@@ -9577,6 +9788,7 @@ static int secdat_store_v2_plaintext_with_attrs(
     status = 0;
 
 cleanup:
+    free(encrypted_key_probe);
     secdat_secure_clear(encrypted, encrypted_length);
     free(encrypted);
     return status;
@@ -9979,12 +10191,6 @@ static int secdat_command_attr(const struct secdat_cli *cli)
         }
         if (options.set_value_access) {
             attrs.value_access = options.attrs.value_access;
-        }
-        if (attrs.key_visibility != original_attrs.key_visibility) {
-            fprintf(stderr, _("v2 key_visibility updates are not implemented yet\n"));
-            secdat_effective_entry_reset(&entry);
-            secdat_domain_chain_free(&chain);
-            return 1;
         }
         if (!secdat_v2_secret_attrs_supported(&attrs)) {
             secdat_effective_entry_reset(&entry);
@@ -10606,9 +10812,6 @@ static int secdat_command_set(const struct secdat_cli *cli)
         }
     }
 
-    if (!secdat_secret_attrs_supported(&attrs)) {
-        return 1;
-    }
     unsafe_store = attrs.value_access == SECDAT_VALUE_ACCESS_ALWAYS;
 
     if (optind >= argc) {
@@ -11760,7 +11963,16 @@ static int secdat_store_migrate_write_v2(
         }
         if (snprintf(entry_path, sizeof(entry_path), "%s/%s.dent", domain_entries_dir, entry_id) >= (int)sizeof(entry_path)
             || secdat_key_list_append_duplicate(&written_paths, entry_path) != 0
-            || secdat_write_v2_domain_entry_file(domain_entries_dir, entry_id, secret_id, plan.entries.items[index], &attrs, entry_path, sizeof(entry_path)) != 0) {
+            || secdat_write_v2_domain_entry_file(
+                current_domain_id,
+                domain_entries_dir,
+                entry_id,
+                secret_id,
+                plan.entries.items[index],
+                &attrs,
+                entry_path,
+                sizeof(entry_path)
+            ) != 0) {
             goto rollback;
         }
     }

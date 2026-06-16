@@ -65,11 +65,10 @@ for tombstones whose parent-visible value is already gone, and
 for local keys that still shadow a parent-visible key.
 .TP
 .B attr KEYREF [\-\-key-visibility always|unlocked] [\-\-value-access unlocked|always] [\-\-sandbox-inject never|explicit|allow]
-Show or update one key's attributes. The current storage format supports only
+Show or update one key's attributes. v1 stores support only
 .B key_visibility=always ;
 .B key_visibility=unlocked
-is reserved for a future format that encrypts key names.
-For v2 stores, visible-key attribute updates write through the domain-entry/object graph; hidden-key updates are not implemented yet.
+requires a v2 store and encrypts the key name in the domain-entry graph. Hidden keys can be listed or resolved only while the domain is unlocked.
 .B value_access=unlocked
 is encrypted-at-rest and unlock-gated, while
 .B value_access=always

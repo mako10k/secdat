@@ -276,14 +276,15 @@ To make the requested behavior implementable, the following are treated as norma
 - `key_visibility` accepts `always` and `unlocked`
 - `value_access` accepts `unlocked` and `always`
 - `sandbox_inject` accepts `never`, `explicit`, and `allow`
-- v1 storage supports only `key_visibility=always`; `key_visibility=unlocked` requires v2 hidden-key lookup/storage support and is rejected for now
+- v1 storage supports only `key_visibility=always`; `key_visibility=unlocked` is supported only by v2 stores
 - `value_access=unlocked` stores the value encrypted-at-rest and requires the master key or an active session for reads
 - `value_access=always` stores the value plaintext-at-rest and permits reads while locked; it is equivalent to the current unsafe/public-value storage mode
 - `sandbox_inject=never` excludes the key from sandbox import selection
 - `sandbox_inject=explicit` allows future sandbox import only when the key is named explicitly
 - `sandbox_inject=allow` allows future sandbox import from explicit key selection and from allowlisted pattern selection
 - attribute updates are allowed only for current-domain local entries; inherited entries must be materialized locally before their attributes can be changed
-- v2 stores can update visible-key `sandbox_inject` and object-owned `value_access` through the domain-entry/object graph; v2 `key_visibility=unlocked` is still pending
+- v2 stores can update `key_visibility`, domain-entry `sandbox_inject`, and object-owned `value_access` through the domain-entry/object graph
+- v2 `key_visibility=unlocked` encrypts the key name in the domain entry; locked list/lookup operations skip hidden keys
 - generic user-defined attributes are intentionally not part of `attr`; policy/storage attributes must stay explicit so authorization, migration, and sandbox export semantics remain auditable
 - `cp` and `mv` preserve source key attributes
 - `ls --metadata` prints key attributes alongside visible keys
@@ -406,7 +407,7 @@ To make the requested behavior implementable, the following are treated as norma
 - migration output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, `injectable_entries`, and `issues`
 - migration refuses invalid v1 entries, invalid sidecars, orphaned sidecars, orphaned tombstones, and pre-existing v2 migration artifacts
 - `store` management never creates, deletes, or lists stores in parent or child domains
-- stores marked with the v2 format marker use the v2 domain-entry/object graph for visible-key `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, and `id`
+- stores marked with the v2 format marker use the v2 domain-entry/object graph for `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, and `id`; hidden keys participate only while unlocked
 - migrated v2 stores keep v1 value files readable by `get` until a value is rewritten into v2 object-owned value storage
 - `secdat id KEYREF` prints the resolved v2 `secret_id` and does not read the secret value
 
@@ -1053,6 +1054,7 @@ domain/store/domain-ent/<entry-id>.dent
     secret_id
     key_visibility
     public key name or public lookup tag, when key_visibility=always
+    encrypted_key hex payload, when key_visibility=unlocked (current transitional format)
     link-side policy flags
   encrypted area:
     key name, when key_visibility=unlocked
@@ -1074,7 +1076,7 @@ objects/secret/<secret-id>.value
     secret-side metadata and secret-side policy flags
 ```
 
-The final binary format is intentionally undecided, but each file must have a magic number, a format version, authenticated encrypted sections, and enough public structure for locked-mode listing of public keys and public values. All encrypted sections must bind the public header as AEAD associated data. The current implementation uses a `.value` sidecar with the existing v1 `SECDAT1` value payload as a compatibility step before the final object file format.
+The final binary format is intentionally undecided, but each file must have a magic number, a format version, authenticated encrypted sections, and enough public structure for locked-mode listing of public keys and public values. All encrypted sections must bind the public header as AEAD associated data. The current implementation uses a `.value` sidecar with the existing v1 `SECDAT1` value payload as a compatibility step before the final object file format, and stores hidden key names as `encrypted_key=<hex(SECDAT1)>` in the domain-entry text file before final domain-entry encrypted sections land.
 
 #### Attribute Placement
 
@@ -1154,7 +1156,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, and `id` through that graph for visible keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. Hidden-key lookup, linked-object key wrapping, `ln`, and final migration cleanup are still part of the later v2 write path.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. Linked-object key wrapping, `ln`, and final migration cleanup are still part of the later v2 write path.
 
 #### Implementation Plan
 
@@ -1185,7 +1187,7 @@ The first implementation should prefer conservative compatibility over removing 
 
 ## 7. Recommended Implementation Order
 
-The v1 implementation now covers the initial command surface and the first secret-attribute metadata layer. The next implementation sequence should focus on store v2 while keeping v1 readable:
+The v1 implementation covers the initial command surface and the first secret-attribute metadata layer. The store-v2 implementation sequence keeps v1 readable while moving behavior into the domain-entry/object graph:
 
 1. keep v1 stable and use the current attribute metadata as migration input
 2. introduce v2 parsers, UUIDs, and fsck graph scanning without changing write behavior
@@ -1194,7 +1196,7 @@ The v1 implementation now covers the initial command surface and the first secre
 5. add v2 read compatibility for `ls`, `get`, `exists`, `attr`, and `id`
 6. add v2 write compatibility for visible-key `set`, `get`, `attr --sandbox-inject`, and `attr --value-access`
 7. add v2 write compatibility for visible-key `rm`, `cp`, and `mv`
-8. add hidden-key lookup/storage before enabling `key_visibility=unlocked`
+8. add hidden-key lookup/storage and enable `key_visibility=unlocked`
 9. add `ln` only after object-key rewrapping and authorization semantics are covered
 10. add fsck repair for rebuildable metadata
 11. add migration finalization once v1 rollback remains tested
@@ -1203,7 +1205,7 @@ The v1 implementation now covers the initial command surface and the first secre
 
 The following should be fixed before implementation is finalized:
 
-1. whether hidden-key exact lookup should require decrypting all domain entries, or whether a keyed lookup tag is worth the equality-leakage tradeoff
+1. whether hidden-key exact lookup should continue decrypting candidate domain entries, or whether a keyed lookup tag is worth the equality-leakage tradeoff
 2. whether direct `secret_id` references should remain metadata-only unless a source domain entry is also provided
 3. whether `secret_inject` should be only `never|allow` or should mirror `entry_inject=never|explicit|allow`
 4. whether cached refcounts should be stored in the object file or only reported by fsck
