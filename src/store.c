@@ -186,6 +186,12 @@ struct secdat_store_migrate_options {
     int dry_run;
 };
 
+struct secdat_store_finalize_migration_options {
+    const char *store_name;
+    const char *from_format;
+    int dry_run;
+};
+
 struct secdat_store_migrate_report {
     size_t domain_entries;
     size_t secret_objects;
@@ -194,6 +200,16 @@ struct secdat_store_migrate_report {
     size_t public_values;
     size_t encrypted_values;
     size_t injectable_entries;
+    size_t issues;
+};
+
+struct secdat_store_finalize_migration_report {
+    size_t legacy_entries;
+    size_t metadata_sidecars;
+    size_t removable_legacy_entries;
+    size_t removable_metadata_sidecars;
+    size_t blocking_legacy_entries;
+    size_t blocking_metadata_sidecars;
     size_t issues;
 };
 
@@ -2866,6 +2882,64 @@ static int secdat_parse_store_migrate_options(const struct secdat_cli *cli, stru
     }
     if (options->to_format == NULL) {
         fprintf(stderr, _("store migrate requires --to-format v2\n"));
+        secdat_cli_print_try_help(cli, "store");
+        return 2;
+    }
+    options->store_name = argv[optind];
+    return 0;
+}
+
+static int secdat_parse_store_finalize_migration_options(
+    const struct secdat_cli *cli,
+    struct secdat_store_finalize_migration_options *options
+)
+{
+    static const struct option long_options[] = {
+        {"from-format", required_argument, NULL, 1000},
+        {"dry-run", no_argument, NULL, 1001},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+
+    memset(options, 0, sizeof(*options));
+
+    secdat_prepare_option_argv(cli, "store finalize-migration", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":", long_options, NULL)) != -1) {
+        switch (option) {
+        case 1000:
+            if (strcmp(optarg, "v1") != 0) {
+                fprintf(stderr, _("invalid migration source format: %s\n"), optarg);
+                return 2;
+            }
+            options->from_format = optarg;
+            break;
+        case 1001:
+            options->dry_run = 1;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for store finalize-migration\n"));
+            secdat_cli_print_try_help(cli, "store");
+            return 2;
+        }
+    }
+
+    if (optind >= argc) {
+        fprintf(stderr, _("missing store name for store finalize-migration\n"));
+        secdat_cli_print_try_help(cli, "store");
+        return 2;
+    }
+    if (optind + 1 != argc) {
+        fprintf(stderr, _("invalid arguments for store finalize-migration\n"));
+        secdat_cli_print_try_help(cli, "store");
+        return 2;
+    }
+    if (options->from_format == NULL) {
+        fprintf(stderr, _("store finalize-migration requires --from-format v1\n"));
         secdat_cli_print_try_help(cli, "store");
         return 2;
     }
@@ -13764,6 +13838,251 @@ static int secdat_store_command_migrate(const struct secdat_cli *cli)
     return status;
 }
 
+static void secdat_store_finalize_migration_report_issue(
+    struct secdat_store_finalize_migration_report *report,
+    const char *kind,
+    const char *key,
+    const char *detail
+)
+{
+    printf("cannot-finalize\t%s\t%s\t%s\n", kind, key, detail);
+    report->issues += 1;
+}
+
+static int secdat_store_finalize_migration_legacy_entry_status(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    const char **detail
+)
+{
+    char entry_path[PATH_MAX];
+    char object_path[PATH_MAX];
+    char value_path[PATH_MAX];
+    struct secdat_v2_domain_entry_info entry;
+    struct secdat_v2_secret_object_info object;
+    const char *object_domain_id;
+    const char *object_store_name;
+    int lookup_status;
+
+    *detail = NULL;
+    lookup_status = secdat_lookup_v2_domain_entry(domain_id, store_name, key, &entry, entry_path, sizeof(entry_path));
+    if (lookup_status > 1) {
+        return 1;
+    }
+    if (lookup_status != 0) {
+        *detail = "missing-v2-entry";
+        return 0;
+    }
+
+    object_domain_id = secdat_v2_entry_object_domain(domain_id, &entry);
+    object_store_name = secdat_v2_entry_object_store(store_name, &entry);
+    if (secdat_build_v2_secret_object_path(object_domain_id, object_store_name, entry.secret_id, object_path, sizeof(object_path)) != 0
+        || secdat_build_v2_secret_value_path(object_domain_id, object_store_name, entry.secret_id, value_path, sizeof(value_path)) != 0) {
+        return 1;
+    }
+    if (secdat_read_v2_secret_object_info(object_path, entry.secret_id, &object) != 0) {
+        *detail = "invalid-v2-secret";
+        return 0;
+    }
+    if (object.has_value_payload) {
+        *detail = "object-payload";
+        return 0;
+    }
+    if (secdat_file_exists(value_path)) {
+        *detail = "object-value-sidecar";
+        return 0;
+    }
+
+    *detail = "missing-object-payload";
+    return 0;
+}
+
+static int secdat_store_finalize_migration_metadata_status(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    const char **detail
+)
+{
+    char entry_path[PATH_MAX];
+    char object_path[PATH_MAX];
+    struct secdat_v2_domain_entry_info entry;
+    struct secdat_v2_secret_object_info object;
+    const char *object_domain_id;
+    const char *object_store_name;
+    int lookup_status;
+
+    *detail = NULL;
+    lookup_status = secdat_lookup_v2_domain_entry(domain_id, store_name, key, &entry, entry_path, sizeof(entry_path));
+    if (lookup_status > 1) {
+        return 1;
+    }
+    if (lookup_status != 0) {
+        *detail = "missing-v2-entry";
+        return 0;
+    }
+
+    object_domain_id = secdat_v2_entry_object_domain(domain_id, &entry);
+    object_store_name = secdat_v2_entry_object_store(store_name, &entry);
+    if (secdat_build_v2_secret_object_path(object_domain_id, object_store_name, entry.secret_id, object_path, sizeof(object_path)) != 0) {
+        return 1;
+    }
+    if (secdat_read_v2_secret_object_info(object_path, entry.secret_id, &object) != 0) {
+        *detail = "invalid-v2-secret";
+        return 0;
+    }
+
+    *detail = "v2-metadata";
+    return 0;
+}
+
+static int secdat_store_finalize_migration_dry_run_v1(
+    const struct secdat_domain_chain *chain,
+    const struct secdat_store_finalize_migration_options *options,
+    struct secdat_store_finalize_migration_report *report
+)
+{
+    char store_root[PATH_MAX];
+    char entries_dir[PATH_MAX];
+    struct stat store_status;
+    struct secdat_key_list legacy_entries = {0};
+    struct secdat_key_list metadata = {0};
+    enum secdat_store_format format;
+    const char *current_domain_id;
+    size_t index;
+    int status = 1;
+
+    memset(report, 0, sizeof(*report));
+    if (chain->count == 0) {
+        fprintf(stderr, _("store finalize-migration requires a registered current domain\n"));
+        return 1;
+    }
+    current_domain_id = chain->ids[0];
+
+    if (secdat_store_root(current_domain_id, options->store_name, store_root, sizeof(store_root)) != 0
+        || secdat_store_entries_dir(current_domain_id, options->store_name, entries_dir, sizeof(entries_dir)) != 0) {
+        return 1;
+    }
+    if (stat(store_root, &store_status) != 0 || !S_ISDIR(store_status.st_mode)) {
+        fprintf(stderr, _("store not found: %s\n"), options->store_name);
+        return 1;
+    }
+    if (secdat_read_store_format(current_domain_id, options->store_name, &format) != 0) {
+        return 1;
+    }
+    if (format == SECDAT_STORE_FORMAT_INVALID) {
+        fprintf(stderr, _("invalid store format marker\n"));
+        return 1;
+    }
+    if (format != SECDAT_STORE_FORMAT_V2) {
+        fprintf(stderr, _("store format is v1; finalize-migration requires a migrated v2 store\n"));
+        return 2;
+    }
+    if (secdat_collect_directory_keys(entries_dir, ".sec", &legacy_entries) != 0
+        || secdat_collect_directory_keys(entries_dir, ".meta", &metadata) != 0) {
+        goto cleanup;
+    }
+    if (legacy_entries.count > 1) {
+        qsort(legacy_entries.items, legacy_entries.count, sizeof(*legacy_entries.items), secdat_compare_strings);
+    }
+    if (metadata.count > 1) {
+        qsort(metadata.items, metadata.count, sizeof(*metadata.items), secdat_compare_strings);
+    }
+
+    report->legacy_entries = legacy_entries.count;
+    report->metadata_sidecars = metadata.count;
+
+    for (index = 0; index < legacy_entries.count; index += 1) {
+        const char *detail = NULL;
+
+        if (secdat_store_finalize_migration_legacy_entry_status(
+                current_domain_id,
+                options->store_name,
+                legacy_entries.items[index],
+                &detail
+            ) != 0) {
+            goto cleanup;
+        }
+        if (strcmp(detail, "object-payload") == 0 || strcmp(detail, "object-value-sidecar") == 0) {
+            printf("would-remove-legacy-entry\t%s\t%s\n", legacy_entries.items[index], detail);
+            report->removable_legacy_entries += 1;
+        } else {
+            secdat_store_finalize_migration_report_issue(report, "legacy-entry", legacy_entries.items[index], detail);
+            report->blocking_legacy_entries += 1;
+        }
+    }
+
+    for (index = 0; index < metadata.count; index += 1) {
+        const char *detail = NULL;
+
+        if (secdat_store_finalize_migration_metadata_status(
+                current_domain_id,
+                options->store_name,
+                metadata.items[index],
+                &detail
+            ) != 0) {
+            goto cleanup;
+        }
+        if (strcmp(detail, "v2-metadata") == 0) {
+            printf("would-remove-legacy-metadata\t%s\t%s\n", metadata.items[index], detail);
+            report->removable_metadata_sidecars += 1;
+        } else {
+            secdat_store_finalize_migration_report_issue(report, "legacy-metadata", metadata.items[index], detail);
+            report->blocking_metadata_sidecars += 1;
+        }
+    }
+
+    puts("format=v2");
+    printf("from_format=%s\n", options->from_format);
+    puts("dry_run=yes");
+    printf("store=%s\n", options->store_name);
+    printf("legacy_entries=%zu\n", report->legacy_entries);
+    printf("metadata_sidecars=%zu\n", report->metadata_sidecars);
+    printf("removable_legacy_entries=%zu\n", report->removable_legacy_entries);
+    printf("removable_metadata_sidecars=%zu\n", report->removable_metadata_sidecars);
+    printf("blocking_legacy_entries=%zu\n", report->blocking_legacy_entries);
+    printf("blocking_metadata_sidecars=%zu\n", report->blocking_metadata_sidecars);
+    printf("issues=%zu\n", report->issues);
+
+    status = report->issues == 0 ? 0 : 1;
+
+cleanup:
+    secdat_key_list_free(&legacy_entries);
+    secdat_key_list_free(&metadata);
+    return status;
+}
+
+static int secdat_store_command_finalize_migration(const struct secdat_cli *cli)
+{
+    struct secdat_store_finalize_migration_options options;
+    struct secdat_store_finalize_migration_report report;
+    struct secdat_domain_chain chain = {0};
+    int status;
+
+    if (cli->store != NULL) {
+        fprintf(stderr, _("--store is not valid with store commands\n"));
+        secdat_cli_print_try_help(cli, "store");
+        return 2;
+    }
+    status = secdat_parse_store_finalize_migration_options(cli, &options);
+    if (status != 0) {
+        return status;
+    }
+    if (!options.dry_run) {
+        fprintf(stderr, _("store finalize-migration currently requires --dry-run\n"));
+        secdat_cli_print_try_help(cli, "store");
+        return 2;
+    }
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
+        return 1;
+    }
+
+    status = secdat_store_finalize_migration_dry_run_v1(&chain, &options, &report);
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
 static int secdat_store_command_create(const struct secdat_cli *cli)
 {
     char current_domain_id[PATH_MAX];
@@ -14507,6 +14826,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_store_command_ls(cli);
     case SECDAT_COMMAND_STORE_MIGRATE:
         return secdat_store_command_migrate(cli);
+    case SECDAT_COMMAND_STORE_FINALIZE_MIGRATION:
+        return secdat_store_command_finalize_migration(cli);
     case SECDAT_COMMAND_SECRET_STATUS:
         return secdat_command_secret_status(cli);
     case SECDAT_COMMAND_DOMAIN_CREATE:

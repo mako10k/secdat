@@ -17,7 +17,7 @@ Current status:
 - `export` is implemented for shell-friendly setup without embedding raw secret values
 - `save` and `load` are implemented for passphrase-protected secret bundles scoped to the current view
 - `domain create`, `domain delete`, `domain ls`, and `domain status` are implemented
-- `store create`, `store delete`, `store ls`, and `store migrate` are implemented
+- `store create`, `store delete`, `store ls`, `store migrate`, and `store finalize-migration --dry-run` are implemented
 - `unlock`, `lock`, and `status` are implemented with domain-scoped session agents and a wrapped persistent master key
 - normal store commands resolve the current domain from `--dir` or the working directory and fall back through parent domains
 - stores are domain-local namespaces, not global objects shared across all domains
@@ -258,12 +258,14 @@ For migration preparation and v2 cache maintenance, `fsck` checks the current do
 ./src/secdat secret status UUID
 ./src/secdat store migrate default --to-format v2 --dry-run
 ./src/secdat store migrate default --to-format v2
+./src/secdat store finalize-migration default --from-format v1 --dry-run
 ```
 
 Clean output is `ok`. v1 issues are tab-separated rows such as `orphaned-metadata	KEY	missing-entry`, `orphaned-tombstone	KEY	missing-parent`, `dangling-entry	KEY	invalid-entry`, or `dangling-metadata	KEY	invalid-metadata`. `--refcount` is currently a clean no-op for v1 because secret objects and hard links arrive with store v2. Stores marked with the v2 format marker can also be checked with `fsck --format v2`, which reports domain-entry/object graph issues such as `orphaned-secret	UUID	missing-entry`, `dangling-entry	ENTRY_ID	missing-secret`, and `refcount-mismatch	SECRET_ID	expected=N actual=M`. `fsck --format v2 --refcount --repair` rewrites only rebuildable cached object refcounts and emits `repaired-refcount	SECRET_ID	expected=N actual=M`; it does not delete orphaned secrets, dangling entries, values, or tombstones.
 `gc --format v2 --dry-run` reports v2 graph artifacts that would be removed as `would-remove-*` rows. Without `--dry-run`, `gc` removes orphaned secret object artifacts and dangling v2 domain-entry/object artifacts, but does not touch legacy v1 key/value fallback files.
 `secret status UUID` prints one v2 secret object's non-secret metadata, cached and actual refcounts, orphaned state, object payload presence, and legacy sidecar presence without reading the secret value.
 `store migrate STORE --to-format v2 --dry-run` validates the selected v1 store and prints the number of domain entries, secret objects, metadata sidecars, tombstones, public values, encrypted values, and bulk-injectable entries that would be created or preserved by the v2 migration path. Without `--dry-run`, migration writes side-by-side v2 domain-entry/object graph files, verifies them with `fsck --format v2`, marks the store as v2, and leaves the v1 value files in place for compatibility.
+`store finalize-migration STORE --from-format v1 --dry-run` inspects the legacy v1 fallback files left after migration. It reports v1 entry files that still block finalization because their v2 objects do not yet have object-owned value payloads, and reports legacy entry/metadata files that would be removable after values have been rewritten or removed. The destructive finalize path remains gated until the dry-run plan is covered by enough compatibility tests.
 For stores marked as v2, `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id KEYREF` use the v2 domain-entry/object graph. Hidden keys are visible to those commands only while unlocked. `ln SRC DST` creates another v2 domain entry pointing to the same secret object, including across explicit source/destination KEYREF domains and stores, so updates through either key affect both. New or rewritten v2 values are stored as a binary payload inside the secret object's `.sec` file; encrypted values use the object data key. Legacy `.value` sidecars and `SECDAT1` value payloads remain readable for migration compatibility. Domain entries record the object domain/store separately from the entry domain/store. `id` prints the resolved `secret_id` without reading the value. Migrated stores keep their preserved v1 value files as a fallback until a value is rewritten into v2 object-owned storage. v2-only errors print a migration dry-run hint; set `SECDAT_SUPPRESS_MIGRATION_HINTS=1` to hide those hints.
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.

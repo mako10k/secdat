@@ -62,7 +62,7 @@ for expected in ["create", "delete", "ls", "status"]:
 mode, values = run_completion("store", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: store completion mode mismatch: {mode!r}")
-for expected in ["create", "delete", "ls", "migrate"]:
+for expected in ["create", "delete", "ls", "migrate", "finalize-migration"]:
     assert_contains(values, expected, "store subcommands")
 
 mode, values = run_completion("secret", "")
@@ -110,6 +110,16 @@ for expected in ["--to-format", "--dry-run"]:
 mode, values = run_completion("store", "migrate", "--to-format", "")
 if mode != "none" or values:
     raise SystemExit(f"FAIL: store migrate --to-format completion mode mismatch: mode={mode!r} values={values!r}")
+
+mode, values = run_completion("store", "finalize-migration", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: store finalize-migration option completion mode mismatch: {mode!r}")
+for expected in ["--from-format", "--dry-run"]:
+    assert_contains(values, expected, "store finalize-migration options")
+
+mode, values = run_completion("store", "finalize-migration", "--from-format", "")
+if mode != "none" or values:
+    raise SystemExit(f"FAIL: store finalize-migration --from-format completion mode mismatch: mode={mode!r} values={values!r}")
 
 mode, values = run_completion("set", "--")
 if mode != "plain":

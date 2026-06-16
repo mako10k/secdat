@@ -130,9 +130,17 @@ rc, stdout, stderr = run([
 if rc != 1 or stdout != "" or "secret status is available only for store format v2\n" not in stderr or "store migrate app --to-format v2 --dry-run" not in stderr:
     fail(f"v1 secret status should include migration hint: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "finalize-migration", "app", "--from-format", "v1", "--dry-run"])
+if rc != 2 or stdout != "" or "store format is v1; finalize-migration requires a migrated v2 store\n" not in stderr:
+    fail(f"v1 finalize-migration should require migrated v2 store: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "migrate", "app", "--to-format", "v3", "--dry-run"])
 if rc != 2 or "invalid migration target format: v3" not in stderr:
     fail(f"store migrate invalid target should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "finalize-migration", "app", "--from-format", "v2", "--dry-run"])
+if rc != 2 or "invalid migration source format: v2" not in stderr:
+    fail(f"store finalize-migration invalid source should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "store", "migrate", "app", "--to-format", "v2", "--dry-run"])
 if rc != 2 or "--store is not valid with store commands" not in stderr:
@@ -207,6 +215,31 @@ if len(list((store_root / "objects" / "secret").glob("*.sec"))) != 2:
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"migrated v2 fsck failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "finalize-migration", "app", "--from-format", "v1"])
+if rc != 2 or stdout != "" or "store finalize-migration currently requires --dry-run\n" not in stderr:
+    fail(f"store finalize-migration write should be gated: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "finalize-migration", "app", "--from-format", "v1", "--dry-run"])
+if rc != 1 or stderr != "":
+    fail(f"initial finalize-migration dry-run should report blocking fallback: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for expected in [
+    "cannot-finalize\tlegacy-entry\tAPP_PUBLIC\tmissing-object-payload\n",
+    "cannot-finalize\tlegacy-entry\tAPP_TOKEN\tmissing-object-payload\n",
+    "would-remove-legacy-metadata\tAPP_TOKEN\tv2-metadata\n",
+    "format=v2\n",
+    "from_format=v1\n",
+    "dry_run=yes\n",
+    "store=app\n",
+    "legacy_entries=2\n",
+    "metadata_sidecars=1\n",
+    "removable_legacy_entries=0\n",
+    "removable_metadata_sidecars=1\n",
+    "blocking_legacy_entries=2\n",
+    "blocking_metadata_sidecars=0\n",
+    "issues=2\n",
+]:
+    assert_contains(stdout, expected, "initial finalize-migration dry-run")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "ls", "--metadata"])
 if rc != 0 or stderr != "":
@@ -338,6 +371,22 @@ if app_public_files[0].exists():
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"migrated v2 fsck after rm failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "finalize-migration", "app", "--from-format", "v1", "--dry-run"])
+if rc != 0 or stderr != "":
+    fail(f"final finalize-migration dry-run should be clean: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for expected in [
+    "would-remove-legacy-entry\tAPP_TOKEN\tobject-payload\n",
+    "would-remove-legacy-metadata\tAPP_TOKEN\tv2-metadata\n",
+    "legacy_entries=1\n",
+    "metadata_sidecars=1\n",
+    "removable_legacy_entries=1\n",
+    "removable_metadata_sidecars=1\n",
+    "blocking_legacy_entries=0\n",
+    "blocking_metadata_sidecars=0\n",
+    "issues=0\n",
+]:
+    assert_contains(stdout, expected, "final finalize-migration dry-run")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "migrate", "app", "--to-format", "v2", "--dry-run"])
 if rc != 2 or "store format is v2; migration is not needed" not in stderr:

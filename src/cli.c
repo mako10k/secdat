@@ -18,7 +18,7 @@ enum {
 };
 
 #define SECDAT_CLI_USAGE_OPTIONS_WIDTH (sizeof("[-d DIR|--dir DIR] [-s STORE|--store STORE]") - 1)
-#define SECDAT_CLI_USAGE_COMMAND_WIDTH (sizeof("domain status") - 1)
+#define SECDAT_CLI_USAGE_COMMAND_WIDTH (sizeof("store finalize-migration") - 1)
 #define SECDAT_CLI_DETAIL_COLUMN 24
 #define SECDAT_CLI_WRAP_WIDTH 96
 
@@ -602,6 +602,9 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
             if (strcmp(subcommand, "migrate") == 0 && strcmp(previous, "--to-format") == 0) {
                 return "none";
             }
+            if (strcmp(subcommand, "finalize-migration") == 0 && strcmp(previous, "--from-format") == 0) {
+                return "none";
+            }
         }
     } else if (strcmp(command, "domain") == 0) {
         if (subcommand != NULL && strcmp(subcommand, "ls") == 0
@@ -769,6 +772,9 @@ int secdat_cli_complete(int argc, char **argv)
     static const char *const store_migrate_options[] = {
         "--to-format", "--dry-run", "--help", "-h", NULL,
     };
+    static const char *const store_finalize_migration_options[] = {
+        "--from-format", "--dry-run", "--help", "-h", NULL,
+    };
     static const char *const domain_ls_options[] = {
         "--long", "-l", "--inherited", "-a", "--ancestors", "-A", "--descendants", "-R", "--pattern", "-p", "--help", "-h", NULL,
     };
@@ -853,6 +859,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, store_ls_options);
     } else if (strcmp(command, "store") == 0 && subcommand != NULL && strcmp(subcommand, "migrate") == 0) {
         secdat_cli_completion_print_candidates(current, store_migrate_options);
+    } else if (strcmp(command, "store") == 0 && subcommand != NULL && strcmp(subcommand, "finalize-migration") == 0) {
+        secdat_cli_completion_print_candidates(current, store_finalize_migration_options);
     } else if (strcmp(command, "domain") == 0 && subcommand != NULL && strcmp(subcommand, "ls") == 0) {
         secdat_cli_completion_print_candidates(current, domain_ls_options);
     }
@@ -942,6 +950,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     }
     if (strcmp(name, "store") == 0) {
         return SECDAT_COMMAND_STORE_LS;
+    }
+    if (strcmp(name, "store finalize-migration") == 0) {
+        return SECDAT_COMMAND_STORE_FINALIZE_MIGRATION;
     }
     if (strcmp(name, "secret") == 0) {
         return SECDAT_COMMAND_SECRET_STATUS;
@@ -1044,6 +1055,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_STORE_MIGRATE:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store migrate", "STORE --to-format v2 [--dry-run]");
+        break;
+    case SECDAT_COMMAND_STORE_FINALIZE_MIGRATION:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store finalize-migration", "STORE --from-format v1 [--dry-run]");
         break;
     case SECDAT_COMMAND_SECRET_STATUS:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "secret status", "UUID");
@@ -1177,6 +1191,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  status: report whether secret material is available from the current domain scope\n"));
     secdat_cli_print_detail_line(_("  wait-unlock: wait until the current domain scope becomes unlocked, or fail on timeout\n"));
     secdat_cli_print_detail_line(_("  secret status: print one v2 secret object's non-secret metadata and reference counts\n"));
+    secdat_cli_print_detail_line(_("  store finalize-migration: inspect or remove legacy v1 fallback files after a v2 migration\n"));
     secdat_cli_print_detail_line(_("  version: print the secdat version\n"));
 }
 
@@ -1306,6 +1321,10 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  store: manage store namespaces and migrate v1 stores to the v2 domain-entry/object layout\n"));
         return;
     }
+    if (target != NULL && strcmp(target, "store finalize-migration") == 0) {
+        secdat_cli_print_detail_line(_("  store finalize-migration: inspect or remove legacy v1 fallback files after a v2 migration\n"));
+        return;
+    }
     if (target != NULL && strcmp(target, "secret") == 0) {
         secdat_cli_print_detail_line(_("  secret: inspect v2 secret-object metadata by UUID without reading secret values\n"));
         return;
@@ -1410,6 +1429,8 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         snprintf(buffer, sizeof(buffer), _("  inspect a v1 to v2 migration before writing: %s store migrate app --to-format v2 --dry-run\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  write the v2 domain-entry/object graph after review: %s store migrate app --to-format v2\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  inspect legacy fallback files after v2 values have been rewritten: %s store finalize-migration app --from-format v1 --dry-run\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         return;
     }
@@ -1623,6 +1644,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         } else if (strcmp(argv[index], "migrate") == 0) {
             cli->command = SECDAT_COMMAND_STORE_MIGRATE;
             index += 1;
+        } else if (strcmp(argv[index], "finalize-migration") == 0) {
+            cli->command = SECDAT_COMMAND_STORE_FINALIZE_MIGRATION;
+            index += 1;
         } else {
             fprintf(stderr, _("unknown store subcommand: %s\n"), argv[index]);
             secdat_cli_print_try_help(cli, "store");
@@ -1756,6 +1780,7 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_DELETE);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_LS);
         secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_MIGRATE);
+        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_FINALIZE_MIGRATION);
         secdat_cli_print_help_routes(program_name, target);
         secdat_cli_print_target_meaning(target);
         secdat_cli_print_target_use_cases(program_name, target);
@@ -1871,6 +1896,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "store ls";
     case SECDAT_COMMAND_STORE_MIGRATE:
         return "store migrate";
+    case SECDAT_COMMAND_STORE_FINALIZE_MIGRATION:
+        return "store finalize-migration";
     case SECDAT_COMMAND_SECRET_STATUS:
         return "secret status";
     case SECDAT_COMMAND_DOMAIN_CREATE:

@@ -223,7 +223,7 @@ returns success without changing local state.
 .B [\-d DIR|\-\-dir DIR] status [\-q|\-\-quiet]
 Report whether secret material is available from the current domain scope.
 .TP
-.B store create|delete|ls|migrate
+.B store create|delete|ls|migrate|finalize-migration
 Manage store namespaces and v1 to v2 migration inside the resolved current domain.
 .TP
 .B secret status
@@ -236,6 +236,13 @@ write side-by-side v2 domain-entry/object graph files, verify them with v2 fsck,
 Some v2-only errors print this dry-run command as a hint; set
 .B SECDAT_SUPPRESS_MIGRATION_HINTS=1
 to hide those hints.
+.TP
+.B store finalize-migration STORE \-\-from-format v1 [\-\-dry-run]
+Inspect legacy v1 fallback files left in a migrated v2 store. The dry-run prints
+.B would-remove-*
+rows for legacy entry or metadata files that are no longer needed, and
+.B cannot-finalize
+rows for legacy entry files that still provide the only value material because the v2 secret object has not yet been rewritten with an object-owned payload. The destructive finalize path is not enabled yet.
 .TP
 .B domain create|delete|status
 Manage domain roots and resolution state.

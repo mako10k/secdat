@@ -70,6 +70,7 @@ secdat [--dir DIR] store create STORE
 secdat [--dir DIR] store delete STORE
 secdat [--dir DIR] store ls [GLOBPATTERN]
 secdat [--dir DIR] store migrate STORE --to-format v2 [--dry-run]
+secdat [--dir DIR] store finalize-migration STORE --from-format v1 [--dry-run]
 
 secdat [--dir DIR] [--store STORE] secret status UUID
 
@@ -417,6 +418,8 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] store migrate STORE --to-format v2` writes side-by-side v2 domain-entry/object graph files, verifies them with v2 fsck, marks the store as v2, and leaves v1 value files in place
 - migration output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, bulk `injectable_entries`, and `issues`
 - migration refuses invalid v1 entries, invalid sidecars, orphaned sidecars, orphaned tombstones, and pre-existing v2 migration artifacts
+- `secdat [--dir DIR] store finalize-migration STORE --from-format v1 --dry-run` inspects legacy v1 fallback entry/metadata files in a migrated v2 store without deleting them
+- finalize dry-run reports removable legacy files as `would-remove-*` rows and blocking files as `cannot-finalize` rows; blocking v1 entry files must remain while the v2 object lacks object-owned value material
 - `store` management never creates, deletes, or lists stores in parent or child domains
 - stores marked with the v2 format marker use the v2 domain-entry/object graph for `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id`; hidden keys participate only while unlocked
 - migrated v2 stores keep v1 value files readable by `get` until a value is rewritten into v2 object-owned value storage
@@ -1175,10 +1178,10 @@ Suggested migration commands:
 ```text
 secdat store migrate STORE --to-format v2 [--dry-run]
 secdat store fsck [--format v1|v2]
-secdat store finalize-migration --from-format v1
+secdat store finalize-migration STORE --from-format v1 [--dry-run]
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `secret status UUID` can inspect one current-domain/current-store object by UUID without reading its value. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links by source unwrap and destination rewrap of the object data key. `fsck --format v2 --refcount --repair` can rebuild cached object refcounts without deleting graph data. `gc --format v2` can delete orphaned or dangling v2 graph files after dry-run review; direct source-object syntax such as `ln @UUID DST_KEYREF` remains planned.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `secret status UUID` can inspect one current-domain/current-store object by UUID without reading its value. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. `store finalize-migration STORE --from-format v1 --dry-run` can inspect which legacy v1 entry and metadata fallback files remain necessary or removable; the destructive finalize path remains future work. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links by source unwrap and destination rewrap of the object data key. `fsck --format v2 --refcount --repair` can rebuild cached object refcounts without deleting graph data. `gc --format v2` can delete orphaned or dangling v2 graph files after dry-run review; direct source-object syntax such as `ln @UUID DST_KEYREF` remains planned.
 
 #### Implementation Plan
 
@@ -1200,7 +1203,7 @@ The current migration writer creates the v2 domain-entry/object graph side-by-si
 16. Add repair-only fsck operations for rebuildable metadata such as cached refcounts. This is implemented for v2 cached object refcounts.
 17. Add `secret status UUID` for read-only v2 secret-object metadata inspection without reading secret values.
 18. Add v2 graph garbage collection for orphaned and dangling artifacts. This is implemented as explicit `gc --format v2`, with `--dry-run`.
-19. Add finalize/cleanup commands for legacy v1 fallback files only after v2 read/write, migration, fsck, gc, and rollback paths are covered by regression tests.
+19. Add finalize/cleanup commands for legacy v1 fallback files only after v2 read/write, migration, fsck, gc, and rollback paths are covered by regression tests. The dry-run inspection path is implemented as `store finalize-migration STORE --from-format v1 --dry-run`; destructive cleanup remains future work.
 
 The first implementation should prefer conservative compatibility over removing old paths. The v1 sidecar metadata added for secret attributes should be treated as migration input, not as the final architecture.
 
