@@ -156,6 +156,46 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_SECRET"])
 if rc != 0 or stderr != "":
     fail(f"pure v2 id for APP_SECRET failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 app_secret_id = stdout.strip()
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "APP_SECRET", "APP_SECRET_LINK"], {"SECDAT_MASTER_KEY": ""})
+if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
+    fail(f"pure v2 locked ln should require unlock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "APP_SECRET", "APP_SECRET_LINK"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 ln failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_SECRET_LINK"])
+if rc != 0 or stdout.strip() != app_secret_id or stderr != "":
+    fail(f"pure v2 linked key should share secret id: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET_LINK"])
+if rc != 0 or stdout != "secret-value" or stderr != "":
+    fail(f"pure v2 linked get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+link_object_text = (secret_objects_dir / f"{app_secret_id}.sec").read_text(encoding="utf-8")
+if "refcount=2\n" not in link_object_text:
+    fail("pure v2 ln did not increment the linked secret refcount")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"pure v2 fsck after ln failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET_LINK", "--value", "linked-value", "--sandbox-inject", "explicit"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 set through linked key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET"])
+if rc != 0 or stdout != "linked-value" or stderr != "":
+    fail(f"pure v2 linked set should update original key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET", "--value", "secret-value", "--sandbox-inject", "explicit"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 restore original linked value failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "rm", "APP_SECRET_LINK"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"pure v2 rm linked key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "exists", "APP_SECRET_LINK"])
+if rc == 0:
+    fail("pure v2 rm should remove only the linked key")
+if not (secret_objects_dir / f"{app_secret_id}.sec").exists() or not (secret_objects_dir / f"{app_secret_id}.value").exists():
+    fail("pure v2 rm linked key should keep the shared secret object")
+link_object_text = (secret_objects_dir / f"{app_secret_id}.sec").read_text(encoding="utf-8")
+if "refcount=1\n" not in link_object_text:
+    fail("pure v2 rm linked key did not decrement the linked secret refcount")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "cp", "APP_SECRET", "APP_SECRET_COPY"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 cp failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

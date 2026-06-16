@@ -54,6 +54,7 @@ secdat [--dir DIR] [--store STORE] set KEYREF [--value|-v] VALUE
 secdat [--dir DIR] [--store STORE] rm [-f|--ignore-missing] KEYREF
 secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
+secdat [--dir DIR] [--store STORE] ln SRC_KEYREF DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [--] CMD [ARGS...]
 
@@ -407,7 +408,7 @@ To make the requested behavior implementable, the following are treated as norma
 - migration output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, `injectable_entries`, and `issues`
 - migration refuses invalid v1 entries, invalid sidecars, orphaned sidecars, orphaned tombstones, and pre-existing v2 migration artifacts
 - `store` management never creates, deletes, or lists stores in parent or child domains
-- stores marked with the v2 format marker use the v2 domain-entry/object graph for `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, and `id`; hidden keys participate only while unlocked
+- stores marked with the v2 format marker use the v2 domain-entry/object graph for `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id`; hidden keys participate only while unlocked
 - migrated v2 stores keep v1 value files readable by `get` until a value is rewritten into v2 object-owned value storage
 - `secdat id KEYREF` prints the resolved v2 `secret_id` and does not read the secret value
 
@@ -1118,9 +1119,10 @@ secdat secret status UUID
 secdat fsck [--orphaned] [--dangling] [--refcount] [--repair]
 ```
 
-Planned semantics:
+Current and planned semantics:
 
-- `ln SRC_KEYREF DST_KEYREF` creates a new domain entry pointing to the source secret object and rewraps the object data key for the destination domain
+- `ln SRC_KEYREF DST_KEYREF` creates a new domain entry pointing to the source secret object; the current implementation requires source and destination to be in the same v2 store and requires an unlocked domain so hidden destination collisions can be checked
+- cross-domain `ln` will require object data-key rewrapping before it can be enabled
 - `ln --secret-id UUID DST_KEYREF` is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry, or through a future explicit recovery mechanism
 - `id KEYREF` prints the resolved `secret_id` without printing the secret value
 - `secret status UUID` prints non-secret object metadata, link count, and whether the object is orphaned
@@ -1156,7 +1158,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. Linked-object key wrapping, `ln`, and final migration cleanup are still part of the later v2 write path.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. Cross-domain linked-object key wrapping, `ln --secret-id`, and final migration cleanup are still part of the later v2 write path.
 
 #### Implementation Plan
 
@@ -1169,7 +1171,7 @@ The current migration writer creates the v2 domain-entry/object graph side-by-si
 7. Add transitional v2 object-owned value storage and support `set`, `get`, and `attr --value-access` for visible keys.
 8. Add v2 write path for visible-key `rm`, `cp`, and `mv`.
 9. Add hidden-key lookup/storage and enable `key_visibility=unlocked`.
-10. Add `ln` with strict authorization through an existing source entry before allowing `--secret-id` linking.
+10. Add same-store `ln` with strict authorization through an existing source entry before allowing `--secret-id` linking.
 11. Replace the transitional `.value` sidecar with the final authenticated object payload format and object data-key wrapping.
 12. Update the future sandbox import/export flow to require both v2 `entry_inject` and `secret_inject`.
 13. Add repair-only fsck operations for rebuildable metadata such as cached refcounts.
@@ -1197,9 +1199,10 @@ The v1 implementation covers the initial command surface and the first secret-at
 6. add v2 write compatibility for visible-key `set`, `get`, `attr --sandbox-inject`, and `attr --value-access`
 7. add v2 write compatibility for visible-key `rm`, `cp`, and `mv`
 8. add hidden-key lookup/storage and enable `key_visibility=unlocked`
-9. add `ln` only after object-key rewrapping and authorization semantics are covered
-10. add fsck repair for rebuildable metadata
-11. add migration finalization once v1 rollback remains tested
+9. add same-store `ln` through an authorized source entry
+10. add cross-domain `ln` only after object-key rewrapping and authorization semantics are covered
+11. add fsck repair for rebuildable metadata
+12. add migration finalization once v1 rollback remains tested
 
 ## 8. Open Questions
 

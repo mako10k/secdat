@@ -461,6 +461,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli);
 static int secdat_command_lock(const struct secdat_cli *cli);
 static int secdat_command_cp(const struct secdat_cli *cli);
 static int secdat_command_mv(const struct secdat_cli *cli);
+static int secdat_command_ln(const struct secdat_cli *cli);
 static int secdat_command_mask(const struct secdat_cli *cli);
 static int secdat_command_unmask(const struct secdat_cli *cli);
 static int secdat_command_rm(const struct secdat_cli *cli);
@@ -11369,6 +11370,183 @@ static int secdat_unmask_key_in_chain(const struct secdat_domain_chain *chain, c
     return secdat_remove_if_exists(tombstone_path);
 }
 
+static int secdat_link_v2_local_key(
+    const char *domain_id,
+    const char *store_name,
+    const char *destination_key,
+    const struct secdat_effective_entry *source_entry
+)
+{
+    char domain_entries_dir[PATH_MAX];
+    char entry_path[PATH_MAX];
+    char object_path[PATH_MAX];
+    char tombstone_path[PATH_MAX];
+    char legacy_entry_path[PATH_MAX];
+    char entry_id[37];
+    struct secdat_secret_attrs attrs;
+    struct secdat_v2_secret_object_info object;
+    size_t references = 0;
+    int status = 1;
+    int entry_written = 0;
+
+    if (secdat_v2_domain_entries_dir(domain_id, store_name, domain_entries_dir, sizeof(domain_entries_dir)) != 0
+        || secdat_build_v2_secret_object_path(domain_id, store_name, source_entry->secret_id, object_path, sizeof(object_path)) != 0
+        || secdat_read_v2_secret_object_info(object_path, source_entry->secret_id, &object) != 0) {
+        fprintf(stderr, _("invalid v2 secret object: %s\n"), source_entry->secret_id);
+        return 1;
+    }
+    if (secdat_count_v2_secret_references_in_store(domain_id, store_name, source_entry->secret_id, &references) != 0) {
+        return 1;
+    }
+    if (references == 0) {
+        fprintf(stderr, _("invalid v2 domain entry: %s\n"), source_entry->entry_id);
+        return 1;
+    }
+    if (secdat_generate_uuid_v4(entry_id, sizeof(entry_id)) != 0
+        || secdat_build_tombstone_path(domain_id, store_name, destination_key, tombstone_path, sizeof(tombstone_path)) != 0
+        || secdat_build_entry_path(domain_id, store_name, destination_key, legacy_entry_path, sizeof(legacy_entry_path)) != 0) {
+        return 1;
+    }
+
+    attrs.key_visibility = source_entry->key_visibility;
+    attrs.value_access = object.value_access;
+    attrs.sandbox_inject = source_entry->entry_inject;
+    if (object.secret_inject == SECDAT_SANDBOX_INJECT_NEVER) {
+        attrs.sandbox_inject = SECDAT_SANDBOX_INJECT_NEVER;
+    }
+
+    if (secdat_write_v2_domain_entry_file(
+            domain_id,
+            domain_entries_dir,
+            entry_id,
+            source_entry->secret_id,
+            destination_key,
+            &attrs,
+            entry_path,
+            sizeof(entry_path)
+        ) != 0) {
+        return 1;
+    }
+    entry_written = 1;
+
+    if (object.refcount_present
+        && secdat_update_v2_secret_refcount(domain_id, store_name, source_entry->secret_id, references + 1) != 0) {
+        goto cleanup;
+    }
+    if (secdat_remove_if_exists(tombstone_path) != 0
+        || secdat_remove_if_exists(legacy_entry_path) != 0
+        || secdat_remove_secret_attrs(domain_id, store_name, destination_key) != 0) {
+        goto cleanup;
+    }
+
+    status = 0;
+
+cleanup:
+    if (status != 0 && entry_written) {
+        (void)secdat_remove_if_exists(entry_path);
+    }
+    return status;
+}
+
+static int secdat_command_ln(const struct secdat_cli *cli)
+{
+    struct secdat_key_reference source_reference;
+    struct secdat_key_reference destination_reference;
+    struct secdat_domain_chain source_chain = {0};
+    struct secdat_domain_chain destination_chain = {0};
+    struct secdat_effective_entry source_entry = {0};
+    char source_domain_id[PATH_MAX];
+    char destination_domain_id[PATH_MAX];
+    char destination_path[PATH_MAX];
+    const char *source_store_name;
+    const char *destination_store_name;
+    enum secdat_store_format format;
+    int status = 1;
+
+    if (cli->argc != 2) {
+        fprintf(stderr, _("invalid arguments for ln\n"));
+        secdat_cli_print_try_help(cli, "ln");
+        return 2;
+    }
+    if (strcmp(cli->argv[0], cli->argv[1]) == 0) {
+        fprintf(stderr, _("source and destination keys must differ\n"));
+        return 1;
+    }
+
+    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &source_reference) != 0
+        || secdat_parse_key_reference(cli->argv[1], secdat_cli_domain_base(cli), cli->store, &destination_reference) != 0) {
+        return 1;
+    }
+    if (secdat_domain_resolve_current(source_reference.domain_value, source_domain_id, sizeof(source_domain_id)) != 0
+        || secdat_domain_resolve_current(destination_reference.domain_value, destination_domain_id, sizeof(destination_domain_id)) != 0) {
+        return 1;
+    }
+    source_store_name = secdat_effective_store_name(source_reference.store_value);
+    destination_store_name = secdat_effective_store_name(destination_reference.store_value);
+    if (strcmp(source_domain_id, destination_domain_id) != 0
+        || strcmp(source_store_name, destination_store_name) != 0) {
+        fprintf(stderr, _("ln requires source and destination in the same v2 store\n"));
+        return 1;
+    }
+    if (secdat_domain_resolve_chain(source_reference.domain_value, &source_chain) != 0) {
+        return 1;
+    }
+    if (secdat_domain_resolve_chain(destination_reference.domain_value, &destination_chain) != 0) {
+        secdat_domain_chain_free(&source_chain);
+        return 1;
+    }
+    if (secdat_require_mutable_session_chain(&destination_chain, "ln") != 0
+        || secdat_require_writable_domain_chain(&destination_chain) != 0) {
+        goto cleanup;
+    }
+    if (secdat_active_overlay_enabled(&source_chain) || secdat_active_overlay_enabled(&destination_chain)) {
+        fprintf(stderr, _("ln is not supported in a volatile session overlay\n"));
+        goto cleanup;
+    }
+    if (secdat_read_store_format(destination_domain_id, destination_reference.store_value, &format) != 0) {
+        goto cleanup;
+    }
+    if (format == SECDAT_STORE_FORMAT_INVALID) {
+        fprintf(stderr, _("invalid store format marker\n"));
+        goto cleanup;
+    }
+    if (format != SECDAT_STORE_FORMAT_V2) {
+        fprintf(stderr, _("ln requires source and destination in the same v2 store\n"));
+        goto cleanup;
+    }
+    if (!secdat_v2_domain_entry_key_access_available(destination_domain_id)) {
+        fprintf(stderr, _("missing SECDAT_MASTER_KEY and no active secdat session; run secdat unlock or export SECDAT_MASTER_KEY\n"));
+        secdat_print_locked_read_guidance(&destination_chain);
+        goto cleanup;
+    }
+
+    if (secdat_resolve_effective_entry(&source_chain, source_reference.store_value, source_reference.key, 0, &source_entry) != 0) {
+        fprintf(stderr, _("key not found: %s\n"), source_reference.key);
+        goto cleanup;
+    }
+    if (!source_entry.from_v2 || source_entry.resolved_index != 0) {
+        fprintf(stderr, _("ln requires source and destination in the same v2 store\n"));
+        goto cleanup;
+    }
+    if (secdat_resolve_entry_path(&destination_chain, destination_reference.store_value, destination_reference.key, destination_path, sizeof(destination_path)) == 0) {
+        fprintf(stderr, _("destination key already exists: %s\n"), destination_reference.key);
+        goto cleanup;
+    }
+
+    status = secdat_link_v2_local_key(
+        destination_domain_id,
+        destination_reference.store_value,
+        destination_reference.key,
+        &source_entry
+    );
+
+cleanup:
+    secdat_effective_entry_reset(&source_entry);
+    secdat_domain_chain_free(&source_chain);
+    secdat_domain_chain_free(&destination_chain);
+    return status;
+}
+
 static int secdat_command_cp(const struct secdat_cli *cli)
 {
     struct secdat_key_reference source_reference;
@@ -12758,6 +12936,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_mv(cli);
     case SECDAT_COMMAND_CP:
         return secdat_command_cp(cli);
+    case SECDAT_COMMAND_LN:
+        return secdat_command_ln(cli);
     case SECDAT_COMMAND_EXEC:
         return secdat_command_exec(cli);
     case SECDAT_COMMAND_EXPORT:

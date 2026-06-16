@@ -124,11 +124,11 @@ That keeps plain `get` fail-fast in automation while making interactive terminal
 
 For explicit non-interactive use, `SECDAT_MASTER_KEY_PASSPHRASE` can provide the current wrapped-key passphrase to `unlock`. This is an override path rather than the default recommendation, because environment variables are easier to expose than terminal prompts.
 
-For a non-mutating session, `unlock --volatile` keeps subsequent `set`, `rm`, `mask`, `unmask`, `cp`, `mv`, `load`, and read-side resolution changes in the session agent's memory instead of writing through to the real store files. `lock` clears that overlay, and `lock --save` first writes the local volatile overlay into the real store files before locking. This is intended for dry-run validation and read-only filesystems.
+For a non-mutating session, `unlock --volatile` keeps subsequent `set`, `rm`, `mask`, `unmask`, `cp`, `mv`, `load`, and read-side resolution changes in the session agent's memory instead of writing through to the real store files. `ln` is a persisted v2 graph operation and is not supported in a volatile overlay. `lock` clears that overlay, and `lock --save` first writes the local volatile overlay into the real store files before locking. This is intended for dry-run validation and read-only filesystems.
 
 When no wrapped master key exists yet, `unlock --volatile` can still start by generating an ephemeral in-memory master key without writing the wrapped-key file. Current volatile sessions can remove only tombstones created in the same volatile overlay; persisted tombstones still require a normal writable session.
 
-For a read-only session with the real persisted data, `unlock --readonly` reuses an existing master key but rejects mutating commands such as `set`, `rm`, `mask`, `unmask`, `cp`, `mv`, `load`, `store create`, `store delete`, and domain create/delete. `--readonly` and `--volatile` are mutually exclusive.
+For a read-only session with the real persisted data, `unlock --readonly` reuses an existing master key but rejects mutating commands such as `set`, `rm`, `mask`, `unmask`, `cp`, `mv`, `ln`, `load`, `store create`, `store delete`, and domain create/delete. `--readonly` and `--volatile` are mutually exclusive.
 
 If you already have a master key to migrate or explicitly override with, `SECDAT_MASTER_KEY` still works:
 
@@ -241,7 +241,7 @@ Use `attr` to inspect or update attributes:
 ./src/secdat ls --sandbox-injectable
 ```
 
-The planned storage v2 moves from one domain-local file per key to a directory/inode-like split between domain entries and secret objects. Domain entries will own key names and key visibility; secret objects will own values and value access. That plan also adds linked secrets (`ln`), secret UUID references, refcount/orphan checks, and a migration-first compatibility path from the current v1 store. See [docs/secdat-spec.md](docs/secdat-spec.md#510-planned-store-v2-domain-entries-and-secret-objects).
+The planned storage v2 moves from one domain-local file per key to a directory/inode-like split between domain entries and secret objects. Domain entries own key names and key visibility; secret objects own values and value access. The current v2 path includes same-store linked secrets (`ln`), secret UUID references, refcount/orphan checks, and a migration-first compatibility path from the current v1 store; cross-domain object-key rewrapping remains planned. See [docs/secdat-spec.md](docs/secdat-spec.md#510-planned-store-v2-domain-entries-and-secret-objects).
 
 For migration preparation, `fsck` performs read-only checks on the current domain/store:
 
@@ -256,7 +256,7 @@ For migration preparation, `fsck` performs read-only checks on the current domai
 
 Clean output is `ok`. v1 issues are tab-separated rows such as `orphaned-metadata	KEY	missing-entry`, `orphaned-tombstone	KEY	missing-parent`, `dangling-entry	KEY	invalid-entry`, or `dangling-metadata	KEY	invalid-metadata`. `--refcount` is currently a clean no-op for v1 because secret objects and hard links arrive with store v2. Stores marked with the v2 format marker can also be checked with `fsck --format v2`, which reports domain-entry/object graph issues such as `orphaned-secret	UUID	missing-entry`, `dangling-entry	ENTRY_ID	missing-secret`, and `refcount-mismatch	SECRET_ID	expected=N actual=M`.
 `store migrate STORE --to-format v2 --dry-run` validates the selected v1 store and prints the number of domain entries, secret objects, metadata sidecars, tombstones, public values, encrypted values, and sandbox-injectable entries that would be created or preserved by the v2 migration path. Without `--dry-run`, migration writes side-by-side v2 domain-entry/object graph files, verifies them with `fsck --format v2`, marks the store as v2, and leaves the v1 value files in place for compatibility.
-For stores marked as v2, `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, and `id KEYREF` use the v2 domain-entry/object graph. Hidden keys are visible to those commands only while unlocked. `id` prints the resolved `secret_id` without reading the value. Migrated stores keep their preserved v1 value files as a fallback until a value is rewritten into v2 object-owned storage.
+For stores marked as v2, `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id KEYREF` use the v2 domain-entry/object graph. Hidden keys are visible to those commands only while unlocked. `ln SRC DST` creates another key in the same v2 store pointing to the same secret object, so updates through either key affect both. `id` prints the resolved `secret_id` without reading the value. Migrated stores keep their preserved v1 value files as a fallback until a value is rewritten into v2 object-owned storage.
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
 When a raw domain is present, the trailing slash before `KEY` is required. If the qualifier is omitted, `--domain`, then `--dir`, then `--store`, and finally the current defaults are used.

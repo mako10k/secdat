@@ -397,7 +397,7 @@ static int secdat_cli_completion_is_command_with_key_operand(const char *command
             || strcmp(command, "attr") == 0
             || strcmp(command, "rm") == 0 || strcmp(command, "mask") == 0
             || strcmp(command, "unmask") == 0 || strcmp(command, "set") == 0
-            || strcmp(command, "cp") == 0 || strcmp(command, "mv") == 0);
+            || strcmp(command, "cp") == 0 || strcmp(command, "mv") == 0 || strcmp(command, "ln") == 0);
 }
 
 static int secdat_cli_completion_token_matches(const char *current, const char *candidate)
@@ -895,6 +895,9 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     if (strcmp(name, "cp") == 0) {
         return SECDAT_COMMAND_CP;
     }
+    if (strcmp(name, "ln") == 0) {
+        return SECDAT_COMMAND_LN;
+    }
     if (strcmp(name, "exec") == 0) {
         return SECDAT_COMMAND_EXEC;
     }
@@ -975,6 +978,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_CP:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "cp", "SRC_KEYREF DST_KEYREF");
+        break;
+    case SECDAT_COMMAND_LN:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "SRC_KEYREF DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--] CMD [ARGS...]");
@@ -1133,6 +1139,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success\n"));
     secdat_cli_print_detail_line(_("  mv: rename or relocate one key between resolved locations\n"));
     secdat_cli_print_detail_line(_("  cp: copy one key into another resolved location\n"));
+    secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object in the same store\n"));
     secdat_cli_print_detail_line(_("  exec: inject resolved keys into a child process environment\n"));
     secdat_cli_print_detail_line(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
     secdat_cli_print_detail_line(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
@@ -1206,6 +1213,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "cp") == 0) {
         secdat_cli_print_detail_line(_("  cp: copy one key into another resolved location\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "ln") == 0) {
+        secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object in the same store\n"));
         return;
     }
     if (target != NULL && strcmp(target, "exec") == 0) {
@@ -1490,6 +1501,9 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
     } else if (strcmp(argv[index], "cp") == 0) {
         cli->command = SECDAT_COMMAND_CP;
         index += 1;
+    } else if (strcmp(argv[index], "ln") == 0) {
+        cli->command = SECDAT_COMMAND_LN;
+        index += 1;
     } else if (strcmp(argv[index], "exec") == 0) {
         cli->command = SECDAT_COMMAND_EXEC;
         index += 1;
@@ -1620,7 +1634,7 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
     if (command == SECDAT_COMMAND_LS || command == SECDAT_COMMAND_LIST || command == SECDAT_COMMAND_ATTR
         || command == SECDAT_COMMAND_MASK || command == SECDAT_COMMAND_UNMASK
         || command == SECDAT_COMMAND_EXISTS || command == SECDAT_COMMAND_ID || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
-        || command == SECDAT_COMMAND_RM || command == SECDAT_COMMAND_MV || command == SECDAT_COMMAND_CP) {
+        || command == SECDAT_COMMAND_RM || command == SECDAT_COMMAND_MV || command == SECDAT_COMMAND_CP || command == SECDAT_COMMAND_LN) {
         printf(_("\n"));
         secdat_cli_print_detail_line(_("  KEYREF syntax: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
     }
@@ -1729,6 +1743,8 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "mv";
     case SECDAT_COMMAND_CP:
         return "cp";
+    case SECDAT_COMMAND_LN:
+        return "ln";
     case SECDAT_COMMAND_EXEC:
         return "exec";
     case SECDAT_COMMAND_EXPORT:

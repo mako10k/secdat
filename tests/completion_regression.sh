@@ -44,7 +44,7 @@ def assert_contains(values, expected, label):
 mode, values = run_completion("")
 if mode != "plain":
     raise SystemExit(f"FAIL: top-level completion mode mismatch: {mode!r}")
-for expected in ["wait-unlock", "inherit", "store", "domain", "unlock", "attr", "fsck", "id", "version", "--dir", "--domain", "--store", "--help", "--version"]:
+for expected in ["wait-unlock", "inherit", "store", "domain", "unlock", "attr", "fsck", "id", "ln", "version", "--dir", "--domain", "--store", "--help", "--version"]:
     assert_contains(values, expected, "top-level commands")
 
 mode, values = run_completion("help", "")
@@ -113,6 +113,10 @@ mode, values = run_completion("mv", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: mv completion mode mismatch: {mode!r}")
 
+mode, values = run_completion("ln", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: ln completion mode mismatch: {mode!r}")
+
 mode, values = run_completion("unlock", "--")
 for expected in ["--duration", "--until", "--descendants", "--yes", "--readonly"]:
     assert_contains(values, expected, "unlock options")
@@ -172,7 +176,7 @@ if mode != "plain":
 assert_contains(values, "COMPLETION_ALPHA", "top-level key completions")
 assert_contains(values, "COMPLETION_ALPHA=", "top-level assignment completions")
 
-for command in ["get", "exists", "attr", "rm", "mask", "unmask", "set", "cp", "mv"]:
+for command in ["get", "exists", "attr", "rm", "mask", "unmask", "set", "cp", "mv", "ln"]:
     mode, values = run_scoped_completion("--dir", literal_dir, command, "COMPLETION_")
     if mode != "plain":
         raise SystemExit(f"FAIL: {command} key completion mode mismatch: {mode!r}")
@@ -180,7 +184,7 @@ for command in ["get", "exists", "attr", "rm", "mask", "unmask", "set", "cp", "m
     if "COMPLETION_ALPHA=" in values:
         raise SystemExit(f"FAIL: {command} key completion should not emit assignment candidates: {values!r}")
 
-for command in ["cp", "mv"]:
+for command in ["cp", "mv", "ln"]:
     mode, values = run_scoped_completion("--dir", literal_dir, command, "COMPLETION_ALPHA", "")
     if "COMPLETION_ALPHA" in values:
         raise SystemExit(f"FAIL: {command} destination completion should not reuse existing key candidates: {values!r}")
