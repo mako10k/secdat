@@ -88,6 +88,14 @@ def assert_wrapped_object_key_count(sid, expected_count, label):
             fail(f"{label}: missing wrapped_object_key")
 
 
+def read_field(text, field):
+    prefix = f"{field}="
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix):]
+    fail(f"missing field: {field}")
+
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "domain", "create"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -135,6 +143,8 @@ entry_text = (domain_entries_dir / f"{entry_id}.dent").read_text(encoding="utf-8
 object_text = (secret_objects_dir / f"{secret_id}.sec").read_text(encoding="utf-8")
 if "entry_inject=never\n" not in entry_text:
     fail("clean v2 attr did not update domain entry inject policy")
+if "object_domain=" not in entry_text or "object_store=default\n" not in entry_text:
+    fail("clean v2 attr did not write object location metadata")
 if "wrapped_object_key=" not in entry_text:
     fail("clean v2 attr did not backfill the wrapped object key")
 if "secret_inject=never\n" not in object_text or "refcount=1\n" not in object_text:
@@ -161,6 +171,42 @@ if rc != 0 or stdout != "public-token" or stderr != "":
     fail(f"pure v2 public get while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if not (secret_objects_dir / f"{secret_id}.value").exists():
     fail("pure v2 set did not create object value storage")
+
+source_entry_text = (domain_entries_dir / f"{entry_id}.dent").read_text(encoding="utf-8")
+source_object_domain = read_field(source_entry_text, "object_domain")
+source_object_store = read_field(source_entry_text, "object_store")
+consumer_domain = work_root / "consumer"
+consumer_domain.mkdir(parents=True)
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "domain", "create"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"consumer domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+consumer_entries_dirs = [path for path in Path(env["XDG_DATA_HOME"]).rglob("entries") if path != entries_dirs[0]]
+if len(consumer_entries_dirs) != 1:
+    fail(f"expected one consumer entries dir, found {consumer_entries_dirs!r}")
+consumer_store_root = consumer_entries_dirs[0].parent
+consumer_domain_entries_dir = consumer_store_root / "domain-ent"
+consumer_secret_objects_dir = consumer_store_root / "objects" / "secret"
+consumer_domain_entries_dir.mkdir(parents=True)
+consumer_secret_objects_dir.mkdir(parents=True)
+(consumer_store_root / "format").write_text("SECDATSTORE1\nformat=v2\nstate=ready\n", encoding="utf-8")
+remote_entry_id = "66666666-6666-4666-8666-666666666666"
+(consumer_domain_entries_dir / f"{remote_entry_id}.dent").write_text(
+    "SECDATDENT1\n"
+    f"entry_id={remote_entry_id}\n"
+    f"secret_id={secret_id}\n"
+    f"object_domain={source_object_domain}\n"
+    f"object_store={source_object_store}\n"
+    "key_visibility=always\n"
+    "key=REMOTE_PUBLIC\n"
+    "entry_inject=explicit\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "fsck", "--format", "v2"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"remote object v2 fsck failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "get", "REMOTE_PUBLIC"], {"SECDAT_MASTER_KEY": ""})
+if rc != 0 or stdout != "public-token" or stderr != "":
+    fail(f"remote public object get while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET", "--value", "secret-value", "--sandbox-inject", "explicit"])
 if rc != 0 or stdout != "" or stderr != "":

@@ -1053,6 +1053,7 @@ domain/store/domain-ent/<entry-id>.dent
     magic/version
     entry_id
     secret_id
+    object_domain and object_store address fields (current transitional format)
     key_visibility
     public key name or public lookup tag, when key_visibility=always
     encrypted_key hex payload, when key_visibility=unlocked (current transitional format)
@@ -1078,7 +1079,7 @@ objects/secret/<secret-id>.value
     secret-side metadata and secret-side policy flags
 ```
 
-The final binary format is intentionally undecided, but each file must have a magic number, a format version, authenticated encrypted sections, and enough public structure for locked-mode listing of public keys and public values. All encrypted sections must bind the public header as AEAD associated data. The current implementation uses a `.value` sidecar with the existing v1 `SECDAT1` value payload as a compatibility step before the final object file format, stores hidden key names as `encrypted_key=<hex(SECDAT1)>`, and stores encrypted-object data keys as `wrapped_object_key=<hex(SECDAT1)>` in the domain-entry text file before final domain-entry encrypted sections land. The `.value` sidecar is still encrypted with the domain-derived key until the later object-key payload migration.
+The final binary format is intentionally undecided, but each file must have a magic number, a format version, authenticated encrypted sections, and enough public structure for locked-mode listing of public keys and public values. All encrypted sections must bind the public header as AEAD associated data. The current implementation uses a `.value` sidecar with the existing v1 `SECDAT1` value payload as a compatibility step before the final object file format, stores object address fields as escaped `object_domain` and `object_store` text, stores hidden key names as `encrypted_key=<hex(SECDAT1)>`, and stores encrypted-object data keys as `wrapped_object_key=<hex(SECDAT1)>` in the domain-entry text file before final domain-entry encrypted sections land. The `.value` sidecar is still encrypted with the domain-derived key until the later object-key payload migration.
 
 #### Attribute Placement
 
@@ -1124,7 +1125,7 @@ Current and planned semantics:
 
 - `ln SRC_KEYREF DST_KEYREF` creates a new domain entry pointing to the source secret object; the target behavior is cross-domain linking with the object data key rewrapped into the destination domain entry
 - the current implementation only supports same-domain/same-store links as graph scaffolding; this is not the final reason for `ln`
-- cross-domain `ln` requires two missing pieces before it can be enabled: stable object addressing across domains, and object data-key wrapping in each domain entry
+- cross-domain `ln` still requires the object value payload to use the object data key, plus cross-domain authorization/refcount semantics, before it can be enabled
 - `ln --secret-id UUID DST_KEYREF` is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry, or through a future explicit recovery mechanism
 - `id KEYREF` prints the resolved `secret_id` without printing the secret value
 - `secret status UUID` prints non-secret object metadata, link count, and whether the object is orphaned
@@ -1160,7 +1161,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. The implemented same-domain/same-store `ln` is only a graph-behavior checkpoint. Cross-domain `ln` remains the design target and depends on object addressing that is not local to the destination domain plus per-entry object-key wrapping.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into v2 object-owned storage. Domain entries now carry explicit object address fields and can resolve object metadata/value sidecars outside the entry's local domain/store. The implemented same-domain/same-store `ln` is only a graph-behavior checkpoint. Cross-domain `ln` remains the design target and still depends on object-key value payloads, authorization semantics, and cross-domain refcount handling.
 
 #### Implementation Plan
 

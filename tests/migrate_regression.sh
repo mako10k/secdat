@@ -193,6 +193,8 @@ app_token_secret_id = stdout.strip()
 app_token_entry_texts = domain_entries_for_secret(store_root, app_token_secret_id)
 if len(app_token_entry_texts) != 1 or "wrapped_object_key=" not in app_token_entry_texts[0]:
     fail("migrated encrypted APP_TOKEN domain entry did not include wrapped_object_key")
+if "object_domain=" not in app_token_entry_texts[0] or "object_store=app\n" not in app_token_entry_texts[0]:
+    fail("migrated encrypted APP_TOKEN domain entry did not include object location")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "id", "APP_PUBLIC"])
 if rc != 0 or stderr != "":
@@ -202,6 +204,8 @@ if len(app_public_entry_texts) != 1:
     fail(f"expected one APP_PUBLIC domain entry, found {len(app_public_entry_texts)}")
 if "wrapped_object_key=" in app_public_entry_texts[0]:
     fail("migrated public APP_PUBLIC domain entry should not include wrapped_object_key")
+if "object_domain=" not in app_public_entry_texts[0] or "object_store=app\n" not in app_public_entry_texts[0]:
+    fail("migrated public APP_PUBLIC domain entry did not include object location")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_PUBLIC"])
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inject=never\n" or stderr != "":
