@@ -29,7 +29,7 @@ secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GL
 
 secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--sandbox-injectable]
 secdat [--dir DIR] [--store STORE] attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|bulk]
-secdat [--dir DIR] [--store STORE] fsck [--orphaned] [--dangling] [--refcount] [--format v1|v2]
+secdat [--dir DIR] [--store STORE] fsck [--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]
 
 secdat [--dir DIR] [--store STORE] exists KEYREF
 secdat [--dir DIR] [--store STORE] id KEYREF
@@ -313,7 +313,8 @@ To make the requested behavior implementable, the following are treated as norma
 - v2 dangling checks report invalid domain entries or secret objects as `dangling-entry	ENTRY_ID	invalid-entry` or `dangling-secret	SECRET_ID	invalid-secret`
 - v2 dangling checks report domain entries that point to missing or invalid secret objects as `dangling-entry	ENTRY_ID	missing-secret`
 - v2 refcount checks report cached object refcount mismatches as `refcount-mismatch	SECRET_ID	expected=N actual=M`
-- `fsck` must not repair or delete data until explicit repair flags are implemented
+- `fsck --format v2 --refcount --repair` rewrites only rebuildable cached object refcounts and reports `repaired-refcount	SECRET_ID	expected=N actual=M`
+- `fsck --repair` must not delete orphaned secrets, dangling entries, values, tombstones, or any non-derived data
 
 #### FR-7c Shell Export
 
@@ -1135,7 +1136,7 @@ Current and planned semantics:
 - `fsck --orphaned` lists secret objects with no referencing domain entries
 - `fsck --dangling` lists domain entries pointing to missing or unreadable secret objects
 - `fsck --refcount` compares cached object refcounts with counts rebuilt from domain entries
-- `fsck --repair` may repair derived metadata, but must not delete orphaned values without an explicit destructive option
+- `fsck --repair` repairs only derived metadata currently supported by the implementation, starting with cached v2 refcounts; it must not delete orphaned values without an explicit destructive option
 
 `cp` and `ln` must remain deliberately different. `cp` produces an independent secret object and can later diverge. `ln` shares one secret object, so changing the value through any link changes the value observed through all links.
 
@@ -1164,7 +1165,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links by source unwrap and destination rewrap of the object data key; direct source-object syntax such as `ln @UUID DST_KEYREF` remains planned.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links by source unwrap and destination rewrap of the object data key. `fsck --format v2 --refcount --repair` can rebuild cached object refcounts without deleting graph data; direct source-object syntax such as `ln @UUID DST_KEYREF` remains planned.
 
 #### Implementation Plan
 
@@ -1183,7 +1184,7 @@ The current migration writer creates the v2 domain-entry/object graph side-by-si
 13. Enable cross-domain `ln` by unwrapping the object key through an authorized source entry and rewrapping it into the destination domain entry. This is implemented for normal KEYREF links; direct `ln @UUID DST_KEYREF` remains future work.
 14. Replace the transitional `.value` sidecar with the final authenticated object payload format that is encrypted by the object data key. This is implemented for new or rewritten values by storing the value payload inside the `.sec` object file; legacy sidecars remain readable for compatibility.
 15. Update the future sandbox import/export flow to require both v2 `entry_inject` and `secret_inject`.
-16. Add repair-only fsck operations for rebuildable metadata such as cached refcounts.
+16. Add repair-only fsck operations for rebuildable metadata such as cached refcounts. This is implemented for v2 cached object refcounts.
 17. Add finalize/cleanup commands only after v2 read/write, migration, fsck, and rollback paths are covered by regression tests.
 
 The first implementation should prefer conservative compatibility over removing old paths. The v1 sidecar metadata added for secret attributes should be treated as migration input, not as the final architecture.
@@ -1212,7 +1213,7 @@ The v1 implementation covers the initial command surface and the first secret-at
 10. add domain-entry `wrapped_object_key` metadata and make every v2 writer preserve or backfill it
 11. add cross-domain object addressing, then enable cross-domain `ln` with source unwrap and destination rewrap semantics
 12. switch object value encryption from the transitional domain-key sidecar to the object data key
-13. add fsck repair for rebuildable metadata
+13. add fsck repair for rebuildable metadata; current support repairs v2 cached object refcounts
 14. add migration finalization once v1 rollback remains tested
 
 ## 8. Open Questions
@@ -1221,11 +1222,10 @@ The following should be fixed before implementation is finalized:
 
 1. whether hidden-key exact lookup should continue decrypting candidate domain entries, or whether a keyed lookup tag is worth the equality-leakage tradeoff
 2. whether direct `secret_id` references should remain metadata-only unless a source domain entry is also provided
-3. whether cached refcounts should be stored in the object file or only reported by fsck
-4. whether orphan cleanup should be a separate destructive command instead of `fsck --repair`
-5. how save/load bundles should encode linked objects without accidentally turning hard links into copies
-6. whether explicit locking such as `flock` should become mandatory during v2 migration and fsck repair
-7. whether `domain delete` should fail when child domains or linked secret objects exist, or whether forced recursive deletion should be a separate command
+3. whether orphan cleanup should be a separate destructive command instead of `fsck --repair`
+4. how save/load bundles should encode linked objects without accidentally turning hard links into copies
+5. whether explicit locking such as `flock` should become mandatory during v2 migration and fsck repair
+6. whether `domain delete` should fail when child domains or linked secret objects exist, or whether forced recursive deletion should be a separate command
 
 ## 9. Recommended Direction
 

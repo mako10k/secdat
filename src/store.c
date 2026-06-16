@@ -151,6 +151,7 @@ struct secdat_fsck_options {
     int orphaned;
     int dangling;
     int refcount;
+    int repair;
 };
 
 struct secdat_fsck_report {
@@ -159,6 +160,7 @@ struct secdat_fsck_report {
     size_t tombstones;
     size_t secret_objects;
     size_t issues;
+    size_t repairs;
 };
 
 enum secdat_store_format {
@@ -487,6 +489,12 @@ static int secdat_count_v2_secret_references_to_object(
     const char *object_store_name,
     const char *secret_id,
     size_t *count
+);
+static int secdat_update_v2_secret_refcount(
+    const char *domain_id,
+    const char *store_name,
+    const char *secret_id,
+    size_t refcount
 );
 static int secdat_atomic_write_file(const char *path, const unsigned char *data, size_t length);
 static int secdat_remove_if_exists(const char *path);
@@ -2674,6 +2682,7 @@ static int secdat_parse_fsck_options(const struct secdat_cli *cli, struct secdat
         {"dangling", no_argument, NULL, 1001},
         {"refcount", no_argument, NULL, 1002},
         {"format", required_argument, NULL, 1003},
+        {"repair", no_argument, NULL, 1004},
         {NULL, 0, NULL, 0},
     };
     char *argv[cli->argc + 2];
@@ -2703,6 +2712,9 @@ static int secdat_parse_fsck_options(const struct secdat_cli *cli, struct secdat
             }
             options->format = optarg;
             break;
+        case 1004:
+            options->repair = 1;
+            break;
         case '?':
         case ':':
         default:
@@ -2721,6 +2733,16 @@ static int secdat_parse_fsck_options(const struct secdat_cli *cli, struct secdat
         options->orphaned = 1;
         options->dangling = 1;
         options->refcount = 1;
+    }
+    if (options->repair) {
+        if (strcmp(options->format, "v2") != 0) {
+            fprintf(stderr, _("fsck --repair is only supported with --format v2\n"));
+            return 2;
+        }
+        if (!options->refcount) {
+            fprintf(stderr, _("fsck --repair currently requires --refcount\n"));
+            return 2;
+        }
     }
 
     return 0;
@@ -10771,6 +10793,12 @@ static void secdat_fsck_report_issue(struct secdat_fsck_report *report, const ch
     report->issues += 1;
 }
 
+static void secdat_fsck_report_repair(struct secdat_fsck_report *report, const char *kind, const char *key, const char *detail)
+{
+    printf("%s\t%s\t%s\n", kind, key, detail);
+    report->repairs += 1;
+}
+
 static int secdat_fsck_v1_store(
     const struct secdat_domain_chain *chain,
     const char *store_name,
@@ -11010,7 +11038,14 @@ static int secdat_fsck_v2_store(
             }
             if (cached_refcount != actual_refcount) {
                 snprintf(detail, sizeof(detail), "expected=%zu actual=%zu", cached_refcount, actual_refcount);
-                secdat_fsck_report_issue(report, "refcount-mismatch", valid_objects.items[index], detail);
+                if (options->repair) {
+                    if (secdat_update_v2_secret_refcount(current_domain_id, store_name, valid_objects.items[index], actual_refcount) != 0) {
+                        goto cleanup;
+                    }
+                    secdat_fsck_report_repair(report, "repaired-refcount", valid_objects.items[index], detail);
+                } else {
+                    secdat_fsck_report_issue(report, "refcount-mismatch", valid_objects.items[index], detail);
+                }
             }
         }
     }
@@ -11049,6 +11084,9 @@ static int secdat_command_fsck(const struct secdat_cli *cli)
         return status;
     }
     if (report.issues == 0) {
+        if (report.repairs != 0) {
+            return 0;
+        }
         puts("ok");
         return 0;
     }
@@ -13181,7 +13219,7 @@ static int secdat_store_migrate_write_v2(
 {
     struct secdat_store_migrate_v1_plan plan = {0};
     struct secdat_key_list written_paths = {0};
-    struct secdat_fsck_options fsck_options = {"v2", 1, 1, 1};
+    struct secdat_fsck_options fsck_options = {"v2", 1, 1, 1, 0};
     struct secdat_fsck_report fsck_report;
     char domain_entries_dir[PATH_MAX];
     char secret_objects_dir[PATH_MAX];

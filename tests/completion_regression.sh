@@ -86,7 +86,7 @@ for expected in ["--key-visibility", "--value-access", "--sandbox-inject", "--in
 mode, values = run_completion("fsck", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: fsck option completion mode mismatch: {mode!r}")
-for expected in ["--orphaned", "--dangling", "--refcount", "--format"]:
+for expected in ["--orphaned", "--dangling", "--refcount", "--repair", "--format"]:
     assert_contains(values, expected, "fsck options")
 
 mode, values = run_completion("store", "migrate", "--")

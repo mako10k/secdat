@@ -399,7 +399,7 @@ for args, marker in [
     ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [-i|--inherit] [-s|--save]"),
     ([bin_path, "help", "list"], "list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--sandbox-injectable]"),
     ([bin_path, "help", "attr"], "attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|bulk]"),
-    ([bin_path, "help", "fsck"], "fsck [--orphaned] [--dangling] [--refcount] [--format v1|v2]"),
+    ([bin_path, "help", "fsck"], "fsck [--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]"),
     ([bin_path, "help", "mask"], "mask KEYREF"),
     ([bin_path, "help", "unmask"], "unmask KEYREF"),
     ([bin_path, "help", "exists"], "exists KEYREF"),

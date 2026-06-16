@@ -80,7 +80,7 @@ marks whether future scoped sandbox imports may include the key.
 .B id KEYREF
 Print the resolved v2 secret object UUID for one key without reading its value. This requires a store marked with the v2 format marker.
 .TP
-.B fsck [\-\-orphaned] [\-\-dangling] [\-\-refcount] [\-\-format v1|v2]
+.B fsck [\-\-orphaned] [\-\-dangling] [\-\-refcount] [\-\-repair] [\-\-format v1|v2]
 Check the current-domain local store namespace without decrypting secret values. Clean v1 output is
 .B ok .
 .B --orphaned
@@ -91,6 +91,10 @@ reports invalid entries or attribute sidecars, and
 is currently a clean no-op for v1 because shared secret objects arrive with store v2. Stores with the v2 format marker are checked with
 .B --format v2 ,
 which scans the domain-entry to secret-object graph and reports orphaned secrets, dangling entries or objects, and cached refcount mismatches.
+.B --repair
+is supported with
+.B --format v2 --refcount
+and rewrites only cached object refcounts that can be rebuilt from domain entries. It does not delete orphaned secrets, dangling entries, values, or tombstones.
 .TP
 .B mask KEYREF
 Create a local tombstone to hide one inherited key in the current domain.

@@ -729,7 +729,7 @@ int secdat_cli_complete(int argc, char **argv)
         "--key-visibility", "--value-access", "--sandbox-inject", "--inject", "--help", "-h", NULL,
     };
     static const char *const fsck_options[] = {
-        "--orphaned", "--dangling", "--refcount", "--format", "--help", "-h", NULL,
+        "--orphaned", "--dangling", "--refcount", "--repair", "--format", "--help", "-h", NULL,
     };
     static const char *const get_options[] = {
         "--on-demand-unlock", "-w", "--unlock-timeout", "-t", "--stdout", "-o", "--shellescaped", "-e", "--help", "-h", NULL,
@@ -950,7 +950,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "attr", "KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|bulk]");
         break;
     case SECDAT_COMMAND_FSCK:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "fsck", "[--orphaned] [--dangling] [--refcount] [--format v1|v2]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "fsck", "[--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]");
         break;
     case SECDAT_COMMAND_MASK:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mask", "KEYREF");
@@ -1129,7 +1129,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  ls: list effective keys visible from the current domain view, optionally filtered by safe or unsafe storage\n"));
     secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe, or sandbox-injectable local state\n"));
     secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and sandbox injection attributes\n"));
-    secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and repair planning\n"));
+    secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and limited repair\n"));
     secdat_cli_print_detail_line(_("  mask: create a local tombstone to hide one inherited key\n"));
     secdat_cli_print_detail_line(_("  unmask: remove one local tombstone from the current domain\n"));
     secdat_cli_print_detail_line(_("  exists: check whether one resolved key is visible from the current domain view\n"));
@@ -1180,7 +1180,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "fsck") == 0) {
-        secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and repair planning\n"));
+        secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and limited repair\n"));
         return;
     }
     if (target != NULL && strcmp(target, "mask") == 0) {

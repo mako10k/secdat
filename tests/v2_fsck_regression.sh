@@ -245,6 +245,15 @@ remote_entry_id = "66666666-6666-4666-8666-666666666666"
 )
 source_public_object_path = secret_objects_dir / f"{secret_id}.sec"
 replace_object_header_text(source_public_object_path, "refcount=1\n", "refcount=2\n")
+replace_object_header_text(source_public_object_path, "refcount=2\n", "refcount=5\n")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--refcount", "--repair"])
+if rc != 0 or stderr != "":
+    fail(f"v2 refcount repair should fix a payload object: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, f"repaired-refcount\t{secret_id}\texpected=5 actual=2\n", "v2 refcount payload repair")
+assert_object_payload_magic(source_public_object_path, b"SECDAT1\0", "v2 refcount repair payload preservation")
+source_public_object_text = read_object_header_text(source_public_object_path)
+if "refcount=2\n" not in source_public_object_text:
+    fail("v2 refcount repair did not update the payload object's cached refcount")
 rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"remote object v2 fsck failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -499,6 +508,20 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v
 if rc != 1 or stderr != "":
     fail(f"v2 refcount fsck should report issues: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, f"refcount-mismatch\t{secret_id}\texpected=3 actual=2\n", "v2 refcount mismatch")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--refcount", "--repair"])
+if rc != 0 or stderr != "":
+    fail(f"v2 refcount repair should report repaired rows: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, f"repaired-refcount\t{secret_id}\texpected=3 actual=2\n", "v2 refcount repair")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--refcount"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"v2 refcount fsck should be clean after repair: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--orphaned"])
+if rc != 1 or stderr != "":
+    fail(f"v2 refcount repair should not remove orphans: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, f"orphaned-secret\t{orphan_secret_id}\tmissing-entry\n", "v2 orphaned secret after repair")
 
 print("PASS v2 fsck regression")
 PY

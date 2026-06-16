@@ -249,11 +249,10 @@ msgstr ""
 
 #: src/cli.c:1132 src/cli.c:1183
 msgid ""
-"  fsck: check current-domain store metadata for migration and repair "
-"planning\n"
+"  fsck: check current-domain store metadata for migration and limited repair\n"
 msgstr ""
-"  fsck: migration と repair 計画のために現在の domain の store metadata を検"
-"査します\n"
+"  fsck: migration と限定的な repair のために現在の domain の store metadata "
+"を検査します\n"
 
 #: src/cli.c:1133 src/cli.c:1187
 msgid "  mask: create a local tombstone to hide one inherited key\n"
@@ -1199,6 +1198,16 @@ msgstr "fsck format が不正です: %s\n"
 #, c-format
 msgid "invalid arguments for fsck\n"
 msgstr "fsck の引数が不正です\n"
+
+#: src/store.c:2732
+#, c-format
+msgid "fsck --repair is only supported with --format v2\n"
+msgstr "fsck --repair は --format v2 でのみサポートされています\n"
+
+#: src/store.c:2736
+#, c-format
+msgid "fsck --repair currently requires --refcount\n"
+msgstr "fsck --repair には現在 --refcount が必要です\n"
 
 #: src/store.c:2740
 #, c-format
