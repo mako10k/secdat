@@ -448,8 +448,15 @@ for args, marker in [
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--sandbox-injectable]"),
     ([bin_path, "help", "passwd"], "passwd"),
     ([bin_path, "help", "store"], "store migrate STORE --to-format v2 [--dry-run]"),
+    ([bin_path, "help", "store", "migrate"], "store migrate STORE --to-format v2 [--dry-run]"),
+    ([bin_path, "--help", "store", "migrate"], "store migrate STORE --to-format v2 [--dry-run]"),
+    ([bin_path, "store", "migrate", "--help"], "store migrate STORE --to-format v2 [--dry-run]"),
+    ([bin_path, "help", "store", "finalize-migration"], "store finalize-migration STORE --from-format v1 [--dry-run]"),
+    ([bin_path, "--help", "store", "finalize-migration"], "store finalize-migration STORE --from-format v1 [--dry-run]"),
     ([bin_path, "store", "finalize-migration", "--help"], "store finalize-migration STORE --from-format v1 [--dry-run]"),
     ([bin_path, "help", "secret"], "secret status UUID"),
+    ([bin_path, "help", "secret", "status"], "secret status UUID"),
+    ([bin_path, "--help", "secret", "status"], "secret status UUID"),
     ([bin_path, "secret", "status", "--help"], "secret status UUID"),
     ([bin_path, "help", "domain"], "domain ls [-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants]"),
     ([bin_path, "store", "--help"], "store create STORE"),
@@ -473,6 +480,76 @@ for args, marker in [
         or "KEY / KEYREF:" not in normalized_output
     ):
         fail(f"help check failed for {args}: rc={rc} output={(stdout + stderr)!r}")
+
+for args, fragments in [
+    (
+        [bin_path, "help", "store", "migrate"],
+        [
+            "store migrate: validate one v1 store;",
+            "leave v1 fallback files in place",
+            "write the v2 graph after reviewing the dry-run output:",
+        ],
+    ),
+    (
+        [bin_path, "store", "migrate", "--help"],
+        [
+            "store migrate: validate one v1 store;",
+            "leave v1 fallback files in place",
+            "write the v2 graph after reviewing the dry-run output:",
+        ],
+    ),
+    (
+        [bin_path, "help", "store", "finalize-migration"],
+        [
+            "store finalize-migration:",
+            "inspect legacy v1 fallback files;",
+            "refuse to remove anything while blockers remain",
+            "remove removable legacy fallback files only after blockers are gone:",
+        ],
+    ),
+    (
+        [bin_path, "help", "secret", "status"],
+        [
+            "secret status: print one v2 secret object's non-secret metadata and reference counts",
+            "inspect one v2 secret object by UUID without reading its value:",
+        ],
+    ),
+    (
+        [bin_path, "help", "attr"],
+        [
+            "value_access=always stores a public/plaintext-at-rest value",
+            "sandbox_inject controls export/exec eligibility",
+        ],
+    ),
+    (
+        [bin_path, "help", "fsck"],
+        [
+            "with no filters, fsck runs orphaned, dangling, and refcount checks",
+            "--repair only rebuilds cached v2 refcounts",
+        ],
+    ),
+    (
+        [bin_path, "help", "gc"],
+        [
+            "--dry-run previews selected v2 graph files",
+            "without --dry-run it removes the selected graph files",
+        ],
+    ),
+    (
+        [bin_path, "help", "ln"],
+        [
+            "value writes through either linked key affect the shared object",
+            "domain-entry attributes remain per link",
+        ],
+    ),
+]:
+    rc, stdout, stderr = run(args)
+    output = stdout + stderr
+    if rc != 0:
+        fail(f"detailed help marker check failed for {args}: rc={rc} output={output!r}")
+    for fragment in fragments:
+        if fragment not in normalize_spaces(output):
+            fail(f"detailed help marker check failed for {args}: missing {fragment!r} in {output!r}")
 
 rc, stdout, stderr = run([bin_path, "help", "get"])
 output = stdout + stderr
@@ -548,7 +625,7 @@ if rc != 2 or "missing store name for store create" not in output:
 rc, stdout, stderr = run([bin_path, "--help"])
 output = stdout + stderr
 normalized_output = normalize_spaces(output)
-if rc != 0 or "[options] subcommand ..." not in normalized_output or "Options:" not in output or "-d, --dir DIR" not in normalized_output or "Commands:" not in output or "Topics:" not in output or "Groups:" not in output or "Support:" not in output or "repository: https://github.com/mako10k/secdat" not in normalized_output or "help usecases" not in normalized_output or "help concepts" not in normalized_output or "--help COMMAND" not in normalized_output or "COMMAND --help" not in normalized_output or "--version" not in normalized_output:
+if rc != 0 or "[options] subcommand ..." not in normalized_output or "Options:" not in output or "-d, --dir DIR" not in normalized_output or "Commands:" not in output or "Topics:" not in output or "Groups:" not in output or "Support:" not in output or "repository: https://github.com/mako10k/secdat" not in normalized_output or "help usecases" not in normalized_output or "help concepts" not in normalized_output or "--help COMMAND" not in normalized_output or "COMMAND --help" not in normalized_output or "--version" not in normalized_output or "store migrate:" not in normalized_output or "store finalize-migration:" not in normalized_output:
     fail(f"global help check failed: rc={rc} output={output!r}")
 
 help_column = description_column(output, "help:")

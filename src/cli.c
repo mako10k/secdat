@@ -286,6 +286,54 @@ static void secdat_cli_print_detail_line(const char *line)
     secdat_cli_print_wrapped_text(description, SECDAT_CLI_DETAIL_COLUMN);
 }
 
+static const char *secdat_cli_help_target_from_args(int argc, char **argv, int index)
+{
+    if (index >= argc) {
+        return NULL;
+    }
+
+    if (index + 1 < argc && strcmp(argv[index], "store") == 0) {
+        if (strcmp(argv[index + 1], "create") == 0) {
+            return "store create";
+        }
+        if (strcmp(argv[index + 1], "delete") == 0) {
+            return "store delete";
+        }
+        if (strcmp(argv[index + 1], "ls") == 0) {
+            return "store ls";
+        }
+        if (strcmp(argv[index + 1], "migrate") == 0) {
+            return "store migrate";
+        }
+        if (strcmp(argv[index + 1], "finalize-migration") == 0) {
+            return "store finalize-migration";
+        }
+    }
+
+    if (index + 1 < argc && strcmp(argv[index], "secret") == 0) {
+        if (strcmp(argv[index + 1], "status") == 0) {
+            return "secret status";
+        }
+    }
+
+    if (index + 1 < argc && strcmp(argv[index], "domain") == 0) {
+        if (strcmp(argv[index + 1], "create") == 0) {
+            return "domain create";
+        }
+        if (strcmp(argv[index + 1], "delete") == 0) {
+            return "domain delete";
+        }
+        if (strcmp(argv[index + 1], "ls") == 0) {
+            return "domain ls";
+        }
+        if (strcmp(argv[index + 1], "status") == 0) {
+            return "domain status";
+        }
+    }
+
+    return argv[index];
+}
+
 static int parse_global_options(int argc, char **argv, int *index, struct secdat_cli *cli)
 {
     static const struct option long_options[] = {
@@ -314,7 +362,7 @@ static int parse_global_options(int argc, char **argv, int *index, struct secdat
         case 'h':
             cli->show_help = 1;
             if (optind < argc && argv[optind][0] != '-') {
-                cli->help_target = argv[optind];
+                cli->help_target = secdat_cli_help_target_from_args(argc, argv, optind);
             }
             *index = optind;
             return 0;
@@ -951,6 +999,18 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     if (strcmp(name, "store") == 0) {
         return SECDAT_COMMAND_STORE_LS;
     }
+    if (strcmp(name, "store create") == 0) {
+        return SECDAT_COMMAND_STORE_CREATE;
+    }
+    if (strcmp(name, "store delete") == 0) {
+        return SECDAT_COMMAND_STORE_DELETE;
+    }
+    if (strcmp(name, "store ls") == 0) {
+        return SECDAT_COMMAND_STORE_LS;
+    }
+    if (strcmp(name, "store migrate") == 0) {
+        return SECDAT_COMMAND_STORE_MIGRATE;
+    }
     if (strcmp(name, "store finalize-migration") == 0) {
         return SECDAT_COMMAND_STORE_FINALIZE_MIGRATION;
     }
@@ -962,6 +1022,18 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     }
     if (strcmp(name, "domain") == 0) {
         return SECDAT_COMMAND_DOMAIN_LS;
+    }
+    if (strcmp(name, "domain create") == 0) {
+        return SECDAT_COMMAND_DOMAIN_CREATE;
+    }
+    if (strcmp(name, "domain delete") == 0) {
+        return SECDAT_COMMAND_DOMAIN_DELETE;
+    }
+    if (strcmp(name, "domain ls") == 0) {
+        return SECDAT_COMMAND_DOMAIN_LS;
+    }
+    if (strcmp(name, "domain status") == 0) {
+        return SECDAT_COMMAND_DOMAIN_STATUS;
     }
     return SECDAT_COMMAND_HELP;
 }
@@ -1097,7 +1169,7 @@ static void secdat_cli_print_common_options(void)
 static void secdat_cli_print_meta_usage_line(const char *program_name, const char *target)
 {
     if (target != NULL && strcmp(target, "help") == 0) {
-        secdat_cli_print_usage_columns(program_name, "", "help", "[COMMAND]");
+        secdat_cli_print_usage_columns(program_name, "", "help", "[COMMAND...]");
         return;
     }
     if (target != NULL && strcmp(target, "version") == 0) {
@@ -1117,11 +1189,11 @@ static void secdat_cli_print_help_routes(const char *program_name, const char *t
 {
     printf(_("\nHelp:\n"));
     printf(_("  %s --help\n"), program_name);
-    printf(_("  %s help [COMMAND]\n"), program_name);
+    printf(_("  %s help [COMMAND...]\n"), program_name);
     printf(_("  %s help usecases\n"), program_name);
     printf(_("  %s help concepts\n"), program_name);
     if (target == NULL) {
-        printf(_("  %s --help COMMAND\n"), program_name);
+        printf(_("  %s --help COMMAND...\n"), program_name);
         printf(_("  %s COMMAND --help\n"), program_name);
     } else {
         printf(_("  %s --help %s\n"), program_name, target);
@@ -1191,6 +1263,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  status: report whether secret material is available from the current domain scope\n"));
     secdat_cli_print_detail_line(_("  wait-unlock: wait until the current domain scope becomes unlocked, or fail on timeout\n"));
     secdat_cli_print_detail_line(_("  secret status: print one v2 secret object's non-secret metadata and reference counts\n"));
+    secdat_cli_print_detail_line(_("  store migrate: validate a v1 store and write the side-by-side v2 domain-entry/object graph after review\n"));
     secdat_cli_print_detail_line(_("  store finalize-migration: inspect or remove legacy v1 fallback files after a v2 migration\n"));
     secdat_cli_print_detail_line(_("  version: print the secdat version\n"));
 }
@@ -1219,14 +1292,17 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "attr") == 0) {
         secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and sandbox injection attributes\n"));
+        secdat_cli_print_detail_line(_("  key_visibility controls whether the key name is visible while locked; value_access=always stores a public/plaintext-at-rest value; sandbox_inject controls export/exec eligibility\n"));
         return;
     }
     if (target != NULL && strcmp(target, "fsck") == 0) {
         secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and limited repair\n"));
+        secdat_cli_print_detail_line(_("  with no filters, fsck runs orphaned, dangling, and refcount checks; --repair only rebuilds cached v2 refcounts\n"));
         return;
     }
     if (target != NULL && strcmp(target, "gc") == 0) {
         secdat_cli_print_detail_line(_("  gc: remove unreachable or dangling v2 graph files after review\n"));
+        secdat_cli_print_detail_line(_("  --dry-run previews selected v2 graph files; without --dry-run it removes the selected graph files\n"));
         return;
     }
     if (target != NULL && strcmp(target, "mask") == 0) {
@@ -1263,6 +1339,7 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "ln") == 0) {
         secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object, including cross-domain v2 links and authorized @UUID sources\n"));
+        secdat_cli_print_detail_line(_("  value writes through either linked key affect the shared object; domain-entry attributes remain per link\n"));
         return;
     }
     if (target != NULL && strcmp(target, "exec") == 0) {
@@ -1321,8 +1398,24 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  store: manage store namespaces and migrate v1 stores to the v2 domain-entry/object layout\n"));
         return;
     }
+    if (target != NULL && strcmp(target, "store create") == 0) {
+        secdat_cli_print_detail_line(_("  store create: create one store namespace in the resolved current domain\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "store delete") == 0) {
+        secdat_cli_print_detail_line(_("  store delete: delete one store namespace from the resolved current domain\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "store ls") == 0) {
+        secdat_cli_print_detail_line(_("  store ls: list store namespaces in the resolved current domain\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "store migrate") == 0) {
+        secdat_cli_print_detail_line(_("  store migrate: validate one v1 store; without --dry-run, write the side-by-side v2 domain-entry/object graph and leave v1 fallback files in place\n"));
+        return;
+    }
     if (target != NULL && strcmp(target, "store finalize-migration") == 0) {
-        secdat_cli_print_detail_line(_("  store finalize-migration: inspect or remove legacy v1 fallback files after a v2 migration\n"));
+        secdat_cli_print_detail_line(_("  store finalize-migration: inspect legacy v1 fallback files; without --dry-run, remove only removable files and refuse to remove anything while blockers remain\n"));
         return;
     }
     if (target != NULL && strcmp(target, "secret") == 0) {
@@ -1335,6 +1428,22 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "domain") == 0) {
         secdat_cli_print_detail_line(_("  domain: manage domain roots and domain discovery scope\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "domain create") == 0) {
+        secdat_cli_print_detail_line(_("  domain create: register the resolved directory as a domain root\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "domain delete") == 0) {
+        secdat_cli_print_detail_line(_("  domain delete: unregister the resolved directory as a domain root\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "domain ls") == 0) {
+        secdat_cli_print_detail_line(_("  domain ls: list domain roots around the scoped directory\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "domain status") == 0) {
+        secdat_cli_print_detail_line(_("  domain status: report the resolved domain root and effective lock/unlock source\n"));
         return;
     }
 }
@@ -1359,6 +1468,30 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         snprintf(buffer, sizeof(buffer), _("  write one value from an argument: %s set API_TOKEN --value new-token\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  read a value from standard input without echoing it in shell history: printf 'token' | %s set API_TOKEN --stdin\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        return;
+    }
+    if (strcmp(target, "attr") == 0) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  inspect one key's current attributes: %s attr API_TOKEN\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  make one value public while keeping the key name visible: %s attr API_TOKEN --value-access always\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        return;
+    }
+    if (strcmp(target, "fsck") == 0) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  run all current-domain metadata checks: %s fsck\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  rebuild cached v2 refcounts after review: %s fsck --format v2 --refcount --repair\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        return;
+    }
+    if (strcmp(target, "gc") == 0) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  preview unreachable v2 graph files before deletion: %s gc --format v2 --dry-run\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  delete the reviewed unreachable v2 graph files: %s gc --format v2\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         return;
     }
@@ -1433,6 +1566,22 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         snprintf(buffer, sizeof(buffer), _("  inspect legacy fallback files after v2 values have been rewritten: %s store finalize-migration app --from-format v1 --dry-run\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  remove removable legacy fallback files after review: %s store finalize-migration app --from-format v1\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        return;
+    }
+    if (strcmp(target, "store migrate") == 0) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  inspect a v1 to v2 migration before writing: %s store migrate app --to-format v2 --dry-run\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  write the v2 graph after reviewing the dry-run output: %s store migrate app --to-format v2\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        return;
+    }
+    if (strcmp(target, "store finalize-migration") == 0) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  inspect legacy fallback files after v2 values have been rewritten: %s store finalize-migration app --from-format v1 --dry-run\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  remove removable legacy fallback files only after blockers are gone: %s store finalize-migration app --from-format v1\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         return;
     }
@@ -1539,7 +1688,7 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         cli->show_help = 1;
         index += 1;
         if (index < argc) {
-            cli->help_target = argv[index];
+            cli->help_target = secdat_cli_help_target_from_args(argc, argv, index);
         }
         return 0;
     } else if (strcmp(argv[index], "version") == 0) {
