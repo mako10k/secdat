@@ -292,7 +292,8 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat fsck` checks the current-domain local store namespace without decrypting secret values
 - the current implementation checks the v1 store format by default
 - `secdat fsck --format v1` explicitly selects v1 checks
-- `secdat fsck --format v2` is reserved for store v2 and is rejected until v2 files exist
+- `secdat fsck --format v2` scans stores marked with the v2 format marker and checks the domain-entry to secret-object graph without decrypting values
+- a missing format marker means v1; a v2 marker makes v1 fsck reject the store and require `--format v2`
 - without a filter, `fsck` runs orphaned, dangling, and refcount checks
 - `--orphaned` reports derived or leftover state that no longer has its authoritative counterpart
 - `--dangling` reports entries or metadata that point at invalid local data
@@ -303,6 +304,10 @@ To make the requested behavior implementable, the following are treated as norma
 - v1 orphan checks report tombstones without a parent-visible key as `orphaned-tombstone	KEY	missing-parent`
 - v1 dangling checks report invalid `.sec` entry files as `dangling-entry	KEY	invalid-entry`
 - v1 dangling checks report invalid or unsupported attribute sidecars as `dangling-metadata	KEY	invalid-metadata`
+- v2 orphan checks report secret objects without referencing domain entries as `orphaned-secret	UUID	missing-entry`
+- v2 dangling checks report invalid domain entries or secret objects as `dangling-entry	ENTRY_ID	invalid-entry` or `dangling-secret	SECRET_ID	invalid-secret`
+- v2 dangling checks report domain entries that point to missing or invalid secret objects as `dangling-entry	ENTRY_ID	missing-secret`
+- v2 refcount checks report cached object refcount mismatches as `refcount-mismatch	SECRET_ID	expected=N actual=M`
 - `fsck` must not repair or delete data until explicit repair flags are implemented
 
 #### FR-7c Shell Export
@@ -1140,7 +1145,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration --from-format v1
 ```
 
-The current implementation accepts only `--dry-run`. The future writer should keep a format marker per store and reject mixed writes unless the store is in an explicit migration state.
+The current migration implementation accepts only `--dry-run`. The read-only v2 scanner already honors a per-store `format` marker, and the future writer should keep that marker authoritative and reject mixed writes unless the store is in an explicit migration state.
 
 #### Implementation Plan
 

@@ -243,7 +243,7 @@ Use `attr` to inspect or update attributes:
 
 The planned storage v2 moves from one domain-local file per key to a directory/inode-like split between domain entries and secret objects. Domain entries will own key names and key visibility; secret objects will own values and value access. That plan also adds linked secrets (`ln`), secret UUID references, refcount/orphan checks, and a migration-first compatibility path from the current v1 store. See [docs/secdat-spec.md](docs/secdat-spec.md#510-planned-store-v2-domain-entries-and-secret-objects).
 
-For migration preparation, `fsck` performs read-only checks on the current v1 domain/store:
+For migration preparation, `fsck` performs read-only checks on the current domain/store:
 
 ```sh
 ./src/secdat fsck
@@ -253,7 +253,7 @@ For migration preparation, `fsck` performs read-only checks on the current v1 do
 ./src/secdat store migrate default --to-format v2 --dry-run
 ```
 
-Clean output is `ok`. Issues are tab-separated rows such as `orphaned-metadata	KEY	missing-entry`, `orphaned-tombstone	KEY	missing-parent`, `dangling-entry	KEY	invalid-entry`, or `dangling-metadata	KEY	invalid-metadata`. `--refcount` is currently a clean no-op for v1 because secret objects and hard links arrive with store v2.
+Clean output is `ok`. v1 issues are tab-separated rows such as `orphaned-metadata	KEY	missing-entry`, `orphaned-tombstone	KEY	missing-parent`, `dangling-entry	KEY	invalid-entry`, or `dangling-metadata	KEY	invalid-metadata`. `--refcount` is currently a clean no-op for v1 because secret objects and hard links arrive with store v2. Stores marked with the v2 format marker can also be checked with `fsck --format v2`, which reports domain-entry/object graph issues such as `orphaned-secret	UUID	missing-entry`, `dangling-entry	ENTRY_ID	missing-secret`, and `refcount-mismatch	SECRET_ID	expected=N actual=M`.
 `store migrate STORE --to-format v2 --dry-run` does not write v2 data yet; it validates the selected v1 store and prints the number of domain entries, secret objects, metadata sidecars, tombstones, public values, encrypted values, and sandbox-injectable entries that would be created or preserved by the v2 migration path.
 
 Key arguments also accept an explicit domain/store qualifier as `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.

@@ -84,7 +84,9 @@ reports leftover metadata or tombstones without an authoritative counterpart,
 .B --dangling
 reports invalid entries or attribute sidecars, and
 .B --refcount
-is currently a clean no-op for v1 because shared secret objects arrive with store v2.
+is currently a clean no-op for v1 because shared secret objects arrive with store v2. Stores with the v2 format marker are checked with
+.B --format v2 ,
+which scans the domain-entry to secret-object graph and reports orphaned secrets, dangling entries or objects, and cached refcount mismatches.
 .TP
 .B mask KEYREF
 Create a local tombstone to hide one inherited key in the current domain.

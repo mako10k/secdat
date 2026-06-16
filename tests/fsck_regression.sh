@@ -65,7 +65,7 @@ if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"v1 refcount fsck should be a clean no-op: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
-if rc != 2 or "store format v2 fsck is not implemented yet" not in stderr:
+if rc != 2 or "store format is v1; use --format v1" not in stderr:
     fail(f"v2 fsck should be rejected for now: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 entry_files = list(Path(env["XDG_DATA_HOME"]).rglob("GOOD.sec"))
