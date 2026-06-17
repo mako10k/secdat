@@ -581,13 +581,23 @@ for args, fragments in [
             "store finalize-migration:",
             "inspect legacy v1 fallback files;",
             "refuse to remove anything while blockers remain",
+            "typical order is migrate dry-run, migrate, fsck --format v2",
             "remove removable legacy fallback files only after blockers are gone:",
+        ],
+    ),
+    (
+        [bin_path, "help", "unlock"],
+        [
+            "--volatile keeps writes, deletes, tombstones",
+            "lock --save persists supported overlay changes before locking",
+            "v2 local-entry deletions still require a normal writable session",
         ],
     ),
     (
         [bin_path, "help", "secret", "status"],
         [
             "secret status: print one v2 secret object's non-secret metadata and reference counts",
+            "UUID lookup is scoped to the current domain/store object view",
             "inspect one v2 secret object by UUID without reading its value:",
         ],
     ),
@@ -596,6 +606,8 @@ for args, fragments in [
         [
             "value_access=always stores a public/plaintext-at-rest value",
             "sandbox_inject controls export/exec eligibility",
+            "--sandbox-injectable is used",
+            "secret object's secret_inject policy",
         ],
     ),
     (
@@ -609,7 +621,7 @@ for args, fragments in [
         [bin_path, "help", "gc"],
         [
             "--dry-run previews selected v2 graph files",
-            "without --dry-run it removes the selected graph files",
+            "without --dry-run it permanently removes the selected graph files",
         ],
     ),
     (
@@ -617,6 +629,14 @@ for args, fragments in [
         [
             "value writes through either linked key affect the shared object",
             "domain-entry attributes remain per link",
+        ],
+    ),
+    (
+        [bin_path, "help", "id"],
+        [
+            "id: print the v2 secret object UUID for one resolved key",
+            "the UUID is an address, not authority",
+            "resolve one key to its v2 secret object UUID without reading it:",
         ],
     ),
 ]:

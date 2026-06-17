@@ -75,13 +75,17 @@ is encrypted-at-rest and unlock-gated, while
 .B value_access=always
 is plaintext-at-rest and readable while locked.
 .B sandbox_inject
-marks whether scoped sandbox injection/export selection may include the key.
+marks whether scoped sandbox injection/export selection may include the key. In v2 this is the entry-side policy; the secret object must also allow the value to leave the store. The
+.B explicit
+mode is excluded by the
+.B --sandbox-injectable
+bulk policy gate; plain pattern filters remain direct visible-key selectors unless that gate is also present.
 .TP
 .B id KEYREF
-Print the resolved v2 secret object UUID for one key without reading its value. This requires a store marked with the v2 format marker.
+Print the resolved v2 secret object UUID for one key without reading its value. This requires a store marked with the v2 format marker. The UUID is an address, not authority.
 .TP
 .B secret status UUID
-Print one v2 secret object's non-secret metadata in the current domain/store without reading its value. Output includes the object domain/store address, value-access and injection policy, cached and actual refcounts, orphaned state, object payload presence, and legacy value sidecar presence.
+Print one v2 secret object's non-secret metadata in the current domain/store without reading its value. UUID lookup is scoped to the current domain/store object view; for cross-domain links, run direct UUID status from the object-owning context. Output includes the object domain/store address, value-access and injection policy, cached and actual refcounts, orphaned state, object payload presence, and legacy value sidecar presence.
 .TP
 .B fsck [\-\-orphaned] [\-\-dangling] [\-\-refcount] [\-\-repair] [\-\-format v1|v2]
 Check the current-domain local store namespace without decrypting secret values. Clean v1 output is
@@ -197,7 +201,7 @@ the command keeps subsequent secret writes, deletes, tombstones, and read-side r
 .B lock
 clears that overlay, so dry runs and read-only filesystems do not touch the persisted store. With
 .B lock --save
-the local volatile overlay is written through to the persisted store before the session is locked. Current volatile sessions remove only overlay-created tombstones; persisted tombstones still require a normal writable session.
+supported local volatile overlay changes are written through to the persisted store before the session is locked. Current volatile sessions remove only overlay-created tombstones; persisted tombstones and v2 local-entry deletions still require a normal writable session.
 With
 .B --readonly
 the command reuses an existing master key but rejects mutating commands while leaving reads, listing, export-like operations, and status available.
@@ -251,6 +255,7 @@ rows for legacy entry or metadata files that are no longer needed, and
 rows for legacy entry files that still provide the only value material because the v2 secret object has not yet been rewritten with an object-owned payload. Without
 .B --dry-run ,
 remove removable legacy fallback files only when no blockers remain; if any blocker is present, report it and remove nothing.
+The intended sequence is migrate dry-run, migrate, v2 fsck, rewrite or remove fallback-backed values, finalize dry-run, then finalize.
 .TP
 .B domain create|delete|status
 Manage domain roots and resolution state.

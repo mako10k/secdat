@@ -287,7 +287,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `value_access=unlocked` stores the value encrypted-at-rest and requires the master key or an active session for reads
 - `value_access=always` stores the value plaintext-at-rest and permits reads while locked; it is equivalent to the current unsafe/public-value storage mode
 - `sandbox_inject=never` excludes the key from sandbox injection/export selection
-- `sandbox_inject=explicit` allows sandbox injection/export only when the key is named explicitly by a future explicit-key flow
+- `sandbox_inject=explicit` is excluded by the current `--sandbox-injectable` bulk policy gate; plain pattern filters remain direct visible-key selectors unless `--sandbox-injectable` is also present
 - `sandbox_inject=bulk` allows sandbox injection/export from explicit key selection and from selector, pattern, or profile based selection
 - attribute updates are allowed only for current-domain local entries; inherited entries must be materialized locally before their attributes can be changed
 - v2 stores can update `key_visibility`, domain-entry `sandbox_inject`, and object-owned `value_access` through the domain-entry/object graph
@@ -356,10 +356,10 @@ To make the requested behavior implementable, the following are treated as norma
 - `wait-unlock` exits successfully immediately when the scope is already unlocked, returns non-zero on timeout, and prints unlock guidance to standard error unless `--quiet` is used
 - if no wrapped persistent master key exists, `unlock` prompts twice through terminal input or askpass, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
 - `unlock --volatile` redirects subsequent secret writes, deletes, and tombstone changes to a session-agent memory overlay that is cleared by `lock`
-- `lock --save` persists the local volatile overlay into the real store files before clearing that local session; it must fail for non-volatile sessions
+- `lock --save` persists supported local volatile overlay changes into the real store files before clearing that local session; it must fail for non-volatile sessions
 - reads, listing, export-like operations, and bundle save/load must prefer the active volatile overlay before consulting persisted store files
 - when no wrapped persistent master key exists, `unlock --volatile` may generate an ephemeral in-memory master key without writing the wrapped-key file
-- the current implementation removes only tombstones created in the active volatile overlay; removing persisted tombstones still requires a normal writable session
+- the current implementation removes only tombstones created in the active volatile overlay; removing persisted tombstones and deleting v2 local entries still require a normal writable session
 - `unlock --readonly` reuses an existing master key but must reject mutating commands, including `fsck --repair`, `gc` without `--dry-run`, `store migrate` without `--dry-run`, and `store finalize-migration` without `--dry-run`, while keeping reads, listing, export-like operations, dry-run cleanup review, and status available
 - `--readonly` and `--volatile` are mutually exclusive, and neither may be combined with `unlock --inherit`
 - if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
@@ -1067,9 +1067,9 @@ Representative error messages:
 - if needed, `SECDAT_DEBUG=1` may enable minimal debug logging
 - even in debug mode, logs must stop at key names and never include values
 
-### 5.10 Planned Store v2: Domain Entries and Secret Objects
+### 5.10 Store v2: Domain Entries and Secret Objects
 
-The current v1 store keeps one domain-local file per key. That is simple, but it couples key visibility, value storage, copy semantics, and metadata too tightly. Store v2 should move to a directory/inode-like model:
+The v1 store keeps one domain-local file per key. That is simple, but it couples key visibility, value storage, copy semantics, and metadata too tightly. Store v2 moves to a directory/inode-like model:
 
 - a **domain entry** (`domain-ent`) is like a directory entry: it lives in one domain/store namespace and maps one key name to one secret object ID
 - a **secret object** is like an inode: it owns the secret value, value-side attributes, object metadata, and object identity
@@ -1137,6 +1137,7 @@ For injection, v2 replaces the single v1 `sandbox_inject` field with two checks:
 
 An injection/export selection is permitted only when both checks allow it. This prevents a permissive link from exporting a value that the secret object itself forbids, and prevents a permissive secret object from bypassing a restrictive domain entry.
 `secret_inject` intentionally remains a boolean object-level authorization (`never|allow`) and does not mirror entry-side selector granularity.
+The current CLI wires the `--sandbox-injectable` bulk policy gate through effective `sandbox_inject`; `entry_inject=explicit` remains reserved for a future explicit-key injection flow and is excluded by that gate. Plain pattern filters remain direct visible-key selectors unless `--sandbox-injectable` is also present.
 
 #### Domain Key and Object Key Handling
 
@@ -1150,7 +1151,7 @@ The object ID is an address, not authority. Commands that accept a `secret_id` m
 
 #### CLI Additions
 
-Store v2 should add these command surfaces:
+Store v2 defines these command surfaces:
 
 ```text
 secdat ln SRC_KEYREF DST_KEYREF
@@ -1198,11 +1199,11 @@ Suggested migration commands:
 
 ```text
 secdat store migrate STORE --to-format v2 [--dry-run]
-secdat store fsck [--format v1|v2]
+secdat fsck [--format v1|v2]
 secdat store finalize-migration STORE --from-format v1 [--dry-run]
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `list`, `exists`, `attr`, `set`, `get`, `rm`, `mask`, `unmask`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys; create/upsert paths require unlock when hidden entries make key absence ambiguous. `secret status UUID` can inspect one current-domain/current-store object by UUID without reading its value. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. `store finalize-migration STORE --from-format v1 --dry-run` can inspect which legacy v1 entry and metadata fallback files remain necessary or removable; without `--dry-run`, it removes removable legacy v1 fallback files only when no blockers remain and the replacement object-owned value material has a valid secdat payload structure. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links and authorized `ln @UUID DST_KEYREF` links by source unwrap and destination rewrap of the object data key. `fsck --format v2 --refcount --repair` can rebuild cached object refcounts without deleting graph data. `gc --format v2` can delete orphaned or dangling v2 graph files, including standalone legacy object value sidecars, after dry-run review.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `list`, `exists`, `attr`, `set`, `get`, `rm`, `mask`, `unmask`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys; create/upsert paths require unlock when hidden entries make key absence ambiguous. `secret status UUID` can inspect one current-domain/current-store object by UUID without reading its value; when following a cross-domain link, run direct UUID status from the object-owning domain/store context. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. `store finalize-migration STORE --from-format v1 --dry-run` can inspect which legacy v1 entry and metadata fallback files remain necessary or removable; without `--dry-run`, it removes removable legacy v1 fallback files only when no blockers remain and the replacement object-owned value material has a valid secdat payload structure. The safe lifecycle is dry-run migrate, migrate, `fsck --format v2`, rewrite or remove fallback-backed values, dry-run finalize, and then finalize. Rewriting currently occurs when a value is set again or when `attr --value-access` changes storage mode; if a migrated value is already in the intended mode, switch it once and switch it back or set the same value again before finalization. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links and authorized `ln @UUID DST_KEYREF` links by source unwrap and destination rewrap of the object data key. `fsck --format v2 --refcount --repair` can rebuild cached object refcounts without deleting graph data. `gc --format v2` can delete orphaned or dangling v2 graph files, including standalone legacy object value sidecars, after dry-run review.
 
 #### Implementation Plan
 

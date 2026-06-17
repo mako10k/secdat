@@ -1340,7 +1340,8 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "attr") == 0) {
         secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and sandbox injection attributes\n"));
-        secdat_cli_print_detail_line(_("  key_visibility controls whether the key name is visible while locked; value_access=always stores a public/plaintext-at-rest value; sandbox_inject controls export/exec eligibility\n"));
+        secdat_cli_print_detail_line(_("  key_visibility controls whether the key name is visible while locked; value_access=always stores a public/plaintext-at-rest value; sandbox_inject controls export/exec eligibility when --sandbox-injectable is used for this entry\n"));
+        secdat_cli_print_detail_line(_("  v2 effective --sandbox-injectable selection also requires the secret object's secret_inject policy to allow the value to leave the store\n"));
         return;
     }
     if (target != NULL && strcmp(target, "fsck") == 0) {
@@ -1349,8 +1350,8 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "gc") == 0) {
-        secdat_cli_print_detail_line(_("  gc: remove unreachable or dangling v2 graph files after review\n"));
-        secdat_cli_print_detail_line(_("  --dry-run previews selected v2 graph files; without --dry-run it removes the selected graph files\n"));
+        secdat_cli_print_detail_line(_("  gc: remove unreachable or dangling v2 graph files after dry-run review\n"));
+        secdat_cli_print_detail_line(_("  --dry-run previews selected v2 graph files; without --dry-run it permanently removes the selected graph files\n"));
         return;
     }
     if (target != NULL && strcmp(target, "mask") == 0) {
@@ -1363,6 +1364,11 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "exists") == 0) {
         secdat_cli_print_detail_line(_("  exists: check whether one resolved key is visible from the current domain view\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "id") == 0) {
+        secdat_cli_print_detail_line(_("  id: print the v2 secret object UUID for one resolved key without reading its value\n"));
+        secdat_cli_print_detail_line(_("  the UUID is an address, not authority; follow-up metadata commands still use the current domain/store object view\n"));
         return;
     }
     if (target != NULL && strcmp(target, "get") == 0) {
@@ -1408,6 +1414,8 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "unlock") == 0) {
         secdat_cli_print_detail_line(_("  unlock: start or refresh a local unlock for the current domain; --duration accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such as PT1H30M, --until accepts an absolute RFC 3339 timestamp, and --inherit drops the current domain's local override to fall back to inherited state\n"));
+        secdat_cli_print_detail_line(_("  --volatile keeps writes, deletes, tombstones, and read-side resolution changes in a session overlay; lock --save persists supported overlay changes before locking\n"));
+        secdat_cli_print_detail_line(_("  persisted tombstone removal and v2 local-entry deletions still require a normal writable session\n"));
         return;
     }
     if (target != NULL && strcmp(target, "inherit") == 0) {
@@ -1464,6 +1472,7 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "store finalize-migration") == 0) {
         secdat_cli_print_detail_line(_("  store finalize-migration: inspect legacy v1 fallback files; without --dry-run, remove only removable files and refuse to remove anything while blockers remain\n"));
+        secdat_cli_print_detail_line(_("  typical order is migrate dry-run, migrate, fsck --format v2, rewrite or remove fallback-backed values, finalize dry-run, then finalize\n"));
         return;
     }
     if (target != NULL && strcmp(target, "secret") == 0) {
@@ -1472,6 +1481,7 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "secret status") == 0) {
         secdat_cli_print_detail_line(_("  secret status: print one v2 secret object's non-secret metadata and reference counts\n"));
+        secdat_cli_print_detail_line(_("  UUID lookup is scoped to the current domain/store object view; use the object's owning context for cross-domain links\n"));
         return;
     }
     if (target != NULL && strcmp(target, "domain") == 0) {
@@ -1567,6 +1577,14 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         secdat_cli_print_detail_line(buffer);
         return;
     }
+    if (strcmp(target, "id") == 0) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  resolve one key to its v2 secret object UUID without reading it: %s id API_TOKEN\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  inspect that object from its owning domain/store context: %s secret status 01234567-89ab-4def-8123-456789abcdef\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        return;
+    }
     if (strcmp(target, "unlock") == 0) {
         char buffer[512];
         snprintf(buffer, sizeof(buffer), _("  start a session for the current project directory: %s unlock\n"), program_name);
@@ -1613,7 +1631,7 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  write the v2 domain-entry/object graph after review: %s store migrate app --to-format v2\n"), program_name);
         secdat_cli_print_detail_line(buffer);
-        snprintf(buffer, sizeof(buffer), _("  inspect legacy fallback files after v2 values have been rewritten: %s store finalize-migration app --from-format v1 --dry-run\n"), program_name);
+        snprintf(buffer, sizeof(buffer), _("  inspect legacy fallback files after blockers are rewritten or removed: %s store finalize-migration app --from-format v1 --dry-run\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  remove removable legacy fallback files after review: %s store finalize-migration app --from-format v1\n"), program_name);
         secdat_cli_print_detail_line(buffer);
@@ -1629,7 +1647,7 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
     }
     if (strcmp(target, "store finalize-migration") == 0) {
         char buffer[512];
-        snprintf(buffer, sizeof(buffer), _("  inspect legacy fallback files after v2 values have been rewritten: %s store finalize-migration app --from-format v1 --dry-run\n"), program_name);
+        snprintf(buffer, sizeof(buffer), _("  identify legacy fallback blockers before deleting anything: %s store finalize-migration app --from-format v1 --dry-run\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  remove removable legacy fallback files only after blockers are gone: %s store finalize-migration app --from-format v1\n"), program_name);
         secdat_cli_print_detail_line(buffer);
@@ -1639,7 +1657,9 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         char buffer[512];
         snprintf(buffer, sizeof(buffer), _("  inspect one v2 secret object by UUID without reading its value: %s secret status 01234567-89ab-4def-8123-456789abcdef\n"), program_name);
         secdat_cli_print_detail_line(buffer);
-        snprintf(buffer, sizeof(buffer), _("  resolve a key to its UUID first: %s id API_TOKEN\n"), program_name);
+        snprintf(buffer, sizeof(buffer), _("  resolve a visible or unlocked key to its UUID first: %s id API_TOKEN\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  for cross-domain links, run status from the object's owning domain/store context\n"));
         secdat_cli_print_detail_line(buffer);
         return;
     }
@@ -1691,7 +1711,7 @@ static void secdat_cli_print_concepts_detail(const char *program_name)
         secdat_cli_print_detail_line(_("  local lock: a local override that blocks reuse of an inherited unlock until the current domain unlocks or inherits again\n"));
         snprintf(buffer, sizeof(buffer), _("  local unlock: an authenticated master-key cache scoped to one domain branch; inspect availability with %s status and refresh it with %s unlock\n"), program_name, program_name);
         secdat_cli_print_detail_line(buffer);
-        secdat_cli_print_detail_line(_("  KEYREF: the canonical lookup syntax KEY[/ABSOLUTE/DOMAIN][:STORE] expressed in help as [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
+        secdat_cli_print_detail_line(_("  KEYREF: key lookup syntax is [/ABSOLUTE/DOMAIN/]KEY[:STORE]; when DOMAIN is present, the trailing slash before KEY is required\n"));
     }
 }
 
