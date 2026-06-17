@@ -47,8 +47,11 @@
 #define SECDAT_WRAP_SALT_LEN 16
 #define SECDAT_WRAP_HEADER_LEN 20
 #define SECDAT_WRAP_PBKDF2_ITERATIONS 200000
+#define SECDAT_WRAP_PBKDF2_MIN_ITERATIONS SECDAT_WRAP_PBKDF2_ITERATIONS
+#define SECDAT_WRAP_PBKDF2_MAX_ITERATIONS 10000000
 #define SECDAT_AGENT_CONNECT_RETRIES 50
 #define SECDAT_SESSION_IDLE_ENV "SECDAT_SESSION_IDLE_SECONDS"
+#define SECDAT_WRAP_PBKDF2_ITERATIONS_ENV "SECDAT_MASTER_KEY_PBKDF2_ITERATIONS"
 #define SECDAT_GET_ON_DEMAND_UNLOCK_ENV "SECDAT_GET_ON_DEMAND_UNLOCK"
 #define SECDAT_GET_UNLOCK_TIMEOUT_ENV "SECDAT_GET_UNLOCK_TIMEOUT_SECONDS"
 #define SECDAT_SUPPRESS_MIGRATION_HINTS_ENV "SECDAT_SUPPRESS_MIGRATION_HINTS"
@@ -4060,6 +4063,44 @@ static time_t secdat_session_idle_seconds(void)
     return SECDAT_SESSION_IDLE_SECONDS;
 }
 
+static int secdat_wrapped_master_key_iterations(uint32_t *iterations)
+{
+    const char *value = getenv(SECDAT_WRAP_PBKDF2_ITERATIONS_ENV);
+    char *end = NULL;
+    unsigned long parsed;
+
+    if (value == NULL || value[0] == '\0') {
+        *iterations = SECDAT_WRAP_PBKDF2_ITERATIONS;
+        return 0;
+    }
+
+    errno = 0;
+    if (!isdigit((unsigned char)value[0])) {
+        parsed = 0;
+        end = (char *)value;
+    } else {
+        parsed = strtoul(value, &end, 10);
+    }
+    if (errno != 0
+        || end == value
+        || *end != '\0'
+        || parsed < SECDAT_WRAP_PBKDF2_MIN_ITERATIONS
+        || parsed > SECDAT_WRAP_PBKDF2_MAX_ITERATIONS
+        || parsed > (unsigned long)INT_MAX) {
+        fprintf(
+            stderr,
+            _("%s must be an integer between %u and %u\n"),
+            SECDAT_WRAP_PBKDF2_ITERATIONS_ENV,
+            (unsigned int)SECDAT_WRAP_PBKDF2_MIN_ITERATIONS,
+            (unsigned int)SECDAT_WRAP_PBKDF2_MAX_ITERATIONS
+        );
+        return 1;
+    }
+
+    *iterations = (uint32_t)parsed;
+    return 0;
+}
+
 static time_t secdat_session_effective_duration(const struct secdat_session_record *record)
 {
     if (record != NULL && record->duration_seconds > 0) {
@@ -5945,6 +5986,10 @@ static int secdat_wrap_key_from_passphrase(
     unsigned char key[32]
 )
 {
+    if (iterations == 0 || iterations > (uint32_t)INT_MAX) {
+        fprintf(stderr, _("invalid wrap key iteration count\n"));
+        return 1;
+    }
     if (PKCS5_PBKDF2_HMAC(passphrase, (int)strlen(passphrase), salt, SECDAT_WRAP_SALT_LEN, (int)iterations, EVP_sha256(), 32, key) != 1) {
         fprintf(stderr, _("failed to derive wrap key\n"));
         return 1;
@@ -5991,6 +6036,7 @@ static int secdat_write_wrapped_master_key(const char *passphrase, const char *m
     int written_length;
     int final_length;
     int status = 1;
+    uint32_t iterations;
 
     if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
         return 1;
@@ -6001,11 +6047,14 @@ static int secdat_write_wrapped_master_key(const char *passphrase, const char *m
     if (secdat_wrapped_master_key_path(path, sizeof(path)) != 0) {
         return 1;
     }
+    if (secdat_wrapped_master_key_iterations(&iterations) != 0) {
+        return 1;
+    }
     if (RAND_bytes(salt, sizeof(salt)) != 1 || RAND_bytes(nonce, sizeof(nonce)) != 1) {
         fprintf(stderr, _("failed to generate nonce\n"));
         return 1;
     }
-    if (secdat_wrap_key_from_passphrase(passphrase, salt, SECDAT_WRAP_PBKDF2_ITERATIONS, wrap_key) != 0) {
+    if (secdat_wrap_key_from_passphrase(passphrase, salt, iterations, wrap_key) != 0) {
         return 1;
     }
 
@@ -6021,7 +6070,7 @@ static int secdat_write_wrapped_master_key(const char *passphrase, const char *m
     buffer[9] = SECDAT_WRAP_SALT_LEN;
     buffer[10] = SECDAT_NONCE_LEN;
     buffer[11] = 0;
-    secdat_write_be32(buffer + 12, SECDAT_WRAP_PBKDF2_ITERATIONS);
+    secdat_write_be32(buffer + 12, iterations);
     secdat_write_be32(buffer + 16, (uint32_t)(plaintext_length + SECDAT_TAG_LEN));
     memcpy(buffer + SECDAT_WRAP_HEADER_LEN, salt, sizeof(salt));
     memcpy(buffer + SECDAT_WRAP_HEADER_LEN + sizeof(salt), nonce, sizeof(nonce));

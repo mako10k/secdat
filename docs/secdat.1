@@ -344,6 +344,14 @@ when
 is unset, may provide a prompt helper when standard input is not a terminal. The helper is executed directly with the prompt text as its first argument and must print the passphrase on stdout.
 
 This is an explicit override path, not the recommended default, because environment variables may be exposed through process inspection or shell history.
+.P
+New wrapped master-key writes use PBKDF2 with 200000 iterations by default.
+.B SECDAT_MASTER_KEY_PBKDF2_ITERATIONS
+may set the iteration count for
+.B unlock
+bootstrap and
+.B passwd
+rewrap writes to an integer from 200000 through 10000000. Existing wrapped keys are read with the iteration count stored in the key file, so changing the environment does not break older keys or rewrite them on read.
 .SH FILES
 .TP
 .B docs/secdat-spec.md
@@ -373,6 +381,7 @@ secdat --dir ~/project/service domain status
 secdat --dir ~/project --store app export
 source <(secdat --dir ~/project --store app export)
 SECDAT_MASTER_KEY_PASSPHRASE=secret secdat unlock
+SECDAT_MASTER_KEY_PBKDF2_ITERATIONS=250000 secdat passwd
 .fi
 .SH SEE ALSO
 .BR bash (1)

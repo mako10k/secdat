@@ -395,8 +395,10 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat passwd` requires an initialized wrapped master key and fails clearly if bootstrap has not happened yet
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `passwd`
 - when standard input is not a terminal, `passwd` may read passphrase prompts that are not covered by `SECDAT_MASTER_KEY_PASSPHRASE` through `SECDAT_ASKPASS` or fallback `SSH_ASKPASS`
-- for the current single-user local scope, the wrapped-key passphrase KDF cost remains at the current setting unless a future review justifies a change
-- any future increase or configurability change for the wrapped-key KDF must preserve compatibility with existing wrapped-key files
+- new wrapped master-key writes use PBKDF2 with 200000 iterations by default
+- `SECDAT_MASTER_KEY_PBKDF2_ITERATIONS` may set the PBKDF2 iteration count for new wrapped master-key writes to an integer from 200000 through 10000000
+- the configured KDF cost applies to `unlock` bootstrap and `passwd` re-wrap writes only; reading an existing wrapped-key file always uses the iteration count stored in that file
+- KDF configurability must preserve compatibility with existing wrapped-key files
 
 #### FR-7b Secret Bundle Save/Load
 

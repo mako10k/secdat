@@ -367,7 +367,7 @@ SECDAT_MASTER_KEY_PASSPHRASE='current-passphrase' ./src/secdat passwd
 
 `passwd` unwraps the persistent master key with the current passphrase and re-wraps it with the new one.
 
-For the current single-user local scope, the wrapped-key passphrase protection remains on the current KDF cost. Future hardening may revisit that cost or make it more configurable, but compatibility with existing wrapped keys must be preserved.
+New wrapped master-key writes use PBKDF2 with 200000 iterations by default. Set `SECDAT_MASTER_KEY_PBKDF2_ITERATIONS` to an integer from 200000 through 10000000 before `unlock` bootstrap or `passwd` to choose the cost for the new wrapped-key file. Existing wrapped keys keep their stored iteration count when they are read, so changing the environment does not break older keys or silently rewrite them.
 
 There is no supported raw master-key retrieval command in the normal workflow. The intended design keeps the generated master key internal to the wrapped-key and session-agent path unless an explicit future recovery/export flow is added.
 
@@ -381,5 +381,4 @@ Help is also available per command:
 
 ## Next implementation steps
 
-1. Revisit wrapped-key passphrase KDF cost and configurability while keeping compatibility with existing wrapped keys.
-2. Expose more structured status output for scripts if a machine-readable mode becomes necessary.
+1. Expose more structured status output for scripts if a machine-readable mode becomes necessary.

@@ -35,6 +35,7 @@ env["LANGUAGE"] = "C"
 for variable_name in (
     "SECDAT_MASTER_KEY",
     "SECDAT_MASTER_KEY_PASSPHRASE",
+    "SECDAT_MASTER_KEY_PBKDF2_ITERATIONS",
     "SECDAT_ASKPASS",
     "SECDAT_GET_ON_DEMAND_UNLOCK",
     "SECDAT_GET_UNLOCK_TIMEOUT_SECONDS",
@@ -65,6 +66,8 @@ askpass_env = {
     "SECDAT_TEST_ASKPASS_LOG": str(askpass_log),
     "SECDAT_TEST_ASKPASS_VALUE": passphrase,
 }
+read_compat_env = askpass_env.copy()
+read_compat_env["SECDAT_MASTER_KEY_PBKDF2_ITERATIONS"] = "250000"
 
 def scoped(args, domain=root_domain):
     return [bin_path, "--dir", str(domain), *args]
@@ -86,6 +89,12 @@ def assert_contains_any(output, fragments, context):
     if any(fragment in output for fragment in fragments):
         return
     fail(f"{context}: missing any of {fragments!r} in {output!r}")
+
+def read_wrapped_iterations(path=wrapped_path):
+    data = path.read_bytes()
+    if len(data) < 20 or data[:8] != b"SECDWRP\0":
+        fail(f"invalid wrapped key header in {path}")
+    return int.from_bytes(data[12:16], "big")
 
 def normalize_spaces(text):
     return re.sub(r"[ \t]+", " ", text)
@@ -715,6 +724,25 @@ if build_line and not re.fullmatch(r"Build: [0-9a-f]{7,40}(?:-dirty)?", build_li
 if (source_root / ".git").exists() and build_line == "":
     fail(f"-V missing build line in git worktree: output={output!r}")
 
+invalid_kdf_runtime = isolated_root / "invalid-kdf-runtime"
+invalid_kdf_data = isolated_root / "invalid-kdf-data"
+invalid_kdf_runtime.mkdir(parents=True, exist_ok=True)
+invalid_kdf_data.mkdir(parents=True, exist_ok=True)
+invalid_kdf_wrapped = invalid_kdf_data / "secdat" / "master-key.bin"
+rc, transcript = run_pty(
+    scoped(["unlock"], root_domain),
+    [("Create secdat passphrase:", passphrase), ("Confirm secdat passphrase:", passphrase)],
+    {
+        "XDG_RUNTIME_DIR": str(invalid_kdf_runtime),
+        "XDG_DATA_HOME": str(invalid_kdf_data),
+        "SECDAT_MASTER_KEY_PBKDF2_ITERATIONS": "199999",
+    },
+)
+if rc == 0 or "SECDAT_MASTER_KEY_PBKDF2_ITERATIONS must be an integer between 200000 and 10000000" not in transcript:
+    fail(f"invalid PBKDF2 iteration count should fail: rc={rc} transcript={transcript!r}")
+if invalid_kdf_wrapped.exists():
+    fail("invalid PBKDF2 iteration count created a wrapped master key")
+
 rc, transcript = run_pty(
     scoped(["unlock", "--duration", "2"]),
     [("Create secdat passphrase:", passphrase), ("Confirm secdat passphrase:", passphrase)],
@@ -725,6 +753,8 @@ if "note: 2 descendant domains remain locked under this branch" not in transcrip
     fail(f"bootstrap unlock coverage summary missing: transcript={transcript!r}")
 if not wrapped_path.is_file():
     fail("wrapped master key was not created")
+if read_wrapped_iterations() != 200000:
+    fail(f"default wrapped master key iterations unexpected: {read_wrapped_iterations()}")
 
 rc, stdout, _ = run(scoped(["status"], root_domain))
 if rc != 0 or "source: session agent" not in stdout or "wrapped master key: present" not in stdout or re.search(r"expires in: \d+ seconds", stdout) or not re.search(r"expires in: (1m\d\ds|2m00s)\n", stdout):
@@ -774,12 +804,14 @@ if rc != 0 or stdout.strip() != "already locked":
     fail(f"second lock noop failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 askpass_log.write_text("")
-rc, stdout, stderr = run(scoped(["unlock"], root_domain), askpass_env)
+rc, stdout, stderr = run(scoped(["unlock"], root_domain), read_compat_env)
 if rc != 0 or "session unlocked\n" not in stdout or "note: 2 descendant domains remain locked under this branch\n" not in stdout:
     fail(f"askpass unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if f"resolved domain: {root_domain}\n" not in stderr:
     fail(f"askpass unlock prompt context missing: stderr={stderr!r}")
 assert_contains(askpass_log.read_text(), "Enter secdat passphrase:", "askpass unlock prompt")
+if read_wrapped_iterations() != 200000:
+    fail("reading an existing wrapped key must not rewrite iterations from the environment")
 
 rc, stdout, stderr = run(scoped(["lock"], root_domain))
 if rc != 0 or stdout.strip() != "session locked":
@@ -995,10 +1027,15 @@ new_passphrase = "rotated-passphrase-for-session-test"
 rc, transcript = run_pty(
     [bin_path, "passwd"],
     [("Create new secdat passphrase:", new_passphrase), ("Confirm new secdat passphrase:", new_passphrase)],
-    {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase},
+    {
+        "SECDAT_MASTER_KEY_PASSPHRASE": passphrase,
+        "SECDAT_MASTER_KEY_PBKDF2_ITERATIONS": "250000",
+    },
 )
 if rc != 0 or "persistent master key passphrase updated" not in transcript:
     fail(f"passwd rotation failed: rc={rc} transcript={transcript!r}")
+if read_wrapped_iterations() != 250000:
+    fail(f"passwd did not rewrite wrapped key iterations: {read_wrapped_iterations()}")
 
 rc, stdout, stderr = run(scoped(["lock"], child_domain))
 if rc != 0 or stdout.strip() != "session locked":
