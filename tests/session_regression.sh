@@ -35,8 +35,10 @@ env["LANGUAGE"] = "C"
 for variable_name in (
     "SECDAT_MASTER_KEY",
     "SECDAT_MASTER_KEY_PASSPHRASE",
+    "SECDAT_ASKPASS",
     "SECDAT_GET_ON_DEMAND_UNLOCK",
     "SECDAT_GET_UNLOCK_TIMEOUT_SECONDS",
+    "SSH_ASKPASS",
 ):
     env.pop(variable_name, None)
 passphrase = "passphrase-for-session-test"
@@ -46,6 +48,23 @@ root_domain = isolated_root / "domain-root"
 child_domain = root_domain / "child-domain"
 grandchild_domain = child_domain / "grandchild-domain"
 sibling_domain = isolated_root / "sibling-domain"
+askpass_path = isolated_root / "askpass.py"
+askpass_log = isolated_root / "askpass.log"
+
+askpass_path.write_text(
+    "#!/usr/bin/env python3\n"
+    "import os\n"
+    "import sys\n"
+    "with open(os.environ['SECDAT_TEST_ASKPASS_LOG'], 'a', encoding='utf-8') as stream:\n"
+    "    stream.write((sys.argv[1] if len(sys.argv) > 1 else '') + '\\n')\n"
+    "print(os.environ['SECDAT_TEST_ASKPASS_VALUE'])\n"
+)
+askpass_path.chmod(0o700)
+askpass_env = {
+    "SECDAT_ASKPASS": str(askpass_path),
+    "SECDAT_TEST_ASKPASS_LOG": str(askpass_log),
+    "SECDAT_TEST_ASKPASS_VALUE": passphrase,
+}
 
 def scoped(args, domain=root_domain):
     return [bin_path, "--dir", str(domain), *args]
@@ -753,6 +772,18 @@ if rc != 0 or stdout.strip() != "session locked":
 rc, stdout, stderr = run(scoped(["lock"], root_domain))
 if rc != 0 or stdout.strip() != "already locked":
     fail(f"second lock noop failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+askpass_log.write_text("")
+rc, stdout, stderr = run(scoped(["unlock"], root_domain), askpass_env)
+if rc != 0 or "session unlocked\n" not in stdout or "note: 2 descendant domains remain locked under this branch\n" not in stdout:
+    fail(f"askpass unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if f"resolved domain: {root_domain}\n" not in stderr:
+    fail(f"askpass unlock prompt context missing: stderr={stderr!r}")
+assert_contains(askpass_log.read_text(), "Enter secdat passphrase:", "askpass unlock prompt")
+
+rc, stdout, stderr = run(scoped(["lock"], root_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"lock after askpass unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
 if rc != 0 or "session unlocked\n" not in stdout or "note: 2 descendant domains remain locked under this branch\n" not in stdout:

@@ -30,15 +30,36 @@ work_root = Path(sys.argv[2])
 env = os.environ.copy()
 env["LC_ALL"] = "C"
 env["LANGUAGE"] = "C"
+for variable_name in ("SECDAT_ASKPASS", "SSH_ASKPASS"):
+    env.pop(variable_name, None)
 bundle_passphrase = "bundle-passphrase"
 
 root_dir = work_root / "workspace" / "root"
 child_dir = root_dir / "child"
 restore_dir = work_root / "workspace" / "restore"
+askpass_restore_dir = work_root / "workspace" / "askpass-restore"
 bundle_path = work_root / "backup" / "app.secdat"
+askpass_bundle_path = work_root / "backup" / "askpass.secdat"
+askpass_path = work_root / "askpass.py"
+askpass_log = work_root / "askpass.log"
 bundle_path.parent.mkdir(parents=True, exist_ok=True)
-for path in [root_dir, child_dir, restore_dir]:
+for path in [root_dir, child_dir, restore_dir, askpass_restore_dir]:
     path.mkdir(parents=True, exist_ok=True)
+
+askpass_path.write_text(
+    "#!/usr/bin/env python3\n"
+    "import os\n"
+    "import sys\n"
+    "with open(os.environ['SECDAT_TEST_ASKPASS_LOG'], 'a', encoding='utf-8') as stream:\n"
+    "    stream.write((sys.argv[1] if len(sys.argv) > 1 else '') + '\\n')\n"
+    "print(os.environ['SECDAT_TEST_ASKPASS_VALUE'])\n"
+)
+askpass_path.chmod(0o700)
+askpass_env = {
+    "SECDAT_ASKPASS": str(askpass_path),
+    "SECDAT_TEST_ASKPASS_LOG": str(askpass_log),
+    "SECDAT_TEST_ASKPASS_VALUE": bundle_passphrase,
+}
 
 
 def fail(message):
@@ -114,7 +135,7 @@ for args, marker in [
     if rc != 0 or marker not in normalize_spaces(output) or "passphrase-protected bundle" not in output:
         fail(f"save/load help check failed for {args}: rc={rc} output={output!r}")
 
-for path in [root_dir, child_dir, restore_dir]:
+for path in [root_dir, child_dir, restore_dir, askpass_restore_dir]:
     rc, stdout, stderr = run([bin_path, "--dir", str(path), "domain", "create"])
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"domain create failed for {path}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -136,6 +157,16 @@ rc, stdout, stderr = run([bin_path, "--dir", str(child_dir), "--store", "app", "
 output = stdout + stderr
 if rc == 0 or "this command requires a terminal for passphrase input" not in output:
     fail(f"non-tty save should require passphrase terminal: rc={rc} output={output!r}")
+
+askpass_log.write_text("")
+rc, stdout, stderr = run([bin_path, "--dir", str(child_dir), "--store", "app", "save", str(askpass_bundle_path)], askpass_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"askpass save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if not askpass_bundle_path.is_file() or askpass_bundle_path.stat().st_size == 0:
+    fail("askpass save did not create a non-empty bundle file")
+askpass_prompts = askpass_log.read_text()
+assert_contains(askpass_prompts, "Create secdat bundle passphrase:", "askpass save create prompt")
+assert_contains(askpass_prompts, "Confirm secdat bundle passphrase:", "askpass save confirm prompt")
 
 rc, transcript = run_pty(
     [bin_path, "--dir", str(child_dir), "--store", "app", "save", str(bundle_path)],
@@ -173,10 +204,27 @@ rc, transcript = run_pty(
 if rc != 0:
     fail(f"load command failed: rc={rc} transcript={transcript!r}")
 
+for args in [
+    [bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "set", "LOCAL_APP", "-v", "old-value"],
+    [bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "set", "EXTRA_APP", "-v", "keep-me"],
+]:
+    rc, stdout, stderr = run(args)
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"askpass restore setup failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+askpass_log.write_text("")
+rc, stdout, stderr = run([bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "load", str(askpass_bundle_path)], askpass_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"askpass load failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(askpass_log.read_text(), "Enter secdat bundle passphrase:", "askpass load prompt")
+
 for args, expected, label in [
     ([bin_path, "--dir", str(restore_dir), "--store", "app", "get", "INHERITED_APP", "-o"], "root-app", "inherited app key"),
     ([bin_path, "--dir", str(restore_dir), "--store", "app", "get", "LOCAL_APP", "-o"], "child-app", "overwritten local app key"),
     ([bin_path, "--dir", str(restore_dir), "--store", "app", "get", "EXTRA_APP", "-o"], "keep-me", "unspecified key preserved"),
+    ([bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "get", "INHERITED_APP", "-o"], "root-app", "askpass inherited app key"),
+    ([bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "get", "LOCAL_APP", "-o"], "child-app", "askpass overwritten local app key"),
+    ([bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "get", "EXTRA_APP", "-o"], "keep-me", "askpass unspecified key preserved"),
 ]:
     rc, stdout, stderr = run(args)
     if rc != 0 or stderr != "":

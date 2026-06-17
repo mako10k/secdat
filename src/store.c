@@ -52,6 +52,7 @@
 #define SECDAT_GET_ON_DEMAND_UNLOCK_ENV "SECDAT_GET_ON_DEMAND_UNLOCK"
 #define SECDAT_GET_UNLOCK_TIMEOUT_ENV "SECDAT_GET_UNLOCK_TIMEOUT_SECONDS"
 #define SECDAT_SUPPRESS_MIGRATION_HINTS_ENV "SECDAT_SUPPRESS_MIGRATION_HINTS"
+#define SECDAT_ASKPASS_ENV "SECDAT_ASKPASS"
 #define SECDAT_ON_DEMAND_UNLOCK_WAIT_USEC 100000
 #define SECDAT_V2_TEXT_FILE_MAX 16384
 #define SECDAT_V2_OBJECT_KEY_LEN 32
@@ -4673,14 +4674,139 @@ static int secdat_spawn_session_agent(const char *domain_id)
     return 1;
 }
 
+static const char *secdat_askpass_command(void)
+{
+    const char *value = getenv(SECDAT_ASKPASS_ENV);
+
+    if (value != NULL && value[0] != '\0') {
+        return value;
+    }
+
+    value = getenv("SSH_ASKPASS");
+    if (value != NULL && value[0] != '\0') {
+        return value;
+    }
+
+    return NULL;
+}
+
+static int secdat_finalize_passphrase_buffer(char *buffer)
+{
+    size_t length = strlen(buffer);
+
+    while (length > 0 && (buffer[length - 1] == '\n' || buffer[length - 1] == '\r')) {
+        buffer[length - 1] = '\0';
+        length -= 1;
+    }
+
+    if (buffer[0] == '\0') {
+        fprintf(stderr, _("empty passphrase is not allowed\n"));
+        return 1;
+    }
+
+    return 0;
+}
+
+static int secdat_read_secret_from_askpass(const char *askpass, const char *prompt, char *buffer, size_t size)
+{
+    int pipe_fds[2];
+    pid_t pid;
+    int status;
+    size_t length = 0;
+    int too_long = 0;
+    ssize_t read_length;
+
+    if (size == 0 || pipe(pipe_fds) != 0) {
+        fprintf(stderr, _("failed to start askpass command\n"));
+        return 1;
+    }
+
+    pid = fork();
+    if (pid < 0) {
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+        fprintf(stderr, _("failed to start askpass command\n"));
+        return 1;
+    }
+
+    if (pid == 0) {
+        int devnull = open("/dev/null", O_RDONLY);
+
+        close(pipe_fds[0]);
+        if (devnull < 0 || dup2(devnull, STDIN_FILENO) != STDIN_FILENO) {
+            _exit(127);
+        }
+        if (devnull > STDERR_FILENO) {
+            close(devnull);
+        }
+        if (dup2(pipe_fds[1], STDOUT_FILENO) != STDOUT_FILENO) {
+            _exit(127);
+        }
+        if (pipe_fds[1] > STDERR_FILENO) {
+            close(pipe_fds[1]);
+        }
+        execl(askpass, askpass, prompt, (char *)NULL);
+        _exit(127);
+    }
+
+    close(pipe_fds[1]);
+    while (1) {
+        char chunk[128];
+
+        read_length = read(pipe_fds[0], chunk, sizeof(chunk));
+        if (read_length <= 0) {
+            break;
+        }
+        if (length + (size_t)read_length < size) {
+            memcpy(buffer + length, chunk, (size_t)read_length);
+            length += (size_t)read_length;
+        } else {
+            size_t room = size > length + 1 ? size - length - 1 : 0;
+
+            if (room > 0) {
+                memcpy(buffer + length, chunk, room);
+                length += room;
+            }
+            too_long = 1;
+        }
+        secdat_secure_clear(chunk, (size_t)read_length);
+    }
+    if (read_length < 0) {
+        close(pipe_fds[0]);
+        waitpid(pid, &status, 0);
+        secdat_secure_clear(buffer, length);
+        fprintf(stderr, _("failed to read askpass output\n"));
+        return 1;
+    }
+    close(pipe_fds[0]);
+
+    if (waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        secdat_secure_clear(buffer, length);
+        fprintf(stderr, _("askpass command failed\n"));
+        return 1;
+    }
+    if (too_long) {
+        secdat_secure_clear(buffer, length);
+        fprintf(stderr, _("askpass output is too long\n"));
+        return 1;
+    }
+
+    buffer[length] = '\0';
+    return secdat_finalize_passphrase_buffer(buffer);
+}
+
 static int secdat_read_secret_from_tty(const char *prompt, char *buffer, size_t size)
 {
     struct termios old_settings;
     struct termios new_settings;
     int restored = 0;
-    size_t length;
+    const char *askpass;
 
     if (!isatty(STDIN_FILENO)) {
+        askpass = secdat_askpass_command();
+        if (askpass != NULL) {
+            return secdat_read_secret_from_askpass(askpass, prompt, buffer, size);
+        }
         fprintf(stderr, _("this command requires a terminal for passphrase input\n"));
         return 1;
     }
@@ -4716,18 +4842,7 @@ static int secdat_read_secret_from_tty(const char *prompt, char *buffer, size_t 
         return 1;
     }
 
-    length = strlen(buffer);
-    while (length > 0 && (buffer[length - 1] == '\n' || buffer[length - 1] == '\r')) {
-        buffer[length - 1] = '\0';
-        length -= 1;
-    }
-
-    if (buffer[0] == '\0') {
-        fprintf(stderr, _("empty passphrase is not allowed\n"));
-        return 1;
-    }
-
-    return 0;
+    return secdat_finalize_passphrase_buffer(buffer);
 }
 
 static int secdat_read_secret_confirmation(char *buffer, size_t size)
@@ -7525,7 +7640,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
             secdat_domain_chain_free(&current_chain);
             return 1;
         }
-        fprintf(stderr, _("no persistent master key is initialized; run secdat unlock once on a terminal to create one\n"));
+        fprintf(stderr, _("no persistent master key is initialized; run secdat unlock once to create one\n"));
         secdat_domain_root_list_free(&descendant_targets);
         secdat_domain_chain_free(&current_chain);
         return 1;
@@ -7695,7 +7810,7 @@ static int secdat_command_passwd(const struct secdat_cli *cli)
         return 2;
     }
     if (!secdat_wrapped_master_key_exists()) {
-        fprintf(stderr, _("no persistent master key is initialized; run secdat unlock once on a terminal to create one\n"));
+        fprintf(stderr, _("no persistent master key is initialized; run secdat unlock once to create one\n"));
         return 1;
     }
     if (secdat_read_unlock_passphrase(current_passphrase, sizeof(current_passphrase)) != 0) {

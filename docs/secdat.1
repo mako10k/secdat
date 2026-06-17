@@ -324,15 +324,24 @@ binary can resolve
 immediately.
 .SH PASSPHRASE SOURCES
 By default,
+.B unlock ,
+.B passwd ,
+.B save ,
+and
+.B load
+read passphrases from a terminal. For explicit non-interactive use,
+.B SECDAT_MASTER_KEY_PASSPHRASE
+may provide the current master-key passphrase to
 .B unlock
 and
 .B passwd
-read passphrases from a terminal. For explicit non-interactive use,
-.B SECDAT_MASTER_KEY_PASSPHRASE
-may provide the current passphrase to
-.B unlock
-and the current-passphrase side of
-.B passwd .
+before falling back to prompts.
+.B SECDAT_ASKPASS ,
+or
+.B SSH_ASKPASS
+when
+.B SECDAT_ASKPASS
+is unset, may provide a prompt helper when standard input is not a terminal. The helper is executed directly with the prompt text as its first argument and must print the passphrase on stdout.
 
 This is an explicit override path, not the recommended default, because environment variables may be exposed through process inspection or shell history.
 .SH FILES

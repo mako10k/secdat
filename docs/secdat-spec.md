@@ -117,6 +117,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat help concepts` prints detailed explanations of domains, stores, inheritance, explicit locks, sessions, and `KEYREF` resolution
 - `unlock` caches the current master key in a domain-scoped runtime location
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit override for non-interactive `unlock` and `passwd` flows
+- `SECDAT_ASKPASS`, or `SSH_ASKPASS` when `SECDAT_ASKPASS` is unset, may provide an askpass helper for non-terminal passphrase prompts; the helper receives the prompt as argv[1] and prints the passphrase on stdout
 - `status` reports whether a master-key session is active for the current domain scope
 - `lock` clears the current domain's local master-key session
 - `wait-unlock` waits until the current domain scope becomes unlocked without reading any secret value
@@ -348,7 +349,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] unlock [--duration TTL] [--until TIME] [--inherit] [--volatile|--readonly] [--descendants] [--yes]` creates or refreshes a domain-scoped cache of the current master key
 - `secdat [--dir DIR] wait-unlock [--timeout SECONDS] [--quiet]` waits for the current effective domain scope to become unlocked and is intended for scripts that handle external notifications separately
 - `wait-unlock` exits successfully immediately when the scope is already unlocked, returns non-zero on timeout, and prints unlock guidance to standard error unless `--quiet` is used
-- if no wrapped persistent master key exists, `unlock` prompts twice on a terminal, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
+- if no wrapped persistent master key exists, `unlock` prompts twice through terminal input or askpass, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
 - `unlock --volatile` redirects subsequent secret writes, deletes, and tombstone changes to a session-agent memory overlay that is cleared by `lock`
 - `lock --save` persists the local volatile overlay into the real store files before clearing that local session; it must fail for non-volatile sessions
 - reads, listing, export-like operations, and bundle save/load must prefer the active volatile overlay before consulting persisted store files
@@ -358,6 +359,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `--readonly` and `--volatile` are mutually exclusive, and neither may be combined with `unlock --inherit`
 - if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `unlock`
+- when standard input is not a terminal and no explicit passphrase override applies, `unlock` may read the passphrase through `SECDAT_ASKPASS` or fallback `SSH_ASKPASS`
 - otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent
 - `unlock --duration TTL` sets the remaining unlock time for the session being created or refreshed
 - plain numeric `TTL` values are interpreted as minutes
@@ -392,6 +394,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat passwd` re-wraps the persistent master key under a new passphrase without changing stored secret payloads
 - `secdat passwd` requires an initialized wrapped master key and fails clearly if bootstrap has not happened yet
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `passwd`
+- when standard input is not a terminal, `passwd` may read passphrase prompts that are not covered by `SECDAT_MASTER_KEY_PASSPHRASE` through `SECDAT_ASKPASS` or fallback `SSH_ASKPASS`
 - for the current single-user local scope, the wrapped-key passphrase KDF cost remains at the current setting unless a future review justifies a change
 - any future increase or configurability change for the wrapped-key KDF must preserve compatibility with existing wrapped-key files
 
@@ -399,7 +402,7 @@ To make the requested behavior implementable, the following are treated as norma
 
 - `secdat save FILE` exports the currently visible secrets from the current `--dir` and `--store` view into a passphrase-protected bundle file
 - `secdat load FILE` imports a previously saved bundle into the current `--dir` and `--store` context
-- both commands require terminal-based passphrase entry; `save` asks for confirmation and `load` asks once
+- both commands require terminal-based passphrase entry or an askpass helper; `save` asks for confirmation and `load` asks once
 - the saved bundle format is a PBKDF2 + AES-256-GCM encrypted binary payload containing key/value entries from the current visible view only
 - `save` refuses to overwrite an existing bundle file
 - `load` overwrites matching keys in the current domain/store and leaves keys not mentioned by the bundle untouched

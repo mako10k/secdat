@@ -97,7 +97,7 @@ Initialize `secdat` once directly with a passphrase in the target domain:
 ./src/secdat --dir ~/example/project unlock
 ```
 
-The first interactive `unlock` generates a fresh master key, stores a wrapped copy under `XDG_DATA_HOME`, and starts a session agent scoped to the current domain. Use `unlock --duration TTL` for relative expiry values: plain numbers mean minutes, suffix forms such as `1h30m` are accepted, and `PT1H30M` style ISO 8601 durations work. Use `unlock --until TIME` for an absolute RFC 3339 expiry timestamp. Running `unlock` again while the current domain is already unlocked refreshes the current domain without asking for the passphrase again.
+The first prompt-based `unlock` generates a fresh master key, stores a wrapped copy under `XDG_DATA_HOME`, and starts a session agent scoped to the current domain. Use `unlock --duration TTL` for relative expiry values: plain numbers mean minutes, suffix forms such as `1h30m` are accepted, and `PT1H30M` style ISO 8601 durations work. Use `unlock --until TIME` for an absolute RFC 3339 expiry timestamp. Running `unlock` again while the current domain is already unlocked refreshes the current domain without asking for the passphrase again.
 
 When a domain is shadowed by a local lock, `unlock --inherit` removes that local lock after checking that the resulting effective state would become unlocked. If no local lock is present but the current domain has its own local unlock, `unlock --inherit` clears that local unlock instead and falls back to inherited state when the checked result would still be unlocked. Symmetrically, `lock --inherit` still removes only the local lock after checking that the resulting effective state would stay locked. Plain `lock` is now a no-op success when the current domain is already locked. If you need to remove the local lock, or clear a local unlock when no lock is present, without that safety check, use `inherit`.
 
@@ -124,7 +124,7 @@ fi
 
 That keeps plain `get` fail-fast in automation while making interactive terminal use wait up to 90 seconds for another terminal to run `secdat unlock`.
 
-For explicit non-interactive use, `SECDAT_MASTER_KEY_PASSPHRASE` can provide the current wrapped-key passphrase to `unlock`. This is an override path rather than the default recommendation, because environment variables are easier to expose than terminal prompts.
+For explicit non-interactive use, `SECDAT_MASTER_KEY_PASSPHRASE` can provide the current wrapped-key passphrase to `unlock`. This is an override path rather than the default recommendation, because environment variables are easier to expose than terminal prompts. When standard input is not a terminal and no passphrase override is set, `SECDAT_ASKPASS` can point to an executable askpass helper; if unset, `SSH_ASKPASS` is used as a fallback. The helper receives the prompt text as its first argument and must print the passphrase on stdout. TTY input remains the default whenever a terminal is available.
 
 For a non-mutating session, `unlock --volatile` keeps subsequent `set`, `rm`, `mask`, `unmask`, `cp`, `mv`, `load`, and read-side resolution changes in the session agent's memory instead of writing through to the real store files. `ln` is a persisted v2 graph operation and is not supported in a volatile overlay. `lock` clears that overlay, and `lock --save` first writes the local volatile overlay into the real store files before locking. This is intended for dry-run validation and read-only filesystems.
 
@@ -329,7 +329,7 @@ You can also save the currently visible secrets from one view and load them into
 ./src/secdat --dir ~/example/restore --store app load ~/backup/app.secdat
 ```
 
-Both commands require a passphrase on a terminal. `save` exports only the secrets visible from the current `--dir` and `--store` view, writes a passphrase-encrypted bundle, and refuses to overwrite an existing bundle file. `load` imports that bundle into the current domain/store context, overwriting matching local keys but leaving unspecified keys untouched.
+Both commands require a passphrase from a terminal or askpass helper. `save` exports only the secrets visible from the current `--dir` and `--store` view, writes a passphrase-encrypted bundle, and refuses to overwrite an existing bundle file. `load` imports that bundle into the current domain/store context, overwriting matching local keys but leaving unspecified keys untouched.
 
 ## Persistent shell setup
 
@@ -356,7 +356,7 @@ You can keep the active master key in a domain-scoped session agent and avoid ex
 ./src/secdat lock
 ```
 
-If `SECDAT_MASTER_KEY` is already set, `unlock` reuses it as an explicit override or migration source and can bootstrap the persistent wrapped key from it. Otherwise, the first terminal `unlock` generates and wraps a fresh master key, and later unlocks unwrap the stored master key into the current domain's session agent.
+If `SECDAT_MASTER_KEY` is already set, `unlock` reuses it as an explicit override or migration source and can bootstrap the persistent wrapped key from it. Otherwise, the first prompt-based `unlock` generates and wraps a fresh master key, and later unlocks unwrap the stored master key into the current domain's session agent.
 
 You can rotate the wrapped-master-key passphrase without changing stored secret payloads:
 
@@ -381,6 +381,5 @@ Help is also available per command:
 
 ## Next implementation steps
 
-1. Add pinentry or askpass support for non-terminal passphrase entry.
-2. Revisit wrapped-key passphrase KDF cost and configurability while keeping compatibility with existing wrapped keys.
-3. Expose more structured status output for scripts if a machine-readable mode becomes necessary.
+1. Revisit wrapped-key passphrase KDF cost and configurability while keeping compatibility with existing wrapped keys.
+2. Expose more structured status output for scripts if a machine-readable mode becomes necessary.
