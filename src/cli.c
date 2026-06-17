@@ -22,6 +22,27 @@ enum {
 #define SECDAT_CLI_DETAIL_COLUMN 24
 #define SECDAT_CLI_WRAP_WIDTH 96
 
+struct secdat_cli_subcommand_entry {
+    const char *group;
+    const char *name;
+    const char *command_name;
+    enum secdat_command_type command;
+};
+
+static const struct secdat_cli_subcommand_entry secdat_cli_subcommand_registry[] = {
+    {"store", "create", "store create", SECDAT_COMMAND_STORE_CREATE},
+    {"store", "delete", "store delete", SECDAT_COMMAND_STORE_DELETE},
+    {"store", "ls", "store ls", SECDAT_COMMAND_STORE_LS},
+    {"store", "migrate", "store migrate", SECDAT_COMMAND_STORE_MIGRATE},
+    {"store", "finalize-migration", "store finalize-migration", SECDAT_COMMAND_STORE_FINALIZE_MIGRATION},
+    {"secret", "status", "secret status", SECDAT_COMMAND_SECRET_STATUS},
+    {"domain", "create", "domain create", SECDAT_COMMAND_DOMAIN_CREATE},
+    {"domain", "delete", "domain delete", SECDAT_COMMAND_DOMAIN_DELETE},
+    {"domain", "ls", "domain ls", SECDAT_COMMAND_DOMAIN_LS},
+    {"domain", "status", "domain status", SECDAT_COMMAND_DOMAIN_STATUS},
+    {NULL, NULL, NULL, SECDAT_COMMAND_HELP},
+};
+
 static void secdat_cli_print_usage_columns(
     const char *program_name,
     const char *options,
@@ -286,48 +307,88 @@ static void secdat_cli_print_detail_line(const char *line)
     secdat_cli_print_wrapped_text(description, SECDAT_CLI_DETAIL_COLUMN);
 }
 
+static const struct secdat_cli_subcommand_entry *secdat_cli_find_subcommand(const char *group, const char *name)
+{
+    size_t index;
+
+    if (group == NULL || name == NULL) {
+        return NULL;
+    }
+
+    for (index = 0; secdat_cli_subcommand_registry[index].group != NULL; index += 1) {
+        if (strcmp(secdat_cli_subcommand_registry[index].group, group) == 0
+            && strcmp(secdat_cli_subcommand_registry[index].name, name) == 0) {
+            return &secdat_cli_subcommand_registry[index];
+        }
+    }
+
+    return NULL;
+}
+
+static const struct secdat_cli_subcommand_entry *secdat_cli_find_subcommand_by_command_name(const char *name)
+{
+    size_t index;
+
+    if (name == NULL) {
+        return NULL;
+    }
+
+    for (index = 0; secdat_cli_subcommand_registry[index].group != NULL; index += 1) {
+        if (strcmp(secdat_cli_subcommand_registry[index].command_name, name) == 0) {
+            return &secdat_cli_subcommand_registry[index];
+        }
+    }
+
+    return NULL;
+}
+
+static const struct secdat_cli_subcommand_entry *secdat_cli_find_subcommand_by_command(enum secdat_command_type command)
+{
+    size_t index;
+
+    for (index = 0; secdat_cli_subcommand_registry[index].group != NULL; index += 1) {
+        if (secdat_cli_subcommand_registry[index].command == command) {
+            return &secdat_cli_subcommand_registry[index];
+        }
+    }
+
+    return NULL;
+}
+
+static int secdat_cli_group_has_subcommands(const char *group)
+{
+    size_t index;
+
+    if (group == NULL) {
+        return 0;
+    }
+
+    for (index = 0; secdat_cli_subcommand_registry[index].group != NULL; index += 1) {
+        if (strcmp(secdat_cli_subcommand_registry[index].group, group) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+int secdat_cli_is_command_group(const char *name)
+{
+    return secdat_cli_group_has_subcommands(name);
+}
+
 static const char *secdat_cli_help_target_from_args(int argc, char **argv, int index)
 {
+    const struct secdat_cli_subcommand_entry *subcommand;
+
     if (index >= argc) {
         return NULL;
     }
 
-    if (index + 1 < argc && strcmp(argv[index], "store") == 0) {
-        if (strcmp(argv[index + 1], "create") == 0) {
-            return "store create";
-        }
-        if (strcmp(argv[index + 1], "delete") == 0) {
-            return "store delete";
-        }
-        if (strcmp(argv[index + 1], "ls") == 0) {
-            return "store ls";
-        }
-        if (strcmp(argv[index + 1], "migrate") == 0) {
-            return "store migrate";
-        }
-        if (strcmp(argv[index + 1], "finalize-migration") == 0) {
-            return "store finalize-migration";
-        }
-    }
-
-    if (index + 1 < argc && strcmp(argv[index], "secret") == 0) {
-        if (strcmp(argv[index + 1], "status") == 0) {
-            return "secret status";
-        }
-    }
-
-    if (index + 1 < argc && strcmp(argv[index], "domain") == 0) {
-        if (strcmp(argv[index + 1], "create") == 0) {
-            return "domain create";
-        }
-        if (strcmp(argv[index + 1], "delete") == 0) {
-            return "domain delete";
-        }
-        if (strcmp(argv[index + 1], "ls") == 0) {
-            return "domain ls";
-        }
-        if (strcmp(argv[index + 1], "status") == 0) {
-            return "domain status";
+    if (index + 1 < argc) {
+        subcommand = secdat_cli_find_subcommand(argv[index], argv[index + 1]);
+        if (subcommand != NULL) {
+            return subcommand->command_name;
         }
     }
 
@@ -429,13 +490,6 @@ static int secdat_cli_completion_is_global_option_with_value(const char *value)
     return value != NULL
         && (strcmp(value, "--dir") == 0 || strcmp(value, "-d") == 0
             || strcmp(value, "--domain") == 0 || strcmp(value, "--store") == 0 || strcmp(value, "-s") == 0);
-}
-
-static int secdat_cli_completion_is_help_target(const char *value)
-{
-    return value != NULL && (strcmp(value, "help") == 0 || strcmp(value, "version") == 0
-        || strcmp(value, "usecases") == 0 || strcmp(value, "concepts") == 0
-        || strcmp(value, "store") == 0 || strcmp(value, "secret") == 0 || strcmp(value, "domain") == 0);
 }
 
 static int secdat_cli_completion_is_command_with_key_operand(const char *command)
@@ -545,25 +599,13 @@ static void secdat_cli_completion_print_top_level_commands(const char *current)
 
 static void secdat_cli_completion_print_group_subcommands(const char *group, const char *current)
 {
-    char prefix[32];
-    char previous[64] = "";
-    enum secdat_command_type command;
-    size_t prefix_length;
+    size_t index;
 
-    snprintf(prefix, sizeof(prefix), "%s ", group);
-    prefix_length = strlen(prefix);
-
-    for (command = SECDAT_COMMAND_HELP; command <= SECDAT_COMMAND_DOMAIN_STATUS; command += 1) {
-        const char *name = secdat_cli_command_name(command);
-
-        if (strncmp(name, prefix, prefix_length) != 0) {
+    for (index = 0; secdat_cli_subcommand_registry[index].group != NULL; index += 1) {
+        if (strcmp(secdat_cli_subcommand_registry[index].group, group) != 0) {
             continue;
         }
-        if (strcmp(name + prefix_length, previous) == 0) {
-            continue;
-        }
-        strcpy(previous, name + prefix_length);
-        secdat_cli_completion_print_candidate(current, name + prefix_length);
+        secdat_cli_completion_print_candidate(current, secdat_cli_subcommand_registry[index].name);
     }
 }
 
@@ -572,6 +614,35 @@ static void secdat_cli_completion_print_help_targets(const char *current)
     secdat_cli_completion_print_top_level_commands(current);
     secdat_cli_completion_print_candidate(current, "usecases");
     secdat_cli_completion_print_candidate(current, "concepts");
+}
+
+static int secdat_cli_completion_print_nested_help_targets(int argc, char **argv, const char *current)
+{
+    int index = 0;
+    int target_index;
+
+    while (index + 1 < argc) {
+        if (secdat_cli_completion_is_global_option_with_value(argv[index])) {
+            index += 2;
+            continue;
+        }
+        break;
+    }
+
+    if (index >= argc - 1
+        || (strcmp(argv[index], "help") != 0 && strcmp(argv[index], "--help") != 0 && strcmp(argv[index], "-h") != 0)) {
+        return 0;
+    }
+
+    target_index = index + 1;
+    if (target_index < argc - 1 && secdat_cli_group_has_subcommands(argv[target_index])) {
+        if (target_index == argc - 2) {
+            secdat_cli_completion_print_group_subcommands(argv[target_index], current);
+        }
+        return 1;
+    }
+
+    return 0;
 }
 
 static const char *secdat_cli_completion_command_prev_option_mode(const char *command, const char *subcommand, const char *previous)
@@ -692,7 +763,7 @@ static void secdat_cli_completion_parse_context(
                 index += 1;
                 continue;
             }
-            if (strcmp(token, "store") == 0 || strcmp(token, "domain") == 0) {
+            if (secdat_cli_group_has_subcommands(token)) {
                 *command = token;
                 index += 1;
                 continue;
@@ -710,7 +781,7 @@ static void secdat_cli_completion_parse_context(
             break;
         }
 
-        if ((*subcommand) == NULL && (strcmp(*command, "store") == 0 || strcmp(*command, "domain") == 0)) {
+        if ((*subcommand) == NULL && secdat_cli_group_has_subcommands(*command)) {
             if (token[0] != '-') {
                 *subcommand = token;
             }
@@ -751,7 +822,7 @@ static int secdat_cli_completion_positional_count(int argc, char **argv, const c
             }
             continue;
         }
-        if (command != NULL && (strcmp(command, "store") == 0 || strcmp(command, "domain") == 0)
+        if (command != NULL && secdat_cli_group_has_subcommands(command)
             && !skipped_subcommand && subcommand != NULL && strcmp(token, subcommand) == 0) {
             skipped_subcommand = 1;
             continue;
@@ -839,6 +910,9 @@ int secdat_cli_complete(int argc, char **argv)
     if (strcmp(mode, "dir") == 0 || strcmp(mode, "file") == 0 || strcmp(mode, "none") == 0) {
         return 0;
     }
+    if (secdat_cli_completion_print_nested_help_targets(argc, argv, current)) {
+        return 0;
+    }
     if (strcmp(mode, "help") == 0) {
         secdat_cli_completion_print_help_targets(current);
         return 0;
@@ -857,16 +931,8 @@ int secdat_cli_complete(int argc, char **argv)
         return 0;
     }
 
-    if (strcmp(command, "store") == 0 && subcommand == NULL) {
-        secdat_cli_completion_print_group_subcommands("store", current);
-        return 0;
-    }
-    if (strcmp(command, "domain") == 0 && subcommand == NULL) {
-        secdat_cli_completion_print_group_subcommands("domain", current);
-        return 0;
-    }
-    if (strcmp(command, "secret") == 0 && subcommand == NULL) {
-        secdat_cli_completion_print_group_subcommands("secret", current);
+    if (secdat_cli_group_has_subcommands(command) && subcommand == NULL) {
+        secdat_cli_completion_print_group_subcommands(command, current);
         return 0;
     }
 
@@ -918,6 +984,8 @@ int secdat_cli_complete(int argc, char **argv)
 
 enum secdat_command_type secdat_cli_parse_command_name(const char *name)
 {
+    const struct secdat_cli_subcommand_entry *subcommand;
+
     if (strcmp(name, "ls") == 0) {
         return SECDAT_COMMAND_LS;
     }
@@ -999,41 +1067,16 @@ enum secdat_command_type secdat_cli_parse_command_name(const char *name)
     if (strcmp(name, "store") == 0) {
         return SECDAT_COMMAND_STORE_LS;
     }
-    if (strcmp(name, "store create") == 0) {
-        return SECDAT_COMMAND_STORE_CREATE;
-    }
-    if (strcmp(name, "store delete") == 0) {
-        return SECDAT_COMMAND_STORE_DELETE;
-    }
-    if (strcmp(name, "store ls") == 0) {
-        return SECDAT_COMMAND_STORE_LS;
-    }
-    if (strcmp(name, "store migrate") == 0) {
-        return SECDAT_COMMAND_STORE_MIGRATE;
-    }
-    if (strcmp(name, "store finalize-migration") == 0) {
-        return SECDAT_COMMAND_STORE_FINALIZE_MIGRATION;
-    }
     if (strcmp(name, "secret") == 0) {
-        return SECDAT_COMMAND_SECRET_STATUS;
-    }
-    if (strcmp(name, "secret status") == 0) {
         return SECDAT_COMMAND_SECRET_STATUS;
     }
     if (strcmp(name, "domain") == 0) {
         return SECDAT_COMMAND_DOMAIN_LS;
     }
-    if (strcmp(name, "domain create") == 0) {
-        return SECDAT_COMMAND_DOMAIN_CREATE;
-    }
-    if (strcmp(name, "domain delete") == 0) {
-        return SECDAT_COMMAND_DOMAIN_DELETE;
-    }
-    if (strcmp(name, "domain ls") == 0) {
-        return SECDAT_COMMAND_DOMAIN_LS;
-    }
-    if (strcmp(name, "domain status") == 0) {
-        return SECDAT_COMMAND_DOMAIN_STATUS;
+
+    subcommand = secdat_cli_find_subcommand_by_command_name(name);
+    if (subcommand != NULL) {
+        return subcommand->command;
     }
     return SECDAT_COMMAND_HELP;
 }
@@ -1655,6 +1698,41 @@ static void secdat_cli_print_semantics(void)
     secdat_cli_print_detail_line(_("  migration hints: v2-only errors suggest store migrate; set SECDAT_SUPPRESS_MIGRATION_HINTS=1 to hide those hints\n"));
 }
 
+static int secdat_cli_parse_group_subcommand(struct secdat_cli *cli, int argc, char **argv, int *index, const char *group)
+{
+    const struct secdat_cli_subcommand_entry *subcommand;
+
+    *index += 1;
+    if (*index >= argc) {
+        cli->show_help = 1;
+        cli->help_target = group;
+        return 0;
+    }
+
+    if (strcmp(argv[*index], "--help") == 0 || strcmp(argv[*index], "-h") == 0) {
+        cli->show_help = 1;
+        cli->help_target = group;
+        return 0;
+    }
+
+    subcommand = secdat_cli_find_subcommand(group, argv[*index]);
+    if (subcommand != NULL) {
+        cli->command = subcommand->command;
+        *index += 1;
+        return 0;
+    }
+
+    if (strcmp(group, "store") == 0) {
+        fprintf(stderr, _("unknown store subcommand: %s\n"), argv[*index]);
+    } else if (strcmp(group, "secret") == 0) {
+        fprintf(stderr, _("unknown secret subcommand: %s\n"), argv[*index]);
+    } else if (strcmp(group, "domain") == 0) {
+        fprintf(stderr, _("unknown domain subcommand: %s\n"), argv[*index]);
+    }
+    secdat_cli_print_try_help(cli, group);
+    return 2;
+}
+
 int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
 {
     int index = 1;
@@ -1769,92 +1847,10 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
     } else if (strcmp(argv[index], "wait-unlock") == 0) {
         cli->command = SECDAT_COMMAND_WAIT_UNLOCK;
         index += 1;
-    } else if (strcmp(argv[index], "store") == 0) {
-        index += 1;
-        if (index >= argc) {
-            cli->show_help = 1;
-            cli->help_target = "store";
-            return 0;
-        }
-
-        if (strcmp(argv[index], "--help") == 0 || strcmp(argv[index], "-h") == 0) {
-            cli->show_help = 1;
-            cli->help_target = "store";
-            return 0;
-        }
-
-        if (strcmp(argv[index], "create") == 0) {
-            cli->command = SECDAT_COMMAND_STORE_CREATE;
-            index += 1;
-        } else if (strcmp(argv[index], "delete") == 0) {
-            cli->command = SECDAT_COMMAND_STORE_DELETE;
-            index += 1;
-        } else if (strcmp(argv[index], "ls") == 0) {
-            cli->command = SECDAT_COMMAND_STORE_LS;
-            index += 1;
-        } else if (strcmp(argv[index], "migrate") == 0) {
-            cli->command = SECDAT_COMMAND_STORE_MIGRATE;
-            index += 1;
-        } else if (strcmp(argv[index], "finalize-migration") == 0) {
-            cli->command = SECDAT_COMMAND_STORE_FINALIZE_MIGRATION;
-            index += 1;
-        } else {
-            fprintf(stderr, _("unknown store subcommand: %s\n"), argv[index]);
-            secdat_cli_print_try_help(cli, "store");
-            return 2;
-        }
-    } else if (strcmp(argv[index], "secret") == 0) {
-        index += 1;
-        if (index >= argc) {
-            cli->show_help = 1;
-            cli->help_target = "secret";
-            return 0;
-        }
-
-        if (strcmp(argv[index], "--help") == 0 || strcmp(argv[index], "-h") == 0) {
-            cli->show_help = 1;
-            cli->help_target = "secret";
-            return 0;
-        }
-
-        if (strcmp(argv[index], "status") == 0) {
-            cli->command = SECDAT_COMMAND_SECRET_STATUS;
-            index += 1;
-        } else {
-            fprintf(stderr, _("unknown secret subcommand: %s\n"), argv[index]);
-            secdat_cli_print_try_help(cli, "secret");
-            return 2;
-        }
-    } else if (strcmp(argv[index], "domain") == 0) {
-        index += 1;
-        if (index >= argc) {
-            cli->show_help = 1;
-            cli->help_target = "domain";
-            return 0;
-        }
-
-        if (strcmp(argv[index], "--help") == 0 || strcmp(argv[index], "-h") == 0) {
-            cli->show_help = 1;
-            cli->help_target = "domain";
-            return 0;
-        }
-
-        if (strcmp(argv[index], "create") == 0) {
-            cli->command = SECDAT_COMMAND_DOMAIN_CREATE;
-            index += 1;
-        } else if (strcmp(argv[index], "delete") == 0) {
-            cli->command = SECDAT_COMMAND_DOMAIN_DELETE;
-            index += 1;
-        } else if (strcmp(argv[index], "ls") == 0) {
-            cli->command = SECDAT_COMMAND_DOMAIN_LS;
-            index += 1;
-        } else if (strcmp(argv[index], "status") == 0) {
-            cli->command = SECDAT_COMMAND_DOMAIN_STATUS;
-            index += 1;
-        } else {
-            fprintf(stderr, _("unknown domain subcommand: %s\n"), argv[index]);
-            secdat_cli_print_try_help(cli, "domain");
-            return 2;
+    } else if (secdat_cli_group_has_subcommands(argv[index])) {
+        result = secdat_cli_parse_group_subcommand(cli, argc, argv, &index, argv[index]);
+        if (result != 0 || cli->show_help) {
+            return result;
         }
     } else if (secdat_cli_is_assignment_operand(argv[index])) {
         cli->command = SECDAT_COMMAND_SET;
@@ -1908,6 +1904,34 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
     secdat_cli_print_semantics();
 }
 
+static int secdat_cli_print_group_help_target(const char *program_name, const char *target)
+{
+    size_t index;
+    int printed = 0;
+
+    if (!secdat_cli_group_has_subcommands(target)) {
+        return 0;
+    }
+
+    printf(_("Usage:\n"));
+    for (index = 0; secdat_cli_subcommand_registry[index].group != NULL; index += 1) {
+        if (strcmp(secdat_cli_subcommand_registry[index].group, target) != 0) {
+            continue;
+        }
+        secdat_cli_print_usage_line(program_name, secdat_cli_subcommand_registry[index].command);
+        printed = 1;
+    }
+    if (!printed) {
+        return 0;
+    }
+    secdat_cli_print_help_routes(program_name, target);
+    secdat_cli_print_target_meaning(target);
+    secdat_cli_print_target_use_cases(program_name, target);
+    secdat_cli_print_support_routes();
+    secdat_cli_print_semantics();
+    return 1;
+}
+
 void secdat_cli_print_help_target(const char *program_name, const char *target)
 {
     if (target != NULL && (strcmp(target, "help") == 0 || strcmp(target, "version") == 0 || strcmp(target, "usecases") == 0 || strcmp(target, "concepts") == 0)) {
@@ -1925,43 +1949,7 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         return;
     }
 
-    if (target != NULL && strcmp(target, "store") == 0) {
-        printf(_("Usage:\n"));
-        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_CREATE);
-        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_DELETE);
-        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_LS);
-        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_MIGRATE);
-        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_STORE_FINALIZE_MIGRATION);
-        secdat_cli_print_help_routes(program_name, target);
-        secdat_cli_print_target_meaning(target);
-        secdat_cli_print_target_use_cases(program_name, target);
-        secdat_cli_print_support_routes();
-        secdat_cli_print_semantics();
-        return;
-    }
-
-    if (target != NULL && strcmp(target, "secret") == 0) {
-        printf(_("Usage:\n"));
-        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_SECRET_STATUS);
-        secdat_cli_print_help_routes(program_name, target);
-        secdat_cli_print_target_meaning(target);
-        secdat_cli_print_target_use_cases(program_name, target);
-        secdat_cli_print_support_routes();
-        secdat_cli_print_semantics();
-        return;
-    }
-
-    if (target != NULL && strcmp(target, "domain") == 0) {
-        printf(_("Usage:\n"));
-        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_CREATE);
-        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_DELETE);
-        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_LS);
-        secdat_cli_print_usage_line(program_name, SECDAT_COMMAND_DOMAIN_STATUS);
-        secdat_cli_print_help_routes(program_name, target);
-        secdat_cli_print_target_meaning(target);
-        secdat_cli_print_target_use_cases(program_name, target);
-        secdat_cli_print_support_routes();
-        secdat_cli_print_semantics();
+    if (target != NULL && secdat_cli_print_group_help_target(program_name, target)) {
         return;
     }
 
@@ -1986,6 +1974,12 @@ void secdat_cli_print_try_help(const struct secdat_cli *cli, const char *target)
 
 const char *secdat_cli_command_name(enum secdat_command_type command)
 {
+    const struct secdat_cli_subcommand_entry *subcommand = secdat_cli_find_subcommand_by_command(command);
+
+    if (subcommand != NULL) {
+        return subcommand->command_name;
+    }
+
     switch (command) {
     case SECDAT_COMMAND_HELP:
         return "help";
@@ -2039,26 +2033,6 @@ const char *secdat_cli_command_name(enum secdat_command_type command)
         return "status";
     case SECDAT_COMMAND_WAIT_UNLOCK:
         return "wait-unlock";
-    case SECDAT_COMMAND_STORE_CREATE:
-        return "store create";
-    case SECDAT_COMMAND_STORE_DELETE:
-        return "store delete";
-    case SECDAT_COMMAND_STORE_LS:
-        return "store ls";
-    case SECDAT_COMMAND_STORE_MIGRATE:
-        return "store migrate";
-    case SECDAT_COMMAND_STORE_FINALIZE_MIGRATION:
-        return "store finalize-migration";
-    case SECDAT_COMMAND_SECRET_STATUS:
-        return "secret status";
-    case SECDAT_COMMAND_DOMAIN_CREATE:
-        return "domain create";
-    case SECDAT_COMMAND_DOMAIN_DELETE:
-        return "domain delete";
-    case SECDAT_COMMAND_DOMAIN_LS:
-        return "domain ls";
-    case SECDAT_COMMAND_DOMAIN_STATUS:
-        return "domain status";
     default:
         return "unknown";
     }

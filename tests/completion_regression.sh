@@ -41,6 +41,11 @@ def assert_contains(values, expected, label):
         raise SystemExit(f"FAIL: {label}: missing {expected!r} in {values!r}")
 
 
+def assert_not_contains(values, unexpected, label):
+    if unexpected in values:
+        raise SystemExit(f"FAIL: {label}: unexpected {unexpected!r} in {values!r}")
+
+
 mode, values = run_completion("")
 if mode != "plain":
     raise SystemExit(f"FAIL: top-level completion mode mismatch: {mode!r}")
@@ -52,6 +57,62 @@ if mode != "plain":
     raise SystemExit(f"FAIL: help completion mode mismatch: {mode!r}")
 for expected in ["usecases", "concepts", "wait-unlock", "store", "secret", "domain", "gc", "id"]:
     assert_contains(values, expected, "help targets")
+
+mode, values = run_completion("help", "store", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: help store completion mode mismatch: {mode!r}")
+for expected in ["create", "delete", "ls", "migrate", "finalize-migration"]:
+    assert_contains(values, expected, "help store subcommands")
+assert_not_contains(values, "get", "help store subcommands")
+
+mode, values = run_completion("help", "domain", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: help domain completion mode mismatch: {mode!r}")
+for expected in ["create", "delete", "ls", "status"]:
+    assert_contains(values, expected, "help domain subcommands")
+assert_not_contains(values, "get", "help domain subcommands")
+
+mode, values = run_completion("help", "secret", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: help secret completion mode mismatch: {mode!r}")
+for expected in ["status"]:
+    assert_contains(values, expected, "help secret subcommands")
+assert_not_contains(values, "get", "help secret subcommands")
+
+mode, values = run_completion("help", "store", "migrate", "")
+if mode != "plain" or values:
+    raise SystemExit(f"FAIL: help store migrate completion should not suggest deeper targets: mode={mode!r} values={values!r}")
+
+mode, values = run_completion("--help", "store", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: --help store completion mode mismatch: {mode!r}")
+for expected in ["create", "delete", "ls", "migrate", "finalize-migration"]:
+    assert_contains(values, expected, "--help store subcommands")
+assert_not_contains(values, "get", "--help store subcommands")
+
+mode, values = run_completion("--help", "store", "migrate", "")
+if mode != "plain" or values:
+    raise SystemExit(f"FAIL: --help store migrate completion should not suggest deeper targets: mode={mode!r} values={values!r}")
+
+mode, values = run_completion("--help", "store", "migrate", "--")
+if mode != "plain" or values:
+    raise SystemExit(f"FAIL: --help store migrate option completion should stay in help target mode: mode={mode!r} values={values!r}")
+
+mode, values = run_completion("set", "help", "store", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: operand help token completion mode mismatch: {mode!r}")
+assert_not_contains(values, "create", "operand help token should not enter help target completion")
+
+mode, values = run_completion("--dir", "/tmp", "help", "store", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: scoped help store completion mode mismatch: {mode!r}")
+for expected in ["create", "delete", "ls", "migrate", "finalize-migration"]:
+    assert_contains(values, expected, "scoped help store subcommands")
+assert_not_contains(values, "get", "scoped help store subcommands")
+
+mode, values = run_completion("--dir", "/tmp", "help", "store", "migrate", "")
+if mode != "plain" or values:
+    raise SystemExit(f"FAIL: scoped help store migrate completion should not suggest deeper targets: mode={mode!r} values={values!r}")
 
 mode, values = run_completion("domain", "")
 if mode != "plain":

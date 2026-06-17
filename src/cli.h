@@ -63,5 +63,6 @@ void secdat_cli_print_help_target(const char *program_name, const char *target);
 void secdat_cli_print_try_help(const struct secdat_cli *cli, const char *target);
 enum secdat_command_type secdat_cli_parse_command_name(const char *name);
 const char *secdat_cli_command_name(enum secdat_command_type command);
+int secdat_cli_is_command_group(const char *name);
 
 #endif
