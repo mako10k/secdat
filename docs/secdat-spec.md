@@ -291,7 +291,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `sandbox_inject=bulk` allows sandbox injection/export from explicit key selection and from selector, pattern, or profile based selection
 - attribute updates are allowed only for current-domain local entries; inherited entries must be materialized locally before their attributes can be changed
 - v2 stores can update `key_visibility`, domain-entry `sandbox_inject`, and object-owned `value_access` through the domain-entry/object graph
-- v2 `key_visibility=unlocked` encrypts the key name in the domain entry; locked list/lookup operations skip hidden keys
+- v2 `key_visibility=unlocked` encrypts the key name in the domain entry; locked list/lookup operations skip hidden keys, and v2 writes that would create a domain entry fail while hidden entries make absence impossible to prove
 - generic user-defined attributes are intentionally not part of `attr`; policy/storage attributes must stay explicit so authorization, migration, and sandbox export semantics remain auditable
 - `cp` and `mv` preserve source key attributes
 - `ls --metadata` prints key attributes alongside visible keys
@@ -318,8 +318,10 @@ To make the requested behavior implementable, the following are treated as norma
 - v1 dangling checks report invalid `.sec` entry files as `dangling-entry	KEY	invalid-entry`
 - v1 dangling checks report invalid or unsupported attribute sidecars as `dangling-metadata	KEY	invalid-metadata`
 - v2 orphan checks report secret objects without referencing domain entries as `orphaned-secret	UUID	missing-entry`
+- v2 orphan checks can report standalone legacy object value sidecars without a secret object as `orphaned-value	UUID	missing-secret`
 - v2 dangling checks report invalid domain entries or secret objects as `dangling-entry	ENTRY_ID	invalid-entry` or `dangling-secret	SECRET_ID	invalid-secret`
 - v2 dangling checks report domain entries that point to missing or invalid secret objects as `dangling-entry	ENTRY_ID	missing-secret`
+- v2 dangling checks report standalone or invalid object value sidecars as `dangling-value	UUID	missing-secret` or `dangling-value	NAME	invalid-value`
 - v2 dangling checks report duplicate logical key entries as `duplicate-key	KEY	multiple-entries`
 - v2 refcount checks report cached object refcount mismatches as `refcount-mismatch	SECRET_ID	expected=N actual=M`
 - `fsck --format v2 --refcount --repair` rewrites only rebuildable cached object refcounts and reports `repaired-refcount	SECRET_ID	expected=N actual=M`
@@ -327,7 +329,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat gc --format v2 [--orphaned] [--dangling]` is the explicit destructive cleanup path for v2 graph garbage
 - without a filter, `gc` targets both orphaned and dangling v2 graph artifacts
 - `gc --dry-run` reports `would-remove-*` rows without deleting files
-- actual `gc` reports `removed-*` rows and removes v2 domain-entry files, orphaned secret-object files, invalid secret-object files, and object value sidecars
+- actual `gc` reports `removed-*` rows and removes v2 domain-entry files, orphaned secret-object files, invalid secret-object files, standalone object value sidecars, and sidecars paired with removed secret objects
 - `gc` must not touch legacy v1 key/value fallback files preserved for migration compatibility
 
 #### FR-7c Shell Export
@@ -435,7 +437,7 @@ To make the requested behavior implementable, the following are treated as norma
 - finalize dry-run reports removable legacy files as `would-remove-*` rows and blocking files as `cannot-finalize` rows; non-dry-run reports successful cleanup as `removed-*` rows
 - blocking v1 entry files must remain while the v2 object lacks object-owned value material; if any blocker is present, non-dry-run finalization reports the blockers and removes nothing
 - `store` management never creates, deletes, or lists stores in parent or child domains
-- stores marked with the v2 format marker use the v2 domain-entry/object graph for `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id`; hidden keys participate only while unlocked
+- stores marked with the v2 format marker use the v2 domain-entry/object graph for `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id`; hidden keys participate only while unlocked, and v2 create/upsert paths require unlock when hidden entries prevent an authoritative absence check
 - migrated v2 stores keep v1 value files readable by `get` until a value is rewritten into v2 object-owned value storage
 - `secdat id KEYREF` prints the resolved v2 `secret_id` and does not read the secret value
 - `secdat [--dir DIR] [--store STORE] secret status UUID` prints non-secret v2 secret-object metadata for an object in the current domain/store, including cached and actual refcounts, orphaned state, object payload presence, and legacy sidecar presence, without reading the secret value
@@ -1167,11 +1169,11 @@ Current and planned semantics:
 - `id KEYREF` prints the resolved `secret_id` without printing the secret value
 - `secret status UUID` prints non-secret object metadata, link count, and whether the object is orphaned
 - `fsck --orphaned` lists secret objects with no referencing domain entries
-- `fsck --dangling` lists domain entries pointing to missing or unreadable secret objects
+- `fsck --dangling` lists domain entries pointing to missing or unreadable secret objects and standalone object value sidecars whose secret object is missing
 - `fsck --refcount` compares cached object refcounts with counts rebuilt from domain entries
 - `fsck --repair` repairs only derived metadata currently supported by the implementation, starting with cached v2 refcounts; it must not delete orphaned values without an explicit destructive option
 - `gc --dry-run` lists v2 graph files that would be deleted
-- `gc` without `--dry-run` deletes only explicit v2 graph garbage: orphaned secret objects, object value sidecars, invalid secret objects, invalid domain entries, and domain entries pointing to missing or unreadable objects
+- `gc` without `--dry-run` deletes only explicit v2 graph garbage: orphaned secret objects, standalone or paired object value sidecars, invalid secret objects, invalid domain entries, and domain entries pointing to missing or unreadable objects
 
 `cp` and `ln` must remain deliberately different. `cp` produces an independent secret object and can later diverge. `ln` shares one secret object, so changing the value through any link changes the value observed through all links.
 
@@ -1200,7 +1202,7 @@ secdat store fsck [--format v1|v2]
 secdat store finalize-migration STORE --from-format v1 [--dry-run]
 ```
 
-The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `list`, `exists`, `attr`, `set`, `get`, `rm`, `mask`, `unmask`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys. `secret status UUID` can inspect one current-domain/current-store object by UUID without reading its value. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. `store finalize-migration STORE --from-format v1 --dry-run` can inspect which legacy v1 entry and metadata fallback files remain necessary or removable; without `--dry-run`, it removes removable legacy v1 fallback files only when no blockers remain. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links and authorized `ln @UUID DST_KEYREF` links by source unwrap and destination rewrap of the object data key. `fsck --format v2 --refcount --repair` can rebuild cached object refcounts without deleting graph data. `gc --format v2` can delete orphaned or dangling v2 graph files after dry-run review.
+The current migration writer creates the v2 domain-entry/object graph side-by-side with v1 files, verifies it with the read-only v2 scanner, and marks the store with a per-store `format` marker. Current v2 support resolves `ls`, `list`, `exists`, `attr`, `set`, `get`, `rm`, `mask`, `unmask`, `cp`, `mv`, `ln`, and `id` through that graph for visible and unlocked hidden keys; create/upsert paths require unlock when hidden entries make key absence ambiguous. `secret status UUID` can inspect one current-domain/current-store object by UUID without reading its value. `get` can read migrated stores through the preserved v1 value file until the value is rewritten into the secret object's `.sec` file. `store finalize-migration STORE --from-format v1 --dry-run` can inspect which legacy v1 entry and metadata fallback files remain necessary or removable; without `--dry-run`, it removes removable legacy v1 fallback files only when no blockers remain and the replacement object-owned value material has a valid secdat payload structure. Domain entries now carry explicit object address fields and can resolve object metadata and legacy value sidecars outside the entry's local domain/store. New or rewritten encrypted v2 values are encrypted by the object data key and stored as `.sec` object payloads. Cross-domain `ln` is enabled for normal KEYREF source/destination links and authorized `ln @UUID DST_KEYREF` links by source unwrap and destination rewrap of the object data key. `fsck --format v2 --refcount --repair` can rebuild cached object refcounts without deleting graph data. `gc --format v2` can delete orphaned or dangling v2 graph files, including standalone legacy object value sidecars, after dry-run review.
 
 #### Implementation Plan
 

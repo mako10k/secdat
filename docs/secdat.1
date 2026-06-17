@@ -69,7 +69,7 @@ for local keys that still shadow a parent-visible key.
 Show or update one key's attributes. v1 stores support only
 .B key_visibility=always ;
 .B key_visibility=unlocked
-requires a v2 store and encrypts the key name in the domain-entry graph. Hidden keys can be listed or resolved only while the domain is unlocked.
+requires a v2 store and encrypts the key name in the domain-entry graph. Hidden keys can be listed or resolved only while the domain is unlocked; v2 writes that would create an entry also require unlock when hidden entries make absence ambiguous.
 .B value_access=unlocked
 is encrypted-at-rest and unlock-gated, while
 .B value_access=always
@@ -93,7 +93,7 @@ reports invalid entries or attribute sidecars, and
 .B --refcount
 is currently a clean no-op for v1 because shared secret objects arrive with store v2. Stores with the v2 format marker are checked with
 .B --format v2 ,
-which scans the domain-entry to secret-object graph and reports orphaned secrets, dangling entries or objects, and cached refcount mismatches.
+which scans the domain-entry to secret-object graph and reports orphaned secrets, standalone object value sidecars, dangling entries or objects, and cached refcount mismatches.
 .B --repair
 is supported with
 .B --format v2 --refcount
@@ -108,7 +108,7 @@ prints
 .B would-remove-*
 rows without deleting files. Actual removal prints
 .B removed-*
-rows. The command removes v2 domain-entry files, orphaned secret-object files, and object value sidecars, but does not touch legacy v1 key/value fallback files.
+rows. The command removes v2 domain-entry files, orphaned secret-object files, standalone object value sidecars, and sidecars paired with removed secret objects, but does not touch legacy v1 key/value fallback files.
 .TP
 .B mask KEYREF
 Create a local tombstone to hide one inherited key in the current domain.

@@ -39,6 +39,7 @@ duplicate_entry_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 missing_entry_id = "33333333-3333-4333-8333-333333333333"
 missing_secret_id = "44444444-4444-4444-8444-444444444444"
 orphan_secret_id = "55555555-5555-4555-8555-555555555555"
+standalone_value_id = "77777777-7777-4777-8777-777777777777"
 
 
 def fail(message):
@@ -596,6 +597,15 @@ if "HIDDEN_TOKEN" in stdout:
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "HIDDEN_TOKEN"], {"SECDAT_MASTER_KEY": ""})
 if rc == 0 or stdout != "":
     fail(f"pure v2 locked hidden key get should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(domain), "set", "HIDDEN_TOKEN", "--public-value", "--value", "locked-public"],
+    {"SECDAT_MASTER_KEY": ""},
+)
+if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
+    fail(f"pure v2 locked hidden key public write should require unlock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--dangling"])
+if rc != 0 or stdout != "ok\n" or stderr != "":
+    fail(f"pure v2 locked hidden key write must not duplicate keys: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "HIDDEN_TOKEN", "--key-visibility", "always"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 hidden key visibility restore failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -612,6 +622,22 @@ if "key_visibility=always\n" not in hidden_entry_text or "key=HIDDEN_TOKEN\n" no
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"pure v2 fsck after hidden key operations failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "delete", "default"])
+if rc != 1 or stdout != "" or "store is not empty: default\n" not in stderr:
+    fail(f"v2 non-empty store delete should fail before deletion: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for required_dir, label in (
+    (entries_dirs[0], "v1 entries"),
+    (store_root / "tombstones", "v1 tombstones"),
+    (domain_entries_dir, "v2 domain entries"),
+    (secret_objects_dir, "v2 secret objects"),
+):
+    if not required_dir.is_dir():
+        fail(f"v2 non-empty store delete removed {label} directory")
+if (not (store_root / "format").is_file()
+        or not (secret_objects_dir / f"{app_secret_id}.sec").exists()
+        or not (secret_objects_dir / f"{hidden_secret_id}.sec").exists()):
+    fail("v2 non-empty store delete removed v2 artifacts")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck"])
 if rc != 2 or "store format is v2; use --format v2" not in stderr:
@@ -634,6 +660,7 @@ write_entry(domain_entries_dir / f"{missing_entry_id}.dent", missing_entry_id, m
 (domain_entries_dir / "BROKEN.dent").write_text("not-a-domain-entry\n", encoding="utf-8")
 (secret_objects_dir / "BAD.sec").write_text("not-a-secret-object\n", encoding="utf-8")
 (secret_objects_dir / "BAD.value").write_text("bad-sidecar\n", encoding="utf-8")
+(secret_objects_dir / f"{standalone_value_id}.value").write_text("standalone-sidecar\n", encoding="utf-8")
 write_object(secret_objects_dir / f"{secret_id}.sec", secret_id, 3)
 write_object(secret_objects_dir / f"{orphan_secret_id}.sec", orphan_secret_id, 0)
 (secret_objects_dir / f"{orphan_secret_id}.value").write_text("orphan-sidecar\n", encoding="utf-8")
@@ -644,11 +671,13 @@ if rc != 1 or stderr != "":
 assert_contains(stdout, "dangling-entry\tBROKEN\tinvalid-entry\n", "v2 invalid entry")
 assert_contains(stdout, f"dangling-entry\t{missing_entry_id}\tmissing-secret\n", "v2 missing secret")
 assert_contains(stdout, "dangling-secret\tBAD\tinvalid-secret\n", "v2 invalid secret")
+assert_contains(stdout, f"dangling-value\t{standalone_value_id}\tmissing-secret\n", "v2 standalone value sidecar")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--orphaned"])
 if rc != 1 or stderr != "":
     fail(f"v2 orphaned fsck should report issues: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, f"orphaned-secret\t{orphan_secret_id}\tmissing-entry\n", "v2 orphaned secret")
+assert_contains(stdout, f"orphaned-value\t{standalone_value_id}\tmissing-secret\n", "v2 orphaned standalone value sidecar")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--refcount"])
 if rc != 1 or stderr != "":
@@ -675,10 +704,12 @@ if rc != 0 or stderr != "":
 assert_contains(stdout, "would-remove-dangling-entry\tBROKEN\tinvalid-entry\n", "v2 gc dry-run invalid entry")
 assert_contains(stdout, f"would-remove-dangling-entry\t{missing_entry_id}\tmissing-secret\n", "v2 gc dry-run missing secret")
 assert_contains(stdout, "would-remove-dangling-secret\tBAD\tinvalid-secret\n", "v2 gc dry-run invalid secret")
+assert_contains(stdout, f"would-remove-dangling-value\t{standalone_value_id}\tmissing-secret\n", "v2 gc dry-run standalone value")
 if (not (domain_entries_dir / "BROKEN.dent").exists()
         or not (domain_entries_dir / f"{missing_entry_id}.dent").exists()
         or not (secret_objects_dir / "BAD.sec").exists()
-        or not (secret_objects_dir / "BAD.value").exists()):
+        or not (secret_objects_dir / "BAD.value").exists()
+        or not (secret_objects_dir / f"{standalone_value_id}.value").exists()):
     fail("v2 gc dry-run should not remove dangling artifacts")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "gc", "--format", "v2", "--dangling"])
@@ -687,10 +718,12 @@ if rc != 0 or stderr != "":
 assert_contains(stdout, "removed-dangling-entry\tBROKEN\tinvalid-entry\n", "v2 gc invalid entry removal")
 assert_contains(stdout, f"removed-dangling-entry\t{missing_entry_id}\tmissing-secret\n", "v2 gc missing secret removal")
 assert_contains(stdout, "removed-dangling-secret\tBAD\tinvalid-secret\n", "v2 gc invalid secret removal")
+assert_contains(stdout, f"removed-dangling-value\t{standalone_value_id}\tmissing-secret\n", "v2 gc standalone value removal")
 if ((domain_entries_dir / "BROKEN.dent").exists()
         or (domain_entries_dir / f"{missing_entry_id}.dent").exists()
         or (secret_objects_dir / "BAD.sec").exists()
-        or (secret_objects_dir / "BAD.value").exists()):
+        or (secret_objects_dir / "BAD.value").exists()
+        or (secret_objects_dir / f"{standalone_value_id}.value").exists()):
     fail("v2 gc did not remove dangling artifacts")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--dangling"])

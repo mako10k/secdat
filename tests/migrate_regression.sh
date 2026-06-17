@@ -284,13 +284,27 @@ if "object_domain=" not in app_token_entry_texts[0] or "object_store=app\n" not 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "id", "APP_PUBLIC"])
 if rc != 0 or stderr != "":
     fail(f"migrated v2 public id failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-app_public_entry_texts = domain_entries_for_secret(store_root, stdout.strip())
+app_public_secret_id = stdout.strip()
+app_public_entry_texts = domain_entries_for_secret(store_root, app_public_secret_id)
 if len(app_public_entry_texts) != 1:
     fail(f"expected one APP_PUBLIC domain entry, found {len(app_public_entry_texts)}")
 if "wrapped_object_key=" in app_public_entry_texts[0]:
     fail("migrated public APP_PUBLIC domain entry should not include wrapped_object_key")
 if "object_domain=" not in app_public_entry_texts[0] or "object_store=app\n" not in app_public_entry_texts[0]:
     fail("migrated public APP_PUBLIC domain entry did not include object location")
+
+app_public_files = list(Path(env["XDG_DATA_HOME"]).rglob("APP_PUBLIC.sec"))
+if len(app_public_files) != 1:
+    fail(f"expected v1 APP_PUBLIC.sec to remain before invalid sidecar finalize, found {app_public_files!r}")
+app_public_value_sidecar = store_root / "objects" / "secret" / f"{app_public_secret_id}.value"
+app_public_value_sidecar.write_text("invalid-sidecar\n", encoding="utf-8")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "finalize-migration", "app", "--from-format", "v1"])
+if rc != 1 or stderr != "":
+    fail(f"finalize-migration should block invalid v2 value sidecar: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "cannot-finalize\tlegacy-entry\tAPP_PUBLIC\tinvalid-object-value-sidecar\n", "invalid value sidecar finalize block")
+if not app_public_files[0].exists():
+    fail("invalid value sidecar finalize removed APP_PUBLIC legacy fallback")
+app_public_value_sidecar.unlink()
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_PUBLIC"])
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inject=never\n" or stderr != "":
