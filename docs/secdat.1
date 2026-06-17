@@ -164,12 +164,12 @@ Inject resolved keys into a child process environment and execute the command. R
 .B --sandbox-injectable
 keeps only keys whose effective sandbox injection policy allows bulk sandbox selection.
 .B --env-map-sed
-applies one sed-style key-to-environment-name mapping. In the current minimal subset, only keys matched by that substitution are injected.
+applies one sed-style key-to-environment-name mapping. In the current minimal subset, only keys matched by that substitution are injected. Generated environment names must be valid identifiers; empty or otherwise invalid names are rejected before values are loaded.
 .TP
 .B export [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-sandbox-injectable]
 Emit bash-oriented export lines for the current visible keys. The
 .B --sandbox-injectable
-option limits output to keys whose effective sandbox injection policy allows bulk sandbox selection.
+option limits output to keys whose effective sandbox injection policy allows bulk sandbox selection. Keys that are not valid environment variable identifiers are rejected before shell text is emitted.
 .TP
 .B save FILE
 Write the current visible secrets into a passphrase-protected bundle.

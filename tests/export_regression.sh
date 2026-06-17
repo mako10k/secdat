@@ -337,6 +337,20 @@ rc, stdout, stderr = run([
 if rc == 0 or "invalid environment variable name from --env-map-sed:" not in stderr:
     fail(f"empty env-map-sed result unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--env-map-sed",
+    r"s/^MY_REDMINE_PROJECT$/BAD-NAME/",
+    "python3",
+    "-c",
+    "print('unreachable')",
+])
+if rc == 0 or "invalid environment variable name from --env-map-sed: BAD-NAME" not in stderr:
+    fail(f"invalid env-map-sed result unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(root_dir), "--store", "app", "export"])
 if rc != 0 or stderr != "":
     fail(f"store export failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -355,6 +369,31 @@ if "CHILD_TOKEN" in stdout:
 rc, stdout, stderr = run([bin_path, "--dir", str(invalid_dir), "set", "BAD-KEY", "bad-secret"])
 if rc == 0 or "key is not a valid environment variable name: BAD-KEY" not in stderr:
     fail(f"invalid key-name check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(invalid_dir), "set", "LEGACY_SOURCE", "legacy-secret"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"legacy invalid-key setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+source_files = list(Path(env["XDG_DATA_HOME"]).rglob("LEGACY_SOURCE.sec"))
+if len(source_files) != 1:
+    fail(f"expected one LEGACY_SOURCE.sec, found {source_files!r}")
+legacy_invalid_entry = source_files[0].parent / "ZZZ-BAD.sec"
+legacy_invalid_entry.write_bytes(source_files[0].read_bytes())
+
+rc, stdout, stderr = run([bin_path, "--dir", str(invalid_dir), "export"])
+if rc == 0 or stdout != "" or "key is not a valid environment variable name: ZZZ-BAD" not in stderr:
+    fail(f"legacy invalid-key export unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(invalid_dir),
+    "exec",
+    "python3",
+    "-c",
+    "print('unreachable')",
+])
+if rc == 0 or stdout != "" or "key is not a valid environment variable name: ZZZ-BAD" not in stderr:
+    fail(f"legacy invalid-key exec unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 print("PASS export regression")
 PY

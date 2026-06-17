@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: secdat 0.2.1\n"
 "Report-Msgid-Bugs-To: noreply@example.invalid\n"
-"POT-Creation-Date: 2026-06-17 19:30+0900\n"
+"POT-Creation-Date: 2026-06-17 20:03+0900\n"
 "PO-Revision-Date: 2026-04-13 00:00+0000\n"
 "Last-Translator: GitHub Copilot <noreply@example.invalid>\n"
 "Language-Team: ja\n"
@@ -1215,9 +1215,9 @@ msgstr "Issue 報告先: %s\n"
 msgid "Author: %s\n"
 msgstr "Author: %s\n"
 
-#: src/store.c:671 src/store.c:687 src/store.c:758 src/store.c:794
-#: src/store.c:839 src/store.c:929 src/store.c:938 src/store.c:955
-#: src/store.c:964 src/store.c:978 src/store.c:984 src/store.c:3304
+#: src/store.c:672 src/store.c:688 src/store.c:759 src/store.c:795
+#: src/store.c:840 src/store.c:930 src/store.c:939 src/store.c:956
+#: src/store.c:965 src/store.c:979 src/store.c:985 src/store.c:3304
 #: src/store.c:3346 src/store.c:3373 src/store.c:3419 src/store.c:3454
 #: src/store.c:3867 src/store.c:4158 src/store.c:5831 src/store.c:6312
 #: src/store.c:6416 src/store.c:6466 src/store.c:6845 src/store.c:7015
@@ -1226,12 +1226,12 @@ msgstr "Author: %s\n"
 #: src/store.c:8832 src/store.c:8887 src/store.c:10084 src/store.c:10218
 #: src/store.c:10387 src/store.c:10425 src/store.c:10747 src/store.c:11390
 #: src/store.c:11514 src/store.c:13081 src/store.c:13140 src/store.c:15504
-#: src/store.c:15570 src/store.c:15622 src/store.c:15805 src/store.c:16049
+#: src/store.c:15574 src/store.c:15626 src/store.c:15806 src/store.c:16050
 #, c-format
 msgid "out of memory\n"
 msgstr "メモリ不足です\n"
 
-#: src/store.c:1005 src/store.c:1023 src/store.c:2452 src/store.c:3276
+#: src/store.c:1006 src/store.c:1024 src/store.c:2452 src/store.c:3276
 #: src/store.c:3468 src/store.c:3616 src/store.c:3643 src/store.c:3670
 #: src/store.c:3972 src/store.c:4069 src/store.c:4190 src/store.c:4213
 #: src/store.c:4229 src/store.c:4846 src/store.c:5242 src/store.c:5269
@@ -1245,88 +1245,88 @@ msgstr "メモリ不足です\n"
 msgid "path is too long\n"
 msgstr "パスが長すぎます\n"
 
-#: src/store.c:1018
+#: src/store.c:1019
 #, c-format
 msgid "failed to resolve directory: %s\n"
 msgstr "ディレクトリの解決に失敗しました: %s\n"
 
-#: src/store.c:1063
+#: src/store.c:1064
 #, c-format
 msgid "writes to the default domain are not supported\n"
 msgstr "default domain への書き込みはサポートされていません\n"
 
-#: src/store.c:1140 src/store.c:4040
+#: src/store.c:1141 src/store.c:4040
 #, c-format
 msgid "failed to remove file: %s\n"
 msgstr "ファイルの削除に失敗しました: %s\n"
 
-#: src/store.c:1184
+#: src/store.c:1185
 #, c-format
 msgid "note: %zu descendant domains can now reuse this session\n"
 msgstr "補足: %zu 個の descendant domain がこの session を再利用できます\n"
 
-#: src/store.c:1190
+#: src/store.c:1191
 #, c-format
 msgid "note: %zu descendant domains remain locked under this branch\n"
 msgstr ""
 "補足: この branch 配下では %zu 個の descendant domain がまだ locked のままで"
 "す\n"
 
-#: src/store.c:1191
+#: src/store.c:1192
 msgid "affected descendants:"
 msgstr "影響を受ける descendant:"
 
-#: src/store.c:1203
+#: src/store.c:1204
 #, c-format
 msgid "  %s\n"
 msgstr "  %s\n"
 
-#: src/store.c:1207
+#: src/store.c:1208
 #, c-format
 msgid "  ... and %zu more\n"
 msgstr "  ... さらに %zu 個\n"
 
-#: src/store.c:1210
+#: src/store.c:1211
 #, c-format
 msgid "inspect descendants: secdat --dir %s domain ls -l --descendants\n"
 msgstr "descendant を確認: secdat --dir %s domain ls -l --descendants\n"
 
-#: src/store.c:1212
+#: src/store.c:1213
 #, c-format
 msgid "inspect one descendant: secdat --dir %s domain status\n"
 msgstr "1 つの descendant を確認: secdat --dir %s domain status\n"
 
-#: src/store.c:1213
+#: src/store.c:1214
 #, c-format
 msgid "unlock one descendant: secdat --dir %s unlock\n"
 msgstr "1 つの descendant を unlock: secdat --dir %s unlock\n"
 
-#: src/store.c:1231 src/store.c:1237 src/store.c:6075 src/store.c:7911
+#: src/store.c:1232 src/store.c:1238 src/store.c:6075 src/store.c:7911
 #, c-format
 msgid "resolved domain: %s\n"
 msgstr "解決された domain: %s\n"
 
-#: src/store.c:1232
+#: src/store.c:1233
 #, c-format
 msgid "inspect current domain: secdat domain status\n"
 msgstr "現在の domain を確認: secdat domain status\n"
 
-#: src/store.c:1233
+#: src/store.c:1234
 #, c-format
 msgid "unlock current domain: secdat unlock\n"
 msgstr "現在の domain を unlock: secdat unlock\n"
 
-#: src/store.c:1238
+#: src/store.c:1239
 #, c-format
 msgid "inspect current domain: secdat --dir %s domain status\n"
 msgstr "現在の domain を確認: secdat --dir %s domain status\n"
 
-#: src/store.c:1239
+#: src/store.c:1240
 #, c-format
 msgid "unlock current domain: secdat --dir %s unlock\n"
 msgstr "現在の domain を unlock: secdat --dir %s unlock\n"
 
-#: src/store.c:1426
+#: src/store.c:1427
 #, c-format
 msgid ""
 "Hint: inspect migration first with `%s store migrate %s --to-format v2 --dry-"
@@ -1335,90 +1335,90 @@ msgstr ""
 "ヒント: 先に `%s store migrate %s --to-format v2 --dry-run` で migration を確"
 "認してください\n"
 
-#: src/store.c:1427
+#: src/store.c:1428
 #, c-format
 msgid "Hint: suppress migration hints with %s=1\n"
 msgstr "ヒント: migration hint を抑制するには %s=1 を設定してください\n"
 
-#: src/store.c:1458
+#: src/store.c:1459
 #, c-format
 msgid "invalid value for --unlock-timeout: %s\n"
 msgstr "--unlock-timeout の値が不正です: %s\n"
 
-#: src/store.c:1906
+#: src/store.c:1907
 #, c-format
 msgid "missing value for --unlock-timeout\n"
 msgstr "--unlock-timeout に値が必要です\n"
 
-#: src/store.c:1911 src/store.c:1920 src/store.c:1932
+#: src/store.c:1912 src/store.c:1921 src/store.c:1933
 #, c-format
 msgid "invalid arguments for get\n"
 msgstr "get の引数が不正です\n"
 
-#: src/store.c:1941
+#: src/store.c:1942
 #, c-format
 msgid "missing key for get\n"
 msgstr "get のキーが不足しています\n"
 
-#: src/store.c:1946
+#: src/store.c:1947
 #, c-format
 msgid "--unlock-timeout requires --on-demand-unlock or %s\n"
 msgstr "--unlock-timeout を使うには --on-demand-unlock または %s が必要です\n"
 
-#: src/store.c:1975
+#: src/store.c:1976
 #, c-format
 msgid "invalid value for --timeout: %s\n"
 msgstr "--timeout の値が不正です: %s\n"
 
-#: src/store.c:1982
+#: src/store.c:1983
 #, c-format
 msgid "missing value for --timeout\n"
 msgstr "--timeout に値が必要です\n"
 
-#: src/store.c:1991 src/store.c:1998 src/store.c:7845
+#: src/store.c:1992 src/store.c:1999 src/store.c:7845
 #, c-format
 msgid "invalid arguments for wait-unlock\n"
 msgstr "wait-unlock の引数が不正です\n"
 
-#: src/store.c:2020
+#: src/store.c:2021
 #, c-format
 msgid ""
 "waiting for another terminal to unlock secrets for resolved domain: %s\n"
 msgstr ""
 "別端末で secrets が unlock されるのを待機しています。解決済み domain: %s\n"
 
-#: src/store.c:2022 src/store.c:2081
+#: src/store.c:2023 src/store.c:2082
 #, c-format
 msgid "unlock from another terminal: secdat unlock\n"
 msgstr "別端末で unlock: secdat unlock\n"
 
-#: src/store.c:2024 src/store.c:2083
+#: src/store.c:2025 src/store.c:2084
 #, c-format
 msgid "unlock from another terminal: secdat --dir %s unlock\n"
 msgstr "別端末で unlock: secdat --dir %s unlock\n"
 
-#: src/store.c:2027
+#: src/store.c:2028
 #, c-format
 msgid "unlock wait timeout: %lld seconds\n"
 msgstr "unlock 待機タイムアウト: %lld 秒\n"
 
-#: src/store.c:2054
+#: src/store.c:2055
 #, c-format
 msgid ""
 "timed out waiting for another terminal to unlock secrets after %lld seconds\n"
 msgstr "別端末での secrets の unlock 待機が %lld 秒でタイムアウトしました\n"
 
-#: src/store.c:2079
+#: src/store.c:2080
 #, c-format
 msgid "waiting for another terminal to unlock resolved domain: %s\n"
 msgstr "別端末で解決済み domain が unlock されるのを待機しています: %s\n"
 
-#: src/store.c:2086
+#: src/store.c:2087
 #, c-format
 msgid "wait-unlock timeout: %lld seconds\n"
 msgstr "wait-unlock タイムアウト: %lld 秒\n"
 
-#: src/store.c:2110
+#: src/store.c:2111
 #, c-format
 msgid ""
 "timed out waiting for another terminal to unlock resolved domain after %lld "
@@ -1426,26 +1426,26 @@ msgid ""
 msgstr ""
 "別端末での解決済み domain の unlock 待機が %lld 秒でタイムアウトしました\n"
 
-#: src/store.c:2162
-#, c-format
-msgid "invalid value for --duration: %s\n"
-msgstr "--duration の値が不正です: %s\n"
-
-#: src/store.c:2169 src/store.c:2227
-#, c-format
-msgid "invalid value for --until: %s\n"
-msgstr "--until の値が不正です: %s\n"
-
-#: src/store.c:2192 src/store.c:2199 src/store.c:2211 src/store.c:2216
-#: src/store.c:2221 src/store.c:7896
+#: src/store.c:2187 src/store.c:2194 src/store.c:2206 src/store.c:2211
+#: src/store.c:2216 src/store.c:7896
 #, c-format
 msgid "invalid arguments for unlock\n"
 msgstr "unlock の引数が不正です\n"
 
-#: src/store.c:2205
+#: src/store.c:2200
 #, c-format
 msgid "--duration and --until cannot be combined\n"
 msgstr "--duration と --until は同時に指定できません\n"
+
+#: src/store.c:2222
+#, c-format
+msgid "invalid value for --duration: %s\n"
+msgstr "--duration の値が不正です: %s\n"
+
+#: src/store.c:2227
+#, c-format
+msgid "invalid value for --until: %s\n"
+msgstr "--until の値が不正です: %s\n"
 
 #: src/store.c:2260 src/store.c:2267 src/store.c:2273 src/store.c:8152
 #, c-format
@@ -1491,7 +1491,7 @@ msgstr ""
 msgid "invalid key reference: %s\n"
 msgstr "不正なキー参照です: %s\n"
 
-#: src/store.c:2477
+#: src/store.c:2477 src/store.c:15569 src/store.c:15738
 #, c-format
 msgid "key is not a valid environment variable name: %s\n"
 msgstr "key は有効な環境変数名ではありません: %s\n"
@@ -1931,8 +1931,8 @@ msgstr "認証タグの取得に失敗しました\n"
 msgid "invalid wrapped master key\n"
 msgstr "ラップ済み master key が不正です\n"
 
-#: src/store.c:6491 src/store.c:7099 src/store.c:7108 src/store.c:16039
-#: src/store.c:16043 src/store.c:16066
+#: src/store.c:6491 src/store.c:7099 src/store.c:7108 src/store.c:16040
+#: src/store.c:16044 src/store.c:16067
 #, c-format
 msgid "invalid secret bundle\n"
 msgstr "secret bundle が不正です\n"
@@ -2604,82 +2604,81 @@ msgstr "store は空ではありません: %s\n"
 msgid "key value contains NUL byte and cannot be exported: %s\n"
 msgstr "key の値に NUL バイトが含まれているため export できません: %s\n"
 
-#: src/store.c:15584 src/store.c:15594
+#: src/store.c:15588 src/store.c:15598
 #, c-format
 msgid "failed to match --env-map-sed against key: %s\n"
 msgstr "--env-map-sed を key に照合できませんでした: %s\n"
 
-#: src/store.c:15659
+#: src/store.c:15663
 #, c-format
 msgid "invalid environment variable name from --env-map-sed: %s\n"
 msgstr "--env-map-sed から不正な環境変数名が生成されました: %s\n"
 
-#: src/store.c:15748
-#, c-format
-msgid "key is not a valid shell identifier: %s\n"
-msgstr "key は有効な shell 識別子ではありません: %s\n"
-
-#: src/store.c:15856
+#: src/store.c:15857
 #, c-format
 msgid "duplicate environment variable name from --env-map-sed: %s\n"
 msgstr "--env-map-sed で環境変数名が重複しました: %s\n"
 
-#: src/store.c:15925
+#: src/store.c:15926
 #, c-format
 msgid "failed to export key to environment: %s\n"
 msgstr "key の環境変数への書き出しに失敗しました: %s\n"
 
-#: src/store.c:15950
+#: src/store.c:15951
 #, c-format
 msgid "failed to execute command: %s\n"
 msgstr "コマンドの実行に失敗しました: %s\n"
 
-#: src/store.c:15964
+#: src/store.c:15965
 #, c-format
 msgid "invalid arguments for save\n"
 msgstr "save の引数が不正です\n"
 
-#: src/store.c:15969
+#: src/store.c:15970
 msgid "Create secdat bundle passphrase: "
 msgstr "secdat bundle 用パスフレーズを作成してください: "
 
-#: src/store.c:15970
+#: src/store.c:15971
 msgid "Confirm secdat bundle passphrase: "
 msgstr "secdat bundle 用パスフレーズを再入力してください: "
 
-#: src/store.c:16001
+#: src/store.c:16002
 #, c-format
 msgid "invalid arguments for load\n"
 msgstr "load の引数が不正です\n"
 
-#: src/store.c:16015
+#: src/store.c:16016
 msgid "Enter secdat bundle passphrase: "
 msgstr "secdat bundle 用パスフレーズを入力してください: "
 
-#: src/store.c:16086
+#: src/store.c:16087
 #, c-format
 msgid "cannot combine --dir and --domain\n"
 msgstr "--dir と --domain は同時に指定できません\n"
 
-#: src/store.c:16162
+#: src/store.c:16163
 #, c-format
 msgid "command not implemented yet: %s\n"
 msgstr "コマンドは未実装です: %s\n"
 
-#: src/store.c:16164
+#: src/store.c:16165
 #, c-format
 msgid "  dir=%s\n"
 msgstr "  dir=%s\n"
 
-#: src/store.c:16167
+#: src/store.c:16168
 #, c-format
 msgid "  domain=%s\n"
 msgstr "  domain=%s\n"
 
-#: src/store.c:16170
+#: src/store.c:16171
 #, c-format
 msgid "  store=%s\n"
 msgstr "  store=%s\n"
+
+#, c-format
+#~ msgid "key is not a valid shell identifier: %s\n"
+#~ msgstr "key は有効な shell 識別子ではありません: %s\n"
 
 #, c-format
 #~ msgid "store finalize-migration currently requires --dry-run\n"

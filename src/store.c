@@ -604,7 +604,8 @@ static int secdat_command_secret_status(const struct secdat_cli *cli);
 
 struct secdat_unlock_options {
     time_t duration_seconds;
-    char until_value[128];
+    const char *duration_value;
+    const char *until_value;
     int include_descendants;
     int duration_configured;
     int until_configured;
@@ -2158,17 +2159,11 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
     while ((option = getopt_long(argc, argv, ":t:u:ivrdy", long_options, NULL)) != -1) {
         switch (option) {
         case 't':
-            if (secdat_parse_session_duration_seconds(optarg, &options->duration_seconds) != 0) {
-                fprintf(stderr, _("invalid value for --duration: %s\n"), optarg != NULL ? optarg : "");
-                return 2;
-            }
+            options->duration_value = optarg;
             options->duration_configured = 1;
             break;
         case 'u':
-            if (optarg == NULL || secdat_copy_string(options->until_value, sizeof(options->until_value), optarg) != 0) {
-                fprintf(stderr, _("invalid value for --until: %s\n"), optarg != NULL ? optarg : "");
-                return 2;
-            }
+            options->until_value = optarg;
             options->until_configured = 1;
             break;
         case 'i':
@@ -2223,8 +2218,13 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
         return 2;
     }
 
+    if (options->duration_configured && secdat_parse_session_duration_seconds(options->duration_value, &options->duration_seconds) != 0) {
+        fprintf(stderr, _("invalid value for --duration: %s\n"), options->duration_value != NULL ? options->duration_value : "");
+        return 2;
+    }
+
     if (options->until_configured && secdat_parse_absolute_duration(options->until_value, &options->duration_seconds) != 0) {
-        fprintf(stderr, _("invalid value for --until: %s\n"), options->until_value);
+        fprintf(stderr, _("invalid value for --until: %s\n"), options->until_value != NULL ? options->until_value : "");
         return 2;
     }
 
@@ -15565,6 +15565,10 @@ static int secdat_exec_env_name_from_key(
     *include_key = 0;
 
     if (!options->env_map_configured) {
+        if (!secdat_is_valid_env_name(key)) {
+            fprintf(stderr, _("key is not a valid environment variable name: %s\n"), key);
+            return 1;
+        }
         env_name = strdup(key);
         if (env_name == NULL) {
             fprintf(stderr, _("out of memory\n"));
@@ -15666,24 +15670,6 @@ static int secdat_exec_env_name_from_key(
     return 0;
 }
 
-static int secdat_is_shell_identifier(const char *value)
-{
-    size_t index;
-
-    if (value == NULL || value[0] == '\0') {
-        return 0;
-    }
-    if (!(isalpha((unsigned char)value[0]) || value[0] == '_')) {
-        return 0;
-    }
-    for (index = 1; value[index] != '\0'; index += 1) {
-        if (!(isalnum((unsigned char)value[index]) || value[index] == '_')) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
 static void secdat_write_shell_quoted(FILE *stream, const char *value)
 {
     size_t index;
@@ -15704,6 +15690,7 @@ static int secdat_command_export(const struct secdat_cli *cli)
     struct secdat_domain_chain chain = {0};
     struct secdat_key_list visible_keys = {0};
     struct secdat_key_list include_patterns = {0};
+    struct secdat_key_list export_keys = {0};
     struct secdat_export_options options;
     char canonical_dir[PATH_MAX];
     size_t key_index;
@@ -15721,12 +15708,14 @@ static int secdat_command_export(const struct secdat_cli *cli)
     }
     if (options.pattern != NULL && secdat_key_list_append(&include_patterns, options.pattern) != 0) {
         secdat_domain_chain_free(&chain);
+        secdat_key_list_free(&export_keys);
         return 1;
     }
     if (secdat_collect_visible_keys(&chain, cli->store, &include_patterns, NULL, &visible_keys) != 0) {
         secdat_key_list_free(&include_patterns);
         secdat_domain_chain_free(&chain);
         secdat_key_list_free(&visible_keys);
+        secdat_key_list_free(&export_keys);
         return 1;
     }
 
@@ -15738,6 +15727,7 @@ static int secdat_command_export(const struct secdat_cli *cli)
                 secdat_key_list_free(&include_patterns);
                 secdat_domain_chain_free(&chain);
                 secdat_key_list_free(&visible_keys);
+                secdat_key_list_free(&export_keys);
                 return 1;
             }
             if (!allowed) {
@@ -15745,15 +15735,25 @@ static int secdat_command_export(const struct secdat_cli *cli)
             }
         }
         if (!secdat_is_valid_env_name(visible_keys.items[key_index])) {
-            fprintf(stderr, _("key is not a valid shell identifier: %s\n"), visible_keys.items[key_index]);
+            fprintf(stderr, _("key is not a valid environment variable name: %s\n"), visible_keys.items[key_index]);
             secdat_key_list_free(&include_patterns);
             secdat_domain_chain_free(&chain);
             secdat_key_list_free(&visible_keys);
+            secdat_key_list_free(&export_keys);
             return 1;
         }
+        if (secdat_key_list_append(&export_keys, visible_keys.items[key_index]) != 0) {
+            secdat_key_list_free(&include_patterns);
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            secdat_key_list_free(&export_keys);
+            return 1;
+        }
+    }
 
+    for (key_index = 0; key_index < export_keys.count; key_index += 1) {
         fputs("eval \"export ", stdout);
-        fputs(visible_keys.items[key_index], stdout);
+        fputs(export_keys.items[key_index], stdout);
         fputs("=$(", stdout);
         secdat_write_shell_quoted(stdout, cli->program_name == NULL ? "secdat" : cli->program_name);
         fputs(cli->domain != NULL ? " --domain " : " --dir ", stdout);
@@ -15763,13 +15763,14 @@ static int secdat_command_export(const struct secdat_cli *cli)
             secdat_write_shell_quoted(stdout, cli->store);
         }
         fputs(" get ", stdout);
-        secdat_write_shell_quoted(stdout, visible_keys.items[key_index]);
+        secdat_write_shell_quoted(stdout, export_keys.items[key_index]);
         fputs(" --shellescaped)\"\n", stdout);
     }
 
     secdat_key_list_free(&include_patterns);
     secdat_domain_chain_free(&chain);
     secdat_key_list_free(&visible_keys);
+    secdat_key_list_free(&export_keys);
     return 0;
 }
 

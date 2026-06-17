@@ -688,6 +688,8 @@ for args, expected in [
     ([bin_path, "unlock", "--bad"], f"Try: {bin_path} help unlock"),
     ([bin_path, "unlock", "--volatile", "--readonly"], f"Try: {bin_path} help unlock"),
     ([bin_path, "unlock", "--duration", "15", "--until", "2026-04-21T15:04:05Z"], "--duration and --until cannot be combined"),
+    ([bin_path, "unlock", "--duration", "bad", "--until", "2026-04-21T15:04:05Z"], "--duration and --until cannot be combined"),
+    ([bin_path, "unlock", "--until", "not-a-date", "--duration", "bad"], "--duration and --until cannot be combined"),
     ([bin_path, "--store", "default", "status"], f"Try: {bin_path} help status"),
     ([bin_path, "store", "create"], f"Try: {bin_path} help store"),
     ([bin_path, "get", "KEY", "--bad"], f"Try: {bin_path} help get"),

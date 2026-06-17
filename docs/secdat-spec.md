@@ -712,6 +712,7 @@ secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-ex
 - repeated `--pattern-exclude` options subtract matches after include filtering
 - `--sandbox-injectable` injects only keys whose effective `sandbox_inject` allows bulk sandbox selection
 - `--env-map-sed EXPR` accepts one sed-style substitution for exec-time environment names; when present, only matched keys are injected
+- mapped environment variable names must remain valid identifiers; empty or otherwise invalid results are rejected before values are loaded
 - the initial subset accepts `s/REGEX/REPLACEMENT/` with an optional leading `/ADDRESS/`; replacement supports `&` and `\1` through `\9`, and the delimiter after `s` may be any non-alphanumeric, non-backslash character
 - the parent process environment is unchanged
 
