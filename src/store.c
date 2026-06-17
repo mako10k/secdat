@@ -59,6 +59,7 @@
 #define SECDAT_ON_DEMAND_UNLOCK_WAIT_USEC 100000
 #define SECDAT_V2_TEXT_FILE_MAX 16384
 #define SECDAT_V2_OBJECT_KEY_LEN 32
+#define SECDAT_KEY_SUGGESTION_LIMIT 5
 
 static const unsigned char secdat_entry_magic[8] = {'S', 'E', 'C', 'D', 'A', 'T', '1', '\0'};
 static const unsigned char secdat_v2_value_magic[8] = {'S', 'E', 'C', 'D', 'V', 'A', 'L', '2'};
@@ -74,6 +75,11 @@ struct secdat_key_list {
     char **items;
     size_t count;
     size_t capacity;
+};
+
+struct secdat_key_suggestion {
+    const char *candidate;
+    size_t distance;
 };
 
 struct secdat_key_reference {
@@ -406,6 +412,7 @@ static int secdat_collect_visible_keys(
     const struct secdat_key_list *exclude_patterns,
     struct secdat_key_list *visible_keys
 );
+static void secdat_print_default_get_command_context(const struct secdat_cli *cli, const char *key);
 static int secdat_load_resolved_plaintext(
     const struct secdat_domain_chain *chain,
     const char *store_name,
@@ -415,6 +422,17 @@ static int secdat_load_resolved_plaintext(
     size_t *resolved_index,
     int *unsafe_store,
     const struct secdat_key_access_options *access_options
+);
+static int secdat_load_resolved_plaintext_with_missing_context(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    unsigned char **plaintext,
+    size_t *plaintext_length,
+    size_t *resolved_index,
+    int *unsafe_store,
+    const struct secdat_key_access_options *access_options,
+    const struct secdat_cli *missing_context_cli
 );
 static int secdat_resolve_entry_path(
     const struct secdat_domain_chain *chain,
@@ -1886,14 +1904,23 @@ static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_
         case ':':
             if (optopt == 't') {
                 fprintf(stderr, _("missing value for --unlock-timeout\n"));
+                if (cli->defaulted_to_get && cli->argc > 0) {
+                    secdat_print_default_get_command_context(cli, cli->argv[0]);
+                }
             } else {
                 fprintf(stderr, _("invalid arguments for get\n"));
+                if (cli->defaulted_to_get && cli->argc > 0) {
+                    secdat_print_default_get_command_context(cli, cli->argv[0]);
+                }
                 secdat_cli_print_try_help(cli, "get");
             }
             return 2;
         case '?':
         default:
             fprintf(stderr, _("invalid arguments for get\n"));
+            if (cli->defaulted_to_get && cli->argc > 0) {
+                secdat_print_default_get_command_context(cli, cli->argv[0]);
+            }
             secdat_cli_print_try_help(cli, "get");
             return 2;
         }
@@ -1903,6 +1930,9 @@ static int secdat_parse_get_options(const struct secdat_cli *cli, struct secdat_
         options->keyref = argv[optind];
     } else if (optind < argc) {
         fprintf(stderr, _("invalid arguments for get\n"));
+        if (cli->defaulted_to_get) {
+            secdat_print_default_get_command_context(cli, argv[optind]);
+        }
         secdat_cli_print_try_help(cli, "get");
         return 2;
     }
@@ -9067,6 +9097,120 @@ cleanup:
     return status;
 }
 
+static int secdat_key_suggestion_is_better(const struct secdat_key_suggestion *left, const struct secdat_key_suggestion *right)
+{
+    if (left->distance != right->distance) {
+        return left->distance < right->distance;
+    }
+    return strcmp(left->candidate, right->candidate) < 0;
+}
+
+static void secdat_add_key_suggestion(
+    struct secdat_key_suggestion *suggestions,
+    size_t *count,
+    const char *candidate,
+    size_t distance
+)
+{
+    struct secdat_key_suggestion next;
+    size_t index;
+    size_t insert_at;
+
+    next.candidate = candidate;
+    next.distance = distance;
+    insert_at = *count;
+    for (index = 0; index < *count; index += 1) {
+        if (secdat_key_suggestion_is_better(&next, &suggestions[index])) {
+            insert_at = index;
+            break;
+        }
+    }
+    if (insert_at >= SECDAT_KEY_SUGGESTION_LIMIT) {
+        return;
+    }
+
+    if (*count < SECDAT_KEY_SUGGESTION_LIMIT) {
+        *count += 1;
+    }
+    for (index = *count - 1; index > insert_at; index -= 1) {
+        suggestions[index] = suggestions[index - 1];
+    }
+    suggestions[insert_at] = next;
+}
+
+static void secdat_print_key_suggestions(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key
+)
+{
+    struct secdat_key_list visible_keys = {0};
+    struct secdat_key_suggestion suggestions[SECDAT_KEY_SUGGESTION_LIMIT];
+    size_t count = 0;
+    size_t index;
+    size_t distance;
+
+    if (chain == NULL || key == NULL || key[0] == '\0') {
+        return;
+    }
+    if (secdat_collect_visible_keys(chain, store_name, NULL, NULL, &visible_keys) != 0) {
+        secdat_key_list_free(&visible_keys);
+        return;
+    }
+
+    for (index = 0; index < visible_keys.count; index += 1) {
+        if (secdat_cli_suggestion_candidate(key, visible_keys.items[index], &distance)) {
+            secdat_add_key_suggestion(suggestions, &count, visible_keys.items[index], distance);
+        }
+    }
+    if (count > 0) {
+        fprintf(stderr, _("Key candidates:\n"));
+        for (index = 0; index < count; index += 1) {
+            fprintf(stderr, "  %s\n", suggestions[index].candidate);
+        }
+    }
+
+    secdat_key_list_free(&visible_keys);
+}
+
+static void secdat_print_default_get_command_context(const struct secdat_cli *cli, const char *key)
+{
+    const char *program_name = "secdat";
+
+    if (cli == NULL || !cli->defaulted_to_get || key == NULL || key[0] == '\0') {
+        return;
+    }
+    if (cli->program_name != NULL && cli->program_name[0] != '\0') {
+        program_name = cli->program_name;
+    }
+
+    if (!secdat_cli_print_command_suggestions(key, 1)) {
+        return;
+    }
+    fprintf(stderr, _("Hint: use %s get KEY for an explicit key lookup, or %s help COMMAND for command help\n"), program_name, program_name);
+}
+
+static void secdat_print_missing_key_context_for_cli(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    const struct secdat_cli *missing_context_cli
+)
+{
+    secdat_print_key_suggestions(chain, store_name, key);
+    secdat_print_default_get_command_context(missing_context_cli, key);
+    fprintf(stderr, _("Hint: check secdat status, --dir, and --store to confirm the lookup context\n"));
+}
+
+static void secdat_print_missing_key_context(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key
+)
+{
+    secdat_print_missing_key_context_for_cli(chain, store_name, key, NULL);
+}
+
 static int secdat_resolve_effective_entry(
     const struct secdat_domain_chain *chain,
     const char *store_name,
@@ -9394,7 +9538,7 @@ cleanup:
     return status;
 }
 
-static int secdat_load_resolved_plaintext(
+static int secdat_load_resolved_plaintext_with_missing_context(
     const struct secdat_domain_chain *chain,
     const char *store_name,
     const char *key,
@@ -9402,7 +9546,8 @@ static int secdat_load_resolved_plaintext(
     size_t *plaintext_length,
     size_t *resolved_index,
     int *unsafe_store,
-    const struct secdat_key_access_options *access_options
+    const struct secdat_key_access_options *access_options,
+    const struct secdat_cli *missing_context_cli
 )
 {
     struct secdat_effective_entry entry = {0};
@@ -9421,7 +9566,7 @@ static int secdat_load_resolved_plaintext(
     status = secdat_resolve_effective_entry(chain, store_name, key, 1, &entry);
     if (status != 0) {
         fprintf(stderr, _("key not found: %s\n"), key);
-        fprintf(stderr, _("Hint: check secdat status, --dir, and --store to confirm the lookup context\n"));
+        secdat_print_missing_key_context_for_cli(chain, store_name, key, missing_context_cli);
         return 1;
     }
 
@@ -9572,6 +9717,30 @@ cleanup:
     return status;
 }
 
+static int secdat_load_resolved_plaintext(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    unsigned char **plaintext,
+    size_t *plaintext_length,
+    size_t *resolved_index,
+    int *unsafe_store,
+    const struct secdat_key_access_options *access_options
+)
+{
+    return secdat_load_resolved_plaintext_with_missing_context(
+        chain,
+        store_name,
+        key,
+        plaintext,
+        plaintext_length,
+        resolved_index,
+        unsafe_store,
+        access_options,
+        NULL
+    );
+}
+
 static int secdat_load_resolved_secret_attrs(
     const struct secdat_domain_chain *chain,
     const char *store_name,
@@ -9587,7 +9756,7 @@ static int secdat_load_resolved_secret_attrs(
     status = secdat_resolve_effective_entry(chain, store_name, key, 0, &entry);
     if (status != 0) {
         fprintf(stderr, _("key not found: %s\n"), key);
-        fprintf(stderr, _("Hint: check secdat status, --dir, and --store to confirm the lookup context\n"));
+        secdat_print_missing_key_context(chain, store_name, key);
         return 1;
     }
 
@@ -12351,8 +12520,9 @@ static int secdat_command_attr(const struct secdat_cli *cli)
         return 1;
     }
     if (secdat_resolve_effective_entry(&chain, reference.store_value, reference.key, 0, &entry) != 0) {
-        secdat_domain_chain_free(&chain);
         fprintf(stderr, _("key not found: %s\n"), reference.key);
+        secdat_print_missing_key_context(&chain, reference.store_value, reference.key);
+        secdat_domain_chain_free(&chain);
         return 1;
     }
 
@@ -12553,7 +12723,7 @@ static int secdat_command_id(const struct secdat_cli *cli)
     status = secdat_resolve_effective_entry(&chain, reference.store_value, reference.key, 0, &entry);
     if (status != 0) {
         fprintf(stderr, _("key not found: %s\n"), reference.key);
-        fprintf(stderr, _("Hint: check secdat status, --dir, and --store to confirm the lookup context\n"));
+        secdat_print_missing_key_context(&chain, reference.store_value, reference.key);
         secdat_domain_chain_free(&chain);
         return 1;
     }
@@ -12708,6 +12878,7 @@ static int secdat_command_get(const struct secdat_cli *cli)
     }
 
     if (secdat_parse_key_reference(options.keyref, secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
+        secdat_print_default_get_command_context(cli, options.keyref);
         return 1;
     }
 
@@ -12715,7 +12886,7 @@ static int secdat_command_get(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_load_resolved_plaintext(
+    if (secdat_load_resolved_plaintext_with_missing_context(
             &chain,
             reference.store_value,
             reference.key,
@@ -12723,7 +12894,8 @@ static int secdat_command_get(const struct secdat_cli *cli)
             &plaintext_length,
             NULL,
             &unsafe_store,
-            &options.access
+            &options.access,
+            cli
         ) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;
@@ -13504,7 +13676,12 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
         if (overlay.found && overlay.tombstone) {
             secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
             free(overlay.plaintext);
-            return (local_file_exists || found_inherited || ignore_missing) ? 0 : (fprintf(stderr, _("key not found: %s\n"), key), 1);
+            if (local_file_exists || found_inherited || ignore_missing) {
+                return 0;
+            }
+            fprintf(stderr, _("key not found: %s\n"), key);
+            secdat_print_key_suggestions(chain, store_name, key);
+            return 1;
         }
         if (overlay.found && !overlay.tombstone) {
             if (secdat_active_overlay_drop(chain, current_domain_id, store_name, key) != 0) {
@@ -13526,6 +13703,7 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
             return 0;
         }
         fprintf(stderr, _("key not found: %s\n"), key);
+        secdat_print_key_suggestions(chain, store_name, key);
         return 1;
     }
 
@@ -13576,6 +13754,7 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
             return 0;
         }
         fprintf(stderr, _("key not found: %s\n"), key);
+        secdat_print_key_suggestions(chain, store_name, key);
         return 1;
     }
 
@@ -13643,6 +13822,7 @@ static int secdat_mask_key_in_chain(const struct secdat_domain_chain *chain, con
         }
         if (!found_inherited) {
             fprintf(stderr, _("key not found: %s\n"), key);
+            secdat_print_key_suggestions(chain, store_name, key);
             return 1;
         }
         return secdat_active_overlay_set_tombstone(chain, current_domain_id, store_name, key);
@@ -13674,6 +13854,7 @@ static int secdat_mask_key_in_chain(const struct secdat_domain_chain *chain, con
 
     if (!found_inherited) {
         fprintf(stderr, _("key not found: %s\n"), key);
+        secdat_print_key_suggestions(chain, store_name, key);
         return 1;
     }
 
@@ -14012,6 +14193,7 @@ static int secdat_command_ln(const struct secdat_cli *cli)
     } else {
         if (secdat_resolve_effective_entry(&source_chain, source_store_value, source_reference.key, 0, &source_entry) != 0) {
             fprintf(stderr, _("key not found: %s\n"), source_reference.key);
+            secdat_print_key_suggestions(&source_chain, source_store_value, source_reference.key);
             goto cleanup;
         }
         if (!source_entry.from_v2) {

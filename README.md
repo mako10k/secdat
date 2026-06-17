@@ -219,6 +219,7 @@ Unsafe values may also be entered from or written to a terminal. Safe values kee
 Copying or moving a `--unsafe` key preserves that plaintext-at-rest storage mode.
 For simple shell-style assignment input, you can also use `KEY=VALUE` operands directly. `secdat KEY=VALUE ...` is treated as repeated `set`, and `secdat set KEY=VALUE ...` does the same. The split happens on the first `=`, so later `=` characters stay in the stored value.
 If the first operand is not a known subcommand and is not an assignment, `secdat KEY` falls back to `secdat get KEY`.
+When a key lookup fails, diagnostics print close visible key candidates when available. Because `secdat KEY` is valid syntax, a bare first operand that cannot be used as a key or looks like a misspelled command reports command candidates separately as "if this was meant as a command"; unknown group subcommands such as `store migarte` likewise report close subcommand candidates.
 Key names are restricted to shell/environment identifier syntax: they must start with a letter or `_`, and the remaining characters may contain only letters, digits, or `_`. `exec --env-map-sed` applies the same rule to generated environment variable names, so empty results or names with unsuitable characters are rejected.
 
 Secret entries now have metadata attributes:

@@ -1185,6 +1185,70 @@ output = stdout + stderr
 if rc == 0 or "key not found: MISSING_KEY" not in output or "Hint: check secdat status, --dir, and --store" not in output:
     fail(f"missing key guidance failed: rc={rc} output={output!r}")
 
+rc, stdout, stderr = run(scoped(["get", "SESSOIN_KEY", "-o"], root_domain))
+output = stdout + stderr
+if rc == 0 or "key not found: SESSOIN_KEY" not in output or "Key candidates:" not in output or "  SESSION_KEY\n" not in output:
+    fail(f"missing key suggestion failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run(scoped(["stauts"], root_domain))
+output = stdout + stderr
+if (
+    rc == 0
+    or "key not found: stauts" not in output
+    or "treated as a key for get" not in output
+    or "Command candidates" not in output
+    or "  status\n" not in output
+):
+    fail(f"default-get command suggestion failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run(scoped(["DEFINITELY_MISSING_KEY"], root_domain))
+output = stdout + stderr
+if (
+    rc == 0
+    or "key not found: DEFINITELY_MISSING_KEY" not in output
+    or "treated as a key for get" in output
+    or "Command candidates" in output
+):
+    fail(f"default-get no-command-suggestion noise failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run(scoped(["sotre", "ls"], root_domain))
+output = stdout + stderr
+if (
+    rc == 0
+    or "invalid arguments for get" not in output
+    or "treated as a key for get" not in output
+    or "Command candidates" not in output
+    or "  store\n" not in output
+):
+    fail(f"default-get invalid-argument command suggestion failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run(scoped(["stauts", "--quiet"], root_domain))
+output = stdout + stderr
+if (
+    rc == 0
+    or "invalid arguments for get" not in output
+    or "treated as a key for get" not in output
+    or "Command candidates" not in output
+    or "  status\n" not in output
+):
+    fail(f"default-get option-error command suggestion failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run(scoped(["wait-unlok"], root_domain))
+output = stdout + stderr
+if (
+    rc == 0
+    or "key is not a valid environment variable name: wait-unlok" not in output
+    or "treated as a key for get" not in output
+    or "Command candidates" not in output
+    or "  wait-unlock\n" not in output
+):
+    fail(f"default-get invalid-key command suggestion failed: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run(scoped(["store", "migarte"], root_domain))
+output = stdout + stderr
+if rc == 0 or "unknown store subcommand: migarte" not in output or "Subcommand candidates:" not in output or "  migrate\n" not in output:
+    fail(f"subcommand suggestion failed: rc={rc} output={output!r}")
+
 rc, stdout, stderr = run(scoped(["get", "SESSION_KEY", "-o"], root_domain))
 if rc != 0 or stdout != "value" or stderr != "":
     fail(f"get after passphrase unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

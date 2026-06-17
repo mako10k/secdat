@@ -51,6 +51,7 @@ struct secdat_cli {
     enum secdat_command_type command;
     int show_help;
     int show_version;
+    int defaulted_to_get;
     int argc;
     char **argv;
 };
@@ -64,5 +65,8 @@ void secdat_cli_print_try_help(const struct secdat_cli *cli, const char *target)
 enum secdat_command_type secdat_cli_parse_command_name(const char *name);
 const char *secdat_cli_command_name(enum secdat_command_type command);
 int secdat_cli_is_command_group(const char *name);
+int secdat_cli_suggestion_candidate(const char *input, const char *candidate, size_t *distance_out);
+int secdat_cli_print_command_suggestions(const char *input, int fallback_get_context);
+void secdat_cli_print_subcommand_suggestions(const char *group, const char *input);
 
 #endif

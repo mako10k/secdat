@@ -29,6 +29,7 @@ and
 .B --store
 provide the current resolution context.
 Write commands still require a registered domain. If resolution would fall back to the implicit default scope, the write fails.
+When a key lookup fails, diagnostics may print close visible key candidates. Because an unknown first operand is valid key lookup syntax, command-name candidates are reported separately as command-intent hints when the fallback operand cannot be used as a key or after that fallback lookup fails. Unknown group subcommands may likewise print close subcommand candidates.
 .SH GLOBAL OPTIONS
 .TP
 .B \-d, \-\-dir DIR

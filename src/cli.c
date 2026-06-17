@@ -21,6 +21,7 @@ enum {
 #define SECDAT_CLI_USAGE_COMMAND_WIDTH (sizeof("store finalize-migration") - 1)
 #define SECDAT_CLI_DETAIL_COLUMN 24
 #define SECDAT_CLI_WRAP_WIDTH 96
+#define SECDAT_CLI_SUGGESTION_LIMIT 5
 
 struct secdat_cli_subcommand_entry {
     const char *group;
@@ -42,6 +43,245 @@ static const struct secdat_cli_subcommand_entry secdat_cli_subcommand_registry[]
     {"domain", "status", "domain status", SECDAT_COMMAND_DOMAIN_STATUS},
     {NULL, NULL, NULL, SECDAT_COMMAND_HELP},
 };
+
+struct secdat_cli_suggestion {
+    const char *candidate;
+    size_t distance;
+};
+
+static size_t secdat_cli_min_size(size_t left, size_t right)
+{
+    return left < right ? left : right;
+}
+
+static size_t secdat_cli_max_size(size_t left, size_t right)
+{
+    return left > right ? left : right;
+}
+
+static size_t secdat_cli_distance_threshold(size_t input_length, size_t candidate_length)
+{
+    size_t length = secdat_cli_max_size(input_length, candidate_length);
+
+    if (length <= 4) {
+        return 1;
+    }
+    if (length <= 8) {
+        return 2;
+    }
+    return 3;
+}
+
+static size_t secdat_cli_bounded_edit_distance(const char *input, const char *candidate, size_t max_distance)
+{
+    size_t input_length = strlen(input);
+    size_t candidate_length = strlen(candidate);
+    size_t length_difference = input_length > candidate_length
+        ? input_length - candidate_length
+        : candidate_length - input_length;
+    size_t *previous;
+    size_t *current;
+    size_t index;
+    size_t distance;
+
+    if (length_difference > max_distance) {
+        return max_distance + 1;
+    }
+    if (input_length == 0) {
+        return candidate_length <= max_distance ? candidate_length : max_distance + 1;
+    }
+    if (candidate_length == 0) {
+        return input_length <= max_distance ? input_length : max_distance + 1;
+    }
+
+    previous = malloc((candidate_length + 1) * sizeof(*previous));
+    current = malloc((candidate_length + 1) * sizeof(*current));
+    if (previous == NULL || current == NULL) {
+        free(previous);
+        free(current);
+        return max_distance + 1;
+    }
+
+    for (index = 0; index <= candidate_length; index += 1) {
+        previous[index] = index;
+    }
+
+    for (index = 1; index <= input_length; index += 1) {
+        size_t candidate_index;
+        size_t row_minimum;
+        size_t *swap;
+
+        current[0] = index;
+        row_minimum = current[0];
+
+        for (candidate_index = 1; candidate_index <= candidate_length; candidate_index += 1) {
+            size_t substitution = previous[candidate_index - 1] + (input[index - 1] == candidate[candidate_index - 1] ? 0 : 1);
+            size_t deletion = previous[candidate_index] + 1;
+            size_t insertion = current[candidate_index - 1] + 1;
+            current[candidate_index] = secdat_cli_min_size(substitution, secdat_cli_min_size(deletion, insertion));
+            row_minimum = secdat_cli_min_size(row_minimum, current[candidate_index]);
+        }
+
+        if (row_minimum > max_distance) {
+            free(previous);
+            free(current);
+            return max_distance + 1;
+        }
+
+        swap = previous;
+        previous = current;
+        current = swap;
+    }
+
+    distance = previous[candidate_length];
+    free(previous);
+    free(current);
+    return distance <= max_distance ? distance : max_distance + 1;
+}
+
+int secdat_cli_suggestion_candidate(const char *input, const char *candidate, size_t *distance_out)
+{
+    size_t input_length;
+    size_t candidate_length;
+    size_t threshold;
+    size_t distance;
+
+    if (input == NULL || candidate == NULL || input[0] == '\0' || candidate[0] == '\0') {
+        return 0;
+    }
+    if (strcmp(input, candidate) == 0) {
+        return 0;
+    }
+
+    input_length = strlen(input);
+    candidate_length = strlen(candidate);
+    if (input_length >= 2 && input_length < candidate_length && strncmp(candidate, input, input_length) == 0) {
+        if (distance_out != NULL) {
+            *distance_out = candidate_length - input_length;
+        }
+        return 1;
+    }
+
+    threshold = secdat_cli_distance_threshold(input_length, candidate_length);
+    distance = secdat_cli_bounded_edit_distance(input, candidate, threshold);
+    if (distance > threshold) {
+        return 0;
+    }
+    if (distance_out != NULL) {
+        *distance_out = distance;
+    }
+    return 1;
+}
+
+static int secdat_cli_suggestion_is_better(const struct secdat_cli_suggestion *left, const struct secdat_cli_suggestion *right)
+{
+    if (left->distance != right->distance) {
+        return left->distance < right->distance;
+    }
+    return strcmp(left->candidate, right->candidate) < 0;
+}
+
+static void secdat_cli_add_suggestion(
+    struct secdat_cli_suggestion *suggestions,
+    size_t *count,
+    const char *candidate,
+    size_t distance
+)
+{
+    struct secdat_cli_suggestion next;
+    size_t index;
+    size_t insert_at;
+
+    for (index = 0; index < *count; index += 1) {
+        if (strcmp(suggestions[index].candidate, candidate) == 0) {
+            return;
+        }
+    }
+
+    next.candidate = candidate;
+    next.distance = distance;
+    insert_at = *count;
+    for (index = 0; index < *count; index += 1) {
+        if (secdat_cli_suggestion_is_better(&next, &suggestions[index])) {
+            insert_at = index;
+            break;
+        }
+    }
+    if (insert_at >= SECDAT_CLI_SUGGESTION_LIMIT) {
+        return;
+    }
+
+    if (*count < SECDAT_CLI_SUGGESTION_LIMIT) {
+        *count += 1;
+    }
+    for (index = *count - 1; index > insert_at; index -= 1) {
+        suggestions[index] = suggestions[index - 1];
+    }
+    suggestions[insert_at] = next;
+}
+
+int secdat_cli_print_command_suggestions(const char *input, int fallback_get_context)
+{
+    static const char *const command_candidates[] = {
+        "help", "ls", "list", "attr", "fsck", "gc", "mask", "unmask", "exists", "id",
+        "get", "set", "rm", "mv", "cp", "ln", "exec", "export", "save", "load",
+        "unlock", "inherit", "passwd", "lock", "status", "wait-unlock",
+        "store", "secret", "domain", "version", NULL,
+    };
+    struct secdat_cli_suggestion suggestions[SECDAT_CLI_SUGGESTION_LIMIT];
+    size_t count = 0;
+    size_t index;
+    size_t distance;
+
+    for (index = 0; command_candidates[index] != NULL; index += 1) {
+        if (secdat_cli_suggestion_candidate(input, command_candidates[index], &distance)) {
+            secdat_cli_add_suggestion(suggestions, &count, command_candidates[index], distance);
+        }
+    }
+    if (count == 0) {
+        return 0;
+    }
+
+    if (fallback_get_context) {
+        fprintf(stderr, _("Note: a first operand that is not a known command is treated as a key for get\n"));
+        fprintf(stderr, _("Command candidates (if \"%s\" was meant as a command):\n"), input);
+    } else {
+        fprintf(stderr, _("Command candidates:\n"));
+    }
+    for (index = 0; index < count; index += 1) {
+        fprintf(stderr, "  %s\n", suggestions[index].candidate);
+    }
+    return 1;
+}
+
+void secdat_cli_print_subcommand_suggestions(const char *group, const char *input)
+{
+    struct secdat_cli_suggestion suggestions[SECDAT_CLI_SUGGESTION_LIMIT];
+    size_t count = 0;
+    size_t index;
+    size_t distance;
+
+    if (group == NULL) {
+        return;
+    }
+
+    for (index = 0; secdat_cli_subcommand_registry[index].group != NULL; index += 1) {
+        if (strcmp(secdat_cli_subcommand_registry[index].group, group) != 0) {
+            continue;
+        }
+        if (secdat_cli_suggestion_candidate(input, secdat_cli_subcommand_registry[index].name, &distance)) {
+            secdat_cli_add_suggestion(suggestions, &count, secdat_cli_subcommand_registry[index].name, distance);
+        }
+    }
+    if (count == 0) {
+        return;
+    }
+
+    fprintf(stderr, _("Subcommand candidates:\n"));
+    for (index = 0; index < count; index += 1) {
+        fprintf(stderr, "  %s\n", suggestions[index].candidate);
+    }
+}
 
 static void secdat_cli_print_usage_columns(
     const char *program_name,
@@ -1756,6 +1996,7 @@ static int secdat_cli_parse_group_subcommand(struct secdat_cli *cli, int argc, c
     } else if (strcmp(group, "domain") == 0) {
         fprintf(stderr, _("unknown domain subcommand: %s\n"), argv[*index]);
     }
+    secdat_cli_print_subcommand_suggestions(group, argv[*index]);
     secdat_cli_print_try_help(cli, group);
     return 2;
 }
@@ -1773,6 +2014,7 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
     cli->command = SECDAT_COMMAND_HELP;
     cli->show_help = 0;
     cli->show_version = 0;
+    cli->defaulted_to_get = 0;
     cli->argc = 0;
     cli->argv = NULL;
 
@@ -1883,6 +2125,7 @@ int secdat_cli_parse(int argc, char **argv, struct secdat_cli *cli)
         cli->command = SECDAT_COMMAND_SET;
     } else {
         cli->command = SECDAT_COMMAND_GET;
+        cli->defaulted_to_get = 1;
     }
 
     cli->argc = argc - index;

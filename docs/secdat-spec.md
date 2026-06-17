@@ -98,6 +98,8 @@ To make the requested behavior implementable, the following are treated as norma
 
 - `get KEYREF` is equivalent to `get KEYREF --stdout`
 - if the first operand is not a known subcommand and is not an assignment, `secdat KEYREF` falls back to `get KEYREF`
+- failed key lookups may report close visible key candidates; if a fallback operand cannot be used as a key or also resembles a command name, diagnostics must label command candidates as command-intent hints rather than treating the operand as an unknown command
+- unknown group subcommands may report close subcommand candidates
 - `get KEYREF --shellescaped` emits a shell-escaped single-value representation suitable for `eval`-style shell assignment
 - `set KEYREF VALUE` is equivalent to `set KEYREF --value VALUE`
 - `set KEYREF` is equivalent to `set KEYREF --stdin`
