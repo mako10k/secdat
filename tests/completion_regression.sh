@@ -3,21 +3,23 @@
 set -euo pipefail
 
 bin_path="${1:-./src/secdat}"
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+source_root="$(CDPATH= cd -- "$script_dir/.." && pwd)"
+completion_script="$source_root/completions/secdat.bash"
 
 fail() {
     printf 'FAIL: %s\n' "$1" >&2
     exit 1
 }
 
-python3 - "$bin_path" <<'PY'
+python3 - "$bin_path" "$completion_script" <<'PY'
 import os
 import subprocess
 import sys
 import tempfile
 
 bin_path = sys.argv[1]
-repo_root = os.path.dirname(os.path.dirname(os.path.abspath(bin_path)))
-completion_script = os.path.join(repo_root, "completions", "secdat.bash")
+completion_script = sys.argv[2]
 
 
 def run_completion(*words):

@@ -33,6 +33,12 @@ bin_path = sys.argv[1]
 env = os.environ.copy()
 env["LC_ALL"] = "C"
 env["LANGUAGE"] = "C"
+japanese_env = {
+    "LC_ALL": "",
+    "LC_MESSAGES": "ja_JP.UTF-8",
+    "LANG": "ja_JP.UTF-8",
+    "LANGUAGE": "ja",
+}
 for variable_name in (
     "SECDAT_MASTER_KEY",
     "SECDAT_MASTER_KEY_PASSPHRASE",
@@ -731,7 +737,7 @@ wait_unlock_column = description_column(output, "wait-unlock:")
 if help_column != get_column or get_column != wait_unlock_column:
     fail(f"command help alignment mismatch: help={help_column} get={get_column} wait-unlock={wait_unlock_column} output={output!r}")
 
-rc, stdout, stderr = run([bin_path, "--help"], {"LANGUAGE": "ja", "LC_ALL": ""})
+rc, stdout, stderr = run([bin_path, "--help"], japanese_env)
 output = stdout + stderr
 if rc != 0 or "トピック:" not in output or "show global help, or combine with COMMAND or TOPIC for detailed help" in output or "decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock" in output or "explain domains, stores, inheritance, sessions, and KEYREF resolution" in output or "local unlock" not in output or "local lock" not in output:
     fail(f"japanese global help translation check failed: rc={rc} output={output!r}")
@@ -743,19 +749,19 @@ repository_column = description_display_column(output, "repository:")
 if issues_column != repository_column:
     fail(f"japanese help alignment mismatch: issues={issues_column} repository={repository_column} output={output!r}")
 
-rc, stdout, stderr = run([bin_path, "help", "get"], {"LANGUAGE": "ja", "LC_ALL": ""})
+rc, stdout, stderr = run([bin_path, "help", "get"], japanese_env)
 output = stdout + stderr
 if rc != 0 or "利用例:" not in output or "意味:" not in output or "read one value to stdout:" in output or "wait for another terminal to unlock before reading:" in output:
     fail(f"japanese get help translation check failed: rc={rc} output={output!r}")
 
-rc, stdout, stderr = run([bin_path, "help", "unlock"], {"LANGUAGE": "ja", "LC_ALL": ""})
+rc, stdout, stderr = run([bin_path, "help", "unlock"], japanese_env)
 output = stdout + stderr
 if rc != 0 or "local unlock" not in output or "local override" not in output or "authenticated secret session" in output:
     fail(f"japanese unlock help translation check failed: rc={rc} output={output!r}")
 if "現在の domain 用の local unlock を開始または更新します。\n                        --duration" not in output or "3339 timestamp を受け付けます。\n                        --inherit" not in output:
     fail(f"japanese unlock help wrap check failed: rc={rc} output={output!r}")
 
-rc, stdout, stderr = run([bin_path, "help", "lock"], {"LANGUAGE": "ja", "LC_ALL": ""})
+rc, stdout, stderr = run([bin_path, "help", "lock"], japanese_env)
 output = stdout + stderr
 if rc != 0 or "ローカルなロック状態へ戻し" not in output or "clear the current domain's direct secret session" in output:
     fail(f"japanese lock help translation check failed: rc={rc} output={output!r}")

@@ -30,6 +30,12 @@ env["LC_ALL"] = "C"
 env["LANGUAGE"] = "C"
 env["SECDAT_MASTER_KEY"] = "lower-level-test-master-key"
 env["SECDAT_MASTER_KEY_PASSPHRASE"] = "lower-level-test-passphrase"
+japanese_env = {
+    "LC_ALL": "",
+    "LC_MESSAGES": "ja_JP.UTF-8",
+    "LANG": "ja_JP.UTF-8",
+    "LANGUAGE": "ja",
+}
 
 work_root = Path(env["XDG_RUNTIME_DIR"]).parent
 root_domain = work_root / "root-domain"
@@ -159,7 +165,7 @@ assert_contains(transcript, "environment  unlocked", "tty metadata line present"
 
 rc, transcript = run_pty(
     [bin_path, "--dir", str(work_root), "domain", "ls", "-l"],
-    {"LC_ALL": None, "LANGUAGE": "ja"},
+    japanese_env,
 )
 if rc != 0:
     fail(f"localized tty domain ls -l failed: rc={rc} transcript={transcript!r}")

@@ -1,9 +1,9 @@
 SUBDIRS = po src
 dist_doc_DATA = README.md docs/secdat-spec.md
-man1_MANS = docs/secdat.1
+dist_man1_MANS = docs/secdat.1
 dist_noinst_DATA = completions/secdat.bash
 bashcompletiondir = $(datadir)/bash-completion/completions
-EXTRA_DIST = completions/secdat.bash tests/keyref_regression.sh tests/session_regression.sh tests/e2e_regression.sh tests/save_load_regression.sh tests/export_regression.sh tests/lower_level_regression.sh tests/completion_regression.sh tests/attribute_regression.sh tests/fsck_regression.sh tests/v2_fsck_regression.sh tests/migrate_regression.sh
+EXTRA_DIST = completions/secdat.bash docs/release-workflow.md docs/release-notes/v0.2.1.md tests/keyref_regression.sh tests/session_regression.sh tests/e2e_regression.sh tests/save_load_regression.sh tests/export_regression.sh tests/lower_level_regression.sh tests/completion_regression.sh tests/attribute_regression.sh tests/fsck_regression.sh tests/v2_fsck_regression.sh tests/migrate_regression.sh
 
 install-data-local:
 	$(MKDIR_P) "$(DESTDIR)$(bashcompletiondir)"
@@ -26,7 +26,7 @@ uninstall-local:
 
 all-local:
 	@set -e; \
-	for po in po/*.po; do \
+	for po in "$(srcdir)"/po/*.po; do \
 		if test -f "$$po"; then \
 			lang=`basename "$$po" .po`; \
 			if test ! -f "po/$$lang.gmo" || test "$$po" -nt "po/$$lang.gmo"; then \
@@ -34,11 +34,12 @@ all-local:
 			fi; \
 		fi; \
 	done; \
-	for catalog in po/*.gmo; do \
+	for catalog in "$(srcdir)"/po/*.gmo po/*.gmo; do \
 		if test -f "$$catalog"; then \
 			lang=`basename "$$catalog" .gmo`; \
 			dir="$(abs_top_builddir)/po/.locale/$$lang/LC_MESSAGES"; \
 			mkdir -p "$$dir"; \
+			rm -f "$$dir/$(PACKAGE).mo"; \
 			cp "$$catalog" "$$dir/$(PACKAGE).mo"; \
 		fi; \
 	done
