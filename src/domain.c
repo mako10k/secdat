@@ -1779,16 +1779,126 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     return 0;
 }
 
+static void secdat_domain_print_json_nullable_string_field(const char *name, const char *value, int trailing_comma)
+{
+    printf("  \"%s\": ", name);
+    if (value == NULL || value[0] == '\0') {
+        fputs("null", stdout);
+    } else {
+        secdat_write_json_string(stdout, value);
+    }
+    fputs(trailing_comma ? ",\n" : "\n", stdout);
+}
+
+static void secdat_domain_print_json_nullable_time_field(const char *name, time_t value, int trailing_comma)
+{
+    printf("  \"%s\": ", name);
+    if (value <= 0) {
+        fputs("null", stdout);
+    } else {
+        printf("%lld", (long long)value);
+    }
+    fputs(trailing_comma ? ",\n" : "\n", stdout);
+}
+
+static void secdat_domain_print_json_nullable_remaining_field(const char *name, time_t expires_at, int trailing_comma)
+{
+    printf("  \"%s\": ", name);
+    if (expires_at <= 0) {
+        fputs("null", stdout);
+    } else {
+        printf("%lld", secdat_remaining_seconds(expires_at));
+    }
+    fputs(trailing_comma ? ",\n" : "\n", stdout);
+}
+
+static const char *secdat_domain_resolution_source_json_name(const struct secdat_cli *cli)
+{
+    if (cli->domain != NULL) {
+        return "domain";
+    }
+    if (cli->dir != NULL) {
+        return "dir";
+    }
+    return "cwd";
+}
+
+static void secdat_domain_print_status_json(
+    const struct secdat_cli *cli,
+    const char *domain_label,
+    const struct secdat_domain_status_summary *summary
+)
+{
+    fputs("{\n", stdout);
+    printf("  \"resolved_domain\": ");
+    secdat_write_json_string(stdout, domain_label);
+    fputs(",\n", stdout);
+    printf("  \"resolution_source\": ");
+    secdat_write_json_string(stdout, secdat_domain_resolution_source_json_name(cli));
+    fputs(",\n", stdout);
+    printf("  \"unlocked\": %s,\n", strcmp(secdat_effective_state_json_name(summary->effective_source), "unlocked") == 0 ? "true" : "false");
+    printf("  \"key_source\": ");
+    secdat_write_json_string(stdout, secdat_key_source_json_name(summary->key_source));
+    fputs(",\n", stdout);
+    printf("  \"effective_state\": ");
+    secdat_write_json_string(stdout, secdat_effective_state_json_name(summary->effective_source));
+    fputs(",\n", stdout);
+    printf("  \"effective_source\": ");
+    secdat_write_json_string(stdout, secdat_effective_source_json_name(summary->effective_source));
+    fputs(",\n", stdout);
+    secdat_domain_print_json_nullable_time_field("session_expires_at", summary->session_expires_at, 1);
+    secdat_domain_print_json_nullable_remaining_field("remaining_seconds", summary->session_expires_at, 1);
+    secdat_domain_print_json_nullable_string_field("related_domain", summary->related_domain_root, 1);
+    printf("  \"store_count\": %zu,\n", summary->store_count);
+    printf("  \"visible_key_count\": %zu,\n", summary->visible_key_count);
+    printf("  \"orphaned_domain\": %s,\n", summary->orphaned_domain ? "true" : "false");
+    printf("  \"wrapped_master_key_present\": %s\n", summary->wrapped_master_key_present ? "true" : "false");
+    fputs("}\n", stdout);
+}
+
 static int secdat_domain_command_status(const struct secdat_cli *cli)
 {
+    static const struct option long_options[] = {
+        {"quiet", no_argument, NULL, 'q'},
+        {"json", no_argument, NULL, 1000},
+        {NULL, 0, NULL, 0},
+    };
     struct secdat_domain_chain chain = {0};
     struct secdat_domain_status_summary summary;
     char domain_label[PATH_MAX];
+    char *argv[cli->argc + 2];
+    int argc = cli->argc + 1;
+    int option;
     int quiet = 0;
+    int json = 0;
+    int index;
 
-    if (cli->argc == 1 && (strcmp(cli->argv[0], "--quiet") == 0 || strcmp(cli->argv[0], "-q") == 0)) {
-        quiet = 1;
-    } else if (cli->argc != 0) {
+    argv[0] = "domain status";
+    for (index = 0; index < cli->argc; index += 1) {
+        argv[index + 1] = cli->argv[index];
+    }
+    argv[argc] = NULL;
+
+    opterr = 0;
+    optind = 0;
+    while ((option = getopt_long(argc, argv, ":q", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'q':
+            quiet = 1;
+            break;
+        case 1000:
+            json = 1;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for domain status\n"));
+            secdat_cli_print_try_help(cli, "domain");
+            return 2;
+        }
+    }
+
+    if (optind != argc || (quiet && json)) {
         fprintf(stderr, _("invalid arguments for domain status\n"));
         secdat_cli_print_try_help(cli, "domain");
         return 2;
@@ -1809,6 +1919,10 @@ static int secdat_domain_command_status(const struct secdat_cli *cli)
 
     if (quiet) {
         puts(domain_label);
+        return 0;
+    }
+    if (json) {
+        secdat_domain_print_status_json(cli, domain_label, &summary);
         return 0;
     }
 

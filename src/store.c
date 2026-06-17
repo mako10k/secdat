@@ -1222,6 +1222,155 @@ static int secdat_parse_boolean_text(const char *value, int *result)
     return 1;
 }
 
+const char *secdat_key_source_json_name(enum secdat_key_source_type source)
+{
+    switch (source) {
+    case SECDAT_KEY_SOURCE_ENVIRONMENT:
+        return "environment";
+    case SECDAT_KEY_SOURCE_SESSION:
+        return "session";
+    default:
+        return "locked";
+    }
+}
+
+const char *secdat_effective_source_json_name(enum secdat_effective_source_type source)
+{
+    switch (source) {
+    case SECDAT_EFFECTIVE_SOURCE_ENVIRONMENT:
+        return "environment";
+    case SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION:
+        return "local_unlock";
+    case SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION:
+        return "inherited_unlock";
+    case SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK:
+        return "local_lock";
+    case SECDAT_EFFECTIVE_SOURCE_BLOCKED:
+        return "inherited_lock";
+    default:
+        return "locked";
+    }
+}
+
+const char *secdat_effective_state_json_name(enum secdat_effective_source_type source)
+{
+    return source == SECDAT_EFFECTIVE_SOURCE_ENVIRONMENT
+            || source == SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION
+            || source == SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION
+        ? "unlocked"
+        : "locked";
+}
+
+long long secdat_remaining_seconds(time_t expires_at)
+{
+    time_t now = time(NULL);
+
+    if (expires_at <= now) {
+        return 0;
+    }
+    return (long long)(expires_at - now);
+}
+
+static size_t secdat_valid_utf8_sequence_length(const unsigned char *cursor)
+{
+    unsigned char first = cursor[0];
+
+    if (first < 0x80) {
+        return 1;
+    }
+    if (first >= 0xc2 && first <= 0xdf) {
+        return (cursor[1] & 0xc0) == 0x80 ? 2 : 0;
+    }
+    if (first == 0xe0) {
+        return cursor[1] >= 0xa0 && cursor[1] <= 0xbf
+                && (cursor[2] & 0xc0) == 0x80
+            ? 3
+            : 0;
+    }
+    if (first >= 0xe1 && first <= 0xec) {
+        return (cursor[1] & 0xc0) == 0x80 && (cursor[2] & 0xc0) == 0x80 ? 3 : 0;
+    }
+    if (first == 0xed) {
+        return cursor[1] >= 0x80 && cursor[1] <= 0x9f
+                && (cursor[2] & 0xc0) == 0x80
+            ? 3
+            : 0;
+    }
+    if (first >= 0xee && first <= 0xef) {
+        return (cursor[1] & 0xc0) == 0x80 && (cursor[2] & 0xc0) == 0x80 ? 3 : 0;
+    }
+    if (first == 0xf0) {
+        return cursor[1] >= 0x90 && cursor[1] <= 0xbf
+                && (cursor[2] & 0xc0) == 0x80
+                && (cursor[3] & 0xc0) == 0x80
+            ? 4
+            : 0;
+    }
+    if (first >= 0xf1 && first <= 0xf3) {
+        return (cursor[1] & 0xc0) == 0x80
+                && (cursor[2] & 0xc0) == 0x80
+                && (cursor[3] & 0xc0) == 0x80
+            ? 4
+            : 0;
+    }
+    if (first == 0xf4) {
+        return cursor[1] >= 0x80 && cursor[1] <= 0x8f
+                && (cursor[2] & 0xc0) == 0x80
+                && (cursor[3] & 0xc0) == 0x80
+            ? 4
+            : 0;
+    }
+
+    return 0;
+}
+
+void secdat_write_json_string(FILE *stream, const char *value)
+{
+    const unsigned char *cursor = (const unsigned char *)(value != NULL ? value : "");
+
+    fputc('"', stream);
+    while (*cursor != '\0') {
+        switch (*cursor) {
+        case '"':
+            fputs("\\\"", stream);
+            break;
+        case '\\':
+            fputs("\\\\", stream);
+            break;
+        case '\b':
+            fputs("\\b", stream);
+            break;
+        case '\f':
+            fputs("\\f", stream);
+            break;
+        case '\n':
+            fputs("\\n", stream);
+            break;
+        case '\r':
+            fputs("\\r", stream);
+            break;
+        case '\t':
+            fputs("\\t", stream);
+            break;
+        default:
+            if (*cursor < 0x20) {
+                fprintf(stream, "\\u%04x", (unsigned int)*cursor);
+            } else {
+                size_t sequence_length = secdat_valid_utf8_sequence_length(cursor);
+                if (sequence_length == 0) {
+                    fprintf(stream, "\\u%04x", (unsigned int)*cursor);
+                } else {
+                    fwrite(cursor, 1, sequence_length, stream);
+                    cursor += sequence_length - 1;
+                }
+            }
+            break;
+        }
+        cursor += 1;
+    }
+    fputc('"', stream);
+}
+
 static int secdat_migration_hints_suppressed(void)
 {
     const char *value = getenv(SECDAT_SUPPRESS_MIGRATION_HINTS_ENV);
@@ -7357,10 +7506,145 @@ static int secdat_domain_chain_from_id(const char *domain_id, struct secdat_doma
     return secdat_domain_resolve_chain(domain_root, chain);
 }
 
+static const char *secdat_session_mode_json_name(const struct secdat_session_record *record)
+{
+    if (record == NULL) {
+        return NULL;
+    }
+    if (record->volatile_mode) {
+        return "volatile";
+    }
+    if (record->readonly_mode) {
+        return "readonly";
+    }
+    return "persistent";
+}
+
+static void secdat_print_json_nullable_string_field(const char *name, const char *value, int trailing_comma)
+{
+    printf("  \"%s\": ", name);
+    if (value == NULL || value[0] == '\0') {
+        fputs("null", stdout);
+    } else {
+        secdat_write_json_string(stdout, value);
+    }
+    fputs(trailing_comma ? ",\n" : "\n", stdout);
+}
+
+static void secdat_print_json_nullable_time_field(const char *name, time_t value, int trailing_comma)
+{
+    printf("  \"%s\": ", name);
+    if (value <= 0) {
+        fputs("null", stdout);
+    } else {
+        printf("%lld", (long long)value);
+    }
+    fputs(trailing_comma ? ",\n" : "\n", stdout);
+}
+
+static void secdat_print_json_nullable_remaining_field(const char *name, time_t expires_at, int trailing_comma)
+{
+    printf("  \"%s\": ", name);
+    if (expires_at <= 0) {
+        fputs("null", stdout);
+    } else {
+        printf("%lld", secdat_remaining_seconds(expires_at));
+    }
+    fputs(trailing_comma ? ",\n" : "\n", stdout);
+}
+
+static void secdat_print_status_json(
+    enum secdat_key_source_type key_source,
+    enum secdat_effective_source_type effective_source,
+    time_t session_expires_at,
+    const char *session_mode,
+    const char *related_domain,
+    int wrapped_present
+)
+{
+    fputs("{\n", stdout);
+    printf("  \"unlocked\": %s,\n", strcmp(secdat_effective_state_json_name(effective_source), "unlocked") == 0 ? "true" : "false");
+    printf("  \"key_source\": ");
+    secdat_write_json_string(stdout, secdat_key_source_json_name(key_source));
+    fputs(",\n", stdout);
+    printf("  \"effective_state\": ");
+    secdat_write_json_string(stdout, secdat_effective_state_json_name(effective_source));
+    fputs(",\n", stdout);
+    printf("  \"effective_source\": ");
+    secdat_write_json_string(stdout, secdat_effective_source_json_name(effective_source));
+    fputs(",\n", stdout);
+    secdat_print_json_nullable_time_field("session_expires_at", session_expires_at, 1);
+    secdat_print_json_nullable_remaining_field("remaining_seconds", session_expires_at, 1);
+    secdat_print_json_nullable_string_field("session_mode", session_mode, 1);
+    secdat_print_json_nullable_string_field("related_domain", related_domain, 1);
+    printf("  \"wrapped_master_key_present\": %s\n", wrapped_present ? "true" : "false");
+    fputs("}\n", stdout);
+}
+
+static int secdat_command_status_json(const struct secdat_cli *cli, int wrapped_present)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_session_record record = {0};
+    enum secdat_key_source_type key_source = SECDAT_KEY_SOURCE_LOCKED;
+    enum secdat_effective_source_type effective_source = SECDAT_EFFECTIVE_SOURCE_LOCKED;
+    size_t matched_index = SIZE_MAX;
+    size_t blocked_index = SIZE_MAX;
+    time_t session_expires_at = 0;
+    const char *session_mode = NULL;
+    char related_domain[PATH_MAX] = "";
+
+    if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
+        key_source = SECDAT_KEY_SOURCE_ENVIRONMENT;
+        effective_source = SECDAT_EFFECTIVE_SOURCE_ENVIRONMENT;
+        secdat_print_status_json(key_source, effective_source, 0, NULL, NULL, wrapped_present);
+        return 0;
+    }
+
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) == 0) {
+        if (secdat_session_agent_status_details(&chain, &record, &matched_index, &blocked_index) == 0) {
+            key_source = SECDAT_KEY_SOURCE_SESSION;
+            effective_source = matched_index == 0
+                ? SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION
+                : SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION;
+            session_expires_at = record.expires_at;
+            session_mode = secdat_session_mode_json_name(&record);
+            if (matched_index != SIZE_MAX && matched_index > 0) {
+                if (matched_index == chain.count) {
+                    if (secdat_domain_display_label("", related_domain, sizeof(related_domain)) != 0) {
+                        related_domain[0] = '\0';
+                    }
+                } else if (secdat_domain_root_path(chain.ids[matched_index], related_domain, sizeof(related_domain)) != 0) {
+                    related_domain[0] = '\0';
+                }
+            }
+        } else if (blocked_index == 0) {
+            effective_source = SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK;
+        } else if (blocked_index != SIZE_MAX && blocked_index < chain.count) {
+            effective_source = SECDAT_EFFECTIVE_SOURCE_BLOCKED;
+            if (secdat_domain_root_path(chain.ids[blocked_index], related_domain, sizeof(related_domain)) != 0) {
+                related_domain[0] = '\0';
+            }
+        }
+        secdat_domain_chain_free(&chain);
+    }
+
+    secdat_print_status_json(
+        key_source,
+        effective_source,
+        session_expires_at,
+        session_mode,
+        related_domain[0] != '\0' ? related_domain : NULL,
+        wrapped_present
+    );
+    secdat_session_record_reset(&record);
+    return strcmp(secdat_effective_state_json_name(effective_source), "unlocked") == 0 ? 0 : 1;
+}
+
 static int secdat_command_status(const struct secdat_cli *cli)
 {
     static const struct option long_options[] = {
         {"quiet", no_argument, NULL, 'q'},
+        {"json", no_argument, NULL, 1000},
         {NULL, 0, NULL, 0},
     };
     struct secdat_domain_chain chain = {0};
@@ -7369,6 +7653,7 @@ static int secdat_command_status(const struct secdat_cli *cli)
     int argc;
     int option;
     int quiet = 0;
+    int json = 0;
     int wrapped_present = secdat_wrapped_master_key_exists();
     char remaining_text[32];
 
@@ -7378,6 +7663,9 @@ static int secdat_command_status(const struct secdat_cli *cli)
         switch (option) {
         case 'q':
             quiet = 1;
+            break;
+        case 1000:
+            json = 1;
             break;
         case '?':
         case ':':
@@ -7398,6 +7686,16 @@ static int secdat_command_status(const struct secdat_cli *cli)
         fprintf(stderr, _("invalid arguments for status\n"));
         secdat_cli_print_try_help(cli, "status");
         return 2;
+    }
+
+    if (quiet && json) {
+        fprintf(stderr, _("invalid arguments for status\n"));
+        secdat_cli_print_try_help(cli, "status");
+        return 2;
+    }
+
+    if (json) {
+        return secdat_command_status_json(cli, wrapped_present);
     }
 
     if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {

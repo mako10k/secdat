@@ -63,7 +63,7 @@ secdat [--dir DIR] unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--des
 secdat [--dir DIR] inherit
 secdat passwd
 secdat [--dir DIR] lock [-i|--inherit] [-s|--save]
-secdat [--dir DIR] status [--quiet]
+secdat [--dir DIR] status [--quiet|--json]
 secdat [--dir DIR] wait-unlock [-t SECONDS|--timeout SECONDS] [-q|--quiet]
 
 secdat [--dir DIR] store create STORE
@@ -77,7 +77,7 @@ secdat [--dir DIR] [--store STORE] secret status UUID
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
 secdat [--dir DIR] domain ls [-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]
-secdat [--dir DIR|--domain DIR] domain status [--quiet]
+secdat [--dir DIR|--domain DIR] domain status [--quiet|--json]
 
 secdat [--dir DIR] [--store STORE] save FILE
 secdat [--dir DIR] [--store STORE] load FILE
@@ -346,6 +346,9 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat status` returns non-zero and reports `locked` when no active master-key source exists
 - `secdat [--dir DIR] status --quiet` suppresses output and reports state only through the exit code
 - `status` without `--quiet` reports the active source and whether a wrapped persistent master key is present
+- `secdat [--dir DIR] status --json` prints stable JSON for scripts, including `unlocked`, `key_source`, `effective_state`, `effective_source`, session expiry/remaining fields, `session_mode`, `related_domain`, and `wrapped_master_key_present`
+- `status --json` keeps the normal status exit-code contract: zero when unlocked and non-zero when locked
+- `status --quiet` and `status --json` are mutually exclusive
 - `secdat [--dir DIR] unlock [--duration TTL] [--until TIME] [--inherit] [--volatile|--readonly] [--descendants] [--yes]` creates or refreshes a domain-scoped cache of the current master key
 - `secdat [--dir DIR] wait-unlock [--timeout SECONDS] [--quiet]` waits for the current effective domain scope to become unlocked and is intended for scripts that handle external notifications separately
 - `wait-unlock` exits successfully immediately when the scope is already unlocked, returns non-zero on timeout, and prints unlock guidance to standard error unless `--quiet` is used
@@ -462,6 +465,8 @@ To make the requested behavior implementable, the following are treated as norma
 - `domain status` reports whether that resolution came from `--dir` or the current working directory
 - `domain status` summarizes the visible key count, current-domain store count, key source, remaining unlock time, wrapped-master-key presence, and the effective access state for that resolved domain
 - `secdat [--dir DIR] domain status --quiet` prints only the resolved domain root, or an emphasized fallback label such as `*default*` when no registered domain applies; that label means no registered domain resolved and the top-level inherited fallback scope is active
+- `secdat [--dir DIR] domain status --json` prints the same domain summary as stable JSON fields, including `resolved_domain`, `resolution_source`, `unlocked`, source/state fields, session expiry/remaining fields, `related_domain`, counts, `orphaned_domain`, and `wrapped_master_key_present`
+- `domain status --quiet` and `domain status --json` are mutually exclusive
 
 #### FR-11 Domain Resolution
 
@@ -724,7 +729,7 @@ Examples:
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
 secdat [--dir DIR] domain ls [-l|--long] [-a|--inherited] [--ancestors] [--descendants] [--pattern GLOBPATTERN]
-secdat [--dir DIR] domain status [--quiet]
+secdat [--dir DIR] domain status [--quiet|--json]
 ```
 
 - `create` registers a domain rooted at the target directory
@@ -739,6 +744,7 @@ secdat [--dir DIR] domain status [--quiet]
 - with `--dir /a/b`, the listing must not include `/a/c` or descendants of `/a/c`
 - `status` reports the resolved current domain for normal store commands and a compact summary of stores, visible keys, key-source state, and effective access state
 - `status --quiet` prints only the resolved domain root, or an emphasized fallback label such as `*default*` when no registered domain applies; that label means no registered domain resolved and the top-level inherited fallback scope is active
+- `domain status --json` prints the same summary as stable JSON fields for scripts
 
 ### 4.10 Domain Resolution Rules
 
@@ -927,6 +933,7 @@ Responsibilities:
 4. report whether key material currently comes from the environment, a session agent, or neither
 5. report whether effective access is unlocked via environment, local session, inherited session, or locked due to default locking, an explicit lock, or an explicit-lock block higher in the domain chain
 6. in `--quiet` mode, print only the resolved domain root identifier
+7. in `--json` mode, print stable machine-readable fields instead of human labels
 
 #### `unlock`
 

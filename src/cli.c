@@ -880,7 +880,7 @@ int secdat_cli_complete(int argc, char **argv)
         "--inherit", "-i", "--save", "-s", "--help", "-h", NULL,
     };
     static const char *const status_options[] = {
-        "--quiet", "-q", "--help", "-h", NULL,
+        "--quiet", "-q", "--json", "--help", "-h", NULL,
     };
     static const char *const wait_unlock_options[] = {
         "--timeout", "-t", "--quiet", "-q", "--help", "-h", NULL,
@@ -896,6 +896,9 @@ int secdat_cli_complete(int argc, char **argv)
     };
     static const char *const domain_ls_options[] = {
         "--long", "-l", "--inherited", "-a", "--ancestors", "-A", "--descendants", "-R", "--pattern", "-p", "--help", "-h", NULL,
+    };
+    static const char *const domain_status_options[] = {
+        "--quiet", "-q", "--json", "--help", "-h", NULL,
     };
     const char *command;
     const char *subcommand;
@@ -977,6 +980,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, store_finalize_migration_options);
     } else if (strcmp(command, "domain") == 0 && subcommand != NULL && strcmp(subcommand, "ls") == 0) {
         secdat_cli_completion_print_candidates(current, domain_ls_options);
+    } else if (strcmp(command, "domain") == 0 && subcommand != NULL && strcmp(subcommand, "status") == 0) {
+        secdat_cli_completion_print_candidates(current, domain_status_options);
     }
 
     return 0;
@@ -1154,7 +1159,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "lock", "[-i|--inherit] [-s|--save]");
         break;
     case SECDAT_COMMAND_STATUS:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "status", "[-q|--quiet]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "status", "[-q|--quiet|--json]");
         break;
     case SECDAT_COMMAND_WAIT_UNLOCK:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "wait-unlock", "[-t SECONDS|--timeout SECONDS] [-q|--quiet]");
@@ -1187,7 +1192,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain ls", "[-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]");
         break;
     case SECDAT_COMMAND_DOMAIN_STATUS:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain status", "[-q|--quiet]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain status", "[-q|--quiet|--json]");
         break;
     default:
         break;
@@ -1585,6 +1590,8 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         snprintf(buffer, sizeof(buffer), _("  check whether the current domain can read secrets now: %s status\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  use exit status only in scripts: %s status --quiet\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  read machine-readable state in scripts: %s status --json\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         return;
     }

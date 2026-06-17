@@ -24,6 +24,7 @@ import subprocess
 import sys
 import time
 import unicodedata
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import hashlib
@@ -139,6 +140,13 @@ def run(args, extra_env=None):
     completed = subprocess.run(args, text=True, capture_output=True, env=run_env)
     return completed.returncode, completed.stdout, completed.stderr
 
+def run_bytes(args, extra_env=None):
+    run_env = env.copy()
+    if extra_env:
+        run_env.update(extra_env)
+    completed = subprocess.run(args, capture_output=True, env=run_env)
+    return completed.returncode, completed.stdout, completed.stderr
+
 def run_background(args, extra_env=None):
     run_env = env.copy()
     if extra_env:
@@ -236,9 +244,34 @@ rc, stdout, stderr = run(scoped(["domain", "create"], sibling_domain))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"sibling domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+invalid_utf8_domain_bytes = os.fsencode(isolated_root) + b"/invalid-json-\xff"
+os.mkdir(invalid_utf8_domain_bytes)
+invalid_utf8_domain = os.fsdecode(invalid_utf8_domain_bytes)
+rc, stdout, stderr = run_bytes([bin_path, "--dir", invalid_utf8_domain, "domain", "create"])
+if rc != 0 or stdout != b"" or stderr != b"":
+    fail(f"invalid-utf8 domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run_bytes([bin_path, "--dir", invalid_utf8_domain, "domain", "status", "--json"])
+if rc != 0 or stderr != b"":
+    fail(f"invalid-utf8 domain status --json failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+invalid_utf8_status = json.loads(stdout)
+if invalid_utf8_status["resolved_domain"].endswith("invalid-json-ÿ") is False:
+    fail(f"invalid-utf8 domain status --json returned unexpected path: {invalid_utf8_status!r}")
+
 rc, _, _ = run(scoped(["status", "--quiet"]))
 if rc != 1:
     fail(f"status --quiet while locked returned {rc}")
+
+rc, stdout, stderr = run(scoped(["status", "--json"]))
+if rc != 1 or stderr != "":
+    fail(f"status --json while locked failed unexpectedly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+locked_status = json.loads(stdout)
+if locked_status["unlocked"] or locked_status["key_source"] != "locked" or locked_status["effective_source"] != "locked" or locked_status["wrapped_master_key_present"]:
+    fail(f"status --json while locked returned unexpected state: {locked_status!r}")
+
+rc, stdout, stderr = run(scoped(["status", "--quiet", "--json"]))
+if rc != 2 or stdout != "" or "invalid arguments for status" not in stderr:
+    fail(f"status --quiet --json should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["set", "UNSAFE_VISIBLE_KEY", "--unsafe", "--value", "visible-while-locked"]))
 if rc != 0 or stdout != "" or stderr != "":
@@ -313,6 +346,13 @@ if rc != 0 or "volatile session unlocked from environment" not in stdout or "res
 rc, stdout, stderr = run(scoped(["status"]))
 if rc != 0 or "overlay: volatile\n" not in stdout or stderr != "":
     fail(f"volatile status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status", "--json"]))
+if rc != 0 or stderr != "":
+    fail(f"volatile status json failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+volatile_status = json.loads(stdout)
+if not volatile_status["unlocked"] or volatile_status["key_source"] != "session" or volatile_status["effective_source"] != "local_unlock" or volatile_status["session_mode"] != "volatile" or volatile_status["remaining_seconds"] is None:
+    fail(f"volatile status json unexpected: {volatile_status!r}")
 
 rc, stdout, stderr = run(scoped(["set", "VOLATILE_ONLY_KEY", "--value", "volatile-value"]))
 if rc != 0 or stdout != "" or stderr != "":
@@ -403,6 +443,13 @@ rc, stdout, stderr = run(scoped(["status"]))
 if rc != 0 or "access: readonly\n" not in stdout or stderr != "":
     fail(f"readonly status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run(scoped(["status", "--json"]))
+if rc != 0 or stderr != "":
+    fail(f"readonly status json failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+readonly_status = json.loads(stdout)
+if not readonly_status["unlocked"] or readonly_status["session_mode"] != "readonly" or readonly_status["effective_state"] != "unlocked":
+    fail(f"readonly status json unexpected: {readonly_status!r}")
+
 rc, stdout, stderr = run(scoped(["set", "READONLY_BLOCKED_KEY", "--value", "blocked"]))
 if rc == 0 or "current session is readonly and cannot run set" not in stderr or f"unlock writable session: secdat --dir {root_domain} unlock" not in stderr:
     fail(f"readonly set should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -450,11 +497,11 @@ if rc == 0 or "key not found: VOLATILE_TOMBSTONE_KEY" not in stderr:
     fail(f"saved volatile tombstone should persist after lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 for args, marker in [
-    ([bin_path, "help", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
-    ([bin_path, "--help", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
-    ([bin_path, "-h", "status"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
-    ([bin_path, "status", "--help"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
-    ([bin_path, "status", "-h"], "[-d DIR|--dir DIR] status [-q|--quiet]"),
+    ([bin_path, "help", "status"], "[-d DIR|--dir DIR] status [-q|--quiet|--json]"),
+    ([bin_path, "--help", "status"], "[-d DIR|--dir DIR] status [-q|--quiet|--json]"),
+    ([bin_path, "-h", "status"], "[-d DIR|--dir DIR] status [-q|--quiet|--json]"),
+    ([bin_path, "status", "--help"], "[-d DIR|--dir DIR] status [-q|--quiet|--json]"),
+    ([bin_path, "status", "-h"], "[-d DIR|--dir DIR] status [-q|--quiet|--json]"),
     ([bin_path, "help", "unlock"], "unlock [-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]"),
     ([bin_path, "help", "inherit"], "[-d DIR|--dir DIR] inherit"),
     ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [-i|--inherit] [-s|--save]"),
@@ -487,6 +534,8 @@ for args, marker in [
     ([bin_path, "--help", "secret", "status"], "secret status UUID"),
     ([bin_path, "secret", "status", "--help"], "secret status UUID"),
     ([bin_path, "help", "domain"], "domain ls [-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants]"),
+    ([bin_path, "help", "domain", "status"], "domain status [-q|--quiet|--json]"),
+    ([bin_path, "domain", "status", "--help"], "domain status [-q|--quiet|--json]"),
     ([bin_path, "store", "--help"], "store create STORE"),
     ([bin_path, "store", "-h"], "store create STORE"),
 ]:
@@ -760,6 +809,13 @@ rc, stdout, _ = run(scoped(["status"], root_domain))
 if rc != 0 or "source: session agent" not in stdout or "wrapped master key: present" not in stdout or re.search(r"expires in: \d+ seconds", stdout) or not re.search(r"expires in: (1m\d\ds|2m00s)\n", stdout):
     fail(f"status after bootstrap unexpected: rc={rc} stdout={stdout!r}")
 
+rc, stdout, stderr = run(scoped(["status", "--json"], root_domain))
+if rc != 0 or stderr != "":
+    fail(f"status --json after bootstrap failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+bootstrap_status = json.loads(stdout)
+if not bootstrap_status["unlocked"] or bootstrap_status["session_mode"] != "persistent" or not bootstrap_status["wrapped_master_key_present"] or bootstrap_status["remaining_seconds"] is None:
+    fail(f"status --json after bootstrap unexpected: {bootstrap_status!r}")
+
 rc, stdout, stderr = run(scoped(["unlock", "--duration", "PT95S"], root_domain))
 if rc != 0 or "session refreshed\n" not in stdout or stderr != f"resolved domain: {root_domain}\n":
     fail(f"refresh unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -849,11 +905,25 @@ if rc != 0 or stderr != "":
 assert_contains(stdout, "effective state: locked\n", "domain status explicit lock")
 assert_contains(stdout, "effective source: local lock\n", "domain status explicit lock")
 
+rc, stdout, stderr = run(scoped(["domain", "status", "--json"], child_domain))
+if rc != 0 or stderr != "":
+    fail(f"domain status --json after explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+child_domain_status = json.loads(stdout)
+if child_domain_status["unlocked"] or child_domain_status["resolved_domain"] != str(child_domain) or child_domain_status["effective_source"] != "local_lock" or child_domain_status["related_domain"] is not None:
+    fail(f"domain status --json after explicit lock unexpected: {child_domain_status!r}")
+
 rc, stdout, stderr = run(scoped(["domain", "status"], grandchild_domain))
 if rc != 0 or stderr != "":
     fail(f"grandchild domain status after parent explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "effective source: inherited lock\n", "grandchild blocked status")
 assert_contains(stdout, f"inherited from: {child_domain}\n", "grandchild blocked status")
+
+rc, stdout, stderr = run(scoped(["domain", "status", "--json"], grandchild_domain))
+if rc != 0 or stderr != "":
+    fail(f"grandchild domain status --json after parent explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+grandchild_domain_status = json.loads(stdout)
+if grandchild_domain_status["unlocked"] or grandchild_domain_status["effective_source"] != "inherited_lock" or grandchild_domain_status["related_domain"] != str(child_domain):
+    fail(f"grandchild domain status --json after parent explicit lock unexpected: {grandchild_domain_status!r}")
 
 rc, stdout, stderr = run(scoped(["domain", "ls", "-l", "--descendants"], root_domain))
 if rc != 0 or stderr != "":
@@ -1232,6 +1302,16 @@ if rc != 0 or stderr != "":
 assert_contains(stdout, "resolved domain: *default*\n", "default-scope domain status label")
 assert_contains(stdout, "key source: session agent\n", "default-scope domain status key source")
 assert_contains(stdout, "effective source: local unlock\n", "default-scope domain status local session")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(default_scope), "domain", "status", "--json"], {
+    "XDG_RUNTIME_DIR": str(default_runtime),
+    "XDG_DATA_HOME": str(default_data),
+})
+if rc != 0 or stderr != "":
+    fail(f"default-scope domain status --json failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+default_domain_status = json.loads(stdout)
+if default_domain_status["resolved_domain"] != "*default*" or not default_domain_status["unlocked"] or default_domain_status["effective_source"] != "local_unlock":
+    fail(f"default-scope domain status --json unexpected: {default_domain_status!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(default_scope), "domain", "ls", "-la"], {
     "XDG_RUNTIME_DIR": str(default_runtime),

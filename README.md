@@ -290,7 +290,7 @@ mkdir -p ~/example/project
 
 When `domain ls -l` writes to a terminal, it now groups rows under their shared parent directory and wraps very long domain labels onto a separate line before the status columns. Non-terminal output keeps the existing tab-separated full-path layout.
 
-`domain status` shows which domain normal commands resolve to for the current context, whether that context came from `--dir` or the working directory, and a compact summary of visible keys, stores, key source state, remaining unlock time, and the effective access state (`environment`, `local unlock`, `inherited unlock`, `local lock`, or `inherited lock`).
+`domain status` shows which domain normal commands resolve to for the current context, whether that context came from `--dir` or the working directory, and a compact summary of visible keys, stores, key source state, remaining unlock time, and the effective access state (`environment`, `local unlock`, `inherited unlock`, `local lock`, or `inherited lock`). Use `domain status --json` when scripts need the same state as stable JSON fields.
 
 When no registered domain applies, user-facing `unlock` and `domain status` output show an emphasized `*default*` label for the user-global fallback scope. In other words, no registered domain resolved and commands are operating against the top-level inherited fallback scope. That label is presentation only; the implementation no longer stores or resolves that case through a domain string sentinel.
 
@@ -298,6 +298,7 @@ When no registered domain applies, user-facing `unlock` and `domain status` outp
 ./src/secdat --dir ~/example/project/child domain status
 ./src/secdat --domain ~/example/project domain status
 ./src/secdat domain status --quiet
+./src/secdat domain status --json
 ```
 
 To avoid writing secrets to your shell history, prefer stdin for sensitive values:
@@ -349,6 +350,7 @@ You can keep the active master key in a domain-scoped session agent and avoid ex
 ```sh
 ./src/secdat status
 ./src/secdat status --quiet
+./src/secdat status --json
 ./src/secdat --dir ~/example/project wait-unlock --timeout 900
 ./src/secdat --dir ~/example/project unlock
 ./src/secdat --dir ~/example/project unlock --inherit
@@ -381,4 +383,4 @@ Help is also available per command:
 
 ## Next implementation steps
 
-1. Expose more structured status output for scripts if a machine-readable mode becomes necessary.
+1. Run a focused v2 architecture review against the current migrated store behavior.

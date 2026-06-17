@@ -5,6 +5,7 @@
 
 #include <limits.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <time.h>
 
 enum secdat_key_source_type {
@@ -45,5 +46,10 @@ int secdat_collect_domain_status_summary(const char *dir_override, struct secdat
 int secdat_collect_registered_domain_status_summary(const char *registered_root, struct secdat_domain_status_summary *summary);
 int secdat_collect_user_global_status_summary(struct secdat_domain_status_summary *summary);
 int secdat_require_writable_session_access(const char *dir_override, const char *command_name);
+const char *secdat_key_source_json_name(enum secdat_key_source_type source);
+const char *secdat_effective_source_json_name(enum secdat_effective_source_type source);
+const char *secdat_effective_state_json_name(enum secdat_effective_source_type source);
+long long secdat_remaining_seconds(time_t expires_at);
+void secdat_write_json_string(FILE *stream, const char *value);
 
 #endif

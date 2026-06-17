@@ -224,8 +224,10 @@ Clear the current domain's local unlock. When the current domain is already lock
 .B lock
 returns success without changing local state.
 .TP
-.B [\-d DIR|\-\-dir DIR] status [\-q|\-\-quiet]
-Report whether secret material is available from the current domain scope.
+.B [\-d DIR|\-\-dir DIR] status [\-q|\-\-quiet|\-\-json]
+Report whether secret material is available from the current domain scope. Use
+.B --json
+for stable machine-readable state while preserving the normal status exit-code contract.
 .TP
 .B store create|delete|ls|migrate|finalize-migration
 Manage store namespaces and v1 to v2 migration inside the resolved current domain.
@@ -268,12 +270,15 @@ adds the effective inherited parent chain for the current scope, including an em
 row when the chain reaches the user-global fallback scope.
 When long format is written to a terminal, shared parent directories are shown once as a heading and very long domain labels wrap before the metadata columns. Non-terminal long-format output keeps the tab-separated full-path rows.
 .TP
-.B domain status [\-q|\-\-quiet]
+.B domain status [\-q|\-\-quiet|\-\-json]
 Report the resolved domain for the current context along with store count, visible key count, key source, wrapped-key presence, and effective access state. Effective access distinguishes environment, local unlock, inherited unlock, local lock, and inherited-lock outcomes.
 When a session is active, the output also includes the remaining unlock time in a compact form such as
 .B 1h59m
 or
 .B 1m32s.
+Use
+.B --json
+for stable machine-readable fields such as resolved_domain, key_source, effective_source, counts, related_domain, and wrapped_master_key_present.
 When no registered domain applies, user-facing output shows an emphasized fallback label such as
 .B *default*
 rather than any internal sentinel or a misleading registered-domain path. That label means no registered domain resolved and the top-level inherited fallback scope is active.
@@ -378,6 +383,8 @@ secdat get API_TOKEN --stdout
 secdat get API_TOKEN --shellescaped
 secdat --dir ~/project domain create
 secdat --dir ~/project/service domain status
+secdat --dir ~/project/service domain status --json
+secdat status --json
 secdat --dir ~/project --store app export
 source <(secdat --dir ~/project --store app export)
 SECDAT_MASTER_KEY_PASSPHRASE=secret secdat unlock
