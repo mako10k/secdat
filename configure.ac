@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([secdat], [0.2.1], [noreply@example.invalid])
+AC_INIT([secdat], [0.2.2], [noreply@example.invalid])
 AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_HEADERS([config.h])
 AM_INIT_AUTOMAKE([foreign subdir-objects -Wall])

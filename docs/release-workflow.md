@@ -29,7 +29,7 @@ This document captures the concrete steps for cutting a release tag and preparin
    - `node_pkg=$(cd bindings/node && npm pack --silent) && tmp_consumer=$(mktemp -d) && cp "bindings/node/$node_pkg" "$tmp_consumer/" && (cd "$tmp_consumer" && npm init -y && PKG_CONFIG_PATH="$prefix/lib/pkgconfig" LD_LIBRARY_PATH="$prefix/lib" npm install "./$node_pkg" && node -e "require('secdat-sdk-node')")`
    - `(cd bindings/go && PKG_CONFIG_PATH="$prefix/lib/pkgconfig" go build ./...)`
    - `(cd bindings/node && npm pack --dry-run)`
-   - `(cd bindings/rust && cargo package --allow-dirty)`
+   - `(cd bindings/rust && PKG_CONFIG_PATH="$prefix/lib/pkgconfig" cargo package --allow-dirty)`
 
 ## Tagging
 
@@ -79,7 +79,7 @@ Check and package from `bindings/rust`:
 
 ```sh
 PKG_CONFIG_PATH=/tmp/secdat-prefix/lib/pkgconfig cargo check
-cargo package --allow-dirty
+PKG_CONFIG_PATH=/tmp/secdat-prefix/lib/pkgconfig cargo package --allow-dirty
 ```
 
 The crate now uses `pkg-config` in `build.rs`, so the target environment must expose `libsecdat.pc` during builds.
