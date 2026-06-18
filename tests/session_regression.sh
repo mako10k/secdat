@@ -139,6 +139,26 @@ def description_display_column(output, label):
             return display_width(line[: len(line) - len(stripped)])
     fail(f"missing line for label {label!r} in output {output!r}")
 
+def usage_command_column(output, command):
+    in_usage = False
+    for line in output.splitlines():
+        if line == "Usage:":
+            in_usage = True
+            continue
+        if not in_usage:
+            continue
+        if line == "":
+            break
+        if not line.startswith("  "):
+            continue
+        program_end = line.find(" ", 2)
+        if program_end < 0:
+            continue
+        column = line.find(command, program_end + 1)
+        if column >= 0:
+            return column
+    fail(f"missing usage command {command!r} in output {output!r}")
+
 def run(args, extra_env=None):
     run_env = env.copy()
     if extra_env:
@@ -563,6 +583,48 @@ for args, marker in [
         or "KEY / KEYREF:" not in normalized_output
     ):
         fail(f"help check failed for {args}: rc={rc} output={(stdout + stderr)!r}")
+
+usage_alignment_targets = [
+    ([bin_path, "help", "help"], ["help"]),
+    ([bin_path, "help", "version"], ["version"]),
+    ([bin_path, "help", "ls"], ["ls"]),
+    ([bin_path, "help", "rm"], ["rm"]),
+    ([bin_path, "help", "cp"], ["cp"]),
+    ([bin_path, "help", "get"], ["get"]),
+    ([bin_path, "help", "unlock"], ["unlock"]),
+    ([bin_path, "help", "wait-unlock"], ["wait-unlock"]),
+    ([bin_path, "help", "secret"], ["secret status"]),
+    ([bin_path, "help", "store"], [
+        "store create",
+        "store delete",
+        "store ls",
+        "store migrate",
+        "store finalize-migration",
+    ]),
+    ([bin_path, "help", "domain"], [
+        "domain create",
+        "domain delete",
+        "domain ls",
+        "domain status",
+    ]),
+]
+usage_columns = {}
+for args, commands in usage_alignment_targets:
+    rc, stdout, stderr = run(args)
+    output = stdout + stderr
+    if rc != 0:
+        fail(f"usage alignment help failed for {args}: rc={rc} output={output!r}")
+    for command in commands:
+        usage_columns[command] = usage_command_column(output, command)
+
+expected_usage_column = usage_columns["ls"]
+misaligned_usage_columns = {
+    command: column
+    for command, column in usage_columns.items()
+    if column != expected_usage_column
+}
+if misaligned_usage_columns:
+    fail(f"usage command column mismatch: expected={expected_usage_column} columns={usage_columns!r}")
 
 for args, fragments in [
     (
