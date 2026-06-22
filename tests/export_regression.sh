@@ -68,6 +68,7 @@ def normalize_spaces(text):
 
 for args, marker in [
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--sandbox-injectable]"),
+    ([bin_path, "help", "exec"], "exec [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--sandbox-injectable] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
     ([bin_path, "export", "--help"], "emit shell-ready export lines"),
     ([bin_path, "help", "get"], "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [-o|--stdout|-e|--shellescaped]"),
     ([bin_path, "help", "usecases"], "inject secrets into one subprocess only:"),
@@ -290,6 +291,133 @@ if json.loads(stdout) != {
     "SPV_REDMINE_PROJECT": "mapped-project-secret",
 }:
     fail(f"exec env-map-sed payload mismatch: {stdout!r}")
+
+dry_run_marker = work_root / "DRY_RUN_RAN"
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--pattern",
+    "MY_REDMINE_*",
+    "--env-map-sed",
+    r"s/^MY_REDMINE_\(.\+\)$/SPV_REDMINE_\1/",
+    "--dry-run",
+    "python3",
+    "-c",
+    f"from pathlib import Path; Path({str(dry_run_marker)!r}).write_text('ran')",
+])
+if rc != 0 or stderr != "":
+    fail(f"exec dry-run failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "injected_key_count: 2\n", "dry-run count")
+assert_contains(stdout, "MY_REDMINE_API_KEY\tSPV_REDMINE_API_KEY", "dry-run API key mapping")
+assert_contains(stdout, "MY_REDMINE_PROJECT\tSPV_REDMINE_PROJECT", "dry-run project mapping")
+if "mapped-api-secret" in stdout or "mapped-project-secret" in stdout:
+    fail(f"dry-run leaked secret values: {stdout!r}")
+if dry_run_marker.exists():
+    fail("exec dry-run unexpectedly ran child command")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--pattern",
+    "MY_REDMINE_*",
+    "--env-map-sed",
+    r"s/^MY_REDMINE_\(.\+\)$/SPV_REDMINE_\1/",
+    "--dry-run",
+    "--json",
+    "python3",
+    "-c",
+    "print('unreachable')",
+])
+if rc != 0 or stderr != "":
+    fail(f"exec json dry-run failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+preflight = json.loads(stdout)
+if preflight["dry_run"] is not True or preflight["injected_key_count"] != 2:
+    fail(f"unexpected json dry-run summary: {preflight!r}")
+if preflight["argv"] != ["python3", "-c", "print('unreachable')"]:
+    fail(f"unexpected json dry-run argv: {preflight!r}")
+if {item["env_name"] for item in preflight["injected_keys"]} != {"SPV_REDMINE_API_KEY", "SPV_REDMINE_PROJECT"}:
+    fail(f"unexpected json dry-run injected keys: {preflight!r}")
+if "mapped-api-secret" in stdout or "mapped-project-secret" in stdout:
+    fail(f"json dry-run leaked secret values: {stdout!r}")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--dry-run",
+    "--json-summary",
+    "python3",
+    "-c",
+    "print('unreachable')",
+])
+if rc == 0 or stdout != "" or "--json-summary cannot be combined with --dry-run" not in stderr:
+    fail(f"exec dry-run json-summary combination did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--pattern",
+    "CONTROL_*",
+    "--json-summary",
+    "python3",
+    "-c",
+    "import os, sys; sys.stdout.write('child stdout'); sys.exit(7)",
+])
+if rc != 7 or stdout != "child stdout":
+    fail(f"exec json-summary child result mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+summary = json.loads(stderr)
+if summary["dry_run"] is not False or summary["exit_status"] != 7 or summary["term_signal"] is not None:
+    fail(f"unexpected json-summary status: {summary!r}")
+if summary["injected_key_count"] != 1 or summary["injected_keys"] != [{"key": "CONTROL_TOKEN", "env_name": "CONTROL_TOKEN"}]:
+    fail(f"unexpected json-summary injected keys: {summary!r}")
+if summary["duration_ms"] is None or summary["duration_ms"] < 0:
+    fail(f"unexpected json-summary duration: {summary!r}")
+if "first" in stderr or "second" in stderr or control_payload in stderr:
+    fail(f"json-summary leaked secret values: {stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--env-map-sed",
+    r"s/^MY_REDMINE_PROJECT$/BAD-NAME/",
+    "--dry-run",
+    "--json",
+    "python3",
+    "-c",
+    "print('unreachable')",
+])
+if rc == 0 or stderr != "":
+    fail(f"invalid env-map json dry-run did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+mapping_error = json.loads(stdout)["mapping_errors"][0]
+if mapping_error["kind"] != "invalid-env-map-name" or mapping_error["env_name"] != "BAD-NAME":
+    fail(f"unexpected invalid env-map json error: {mapping_error!r}")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--env-map-sed",
+    r"s/^MY_REDMINE_.*$/DUP_REDMINE/",
+    "--json-summary",
+    "python3",
+    "-c",
+    "print('unreachable')",
+])
+if rc == 0 or stdout != "":
+    fail(f"duplicate env-map json-summary did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+mapping_error = json.loads(stderr)["mapping_errors"][0]
+if mapping_error["kind"] != "duplicate-env-map-name" or mapping_error["env_name"] != "DUP_REDMINE":
+    fail(f"unexpected duplicate env-map json error: {mapping_error!r}")
 
 for expression, expected in [
     (

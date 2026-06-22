@@ -162,12 +162,22 @@ Direct source-object links such as
 .B ln @UUID DST_KEYREF
 are allowed only when the current context can authorize the UUID through an existing visible or unlocked domain entry; object UUID syntax is not a destination operand.
 .TP
-.B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-\-env-map-sed EXPR] [\-\-sandbox-injectable] [\-\-] CMD [ARGS...]
+.B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-\-env-map-sed EXPR] [\-\-sandbox-injectable] [\-\-dry-run] [\-\-json] [\-\-json-summary] [\-\-] CMD [ARGS...]
 Inject resolved keys into a child process environment and execute the command. Repeated include patterns widen the match set, repeated exclude patterns subtract from it, and
 .B --sandbox-injectable
 keeps only keys whose effective sandbox injection policy allows bulk sandbox selection.
 .B --env-map-sed
 applies one sed-style key-to-environment-name mapping. In the current minimal subset, only keys matched by that substitution are injected. Generated environment names must be valid identifiers; empty or otherwise invalid names are rejected before values are loaded.
+.B --dry-run
+prints the command argv, selected key names, generated environment names, and injection count without running the child or reading secret values. Add
+.B --json
+to write that preflight report as JSON to standard output.
+.B --json-summary
+runs the child and writes a JSON audit summary to standard error after child exit, preserving child standard output. It cannot be combined with
+.B --dry-run .
+JSON output includes machine-readable
+.B mapping_errors
+for invalid mappings and duplicate generated environment names, and never includes secret values.
 .TP
 .B export [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-sandbox-injectable]
 Emit bash-oriented export lines for the current visible keys. The

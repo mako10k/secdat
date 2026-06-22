@@ -66,7 +66,7 @@ secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] ln SRC_KEYREF|@UUID DST_KEYREF
 
-secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] [--sandbox-injectable] [--] CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] [--sandbox-injectable] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 
 secdat [--dir DIR] unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH]
 secdat [--dir DIR] inherit
@@ -273,6 +273,12 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat exec --pattern GLOBPATTERN CMD [ARGS...]` injects only matched keys
 - the initial `--env-map-sed` subset accepts a single `s///` expression with an optional leading `/ADDRESS/` filter and supports `&` plus `\1` through `\9` in the replacement text
 - the delimiter after `s` may be any non-alphanumeric, non-backslash character, so `s|...|...|` and `s#...#...#` are accepted
+- `secdat exec --dry-run CMD [ARGS...]` reports the selected key names, generated environment variable names, injection count, and command argv without executing the child or reading secret values
+- `exec --dry-run --json` reports the same preflight data as stable JSON on standard output
+- `exec --json-summary CMD [ARGS...]` executes the child and writes a stable JSON summary to standard error after it exits, preserving child standard output for the child process
+- `exec --json-summary` and `exec --dry-run` are mutually exclusive because `--json-summary` is reserved for real executions
+- JSON summaries include domain, store, include/exclude patterns, sandbox and mapping flags, injected key count, injected key/environment-name pairs, sanitized child argv, exit status or terminating signal, duration, and machine-readable `mapping_errors`
+- preflight output and JSON summaries must not contain secret values
 - the parent process environment is not modified
 - resolved values are decrypted and passed through an `execve`-style API
 
@@ -713,7 +719,7 @@ secdat [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY
 ### 4.8 `exec`
 
 ```text
-secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] [--sandbox-injectable] [--] CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] [--sandbox-injectable] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 ```
 
 - without `--pattern`, all effective visible keys are injected unless further restricted by `--sandbox-injectable`
@@ -723,6 +729,12 @@ secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-ex
 - `--env-map-sed EXPR` accepts one sed-style substitution for exec-time environment names; when present, only matched keys are injected
 - mapped environment variable names must remain valid identifiers; empty or otherwise invalid results are rejected before values are loaded
 - the initial subset accepts `s/REGEX/REPLACEMENT/` with an optional leading `/ADDRESS/`; replacement supports `&` and `\1` through `\9`, and the delimiter after `s` may be any non-alphanumeric, non-backslash character
+- `--dry-run` prints a preflight report containing the command argv, selected key names, generated environment names, and injection count without executing the child or reading secret values
+- `--json` is valid with `--dry-run` and writes the preflight report as JSON to standard output
+- `--json-summary` runs the child and writes a JSON summary to standard error after child exit so child standard output remains parseable
+- `--json-summary` cannot be combined with `--dry-run`; use `--dry-run --json` for JSON preflight
+- JSON preflight and summary output represent invalid mappings and duplicate generated environment names in `mapping_errors`
+- preflight and summary output must never include secret values
 - the parent process environment is unchanged
 
 Environment variable mapping:
