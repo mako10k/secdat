@@ -51,13 +51,13 @@ def assert_not_contains(values, unexpected, label):
 mode, values = run_completion("")
 if mode != "plain":
     raise SystemExit(f"FAIL: top-level completion mode mismatch: {mode!r}")
-for expected in ["wait-unlock", "inherit", "store", "secret", "domain", "unlock", "attr", "fsck", "gc", "id", "ln", "version", "--dir", "--domain", "--store", "--help", "--version"]:
+for expected in ["wait-unlock", "inherit", "store", "meta", "relation", "secret", "domain", "unlock", "attr", "fsck", "gc", "id", "ln", "version", "--dir", "--domain", "--store", "--help", "--version"]:
     assert_contains(values, expected, "top-level commands")
 
 mode, values = run_completion("help", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: help completion mode mismatch: {mode!r}")
-for expected in ["usecases", "concepts", "wait-unlock", "store", "secret", "domain", "gc", "id"]:
+for expected in ["usecases", "concepts", "wait-unlock", "store", "meta", "relation", "secret", "domain", "gc", "id"]:
     assert_contains(values, expected, "help targets")
 
 mode, values = run_completion("help", "store", "")
@@ -66,6 +66,20 @@ if mode != "plain":
 for expected in ["create", "delete", "ls", "migrate", "finalize-migration"]:
     assert_contains(values, expected, "help store subcommands")
 assert_not_contains(values, "get", "help store subcommands")
+
+mode, values = run_completion("help", "meta", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: help meta completion mode mismatch: {mode!r}")
+for expected in ["get", "set", "unset", "search"]:
+    assert_contains(values, expected, "help meta subcommands")
+assert_not_contains(values, "create", "help meta subcommands")
+
+mode, values = run_completion("help", "relation", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: help relation completion mode mismatch: {mode!r}")
+for expected in ["set", "ls", "show", "rm"]:
+    assert_contains(values, expected, "help relation subcommands")
+assert_not_contains(values, "create", "help relation subcommands")
 
 mode, values = run_completion("help", "domain", "")
 if mode != "plain":
@@ -128,6 +142,18 @@ if mode != "plain":
 for expected in ["create", "delete", "ls", "migrate", "finalize-migration"]:
     assert_contains(values, expected, "store subcommands")
 
+mode, values = run_completion("meta", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: meta completion mode mismatch: {mode!r}")
+for expected in ["get", "set", "unset", "search"]:
+    assert_contains(values, expected, "meta subcommands")
+
+mode, values = run_completion("relation", "")
+if mode != "plain":
+    raise SystemExit(f"FAIL: relation completion mode mismatch: {mode!r}")
+for expected in ["set", "ls", "show", "rm"]:
+    assert_contains(values, expected, "relation subcommands")
+
 mode, values = run_completion("secret", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: secret completion mode mismatch: {mode!r}")
@@ -170,6 +196,16 @@ if mode != "plain":
     raise SystemExit(f"FAIL: attr option completion mode mismatch: {mode!r}")
 for expected in ["--key-visibility", "--value-access", "--sandbox-inject", "--inject"]:
     assert_contains(values, expected, "attr options")
+
+mode, values = run_completion("relation", "set", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: relation set option completion mode mismatch: {mode!r}")
+for expected in ["--kind", "--member", "--security", "--exposure", "--impact", "--note"]:
+    assert_contains(values, expected, "relation set options")
+
+mode, values = run_completion("relation", "set", "--member", "")
+if mode != "none" or values:
+    raise SystemExit(f"FAIL: relation set --member completion mode mismatch: mode={mode!r} values={values!r}")
 
 mode, values = run_completion("fsck", "--")
 if mode != "plain":

@@ -38,6 +38,14 @@ secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GL
 
 secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--sandbox-injectable]
 secdat [--dir DIR] [--store STORE] attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|bulk]
+secdat [--dir DIR] [--store STORE] meta get KEYREF
+secdat [--dir DIR] [--store STORE] meta set KEYREF FIELD VALUE
+secdat [--dir DIR] [--store STORE] meta unset KEYREF FIELD
+secdat [--dir DIR] [--store STORE] meta search [FIELD|FIELD=GLOB]...
+secdat [--dir DIR] [--store STORE] relation set RELATION_ID --kind KIND --member ROLE=KEYREF --member ROLE=KEYREF [--security TEXT] [--exposure TEXT] [--impact TEXT] [--note TEXT]
+secdat [--dir DIR] [--store STORE] relation ls [KEYREF]
+secdat [--dir DIR] [--store STORE] relation show RELATION_ID
+secdat [--dir DIR] [--store STORE] relation rm RELATION_ID
 secdat [--dir DIR] [--store STORE] fsck [--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]
 secdat [--dir DIR] [--store STORE] gc [--orphaned] [--dangling] [--dry-run] [--format v2]
 
@@ -116,6 +124,8 @@ To make the requested behavior implementable, the following are treated as norma
 - `set KEYREF --public-value ...` is the clearer alias for plaintext-at-rest values that remain readable while locked
 - per-secret attributes include `key_visibility`, `value_access`, and `sandbox_inject`
 - `sandbox_inject` controls whether a key may be included in scoped sandbox injection/export selection
+- searchable key metadata is non-secret `FIELD=VALUE` data managed by `meta`, not by `attr`
+- semantic relations are non-secret records that connect two or more role-named KEYREFs and describe the security meaning of the combination
 - `fsck` performs non-destructive store consistency checks used by the migration path
 - `gc` explicitly removes unreachable or dangling v2 graph files after review
 - `exec` injects matched keys into the child process environment
@@ -253,6 +263,7 @@ To make the requested behavior implementable, the following are treated as norma
 - it is an error if `SRC_KEYREF` and `DST_KEYREF` are identical textually
 - if `SRC_KEYREF` is inherited from a parent domain, the source name is hidden with a tombstone in the resolved source current domain after the destination is materialized
 - `mv` preserves the source entry storage mode, including plaintext-at-rest entries created with `set --unsafe`
+- `mv` preserves searchable key metadata on the destination and removes local searchable key metadata from a removed local source
 
 #### FR-6 Key Copy
 
@@ -260,6 +271,7 @@ To make the requested behavior implementable, the following are treated as norma
 - it is an error if `DST_KEYREF` already exists in the effective destination view
 - the copied value must be re-encrypted with a new nonce
 - `cp` preserves the source entry storage mode, including plaintext-at-rest entries created with `set --unsafe`
+- `cp` preserves searchable key metadata on the destination
 
 #### FR-7 Runtime Injection
 
@@ -317,6 +329,33 @@ To make the requested behavior implementable, the following are treated as norma
 - `exec --sandbox-injectable` injects only keys whose effective `sandbox_inject` allows bulk selector, pattern, or profile based selection
 - `export --sandbox-injectable` emits only keys whose effective `sandbox_inject` allows bulk selector, pattern, or profile based selection
 
+#### FR-3ad Searchable Metadata and Semantic Relations
+
+- `secdat meta get KEYREF` prints the effective non-secret searchable metadata for one visible key as `FIELD=VALUE` rows
+- `secdat meta set KEYREF FIELD VALUE` adds or replaces one non-secret searchable metadata field on a current-domain local key
+- `secdat meta unset KEYREF FIELD` removes one searchable metadata field from a current-domain local key
+- `secdat meta search` lists visible keys with any searchable metadata
+- `secdat meta search FIELD` lists visible keys whose metadata contains `FIELD`
+- `secdat meta search FIELD=GLOB` lists visible keys whose metadata field value matches the shell glob
+- multiple `meta search` filters are conjunctive
+- metadata field names accept alphanumeric characters, `_`, `-`, and `.`
+- searchable metadata must not contain secret values; it is intended for labels, ownership, service names, non-secret meaning, and lookup hints
+- `meta set` and `meta unset` reject inherited keys; inherited keys must be materialized locally before their current-domain metadata can be changed
+- `cp` and `mv` preserve searchable metadata; `rm` removes searchable metadata for a removed local key
+- v2 `key_visibility=unlocked` keys reject searchable metadata, and keys with existing searchable metadata cannot be changed to `key_visibility=unlocked`, because metadata files are indexed by plaintext key name
+- `secdat relation set RELATION_ID --kind KIND --member ROLE=KEYREF --member ROLE=KEYREF ...` creates or replaces one relation with at least two member key references
+- relation IDs, kinds, and member roles accept alphanumeric characters, `_`, `-`, and `.`
+- each relation member is validated as an existing key when the relation is written
+- relation members are stored as canonical KEYREFs
+- v2 `key_visibility=unlocked` keys cannot be relation members, and keys with existing relation membership cannot be changed to `key_visibility=unlocked`, because relation records store canonical KEYREFs
+- `--security`, `--exposure`, `--impact`, and `--note` record non-secret security meaning for the relation, such as whether the combination is sensitive, which parts may be public, and what impact disclosure has
+- relation commands never read or print secret values
+- `secdat relation show RELATION_ID` prints relation metadata and canonical member KEYREFs
+- `secdat relation ls` lists relation IDs in the current domain/store
+- `secdat relation ls KEYREF` lists relation IDs containing the resolved key
+- `secdat relation rm RELATION_ID` removes one relation record
+- relation writes reject volatile overlay sessions and readonly sessions
+
 #### FR-3ac Store Consistency Checks
 
 - `secdat fsck` checks the current-domain local store namespace without decrypting secret values
@@ -331,9 +370,13 @@ To make the requested behavior implementable, the following are treated as norma
 - clean output is `ok`
 - issue output is tab-separated and stable enough for scripts
 - v1 orphan checks report `.meta` sidecars without matching `.sec` entries as `orphaned-metadata	KEY	missing-entry`
+- v1/v2 orphan checks report searchable key metadata without a local key as `orphaned-key-metadata	KEY	missing-entry`
 - v1 orphan checks report tombstones without a parent-visible key as `orphaned-tombstone	KEY	missing-parent`
 - v1 dangling checks report invalid `.sec` entry files as `dangling-entry	KEY	invalid-entry`
 - v1 dangling checks report invalid or unsupported attribute sidecars as `dangling-metadata	KEY	invalid-metadata`
+- v1/v2 dangling checks report invalid searchable key metadata as `dangling-key-metadata	KEY	invalid-metadata`
+- v1/v2 dangling checks report invalid relation records as `dangling-relation	RELATION_ID	invalid-relation`
+- v1/v2 dangling checks report relation members whose keys are no longer visible as `dangling-relation	RELATION_ID	missing-key:ROLE`
 - v2 orphan checks report secret objects without referencing domain entries as `orphaned-secret	UUID	missing-entry`
 - v2 orphan checks can report standalone legacy object value sidecars without a secret object as `orphaned-value	UUID	missing-secret`
 - v2 dangling checks report invalid domain entries or secret objects as `dangling-entry	ENTRY_ID	invalid-entry` or `dangling-secret	SECRET_ID	invalid-secret`
@@ -377,7 +420,7 @@ To make the requested behavior implementable, the following are treated as norma
 - reads, listing, export-like operations, and bundle save/load must prefer the active volatile overlay before consulting persisted store files
 - when no wrapped persistent master key exists, `unlock --volatile` may generate an ephemeral in-memory master key without writing the wrapped-key file
 - the current implementation removes only tombstones created in the active volatile overlay; removing persisted tombstones and deleting v2 local entries still require a normal writable session
-- `unlock --readonly` reuses an existing master key but must reject mutating commands, including `fsck --repair`, `gc` without `--dry-run`, `store migrate` without `--dry-run`, and `store finalize-migration` without `--dry-run`, while keeping reads, listing, export-like operations, dry-run cleanup review, and status available
+- `unlock --readonly` reuses an existing master key but must reject mutating commands, including `meta set`, `meta unset`, `relation set`, `relation rm`, `fsck --repair`, `gc` without `--dry-run`, `store migrate` without `--dry-run`, and `store finalize-migration` without `--dry-run`, while keeping reads, listing, export-like operations, dry-run cleanup review, and status available
 - `--readonly` and `--volatile` are mutually exclusive, and neither may be combined with `unlock --inherit`
 - if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `unlock`

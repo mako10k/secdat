@@ -1,4 +1,4 @@
-.TH SECDAT 1 "2026-06-18" "secdat 0.2.2" "User Commands"
+.TH SECDAT 1 "2026-06-22" "secdat 0.2.2" "User Commands"
 .SH NAME
 secdat \- minimal local secret store with domain and store scoping
 .SH SYNOPSIS
@@ -85,6 +85,38 @@ mode is excluded by the
 .B --sandbox-injectable
 bulk policy gate; plain pattern filters remain direct visible-key selectors unless that gate is also present.
 .TP
+.B meta get KEYREF
+Print non-secret searchable metadata for one visible key as
+.B FIELD=VALUE
+rows. Secret values are not read.
+.TP
+.B meta set KEYREF FIELD VALUE
+Attach or replace one non-secret searchable metadata field on a current-domain local key. Inherited keys must be materialized locally before their metadata can be changed. v2 hidden keys
+.RB ( key_visibility=unlocked )
+reject searchable metadata because metadata paths are plaintext key-name indexed.
+.TP
+.B meta unset KEYREF FIELD
+Remove one searchable metadata field from a current-domain local key.
+.TP
+.B meta search [FIELD|FIELD=GLOB]...
+List visible keys whose searchable metadata matches all requested filters. A bare
+.B FIELD
+filter requires presence of that field, and
+.B FIELD=GLOB
+uses shell-style glob matching against the metadata value.
+.TP
+.B relation set RELATION_ID --kind KIND --member ROLE=KEYREF --member ROLE=KEYREF [--security TEXT] [--exposure TEXT] [--impact TEXT] [--note TEXT]
+Create or replace one non-secret semantic relation with two or more role-named members. Member keys are validated when the relation is written and are stored as canonical KEYREFs. v2 hidden keys cannot be relation members because relation records store canonical KEYREFs. The security, exposure, impact, and note fields describe the non-secret security meaning of the combination, such as whether an id/password pair is sensitive together while an id alone may be public.
+.TP
+.B relation ls [KEYREF]
+List relation identifiers in the current domain/store, optionally limited to relations containing one resolved key.
+.TP
+.B relation show RELATION_ID
+Print one semantic relation without reading secret values.
+.TP
+.B relation rm RELATION_ID
+Remove one semantic relation record.
+.TP
 .B id KEYREF
 Print the resolved v2 secret object UUID for one key without reading its value. This requires a store marked with the v2 format marker. The UUID is an address, not authority.
 .TP
@@ -95,9 +127,9 @@ Print one v2 secret object's non-secret metadata in the current domain/store wit
 Check the current-domain local store namespace without decrypting secret values. Clean v1 output is
 .B ok .
 .B --orphaned
-reports leftover metadata or tombstones without an authoritative counterpart,
+reports leftover metadata, searchable key metadata, or tombstones without an authoritative counterpart,
 .B --dangling
-reports invalid entries or attribute sidecars, and
+reports invalid entries, attribute sidecars, searchable key metadata, invalid relation records, or relation members whose referenced keys are no longer visible, and
 .B --refcount
 is currently a clean no-op for v1 because shared secret objects arrive with store v2. Stores with the v2 format marker are checked with
 .B --format v2 ,
@@ -414,6 +446,10 @@ Makoto Katsumata
 secdat set API_TOKEN --value token-123
 secdat get API_TOKEN --stdout
 secdat get API_TOKEN --shellescaped
+secdat meta set API_TOKEN service billing
+secdat meta search service=bill*
+secdat relation set billing-login --kind credential --member id=BILLING_ID --member password=BILLING_PASSWORD --security combination-sensitive
+secdat relation show billing-login
 secdat --dir ~/project domain create
 secdat --dir ~/project/service domain status
 secdat --dir ~/project/service domain status --json

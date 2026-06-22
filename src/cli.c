@@ -31,6 +31,14 @@ struct secdat_cli_subcommand_entry {
 };
 
 static const struct secdat_cli_subcommand_entry secdat_cli_subcommand_registry[] = {
+    {"meta", "get", "meta get", SECDAT_COMMAND_META_GET},
+    {"meta", "set", "meta set", SECDAT_COMMAND_META_SET},
+    {"meta", "unset", "meta unset", SECDAT_COMMAND_META_UNSET},
+    {"meta", "search", "meta search", SECDAT_COMMAND_META_SEARCH},
+    {"relation", "set", "relation set", SECDAT_COMMAND_RELATION_SET},
+    {"relation", "ls", "relation ls", SECDAT_COMMAND_RELATION_LS},
+    {"relation", "show", "relation show", SECDAT_COMMAND_RELATION_SHOW},
+    {"relation", "rm", "relation rm", SECDAT_COMMAND_RELATION_RM},
     {"store", "create", "store create", SECDAT_COMMAND_STORE_CREATE},
     {"store", "delete", "store delete", SECDAT_COMMAND_STORE_DELETE},
     {"store", "ls", "store ls", SECDAT_COMMAND_STORE_LS},
@@ -223,7 +231,7 @@ static void secdat_cli_add_suggestion(
 int secdat_cli_print_command_suggestions(const char *input, int fallback_get_context)
 {
     static const char *const command_candidates[] = {
-        "help", "ls", "list", "attr", "fsck", "gc", "mask", "unmask", "exists", "id",
+        "help", "ls", "list", "attr", "meta", "relation", "fsck", "gc", "mask", "unmask", "exists", "id",
         "get", "set", "rm", "mv", "cp", "ln", "exec", "export", "save", "load",
         "unlock", "inherit", "passwd", "lock", "status", "wait-unlock",
         "store", "secret", "domain", "version", NULL,
@@ -732,11 +740,14 @@ static int secdat_cli_completion_is_global_option_with_value(const char *value)
             || strcmp(value, "--domain") == 0 || strcmp(value, "--store") == 0 || strcmp(value, "-s") == 0);
 }
 
-static int secdat_cli_completion_is_command_with_key_operand(const char *command)
+static int secdat_cli_completion_is_command_with_key_operand(const char *command, const char *subcommand)
 {
     return command != NULL
         && (strcmp(command, "get") == 0 || strcmp(command, "exists") == 0 || strcmp(command, "id") == 0
             || strcmp(command, "attr") == 0
+            || (strcmp(command, "meta") == 0
+                && subcommand != NULL
+                && (strcmp(subcommand, "get") == 0 || strcmp(subcommand, "set") == 0 || strcmp(subcommand, "unset") == 0))
             || strcmp(command, "rm") == 0 || strcmp(command, "mask") == 0
             || strcmp(command, "unmask") == 0 || strcmp(command, "set") == 0
             || strcmp(command, "cp") == 0 || strcmp(command, "mv") == 0 || strcmp(command, "ln") == 0);
@@ -930,6 +941,16 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
             || strcmp(previous, "--inject") == 0) {
             return "none";
         }
+    } else if (strcmp(command, "relation") == 0) {
+        if (subcommand != NULL && strcmp(subcommand, "set") == 0
+            && (strcmp(previous, "--kind") == 0
+                || strcmp(previous, "--member") == 0
+                || strcmp(previous, "--security") == 0
+                || strcmp(previous, "--exposure") == 0
+                || strcmp(previous, "--impact") == 0
+                || strcmp(previous, "--note") == 0)) {
+            return "none";
+        }
     } else if (strcmp(command, "fsck") == 0 || strcmp(command, "gc") == 0) {
         if (strcmp(previous, "--format") == 0) {
             return "none";
@@ -1097,6 +1118,9 @@ int secdat_cli_complete(int argc, char **argv)
     static const char *const attr_options[] = {
         "--key-visibility", "--value-access", "--sandbox-inject", "--inject", "--help", "-h", NULL,
     };
+    static const char *const relation_set_options[] = {
+        "--kind", "--member", "--security", "--exposure", "--impact", "--note", "--help", "-h", NULL,
+    };
     static const char *const fsck_options[] = {
         "--orphaned", "--dangling", "--refcount", "--repair", "--format", "--help", "-h", NULL,
     };
@@ -1190,7 +1214,7 @@ int secdat_cli_complete(int argc, char **argv)
         return 0;
     }
 
-    if (secdat_cli_completion_is_command_with_key_operand(command)
+    if (secdat_cli_completion_is_command_with_key_operand(command, subcommand)
         && secdat_cli_completion_positional_count(argc, argv, command, subcommand) == 0) {
         secdat_cli_completion_print_keys(argc, argv, current, 0);
     }
@@ -1201,6 +1225,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, list_options);
     } else if (strcmp(command, "attr") == 0) {
         secdat_cli_completion_print_candidates(current, attr_options);
+    } else if (strcmp(command, "relation") == 0 && subcommand != NULL && strcmp(subcommand, "set") == 0) {
+        secdat_cli_completion_print_candidates(current, relation_set_options);
     } else if (strcmp(command, "fsck") == 0) {
         secdat_cli_completion_print_candidates(current, fsck_options);
     } else if (strcmp(command, "gc") == 0) {
@@ -1350,6 +1376,30 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_ATTR:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "attr", "KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--sandbox-inject never|explicit|bulk]");
+        break;
+    case SECDAT_COMMAND_META_GET:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "meta get", "KEYREF");
+        break;
+    case SECDAT_COMMAND_META_SET:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "meta set", "KEYREF FIELD VALUE");
+        break;
+    case SECDAT_COMMAND_META_UNSET:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "meta unset", "KEYREF FIELD");
+        break;
+    case SECDAT_COMMAND_META_SEARCH:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "meta search", "[FIELD|FIELD=GLOB]...");
+        break;
+    case SECDAT_COMMAND_RELATION_SET:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation set", "RELATION_ID --kind KIND --member ROLE=KEYREF --member ROLE=KEYREF [--security TEXT] [--exposure TEXT] [--impact TEXT] [--note TEXT]");
+        break;
+    case SECDAT_COMMAND_RELATION_LS:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation ls", "[KEYREF]");
+        break;
+    case SECDAT_COMMAND_RELATION_SHOW:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation show", "RELATION_ID");
+        break;
+    case SECDAT_COMMAND_RELATION_RM:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation rm", "RELATION_ID");
         break;
     case SECDAT_COMMAND_FSCK:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "fsck", "[--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]");
@@ -1530,6 +1580,8 @@ static void secdat_cli_print_group_meanings(void)
 {
     printf(_("\nGroups:\n"));
     secdat_cli_print_detail_line(_("  store: manage store namespaces and v1 to v2 migration inside the resolved current domain\n"));
+    secdat_cli_print_detail_line(_("  meta: manage non-secret searchable metadata attached to keys\n"));
+    secdat_cli_print_detail_line(_("  relation: connect keys into semantic groups with non-secret security meaning\n"));
     secdat_cli_print_detail_line(_("  secret: inspect v2 secret-object metadata by UUID without reading secret values\n"));
     secdat_cli_print_detail_line(_("  domain: manage domain roots and domain discovery scope\n"));
 }
@@ -1541,6 +1593,8 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  ls: list effective keys visible from the current domain view, optionally filtered by safe or unsafe storage\n"));
     secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe, or sandbox-injectable local state\n"));
     secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and sandbox injection attributes\n"));
+    secdat_cli_print_detail_line(_("  meta: manage non-secret searchable metadata without reading secret values\n"));
+    secdat_cli_print_detail_line(_("  relation: record semantic links between keys and the security meaning of those links\n"));
     secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and limited repair\n"));
     secdat_cli_print_detail_line(_("  gc: remove unreachable or dangling v2 graph files after review\n"));
     secdat_cli_print_detail_line(_("  mask: create a local tombstone to hide one inherited key\n"));
@@ -1595,6 +1649,47 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and sandbox injection attributes\n"));
         secdat_cli_print_detail_line(_("  key_visibility controls whether the key name is visible while locked; value_access=always stores a public/plaintext-at-rest value; sandbox_inject controls export/exec eligibility when --sandbox-injectable is used for this entry\n"));
         secdat_cli_print_detail_line(_("  v2 effective --sandbox-injectable selection also requires the secret object's secret_inject policy to allow the value to leave the store\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "meta") == 0) {
+        secdat_cli_print_detail_line(_("  meta: manage non-secret searchable metadata attached to keys in the current store\n"));
+        secdat_cli_print_detail_line(_("  metadata values are labels or descriptions for lookup; do not store secret material in metadata\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "meta get") == 0) {
+        secdat_cli_print_detail_line(_("  meta get: print non-secret searchable metadata for one visible key\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "meta set") == 0) {
+        secdat_cli_print_detail_line(_("  meta set: attach or replace one non-secret searchable metadata field on a local key\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "meta unset") == 0) {
+        secdat_cli_print_detail_line(_("  meta unset: remove one searchable metadata field from a local key\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "meta search") == 0) {
+        secdat_cli_print_detail_line(_("  meta search: list visible keys whose non-secret metadata contains all requested fields or glob-matched values\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "relation") == 0) {
+        secdat_cli_print_detail_line(_("  relation: record semantic links between multiple key references and the non-secret security meaning of the combination\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "relation set") == 0) {
+        secdat_cli_print_detail_line(_("  relation set: create or replace one semantic relation with two or more role=KEYREF members\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "relation ls") == 0) {
+        secdat_cli_print_detail_line(_("  relation ls: list relation identifiers, optionally limited to relations containing one key\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "relation show") == 0) {
+        secdat_cli_print_detail_line(_("  relation show: print one semantic relation without reading secret values\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "relation rm") == 0) {
+        secdat_cli_print_detail_line(_("  relation rm: remove one semantic relation record\n"));
         return;
     }
     if (target != NULL && strcmp(target, "fsck") == 0) {
@@ -1787,6 +1882,22 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         snprintf(buffer, sizeof(buffer), _("  inspect one key's current attributes: %s attr API_TOKEN\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  make one value public while keeping the key name visible: %s attr API_TOKEN --value-access always\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        return;
+    }
+    if (strcmp(target, "meta") == 0 || strcmp(target, "meta set") == 0 || strcmp(target, "meta search") == 0) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  tag one key for search: %s meta set API_TOKEN service billing\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  find keys by metadata: %s meta search service=bill*\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        return;
+    }
+    if (strcmp(target, "relation") == 0 || strcmp(target, "relation set") == 0 || strcmp(target, "relation show") == 0) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  record a credential pair: %s relation set billing-login --kind credential --member id=BILLING_ID --member password=BILLING_PASSWORD --security combination-sensitive\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  inspect relation metadata: %s relation show billing-login\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         return;
     }
@@ -2004,6 +2115,10 @@ static int secdat_cli_parse_group_subcommand(struct secdat_cli *cli, int argc, c
 
     if (strcmp(group, "store") == 0) {
         fprintf(stderr, _("unknown store subcommand: %s\n"), argv[*index]);
+    } else if (strcmp(group, "meta") == 0) {
+        fprintf(stderr, _("unknown meta subcommand: %s\n"), argv[*index]);
+    } else if (strcmp(group, "relation") == 0) {
+        fprintf(stderr, _("unknown relation subcommand: %s\n"), argv[*index]);
     } else if (strcmp(group, "secret") == 0) {
         fprintf(stderr, _("unknown secret subcommand: %s\n"), argv[*index]);
     } else if (strcmp(group, "domain") == 0) {
@@ -2171,6 +2286,8 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
     printf(_("Usage:\n"));
     secdat_cli_print_usage_line(program_name, command);
     if (command == SECDAT_COMMAND_LS || command == SECDAT_COMMAND_LIST || command == SECDAT_COMMAND_ATTR
+        || command == SECDAT_COMMAND_META_GET || command == SECDAT_COMMAND_META_SET || command == SECDAT_COMMAND_META_UNSET
+        || command == SECDAT_COMMAND_RELATION_SET || command == SECDAT_COMMAND_RELATION_LS
         || command == SECDAT_COMMAND_MASK || command == SECDAT_COMMAND_UNMASK
         || command == SECDAT_COMMAND_EXISTS || command == SECDAT_COMMAND_ID || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
         || command == SECDAT_COMMAND_RM || command == SECDAT_COMMAND_MV || command == SECDAT_COMMAND_CP || command == SECDAT_COMMAND_LN) {

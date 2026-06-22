@@ -19,6 +19,8 @@ Current status:
 - `domain create`, `domain delete`, `domain ls`, and `domain status` are implemented
 - `store create`, `store delete`, `store ls`, `store migrate`, and `store finalize-migration` are implemented
 - `unlock`, `lock`, and `status` are implemented with domain-scoped session agents and a wrapped persistent master key
+- `meta` is implemented for non-secret searchable key metadata
+- `relation` is implemented for semantic key groupings with non-secret security meaning
 - normal store commands resolve the current domain from `--dir` or the working directory and fall back through parent domains
 - stores are domain-local namespaces, not global objects shared across all domains
 - encryption currently uses `SECDAT_MASTER_KEY` or an active `secdat unlock` session
@@ -135,7 +137,7 @@ For a session that does not write through unless explicitly saved, `unlock --vol
 
 When no wrapped master key exists yet, `unlock --volatile` can still start by generating an ephemeral in-memory master key without writing the wrapped-key file. Current volatile sessions can remove only tombstones created in the same volatile overlay; persisted tombstones and v2 local-entry deletions still require a normal writable session.
 
-For a read-only session with the real persisted data, `unlock --readonly` reuses an existing master key but rejects mutating commands such as `set`, `rm`, `mask`, `unmask`, `cp`, `mv`, `ln`, `gc`, `load`, `fsck --repair`, `store migrate` without `--dry-run`, `store create`, `store delete`, `store finalize-migration` without `--dry-run`, and domain create/delete. `--readonly` and `--volatile` are mutually exclusive.
+For a read-only session with the real persisted data, `unlock --readonly` reuses an existing master key but rejects mutating commands such as `set`, `rm`, `mask`, `unmask`, `cp`, `mv`, `ln`, `meta set`, `meta unset`, `relation set`, `relation rm`, `gc`, `load`, `fsck --repair`, `store migrate` without `--dry-run`, `store create`, `store delete`, `store finalize-migration` without `--dry-run`, and domain create/delete. `--readonly` and `--volatile` are mutually exclusive.
 
 If you already have a master key to migrate or explicitly override with, `SECDAT_MASTER_KEY` still works:
 
@@ -249,6 +251,34 @@ Use `attr` to inspect or update attributes:
 ./src/secdat ls --sandbox-injectable
 ```
 
+For non-secret lookup information, use `meta`. Metadata values are stored as searchable labels or descriptions and are never treated as secret values:
+
+```sh
+./src/secdat meta set BILLING_ID service billing
+./src/secdat meta set BILLING_ID meaning "public identifier"
+./src/secdat meta get BILLING_ID
+./src/secdat meta search service=bill*
+./src/secdat meta unset BILLING_ID meaning
+```
+
+`meta set` and `meta unset` update only current-domain local keys; inherited keys must be materialized before their local metadata can be changed. `meta search` lists visible keys whose metadata has all requested `FIELD` or `FIELD=GLOB` filters. `cp` and `mv` preserve searchable metadata, and `rm` removes local searchable metadata for the removed key. v2 hidden keys (`key_visibility=unlocked`) cannot have searchable metadata, because metadata paths are plaintext key-name indexed.
+
+To describe how multiple keys belong together, use `relation`. A relation connects two or more role-named key references and records non-secret security meaning for the combination:
+
+```sh
+./src/secdat relation set billing-login \
+  --kind credential \
+  --member id=BILLING_ID \
+  --member password=BILLING_PASSWORD \
+  --security combination-sensitive \
+  --exposure "id may be public; password must remain secret" \
+  --impact "account takeover"
+./src/secdat relation show billing-login
+./src/secdat relation ls BILLING_PASSWORD
+```
+
+Relation members are validated as existing keys when the relation is written. Relation output never reads secret values; it stores the canonical member KEYREFs and the supplied non-secret meaning fields. v2 hidden keys cannot be relation members, and a visible key with existing relation membership cannot be changed to `key_visibility=unlocked` until those relation records are removed.
+
 The storage v2 layout moves from one domain-local file per key to a directory/inode-like split between domain entries and secret objects. Domain entries own key names and key visibility; secret objects own values and value access. The current v2 path includes linked secrets (`ln`) across v2 domains/stores, secret UUID references, object address metadata, object-owned payloads for new or rewritten v2 values, refcount/orphan checks, cached refcount repair, and a migration-first compatibility path from the current v1 store. Direct source-object links such as `ln @UUID DST_KEYREF` are supported only when the current context can authorize the UUID through an existing visible or unlocked domain entry; `@UUID` is a source operand, not a destination. See [docs/secdat-spec.md](docs/secdat-spec.md#510-store-v2-domain-entries-and-secret-objects).
 
 For migration preparation and v2 cache maintenance, `fsck` checks the current domain/store without decrypting secret values:
@@ -268,7 +298,7 @@ For migration preparation and v2 cache maintenance, `fsck` checks the current do
 ./src/secdat store finalize-migration default --from-format v1
 ```
 
-Clean output is `ok`. v1 issues are tab-separated rows such as `orphaned-metadata	KEY	missing-entry`, `orphaned-tombstone	KEY	missing-parent`, `dangling-entry	KEY	invalid-entry`, or `dangling-metadata	KEY	invalid-metadata`. `--refcount` is currently a clean no-op for v1 because secret objects and hard links arrive with store v2. Stores marked with the v2 format marker can also be checked with `fsck --format v2`, which reports domain-entry/object graph issues such as `orphaned-secret	UUID	missing-entry`, `orphaned-value	UUID	missing-secret`, `dangling-entry	ENTRY_ID	missing-secret`, `dangling-value	UUID	missing-secret`, `duplicate-key	KEY	multiple-entries`, and `refcount-mismatch	SECRET_ID	expected=N actual=M`. `fsck --format v2 --refcount --repair` rewrites only rebuildable cached object refcounts and emits `repaired-refcount	SECRET_ID	expected=N actual=M`; it does not delete orphaned secrets, dangling entries, values, or tombstones.
+Clean output is `ok`. v1 issues are tab-separated rows such as `orphaned-metadata	KEY	missing-entry`, `orphaned-key-metadata	KEY	missing-entry`, `orphaned-tombstone	KEY	missing-parent`, `dangling-entry	KEY	invalid-entry`, `dangling-metadata	KEY	invalid-metadata`, `dangling-key-metadata	KEY	invalid-metadata`, or `dangling-relation	RELATION_ID	missing-key:ROLE`. `--refcount` is currently a clean no-op for v1 because secret objects and hard links arrive with store v2. Stores marked with the v2 format marker can also be checked with `fsck --format v2`, which reports domain-entry/object graph issues such as `orphaned-secret	UUID	missing-entry`, `orphaned-value	UUID	missing-secret`, `dangling-entry	ENTRY_ID	missing-secret`, `dangling-value	UUID	missing-secret`, `duplicate-key	KEY	multiple-entries`, and `refcount-mismatch	SECRET_ID	expected=N actual=M`; searchable key metadata and relations are checked in v2 stores as well. `fsck --format v2 --refcount --repair` rewrites only rebuildable cached object refcounts and emits `repaired-refcount	SECRET_ID	expected=N actual=M`; it does not delete orphaned secrets, dangling entries, values, tombstones, key metadata, or relations.
 `gc --format v2 --dry-run` reports v2 graph artifacts that would be removed as `would-remove-*` rows. Without `--dry-run`, `gc` removes orphaned secret object artifacts, standalone object value sidecars, and dangling v2 domain-entry/object artifacts, but does not touch legacy v1 key/value fallback files.
 `secret status UUID` prints one v2 secret object's non-secret metadata, cached and actual refcounts, orphaned state, object payload presence, and legacy sidecar presence without reading the secret value. UUID lookup is scoped to the current domain/store object view; when following a cross-domain link, use the object-owning domain/store context for direct UUID status.
 `store migrate STORE --to-format v2 --dry-run` validates the selected v1 store and prints the number of domain entries, secret objects, metadata sidecars, tombstones, public values, encrypted values, and bulk-injectable entries that would be created or preserved by the v2 migration path. Without `--dry-run`, migration writes side-by-side v2 domain-entry/object graph files, verifies them with `fsck --format v2`, marks the store as v2, and leaves the v1 value files in place for compatibility.
