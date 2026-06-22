@@ -327,5 +327,38 @@ if rc != 1 or stderr != "":
     fail(f"fsck should report relation missing member: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "dangling-relation\tbilling-login\tmissing-key:password\n", "relation missing key fsck")
 
+relation_dirs = [
+    path for path in Path(env["XDG_DATA_HOME"]).rglob("relations")
+    if (path / "billing-login.rel").exists()
+]
+if len(relation_dirs) != 1:
+    fail(f"expected one relation directory, found {relation_dirs!r}")
+relation_path = relation_dirs[0] / "billing-login.rel"
+relation_path.write_text(
+    "SECDATREL1\n"
+    "relation_id=billing-login\n"
+    "kind=credential\n"
+    f"member=id\t{domain}/BILLING_ID:default\n"
+    f"member=id\t{domain}/BILLING_SALT:default\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck"])
+if rc != 1 or stderr != "":
+    fail(f"fsck should keep quiet for duplicate relation role: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "dangling-relation\tbilling-login\tinvalid-relation\n", "duplicate relation role fsck")
+
+relation_path.write_text(
+    "SECDATREL1\n"
+    "relation_id=billing-login\n"
+    "kind=credential\n"
+    "member=id\t\n"
+    f"member=salt\t{domain}/BILLING_SALT:default\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck"])
+if rc != 1 or stderr != "":
+    fail(f"fsck should keep quiet for empty relation keyref: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "dangling-relation\tbilling-login\tinvalid-relation\n", "empty relation keyref fsck")
+
 print("PASS metadata/relation regression")
 PY

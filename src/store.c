@@ -12115,7 +12115,7 @@ static int secdat_relation_set_string(char **field, const char *value)
     return 0;
 }
 
-static int secdat_relation_add_member(struct secdat_relation_info *relation, const char *role, const char *keyref)
+static int secdat_relation_add_member_checked(struct secdat_relation_info *relation, const char *role, const char *keyref, int quiet)
 {
     struct secdat_relation_member *new_members;
     size_t new_capacity;
@@ -12124,16 +12124,22 @@ static int secdat_relation_add_member(struct secdat_relation_info *relation, con
     char *keyref_copy = NULL;
 
     if (!secdat_metadata_token_is_valid(role)) {
-        fprintf(stderr, _("invalid relation member role: %s\n"), role != NULL ? role : "");
+        if (!quiet) {
+            fprintf(stderr, _("invalid relation member role: %s\n"), role != NULL ? role : "");
+        }
         return 2;
     }
     if (keyref == NULL || keyref[0] == '\0') {
-        fprintf(stderr, _("invalid relation member key reference\n"));
+        if (!quiet) {
+            fprintf(stderr, _("invalid relation member key reference\n"));
+        }
         return 2;
     }
     for (index = 0; index < relation->member_count; index += 1) {
         if (strcmp(relation->members[index].role, role) == 0) {
-            fprintf(stderr, _("duplicate relation member role: %s\n"), role);
+            if (!quiet) {
+                fprintf(stderr, _("duplicate relation member role: %s\n"), role);
+            }
             return 2;
         }
     }
@@ -12159,6 +12165,11 @@ static int secdat_relation_add_member(struct secdat_relation_info *relation, con
     relation->members[relation->member_count].keyref = keyref_copy;
     relation->member_count += 1;
     return 0;
+}
+
+static int secdat_relation_add_member(struct secdat_relation_info *relation, const char *role, const char *keyref)
+{
+    return secdat_relation_add_member_checked(relation, role, keyref, 0);
 }
 
 static int secdat_parse_relation_member_arg(const char *raw, char **role_out, char **keyref_out)
@@ -12366,7 +12377,7 @@ static int secdat_relation_read_path(const char *relation_path, const char *file
             keyref_start = role_end + 1;
             if (!secdat_metadata_token_is_valid(separator)
                 || secdat_unescape_component(keyref_start, &decoded_keyref) != 0
-                || secdat_relation_add_member(relation, separator, decoded_keyref) != 0) {
+                || secdat_relation_add_member_checked(relation, separator, decoded_keyref, quiet) != 0) {
                 free(decoded_keyref);
                 goto cleanup;
             }
