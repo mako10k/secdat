@@ -1081,7 +1081,7 @@ int secdat_cli_complete(int argc, char **argv)
     static const char *const ls_options[] = {
         "--pattern", "-p", "--pattern-exclude", "-x", "--safe", "-e", "--unsafe", "-u",
         "--public-value", "--secret-value", "--sandbox-injectable", "--metadata",
-        "--canonical", "-c", "--canonical-domain", "-D", "--canonical-store", "-S", "--help", "-h", NULL,
+        "--canonical", "-c", "--canonical-domain", "-D", "--canonical-store", "-S", "--json", "--help", "-h", NULL,
     };
     static const char *const list_options[] = {
         "--masked", "-m", "--overridden", "-o", "--orphaned", "-O", "--safe", "-e", "--unsafe", "-u",
@@ -1126,7 +1126,7 @@ int secdat_cli_complete(int argc, char **argv)
         "--timeout", "-t", "--quiet", "-q", "--help", "-h", NULL,
     };
     static const char *const store_ls_options[] = {
-        "--pattern", "-p", "--help", "-h", NULL,
+        "--pattern", "-p", "--json", "--help", "-h", NULL,
     };
     static const char *const store_migrate_options[] = {
         "--to-format", "--dry-run", "--help", "-h", NULL,
@@ -1135,7 +1135,7 @@ int secdat_cli_complete(int argc, char **argv)
         "--from-format", "--dry-run", "--help", "-h", NULL,
     };
     static const char *const domain_ls_options[] = {
-        "--long", "-l", "--inherited", "-a", "--ancestors", "-A", "--descendants", "-R", "--pattern", "-p", "--help", "-h", NULL,
+        "--long", "-l", "--inherited", "-a", "--ancestors", "-A", "--descendants", "-R", "--pattern", "-p", "--json", "--help", "-h", NULL,
     };
     static const char *const domain_status_options[] = {
         "--quiet", "-q", "--json", "--help", "-h", NULL,
@@ -1330,7 +1330,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
 {
     switch (command) {
     case SECDAT_COMMAND_LS:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--sandbox-injectable] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--sandbox-injectable] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store] [--json]");
         break;
     case SECDAT_COMMAND_LIST:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "list", "[-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--sandbox-injectable]");
@@ -1411,7 +1411,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store delete", "STORE");
         break;
     case SECDAT_COMMAND_STORE_LS:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [--json]");
         break;
     case SECDAT_COMMAND_STORE_MIGRATE:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store migrate", "STORE --to-format v2 [--dry-run]");
@@ -1429,7 +1429,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain delete", "");
         break;
     case SECDAT_COMMAND_DOMAIN_LS:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain ls", "[-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain ls", "[-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [--json]");
         break;
     case SECDAT_COMMAND_DOMAIN_STATUS:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain status", "[-q|--quiet|--json]");

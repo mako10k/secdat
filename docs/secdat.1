@@ -48,7 +48,7 @@ Show global help, or combine with a command name for command-local help.
 Print the secdat version. When built from a Git worktree, also print a short build identifier and append \fB-dirty\fR when the worktree had uncommitted changes at build time.
 .SH COMMANDS
 .TP
-.B ls [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-e|\-\-safe] [\-u|\-\-unsafe] [\-\-metadata] [\-\-sandbox-injectable]
+.B ls [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-e|\-\-safe] [\-u|\-\-unsafe] [\-\-metadata] [\-\-sandbox-injectable] [\-\-json]
 List effective keys visible from the current domain view. Repeated include patterns widen the match set, and repeated exclude patterns subtract from it.
 .B --metadata
 prints key attributes alongside each key, and
@@ -56,6 +56,9 @@ prints key attributes alongside each key, and
 keeps only keys whose sandbox injection policy allows
 .B bulk
 selector, pattern, or profile based selection.
+Use
+.B --json
+for machine-readable key metadata, including key name, store name, source domain, canonical key reference, safe/unsafe storage mode, and non-secret attributes.
 .TP
 .B list [\-m|\-\-masked] [\-o|\-\-overridden] [\-O|\-\-orphaned] [\-e|\-\-safe] [\-u|\-\-unsafe] [\-\-sandbox-injectable]
 Inspect current-domain local state. Use
@@ -237,6 +240,11 @@ for stable machine-readable state while preserving the normal status exit-code c
 .B store create|delete|ls|migrate|finalize-migration
 Manage store namespaces and v1 to v2 migration inside the resolved current domain.
 .TP
+.B store ls [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-json]
+List store namespaces in the resolved current domain. Use
+.B --json
+for a machine-readable store list and store count.
+.TP
 .B secret status
 Inspect v2 secret-object metadata by UUID without reading secret values.
 .TP
@@ -261,7 +269,7 @@ The intended sequence is migrate dry-run, migrate, v2 fsck, rewrite or remove fa
 .B domain create|delete|status
 Manage domain roots and resolution state.
 .TP
-.B domain ls [\-l|\-\-long] [\-a|\-\-inherited] [\-A|\-\-ancestors] [\-R|\-\-descendants] [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]
+.B domain ls [\-l|\-\-long] [\-a|\-\-inherited] [\-A|\-\-ancestors] [\-R|\-\-descendants] [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-json]
 List domain roots around the scoped directory. Use
 .B -l
 or
@@ -275,6 +283,9 @@ adds the effective inherited parent chain for the current scope, including an em
 .B *default*
 row when the chain reaches the user-global fallback scope.
 When long format is written to a terminal, shared parent directories are shown once as a heading and very long domain labels wrap before the metadata columns. Non-terminal long-format output keeps the tab-separated full-path rows.
+Use
+.B --json
+for stable rows with root, key source, effective state/source, related domain, expiry, remaining seconds, store count, visible key count, orphaned-domain state, and wrapped-key presence.
 .TP
 .B domain status [\-q|\-\-quiet|\-\-json]
 Report the resolved domain for the current context along with store count, visible key count, key source, wrapped-key presence, and effective access state. Effective access distinguishes environment, local unlock, inherited unlock, local lock, and inherited-lock outcomes.

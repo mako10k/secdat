@@ -294,6 +294,8 @@ if rc != 1 or stderr != "":
 locked_status = json.loads(stdout)
 if locked_status["unlocked"] or locked_status["key_source"] != "locked" or locked_status["effective_source"] != "locked" or locked_status["wrapped_master_key_present"]:
     fail(f"status --json while locked returned unexpected state: {locked_status!r}")
+if locked_status["resolved_domain"] != str(root_domain) or locked_status["store_count"] != 1 or locked_status["visible_key_count"] != 0:
+    fail(f"status --json while locked returned unexpected metadata: {locked_status!r}")
 
 rc, stdout, stderr = run(scoped(["status", "--quiet", "--json"]))
 if rc != 2 or stdout != "" or "invalid arguments for status" not in stderr:
@@ -318,6 +320,32 @@ if rc != 0 or stdout != "UNSAFE_VISIBLE_KEY\n" or stderr != "":
 rc, stdout, stderr = run(scoped(["ls", "--safe"]))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"ls --safe while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["ls", "--json", "--canonical-domain", "--canonical-store", "--unsafe"]))
+if rc != 0 or stderr != "":
+    fail(f"ls --json while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if "visible-while-locked" in stdout:
+    fail(f"ls --json leaked secret value: {stdout!r}")
+ls_metadata = json.loads(stdout)
+if ls_metadata["key_count"] != 1 or len(ls_metadata["keys"]) != 1:
+    fail(f"ls --json returned unexpected key count: {ls_metadata!r}")
+json_key = ls_metadata["keys"][0]
+if (
+    json_key["key"] != "UNSAFE_VISIBLE_KEY"
+    or json_key["store"] != "default"
+    or json_key["source_domain"] != str(root_domain)
+    or json_key["canonical_keyref"] != f"{root_domain}/UNSAFE_VISIBLE_KEY:default"
+    or json_key["storage_mode"] != "unsafe"
+    or not json_key["unsafe_store"]
+):
+    fail(f"ls --json returned unexpected key metadata: {ls_metadata!r}")
+
+rc, stdout, stderr = run(scoped(["store", "ls", "--json"]))
+if rc != 0 or stderr != "":
+    fail(f"store ls --json failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+store_listing = json.loads(stdout)
+if store_listing["resolved_domain"] != str(root_domain) or store_listing["store_count"] != 1 or [item["name"] for item in store_listing["stores"]] != ["default"]:
+    fail(f"store ls --json returned unexpected metadata: {store_listing!r}")
 
 rc, stdout, stderr = run(scoped(["list", "--unsafe"]))
 if rc != 0 or stdout != "UNSAFE_VISIBLE_KEY\n" or stderr != "":
@@ -1022,6 +1050,20 @@ assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\
 assert_contains(stdout, f"{child_domain}\tlocked\tlocked\t-\tlocal-lock", "domain ls explicit-lock row")
 assert_contains(stdout, f"{grandchild_domain}\tlocked\tlocked\t-\tinherited-lock-from:{child_domain}", "domain ls blocked row")
 
+rc, stdout, stderr = run(scoped(["domain", "ls", "--json", "--long", "--descendants"], root_domain))
+if rc != 0 or stderr != "":
+    fail(f"domain ls --json after explicit lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if "visible-from-parent" in stdout:
+    fail(f"domain ls --json leaked secret value: {stdout!r}")
+domain_listing = json.loads(stdout)
+domain_rows = {item["root"]: item for item in domain_listing["domains"]}
+if domain_listing["domain_count"] < 3 or str(child_domain) not in domain_rows or str(grandchild_domain) not in domain_rows:
+    fail(f"domain ls --json returned missing rows: {domain_listing!r}")
+if domain_rows[str(child_domain)]["effective_source"] != "local_lock" or domain_rows[str(child_domain)]["related_domain"] is not None:
+    fail(f"domain ls --json returned unexpected child row: {domain_rows[str(child_domain)]!r}")
+if domain_rows[str(grandchild_domain)]["effective_source"] != "inherited_lock" or domain_rows[str(grandchild_domain)]["related_domain"] != str(child_domain):
+    fail(f"domain ls --json returned unexpected grandchild row: {domain_rows[str(grandchild_domain)]!r}")
+
 rc, stdout, stderr = run(scoped(["get", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain))
 if rc == 0 or "no active secdat session" not in stderr:
     fail(f"child unexpectedly reused ancestor session after explicit lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -1476,6 +1518,17 @@ if rc != 0 or stderr != "":
 assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "default-scope domain ls -la header")
 assert_contains(stdout, "*default*\tsession\tunlocked\t", "default-scope domain ls -la fallback row prefix")
 assert_contains(stdout, "\tlocal-unlock\t0\t0\tpresent\n", "default-scope domain ls -la fallback row suffix")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(default_scope), "domain", "ls", "--json", "--long", "--inherited"], {
+    "XDG_RUNTIME_DIR": str(default_runtime),
+    "XDG_DATA_HOME": str(default_data),
+})
+if rc != 0 or stderr != "":
+    fail(f"default-scope domain ls --json failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+default_domain_listing = json.loads(stdout)
+default_rows = {item["root"]: item for item in default_domain_listing["domains"]}
+if "*default*" not in default_rows or default_rows["*default*"]["effective_source"] != "local_unlock":
+    fail(f"default-scope domain ls --json unexpected: {default_domain_listing!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(default_child), "domain", "create"], {
     "XDG_RUNTIME_DIR": str(default_runtime),

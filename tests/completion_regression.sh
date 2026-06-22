@@ -137,7 +137,7 @@ for expected in ["status"]:
 mode, values = run_completion("ls", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: ls option completion mode mismatch: {mode!r}")
-for expected in ["--pattern-exclude", "--canonical-store", "--safe", "--unsafe", "--metadata", "--sandbox-injectable", "--public-value", "--secret-value"]:
+for expected in ["--pattern-exclude", "--canonical-store", "--safe", "--unsafe", "--metadata", "--sandbox-injectable", "--public-value", "--secret-value", "--json"]:
     assert_contains(values, expected, "ls options")
 
 mode, values = run_completion("list", "--")
@@ -169,6 +169,18 @@ if mode != "plain":
     raise SystemExit(f"FAIL: store migrate option completion mode mismatch: {mode!r}")
 for expected in ["--to-format", "--dry-run"]:
     assert_contains(values, expected, "store migrate options")
+
+mode, values = run_completion("store", "ls", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: store ls option completion mode mismatch: {mode!r}")
+for expected in ["--pattern", "--json"]:
+    assert_contains(values, expected, "store ls options")
+
+mode, values = run_completion("domain", "ls", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: domain ls option completion mode mismatch: {mode!r}")
+for expected in ["--long", "--inherited", "--descendants", "--pattern", "--json"]:
+    assert_contains(values, expected, "domain ls options")
 
 mode, values = run_completion("store", "migrate", "--to-format", "")
 if mode != "none" or values:

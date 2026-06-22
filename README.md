@@ -285,14 +285,17 @@ mkdir -p ~/example/project
 ./src/secdat --dir ~/example/project store create app
 ./src/secdat --dir ~/example/project --store app set API_TOKEN --value token-123
 ./src/secdat --dir ~/example/project store ls
+./src/secdat --dir ~/example/project store ls --json
 ./src/secdat --dir ~/example/project store migrate app --to-format v2 --dry-run
 ```
 
-`domain ls` is scoped by directory. Without `--dir`, it behaves like `--dir .`, so it lists only ancestor/self/descendant domains around the current working directory. Use `--ancestors` to keep only the current domain and its ancestor side, `--descendants` to keep only the current domain and its descendant side, `-a` or `--inherited` to add the effective inherited parent chain for the current scope, and `-l` or `--long` to add the `domain status` summary columns for each listed domain. When that inherited chain reaches the user-global fallback scope, `domain ls -a` includes a presentation row labeled `*default*`. A wider base such as `--dir ~` gives you a broader registered-domain listing. The long format now includes `EFFECTIVE`, `REMAINING`, and `STATE_SOURCE` so shadowed descendants can be distinguished from local unlocks, inherited unlocks, local locks, inherited locks, and orphaned registered domains whose root directories have already been removed. `REMAINING` shows a session lifetime such as `1h59m` or `1m32s`, and `-` when no runtime session is active.
+`ls --json` prints key metadata without secret values, including key name, store name, source domain, canonical key reference, safe/unsafe storage mode, and non-secret key attributes. `store ls --json` prints the resolved domain, store list, and store count.
+
+`domain ls` is scoped by directory. Without `--dir`, it behaves like `--dir .`, so it lists only ancestor/self/descendant domains around the current working directory. Use `--ancestors` to keep only the current domain and its ancestor side, `--descendants` to keep only the current domain and its descendant side, `-a` or `--inherited` to add the effective inherited parent chain for the current scope, and `-l` or `--long` to add the `domain status` summary columns for each listed domain. When that inherited chain reaches the user-global fallback scope, `domain ls -a` includes a presentation row labeled `*default*`. A wider base such as `--dir ~` gives you a broader registered-domain listing. The long format now includes `EFFECTIVE`, `REMAINING`, and `STATE_SOURCE` so shadowed descendants can be distinguished from local unlocks, inherited unlocks, local locks, inherited locks, and orphaned registered domains whose root directories have already been removed. `REMAINING` shows a session lifetime such as `1h59m` or `1m32s`, and `-` when no runtime session is active. Use `domain ls --json` for stable domain rows with effective source/state, related domain, expiry, remaining seconds, store count, visible key count, orphaned-domain state, and wrapped-key presence.
 
 When `domain ls -l` writes to a terminal, it now groups rows under their shared parent directory and wraps very long domain labels onto a separate line before the status columns. Non-terminal output keeps the existing tab-separated full-path layout.
 
-`domain status` shows which domain normal commands resolve to for the current context, whether that context came from `--dir` or the working directory, and a compact summary of visible keys, stores, key source state, remaining unlock time, and the effective access state (`environment`, `local unlock`, `inherited unlock`, `local lock`, or `inherited lock`). Use `domain status --json` when scripts need the same state as stable JSON fields.
+`domain status` shows which domain normal commands resolve to for the current context, whether that context came from `--dir` or the working directory, and a compact summary of visible keys, stores, key source state, remaining unlock time, and the effective access state (`environment`, `local unlock`, `inherited unlock`, `local lock`, or `inherited lock`). Use `status --json` or `domain status --json` when scripts need the same state as stable JSON fields.
 
 When no registered domain applies, user-facing `unlock` and `domain status` output show an emphasized `*default*` label for the user-global fallback scope. In other words, no registered domain resolved and commands are operating against the top-level inherited fallback scope. That label is presentation only; the implementation no longer stores or resolves that case through a domain string sentinel.
 
@@ -301,6 +304,7 @@ When no registered domain applies, user-facing `unlock` and `domain status` outp
 ./src/secdat --domain ~/example/project domain status
 ./src/secdat domain status --quiet
 ./src/secdat domain status --json
+./src/secdat domain ls --json --long --inherited
 ```
 
 To avoid writing secrets to your shell history, prefer stdin for sensitive values:

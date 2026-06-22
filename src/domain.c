@@ -1614,6 +1614,72 @@ static int secdat_domain_ls_emit_row(
     return 0;
 }
 
+static void secdat_domain_ls_print_json_nullable_string_field(const char *name, const char *value, int trailing_comma)
+{
+    printf("      \"%s\": ", name);
+    if (value == NULL || value[0] == '\0') {
+        fputs("null", stdout);
+    } else {
+        secdat_write_json_string(stdout, value);
+    }
+    fputs(trailing_comma ? ",\n" : "\n", stdout);
+}
+
+static void secdat_domain_ls_print_json_nullable_time_field(const char *name, time_t value, int trailing_comma)
+{
+    printf("      \"%s\": ", name);
+    if (value <= 0) {
+        fputs("null", stdout);
+    } else {
+        printf("%lld", (long long)value);
+    }
+    fputs(trailing_comma ? ",\n" : "\n", stdout);
+}
+
+static void secdat_domain_ls_print_json_nullable_remaining_field(const char *name, time_t expires_at, int trailing_comma)
+{
+    printf("      \"%s\": ", name);
+    if (expires_at <= 0) {
+        fputs("null", stdout);
+    } else {
+        printf("%lld", secdat_remaining_seconds(expires_at));
+    }
+    fputs(trailing_comma ? ",\n" : "\n", stdout);
+}
+
+static void secdat_domain_ls_emit_json_row(
+    const char *root,
+    const struct secdat_domain_status_summary *summary,
+    size_t emitted_count
+)
+{
+    if (emitted_count > 0) {
+        fputs(",\n", stdout);
+    }
+    fputs("    {\n", stdout);
+    fputs("      \"root\": ", stdout);
+    secdat_write_json_string(stdout, root);
+    fputs(",\n", stdout);
+    printf("      \"unlocked\": %s,\n", strcmp(secdat_effective_state_json_name(summary->effective_source), "unlocked") == 0 ? "true" : "false");
+    fputs("      \"key_source\": ", stdout);
+    secdat_write_json_string(stdout, secdat_key_source_json_name(summary->key_source));
+    fputs(",\n", stdout);
+    fputs("      \"effective_state\": ", stdout);
+    secdat_write_json_string(stdout, secdat_effective_state_json_name(summary->effective_source));
+    fputs(",\n", stdout);
+    fputs("      \"effective_source\": ", stdout);
+    secdat_write_json_string(stdout, secdat_effective_source_json_name(summary->effective_source));
+    fputs(",\n", stdout);
+    secdat_domain_ls_print_json_nullable_time_field("session_expires_at", summary->session_expires_at, 1);
+    secdat_domain_ls_print_json_nullable_remaining_field("remaining_seconds", summary->session_expires_at, 1);
+    secdat_domain_ls_print_json_nullable_string_field("related_domain", summary->related_domain_root, 1);
+    printf("      \"store_count\": %zu,\n", summary->store_count);
+    printf("      \"visible_key_count\": %zu,\n", summary->visible_key_count);
+    printf("      \"orphaned_domain\": %s,\n", summary->orphaned_domain ? "true" : "false");
+    printf("      \"wrapped_master_key_present\": %s\n", summary->wrapped_master_key_present ? "true" : "false");
+    fputs("    }", stdout);
+}
+
 static int secdat_domain_command_ls(const struct secdat_cli *cli)
 {
     struct secdat_domain_ls_row *rows = NULL;
@@ -1628,6 +1694,7 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
         {"ancestors", no_argument, NULL, 'A'},
         {"descendants", no_argument, NULL, 'R'},
         {"pattern", required_argument, NULL, 'p'},
+        {"json", no_argument, NULL, 1000},
         {NULL, 0, NULL, 0},
     };
     char scope_base[PATH_MAX];
@@ -1641,6 +1708,8 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
     int include_inherited = 0;
     int long_format = 0;
     int tty_long_format = 0;
+    int json = 0;
+    size_t emitted_count = 0;
 
     argv[0] = "domain ls";
     for (index = 0; index < (size_t)cli->argc; index += 1) {
@@ -1666,6 +1735,9 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
             break;
         case 'R':
             include_descendants = 1;
+            break;
+        case 1000:
+            json = 1;
             break;
         case ':':
         default:
@@ -1712,9 +1784,11 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
         }
     }
 
-    tty_long_format = long_format && isatty(STDOUT_FILENO);
+    tty_long_format = long_format && !json && isatty(STDOUT_FILENO);
 
-    if (long_format && !tty_long_format) {
+    if (json) {
+        fputs("{\n  \"domains\": [\n", stdout);
+    } else if (long_format && !tty_long_format) {
         printf(_("DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n"));
     }
 
@@ -1740,7 +1814,10 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
             return 1;
         }
 
-        if (secdat_domain_ls_emit_row(roots.items[index], &summary, long_format, tty_long_format, &rows, &row_count) != 0) {
+        if (json) {
+            secdat_domain_ls_emit_json_row(roots.items[index], &summary, emitted_count);
+            emitted_count += 1;
+        } else if (secdat_domain_ls_emit_row(roots.items[index], &summary, long_format, tty_long_format, &rows, &row_count) != 0) {
             secdat_domain_chain_free(&current_chain);
             secdat_string_list_free(&inherited_roots);
             secdat_string_list_free(&roots);
@@ -1759,7 +1836,10 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
             secdat_domain_ls_row_list_clear(rows, row_count);
             return 1;
         }
-        if (secdat_domain_ls_emit_row(secdat_user_global_domain_label, &summary, long_format, tty_long_format, &rows, &row_count) != 0) {
+        if (json) {
+            secdat_domain_ls_emit_json_row(secdat_user_global_domain_label, &summary, emitted_count);
+            emitted_count += 1;
+        } else if (secdat_domain_ls_emit_row(secdat_user_global_domain_label, &summary, long_format, tty_long_format, &rows, &row_count) != 0) {
             secdat_domain_chain_free(&current_chain);
             secdat_string_list_free(&inherited_roots);
             secdat_string_list_free(&roots);
@@ -1768,7 +1848,10 @@ static int secdat_domain_command_ls(const struct secdat_cli *cli)
         }
     }
 
-    if (tty_long_format) {
+    if (json) {
+        printf("\n  ],\n  \"domain_count\": %zu\n", emitted_count);
+        fputs("}\n", stdout);
+    } else if (tty_long_format) {
         secdat_render_domain_ls_tty_rows(rows, row_count);
     }
 

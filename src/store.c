@@ -95,10 +95,16 @@ struct secdat_ls_options {
     struct secdat_key_list exclude_patterns;
     int canonical_domain;
     int canonical_store;
+    int json;
     int safe;
     int unsafe_store;
     int metadata;
     int sandbox_injectable;
+};
+
+struct secdat_store_ls_options {
+    const char *pattern;
+    int json;
 };
 
 struct secdat_exec_options {
@@ -2493,6 +2499,7 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
         {"canonical", no_argument, NULL, 'c'},
         {"canonical-domain", no_argument, NULL, 'D'},
         {"canonical-store", no_argument, NULL, 'S'},
+        {"json", no_argument, NULL, 1002},
         {"safe", no_argument, NULL, 'e'},
         {"unsafe", no_argument, NULL, 'u'},
         {"secret-value", no_argument, NULL, 'e'},
@@ -2534,6 +2541,9 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
             break;
         case 'S':
             options->canonical_store = 1;
+            break;
+        case 1002:
+            options->json = 1;
             break;
         case 'e':
             options->safe = 1;
@@ -3245,6 +3255,52 @@ static int secdat_parse_simple_ls_pattern(const struct secdat_cli *cli, const ch
     return 0;
 }
 
+static int secdat_parse_store_ls_options(const struct secdat_cli *cli, struct secdat_store_ls_options *options)
+{
+    static const struct option long_options[] = {
+        {"pattern", required_argument, NULL, 'p'},
+        {"json", no_argument, NULL, 1000},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+
+    memset(options, 0, sizeof(*options));
+    secdat_prepare_option_argv(cli, "store ls", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":p:", long_options, NULL)) != -1) {
+        switch (option) {
+        case 'p':
+            if (options->pattern != NULL) {
+                fprintf(stderr, _("invalid arguments for store ls\n"));
+                return 2;
+            }
+            options->pattern = optarg;
+            break;
+        case 1000:
+            options->json = 1;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for store ls\n"));
+            return 2;
+        }
+    }
+
+    if (optind + 1 == argc && options->pattern == NULL) {
+        options->pattern = argv[optind];
+        return 0;
+    }
+    if (optind != argc) {
+        fprintf(stderr, _("invalid arguments for store ls\n"));
+        return 2;
+    }
+
+    return 0;
+}
+
 static int secdat_format_canonical_key(
     char *buffer,
     size_t size,
@@ -3277,6 +3333,76 @@ static int secdat_format_canonical_key(
         return 1;
     }
 
+    return 0;
+}
+
+static int secdat_print_ls_json_key(
+    const struct secdat_domain_chain *chain,
+    const struct secdat_cli *cli,
+    const char *key,
+    const struct secdat_effective_entry *entry,
+    const struct secdat_secret_attrs *attrs,
+    int entry_is_unsafe,
+    const char *fallback_domain_path,
+    size_t emitted_count
+)
+{
+    char source_domain[PATH_MAX];
+    char canonical_keyref[PATH_MAX * 2];
+    const char *store_name = secdat_effective_store_name(cli->store);
+
+    source_domain[0] = '\0';
+    if (entry->resolved_index < chain->count) {
+        if (secdat_domain_root_path(chain->ids[entry->resolved_index], source_domain, sizeof(source_domain)) != 0) {
+            return 1;
+        }
+    }
+    if (source_domain[0] == '\0' && fallback_domain_path != NULL) {
+        if (secdat_copy_string(source_domain, sizeof(source_domain), fallback_domain_path) != 0) {
+            return 1;
+        }
+    }
+
+    if (secdat_format_canonical_key(
+            canonical_keyref,
+            sizeof(canonical_keyref),
+            key,
+            source_domain,
+            store_name,
+            1,
+            1) != 0) {
+        return 1;
+    }
+
+    if (emitted_count > 0) {
+        fputs(",\n", stdout);
+    }
+    fputs("    {\n", stdout);
+    fputs("      \"key\": ", stdout);
+    secdat_write_json_string(stdout, key);
+    fputs(",\n", stdout);
+    fputs("      \"store\": ", stdout);
+    secdat_write_json_string(stdout, store_name);
+    fputs(",\n", stdout);
+    fputs("      \"source_domain\": ", stdout);
+    secdat_write_json_string(stdout, source_domain);
+    fputs(",\n", stdout);
+    fputs("      \"canonical_keyref\": ", stdout);
+    secdat_write_json_string(stdout, canonical_keyref);
+    fputs(",\n", stdout);
+    printf("      \"unsafe_store\": %s,\n", entry_is_unsafe ? "true" : "false");
+    fputs("      \"storage_mode\": ", stdout);
+    secdat_write_json_string(stdout, entry_is_unsafe ? "unsafe" : "safe");
+    fputs(",\n", stdout);
+    fputs("      \"key_visibility\": ", stdout);
+    secdat_write_json_string(stdout, secdat_key_visibility_name(attrs->key_visibility));
+    fputs(",\n", stdout);
+    fputs("      \"value_access\": ", stdout);
+    secdat_write_json_string(stdout, secdat_value_access_name(attrs->value_access));
+    fputs(",\n", stdout);
+    fputs("      \"sandbox_inject\": ", stdout);
+    secdat_write_json_string(stdout, secdat_sandbox_inject_name(attrs->sandbox_inject));
+    fputs("\n    }", stdout);
     return 0;
 }
 
@@ -7653,15 +7779,19 @@ static void secdat_print_json_nullable_remaining_field(const char *name, time_t 
 }
 
 static void secdat_print_status_json(
+    const char *resolved_domain,
     enum secdat_key_source_type key_source,
     enum secdat_effective_source_type effective_source,
     time_t session_expires_at,
     const char *session_mode,
     const char *related_domain,
-    int wrapped_present
+    int wrapped_present,
+    size_t store_count,
+    size_t visible_key_count
 )
 {
     fputs("{\n", stdout);
+    secdat_print_json_nullable_string_field("resolved_domain", resolved_domain, 1);
     printf("  \"unlocked\": %s,\n", strcmp(secdat_effective_state_json_name(effective_source), "unlocked") == 0 ? "true" : "false");
     printf("  \"key_source\": ");
     secdat_write_json_string(stdout, secdat_key_source_json_name(key_source));
@@ -7676,6 +7806,8 @@ static void secdat_print_status_json(
     secdat_print_json_nullable_remaining_field("remaining_seconds", session_expires_at, 1);
     secdat_print_json_nullable_string_field("session_mode", session_mode, 1);
     secdat_print_json_nullable_string_field("related_domain", related_domain, 1);
+    printf("  \"store_count\": %zu,\n", store_count);
+    printf("  \"visible_key_count\": %zu,\n", visible_key_count);
     printf("  \"wrapped_master_key_present\": %s\n", wrapped_present ? "true" : "false");
     fputs("}\n", stdout);
 }
@@ -7691,15 +7823,42 @@ static int secdat_command_status_json(const struct secdat_cli *cli, int wrapped_
     time_t session_expires_at = 0;
     const char *session_mode = NULL;
     char related_domain[PATH_MAX] = "";
+    char resolved_domain[PATH_MAX] = "";
+    size_t store_count = 0;
+    size_t visible_key_count = 0;
+    int chain_resolved = 0;
+
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) == 0) {
+        struct secdat_domain_status_summary summary;
+
+        chain_resolved = 1;
+        if (secdat_domain_display_label(chain.count == 0 ? "" : chain.ids[0], resolved_domain, sizeof(resolved_domain)) != 0) {
+            resolved_domain[0] = '\0';
+        }
+        if (secdat_collect_domain_status_summary_for_chain(&chain, &summary) == 0) {
+            store_count = summary.store_count;
+            visible_key_count = summary.visible_key_count;
+        }
+    }
 
     if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
         key_source = SECDAT_KEY_SOURCE_ENVIRONMENT;
         effective_source = SECDAT_EFFECTIVE_SOURCE_ENVIRONMENT;
-        secdat_print_status_json(key_source, effective_source, 0, NULL, NULL, wrapped_present);
+        secdat_print_status_json(
+            resolved_domain[0] != '\0' ? resolved_domain : NULL,
+            key_source,
+            effective_source,
+            0,
+            NULL,
+            NULL,
+            wrapped_present,
+            store_count,
+            visible_key_count);
+        secdat_domain_chain_free(&chain);
         return 0;
     }
 
-    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) == 0) {
+    if (chain_resolved) {
         if (secdat_session_agent_status_details(&chain, &record, &matched_index, &blocked_index) == 0) {
             key_source = SECDAT_KEY_SOURCE_SESSION;
             effective_source = matched_index == 0
@@ -7724,17 +7883,20 @@ static int secdat_command_status_json(const struct secdat_cli *cli, int wrapped_
                 related_domain[0] = '\0';
             }
         }
-        secdat_domain_chain_free(&chain);
     }
 
     secdat_print_status_json(
+        resolved_domain[0] != '\0' ? resolved_domain : NULL,
         key_source,
         effective_source,
         session_expires_at,
         session_mode,
         related_domain[0] != '\0' ? related_domain : NULL,
-        wrapped_present
+        wrapped_present,
+        store_count,
+        visible_key_count
     );
+    secdat_domain_chain_free(&chain);
     secdat_session_record_reset(&record);
     return strcmp(secdat_effective_state_json_name(effective_source), "unlocked") == 0 ? 0 : 1;
 }
@@ -9803,6 +9965,7 @@ static int secdat_command_ls(const struct secdat_cli *cli)
     struct secdat_ls_options options;
     char canonical_base_dir[PATH_MAX];
     size_t index;
+    size_t emitted_count = 0;
     int filter_by_storage;
 
     if (secdat_parse_ls_options(cli, &options) != 0) {
@@ -9831,6 +9994,14 @@ static int secdat_command_ls(const struct secdat_cli *cli)
     }
 
     filter_by_storage = options.safe || options.unsafe_store;
+
+    if (options.json) {
+        fputs("{\n", stdout);
+        fputs("  \"store\": ", stdout);
+        secdat_write_json_string(stdout, secdat_effective_store_name(cli->store));
+        fputs(",\n", stdout);
+        fputs("  \"keys\": [\n", stdout);
+    }
 
     for (index = 0; index < visible_keys.count; index += 1) {
         char output[PATH_MAX * 2];
@@ -9876,6 +10047,28 @@ static int secdat_command_ls(const struct secdat_cli *cli)
             }
         }
         if (options.sandbox_injectable && !secdat_sandbox_inject_allows_bulk_selection(&attrs)) {
+            secdat_effective_entry_reset(&entry);
+            continue;
+        }
+
+        if (options.json) {
+            if (secdat_print_ls_json_key(
+                    &chain,
+                    cli,
+                    visible_keys.items[index],
+                    &entry,
+                    &attrs,
+                    entry_is_unsafe,
+                    canonical_base_dir,
+                    emitted_count) != 0) {
+                secdat_effective_entry_reset(&entry);
+                secdat_key_list_free(&options.include_patterns);
+                secdat_key_list_free(&options.exclude_patterns);
+                secdat_domain_chain_free(&chain);
+                secdat_key_list_free(&visible_keys);
+                return 1;
+            }
+            emitted_count += 1;
             secdat_effective_entry_reset(&entry);
             continue;
         }
@@ -9945,6 +10138,11 @@ static int secdat_command_ls(const struct secdat_cli *cli)
         }
         fputc('\n', stdout);
         secdat_effective_entry_reset(&entry);
+    }
+
+    if (options.json) {
+        printf("\n  ],\n  \"key_count\": %zu\n", emitted_count);
+        fputs("}\n", stdout);
     }
 
     secdat_key_list_free(&options.include_patterns);
@@ -14533,8 +14731,9 @@ static int secdat_collect_store_names(const char *domain_id, const char *pattern
 static int secdat_store_command_ls(const struct secdat_cli *cli)
 {
     char current_domain_id[PATH_MAX];
+    char current_domain_label[PATH_MAX];
     struct secdat_key_list stores = {0};
-    const char *pattern = NULL;
+    struct secdat_store_ls_options options;
     size_t index;
 
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
@@ -14542,16 +14741,39 @@ static int secdat_store_command_ls(const struct secdat_cli *cli)
         secdat_cli_print_try_help(cli, "store");
         return 2;
     }
-    if (secdat_parse_simple_ls_pattern(cli, "store ls", &pattern) != 0) {
+    if (secdat_parse_store_ls_options(cli, &options) != 0) {
         return 2;
     }
 
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
     }
-    if (secdat_collect_store_names(current_domain_id, pattern, &stores) != 0) {
+    if (secdat_domain_display_label(current_domain_id, current_domain_label, sizeof(current_domain_label)) != 0) {
+        return 1;
+    }
+    if (secdat_collect_store_names(current_domain_id, options.pattern, &stores) != 0) {
         secdat_key_list_free(&stores);
         return 1;
+    }
+
+    if (options.json) {
+        fputs("{\n", stdout);
+        fputs("  \"resolved_domain\": ", stdout);
+        secdat_write_json_string(stdout, current_domain_label);
+        fputs(",\n", stdout);
+        fputs("  \"stores\": [\n", stdout);
+        for (index = 0; index < stores.count; index += 1) {
+            if (index > 0) {
+                fputs(",\n", stdout);
+            }
+            fputs("    {\"name\": ", stdout);
+            secdat_write_json_string(stdout, stores.items[index]);
+            fputs("}", stdout);
+        }
+        printf("\n  ],\n  \"store_count\": %zu\n", stores.count);
+        fputs("}\n", stdout);
+        secdat_key_list_free(&stores);
+        return 0;
     }
 
     for (index = 0; index < stores.count; index += 1) {
