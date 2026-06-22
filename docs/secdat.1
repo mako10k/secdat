@@ -111,6 +111,23 @@ Create or replace one non-secret semantic relation with two or more role-named m
 .B relation ls [KEYREF]
 List relation identifiers in the current domain/store, optionally limited to relations containing one resolved key.
 .TP
+.B relation search [FIELD|FIELD=GLOB]...
+List relation identifiers whose non-secret relation fields match all requested filters. A bare
+.B FIELD
+filter requires a non-empty field, and
+.B FIELD=GLOB
+uses shell-style glob matching. Supported fields are
+.BR relation_id ,
+.BR kind ,
+.BR security ,
+.BR exposure ,
+.BR impact ,
+.BR note ,
+.BR member ,
+and
+.BR member.ROLE ;
+member fields match canonical member KEYREFs.
+.TP
 .B relation show RELATION_ID
 Print one semantic relation without reading secret values.
 .TP
@@ -449,6 +466,7 @@ secdat get API_TOKEN --shellescaped
 secdat meta set API_TOKEN service billing
 secdat meta search service=bill*
 secdat relation set billing-login --kind credential --member id=BILLING_ID --member password=BILLING_PASSWORD --security combination-sensitive
+secdat relation search kind=credential security=combination-*
 secdat relation show billing-login
 secdat --dir ~/project domain create
 secdat --dir ~/project/service domain status

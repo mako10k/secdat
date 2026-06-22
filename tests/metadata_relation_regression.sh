@@ -162,6 +162,26 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "ls", "BIL
 if rc != 0 or stderr != "":
     fail(f"relation ls by key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_eq(stdout, "billing-login\n", "relation ls by key")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "search"])
+if rc != 0 or stderr != "":
+    fail(f"relation search all failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, "billing-login\n", "relation search all")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "search", "kind=credential", "security=combination-*"])
+if rc != 0 or stderr != "":
+    fail(f"relation search fields failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, "billing-login\n", "relation search fields")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "search", "member.password=*BILLING_PASSWORD:default"])
+if rc != 0 or stderr != "":
+    fail(f"relation search member role failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, "billing-login\n", "relation search member role")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "search", "impact=*takeover"])
+if rc != 0 or stderr != "":
+    fail(f"relation search impact failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, "billing-login\n", "relation search impact")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "search", "member.secret"])
+if rc != 0 or stderr != "":
+    fail(f"relation search absent member role failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, "", "relation search absent member role")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "unlock", "--readonly"])
 if rc != 0 or "readonly session unlocked from environment" not in stdout:
@@ -175,6 +195,10 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "ls"], ext
 if rc != 0 or stderr != "":
     fail(f"relation ls should work in readonly session: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_eq(stdout, "billing-login\n", "readonly relation ls")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "search", "member.password=*BILLING_PASSWORD:default"], extra_env=readonly_env)
+if rc != 0 or stderr != "":
+    fail(f"relation search should work in readonly session: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, "billing-login\n", "readonly relation search")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "set", "readonly-blocked", "--member", "id=BILLING_ID", "--member", "password=BILLING_PASSWORD"], extra_env=readonly_env)
 if rc == 0 or "current session is readonly and cannot run relation set" not in stderr:
     fail(f"relation set should be blocked in readonly session: rc={rc} stdout={stdout!r} stderr={stderr!r}")

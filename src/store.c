@@ -15088,6 +15088,75 @@ static int secdat_relation_contains_keyref(const struct secdat_relation_info *re
     return 0;
 }
 
+static int secdat_relation_filter_value_matches(const char *value, const struct secdat_meta_filter *filter)
+{
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+    return filter->pattern == NULL || fnmatch(filter->pattern, value, 0) == 0;
+}
+
+static int secdat_relation_member_matches_filter(const struct secdat_relation_info *relation, const struct secdat_meta_filter *filter)
+{
+    const char *role = NULL;
+    size_t index;
+
+    if (strcmp(filter->name, "member") == 0) {
+        role = NULL;
+    } else if (strncmp(filter->name, "member.", 7) == 0 && filter->name[7] != '\0') {
+        role = filter->name + 7;
+    } else {
+        return 0;
+    }
+    for (index = 0; index < relation->member_count; index += 1) {
+        if (role != NULL && strcmp(relation->members[index].role, role) != 0) {
+            continue;
+        }
+        if (filter->pattern == NULL || fnmatch(filter->pattern, relation->members[index].keyref, 0) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_relation_matches_filter(const struct secdat_relation_info *relation, const struct secdat_meta_filter *filter)
+{
+    if (strcmp(filter->name, "relation_id") == 0) {
+        return secdat_relation_filter_value_matches(relation->relation_id, filter);
+    }
+    if (strcmp(filter->name, "kind") == 0) {
+        return secdat_relation_filter_value_matches(relation->kind, filter);
+    }
+    if (strcmp(filter->name, "security") == 0) {
+        return secdat_relation_filter_value_matches(relation->security, filter);
+    }
+    if (strcmp(filter->name, "exposure") == 0) {
+        return secdat_relation_filter_value_matches(relation->exposure, filter);
+    }
+    if (strcmp(filter->name, "impact") == 0) {
+        return secdat_relation_filter_value_matches(relation->impact, filter);
+    }
+    if (strcmp(filter->name, "note") == 0) {
+        return secdat_relation_filter_value_matches(relation->note, filter);
+    }
+    return secdat_relation_member_matches_filter(relation, filter);
+}
+
+static int secdat_relation_matches_filters(const struct secdat_relation_info *relation, const struct secdat_meta_filter_list *filters)
+{
+    size_t index;
+
+    if (filters == NULL || filters->count == 0) {
+        return 1;
+    }
+    for (index = 0; index < filters->count; index += 1) {
+        if (!secdat_relation_matches_filter(relation, &filters->items[index])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int secdat_command_relation_ls(const struct secdat_cli *cli)
 {
     struct secdat_key_list relation_ids = {0};
@@ -15147,6 +15216,56 @@ static int secdat_command_relation_ls(const struct secdat_cli *cli)
     status = 0;
 
 cleanup:
+    secdat_key_list_free(&relation_ids);
+    return status;
+}
+
+static int secdat_command_relation_search(const struct secdat_cli *cli)
+{
+    struct secdat_key_list relation_ids = {0};
+    struct secdat_meta_filter_list filters = {0};
+    char current_domain_id[PATH_MAX];
+    char relation_dir[PATH_MAX];
+    size_t index;
+    int status = 1;
+
+    for (index = 0; index < (size_t)cli->argc; index += 1) {
+        int filter_status = secdat_metadata_filter_list_append(&filters, cli->argv[index]);
+        if (filter_status != 0) {
+            secdat_metadata_filter_list_free(&filters);
+            return filter_status;
+        }
+    }
+    if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
+        goto cleanup;
+    }
+    if (current_domain_id[0] == '\0') {
+        fprintf(stderr, _("relation search requires a registered current domain\n"));
+        goto cleanup;
+    }
+    if (secdat_relations_dir(current_domain_id, cli->store, relation_dir, sizeof(relation_dir)) != 0
+        || secdat_collect_directory_keys(relation_dir, ".rel", &relation_ids) != 0) {
+        goto cleanup;
+    }
+    if (relation_ids.count > 1) {
+        qsort(relation_ids.items, relation_ids.count, sizeof(*relation_ids.items), secdat_compare_strings);
+    }
+    for (index = 0; index < relation_ids.count; index += 1) {
+        struct secdat_relation_info relation = {0};
+
+        if (secdat_read_relation(current_domain_id, cli->store, relation_ids.items[index], &relation, 0) != 0) {
+            secdat_relation_info_reset(&relation);
+            goto cleanup;
+        }
+        if (secdat_relation_matches_filters(&relation, &filters)) {
+            puts(relation_ids.items[index]);
+        }
+        secdat_relation_info_reset(&relation);
+    }
+    status = 0;
+
+cleanup:
+    secdat_metadata_filter_list_free(&filters);
     secdat_key_list_free(&relation_ids);
     return status;
 }
@@ -19301,6 +19420,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_relation_set(cli);
     case SECDAT_COMMAND_RELATION_LS:
         return secdat_command_relation_ls(cli);
+    case SECDAT_COMMAND_RELATION_SEARCH:
+        return secdat_command_relation_search(cli);
     case SECDAT_COMMAND_RELATION_SHOW:
         return secdat_command_relation_show(cli);
     case SECDAT_COMMAND_RELATION_RM:

@@ -77,7 +77,7 @@ assert_not_contains(values, "create", "help meta subcommands")
 mode, values = run_completion("help", "relation", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: help relation completion mode mismatch: {mode!r}")
-for expected in ["set", "ls", "show", "rm"]:
+for expected in ["set", "ls", "search", "show", "rm"]:
     assert_contains(values, expected, "help relation subcommands")
 assert_not_contains(values, "create", "help relation subcommands")
 
@@ -151,7 +151,7 @@ for expected in ["get", "set", "unset", "search"]:
 mode, values = run_completion("relation", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: relation completion mode mismatch: {mode!r}")
-for expected in ["set", "ls", "show", "rm"]:
+for expected in ["set", "ls", "search", "show", "rm"]:
     assert_contains(values, expected, "relation subcommands")
 
 mode, values = run_completion("secret", "")

@@ -275,9 +275,10 @@ To describe how multiple keys belong together, use `relation`. A relation connec
   --impact "account takeover"
 ./src/secdat relation show billing-login
 ./src/secdat relation ls BILLING_PASSWORD
+./src/secdat relation search kind=credential security=combination-*
 ```
 
-Relation members are validated as existing keys when the relation is written. Relation output never reads secret values; it stores the canonical member KEYREFs and the supplied non-secret meaning fields. v2 hidden keys cannot be relation members, and a visible key with existing relation membership cannot be changed to `key_visibility=unlocked` until those relation records are removed.
+Relation members are validated as existing keys when the relation is written. Relation output never reads secret values; it stores the canonical member KEYREFs and the supplied non-secret meaning fields. `relation search` filters relation records with `FIELD` or `FIELD=GLOB`; supported fields are `relation_id`, `kind`, `security`, `exposure`, `impact`, `note`, `member`, and `member.ROLE`. v2 hidden keys cannot be relation members, and a visible key with existing relation membership cannot be changed to `key_visibility=unlocked` until those relation records are removed.
 
 The storage v2 layout moves from one domain-local file per key to a directory/inode-like split between domain entries and secret objects. Domain entries own key names and key visibility; secret objects own values and value access. The current v2 path includes linked secrets (`ln`) across v2 domains/stores, secret UUID references, object address metadata, object-owned payloads for new or rewritten v2 values, refcount/orphan checks, cached refcount repair, and a migration-first compatibility path from the current v1 store. Direct source-object links such as `ln @UUID DST_KEYREF` are supported only when the current context can authorize the UUID through an existing visible or unlocked domain entry; `@UUID` is a source operand, not a destination. See [docs/secdat-spec.md](docs/secdat-spec.md#510-store-v2-domain-entries-and-secret-objects).
 

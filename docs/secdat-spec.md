@@ -44,6 +44,7 @@ secdat [--dir DIR] [--store STORE] meta unset KEYREF FIELD
 secdat [--dir DIR] [--store STORE] meta search [FIELD|FIELD=GLOB]...
 secdat [--dir DIR] [--store STORE] relation set RELATION_ID --kind KIND --member ROLE=KEYREF --member ROLE=KEYREF [--security TEXT] [--exposure TEXT] [--impact TEXT] [--note TEXT]
 secdat [--dir DIR] [--store STORE] relation ls [KEYREF]
+secdat [--dir DIR] [--store STORE] relation search [FIELD|FIELD=GLOB]...
 secdat [--dir DIR] [--store STORE] relation show RELATION_ID
 secdat [--dir DIR] [--store STORE] relation rm RELATION_ID
 secdat [--dir DIR] [--store STORE] fsck [--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]
@@ -353,6 +354,11 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat relation show RELATION_ID` prints relation metadata and canonical member KEYREFs
 - `secdat relation ls` lists relation IDs in the current domain/store
 - `secdat relation ls KEYREF` lists relation IDs containing the resolved key
+- `secdat relation search` lists all relation IDs in the current domain/store
+- `secdat relation search FIELD` lists relation IDs containing one non-empty relation field
+- `secdat relation search FIELD=GLOB` lists relation IDs whose relation field value matches the shell glob
+- multiple `relation search` filters are conjunctive
+- relation search fields are `relation_id`, `kind`, `security`, `exposure`, `impact`, `note`, `member`, and `member.ROLE`; `member` and `member.ROLE` match canonical member KEYREFs
 - `secdat relation rm RELATION_ID` removes one relation record
 - relation writes reject volatile overlay sessions and readonly sessions
 

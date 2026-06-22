@@ -603,6 +603,14 @@ msgstr ""
 
 #: src/cli.c:1688
 msgid ""
+"  relation search: list relation identifiers whose non-secret relation "
+"fields match all filters\n"
+msgstr ""
+"  relation search: すべての filter に一致する非秘密の relation field を持つ "
+"relation identifier を一覧します\n"
+
+#: src/cli.c:1688
+msgid ""
 "  relation show: print one semantic relation without reading secret values\n"
 msgstr ""
 "  relation show: secret value を読まずに 1 つの semantic relation を表示しま"
@@ -833,6 +841,15 @@ msgstr ""
 "  credential pair を記録する: %s relation set billing-login --kind "
 "credential --member id=BILLING_ID --member password=BILLING_PASSWORD --"
 "security combination-sensitive\n"
+
+#: src/cli.c:1900
+#, c-format
+msgid ""
+"  find credential relations: %s relation search kind=credential security="
+"combination-*\n"
+msgstr ""
+"  credential relation を探す: %s relation search kind=credential security="
+"combination-*\n"
 
 #: src/cli.c:1900
 #, c-format
@@ -2690,6 +2707,11 @@ msgstr "relation ls の引数が不正です\n"
 #, c-format
 msgid "relation ls requires a registered current domain\n"
 msgstr "relation ls には登録済みの current domain が必要です\n"
+
+#: src/store.c
+#, c-format
+msgid "relation search requires a registered current domain\n"
+msgstr "relation search には登録済みの current domain が必要です\n"
 
 #: src/store.c:14926
 #, c-format

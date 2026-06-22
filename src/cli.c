@@ -37,6 +37,7 @@ static const struct secdat_cli_subcommand_entry secdat_cli_subcommand_registry[]
     {"meta", "search", "meta search", SECDAT_COMMAND_META_SEARCH},
     {"relation", "set", "relation set", SECDAT_COMMAND_RELATION_SET},
     {"relation", "ls", "relation ls", SECDAT_COMMAND_RELATION_LS},
+    {"relation", "search", "relation search", SECDAT_COMMAND_RELATION_SEARCH},
     {"relation", "show", "relation show", SECDAT_COMMAND_RELATION_SHOW},
     {"relation", "rm", "relation rm", SECDAT_COMMAND_RELATION_RM},
     {"store", "create", "store create", SECDAT_COMMAND_STORE_CREATE},
@@ -1395,6 +1396,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
     case SECDAT_COMMAND_RELATION_LS:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation ls", "[KEYREF]");
         break;
+    case SECDAT_COMMAND_RELATION_SEARCH:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation search", "[FIELD|FIELD=GLOB]...");
+        break;
     case SECDAT_COMMAND_RELATION_SHOW:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation show", "RELATION_ID");
         break;
@@ -1684,6 +1688,10 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  relation ls: list relation identifiers, optionally limited to relations containing one key\n"));
         return;
     }
+    if (target != NULL && strcmp(target, "relation search") == 0) {
+        secdat_cli_print_detail_line(_("  relation search: list relation identifiers whose non-secret relation fields match all filters\n"));
+        return;
+    }
     if (target != NULL && strcmp(target, "relation show") == 0) {
         secdat_cli_print_detail_line(_("  relation show: print one semantic relation without reading secret values\n"));
         return;
@@ -1893,9 +1901,11 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         secdat_cli_print_detail_line(buffer);
         return;
     }
-    if (strcmp(target, "relation") == 0 || strcmp(target, "relation set") == 0 || strcmp(target, "relation show") == 0) {
+    if (strcmp(target, "relation") == 0 || strcmp(target, "relation set") == 0 || strcmp(target, "relation search") == 0 || strcmp(target, "relation show") == 0) {
         char buffer[512];
         snprintf(buffer, sizeof(buffer), _("  record a credential pair: %s relation set billing-login --kind credential --member id=BILLING_ID --member password=BILLING_PASSWORD --security combination-sensitive\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  find credential relations: %s relation search kind=credential security=combination-*\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  inspect relation metadata: %s relation show billing-login\n"), program_name);
         secdat_cli_print_detail_line(buffer);
