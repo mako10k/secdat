@@ -20,6 +20,15 @@ In addition to the CLI, `secdat` may expose a small stable C ABI for in-process 
 
 Bindings for higher-level languages should prefer this C ABI over reimplementing store logic independently.
 
+The SDK includes metadata-only inventory calls for harness and UI backends:
+
+- `secdat_sdk_list_keys(options, filters, result_out)` returns key name, store, canonical keyref, source domain, local/inherited source metadata, safe/unsafe storage mode, and non-secret attributes
+- `secdat_sdk_list_stores(options, result_out)` returns store names for the resolved current domain
+- `secdat_sdk_list_domains(options, filters, result_out)` returns registered-domain status metadata such as root, effective lock state, related domain, counts, and wrapped-key presence
+- `secdat_sdk_wait_unlock(options, timeout_seconds)` follows `wait-unlock` semantics for programmatic callers without reading a secret value; `timeout_seconds <= 0` waits without a timeout
+
+Returned list item arrays are allocated by `libsecdat` and owned by the caller; callers release `result_out->items` with `secdat_sdk_free()`. Metadata-only list APIs must not return plaintext secret values or decrypted value buffers.
+
 ### 2.1 Target CLI
 
 The intended command set is:

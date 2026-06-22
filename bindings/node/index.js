@@ -12,4 +12,8 @@ module.exports = {
   unlock: addon.unlock,
   lock: addon.lock,
   collectStatus: addon.collectStatus,
+  listKeys: addon.listKeys,
+  listStores: addon.listStores,
+  listDomains: addon.listDomains,
+  waitUnlock: addon.waitUnlock,
 };

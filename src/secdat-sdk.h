@@ -37,6 +37,21 @@ struct secdat_sdk_options {
     const char *store;
 };
 
+struct secdat_sdk_list_filters {
+    const char *include_pattern;
+    const char *exclude_pattern;
+    int safe;
+    int unsafe_store;
+    int sandbox_injectable;
+};
+
+struct secdat_sdk_domain_filters {
+    const char *pattern;
+    int include_ancestors;
+    int include_descendants;
+    int include_inherited;
+};
+
 struct secdat_sdk_status_summary {
     size_t store_count;
     size_t visible_key_count;
@@ -45,6 +60,54 @@ struct secdat_sdk_status_summary {
     enum secdat_sdk_effective_source_type effective_source;
     time_t session_expires_at;
     char related_domain_root[PATH_MAX];
+};
+
+struct secdat_sdk_key_metadata {
+    char key[PATH_MAX];
+    char store[PATH_MAX];
+    char canonical_keyref[PATH_MAX * 2];
+    char source_domain[PATH_MAX];
+    char source_type[16];
+    int local;
+    int inherited;
+    int unsafe_store;
+    char storage_mode[16];
+    char key_visibility[16];
+    char value_access[16];
+    char sandbox_inject[16];
+};
+
+struct secdat_sdk_key_metadata_list {
+    struct secdat_sdk_key_metadata *items;
+    size_t count;
+};
+
+struct secdat_sdk_store_metadata {
+    char name[PATH_MAX];
+};
+
+struct secdat_sdk_store_metadata_list {
+    struct secdat_sdk_store_metadata *items;
+    size_t count;
+};
+
+struct secdat_sdk_domain_metadata {
+    char root[PATH_MAX];
+    int unlocked;
+    enum secdat_sdk_key_source_type key_source;
+    enum secdat_sdk_effective_source_type effective_source;
+    time_t session_expires_at;
+    time_t remaining_seconds;
+    char related_domain_root[PATH_MAX];
+    size_t store_count;
+    size_t visible_key_count;
+    int orphaned_domain;
+    int wrapped_master_key_present;
+};
+
+struct secdat_sdk_domain_metadata_list {
+    struct secdat_sdk_domain_metadata *items;
+    size_t count;
 };
 
 int secdat_sdk_get(
@@ -94,6 +157,28 @@ int secdat_sdk_exists(
 int secdat_sdk_collect_status(
     const struct secdat_sdk_options *options,
     struct secdat_sdk_status_summary *summary
+);
+
+/* Metadata-only list APIs allocate result_out->items; release it with secdat_sdk_free(). */
+int secdat_sdk_list_keys(
+    const struct secdat_sdk_options *options,
+    const struct secdat_sdk_list_filters *filters,
+    struct secdat_sdk_key_metadata_list *result_out
+);
+int secdat_sdk_list_stores(
+    const struct secdat_sdk_options *options,
+    struct secdat_sdk_store_metadata_list *result_out
+);
+int secdat_sdk_list_domains(
+    const struct secdat_sdk_options *options,
+    const struct secdat_sdk_domain_filters *filters,
+    struct secdat_sdk_domain_metadata_list *result_out
+);
+
+/* timeout_seconds <= 0 waits without a timeout, matching CLI wait-unlock without --timeout. */
+int secdat_sdk_wait_unlock(
+    const struct secdat_sdk_options *options,
+    time_t timeout_seconds
 );
 void secdat_sdk_free(void *pointer);
 

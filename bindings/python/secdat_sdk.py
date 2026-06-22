@@ -49,6 +49,85 @@ class _StatusSummary(ctypes.Structure):
     ]
 
 
+class _ListFilters(ctypes.Structure):
+    _fields_ = [
+        ("include_pattern", ctypes.c_char_p),
+        ("exclude_pattern", ctypes.c_char_p),
+        ("safe", ctypes.c_int),
+        ("unsafe_store", ctypes.c_int),
+        ("sandbox_injectable", ctypes.c_int),
+    ]
+
+
+class _DomainFilters(ctypes.Structure):
+    _fields_ = [
+        ("pattern", ctypes.c_char_p),
+        ("include_ancestors", ctypes.c_int),
+        ("include_descendants", ctypes.c_int),
+        ("include_inherited", ctypes.c_int),
+    ]
+
+
+class _KeyMetadata(ctypes.Structure):
+    _fields_ = [
+        ("key", ctypes.c_char * PATH_MAX),
+        ("store", ctypes.c_char * PATH_MAX),
+        ("canonical_keyref", ctypes.c_char * (PATH_MAX * 2)),
+        ("source_domain", ctypes.c_char * PATH_MAX),
+        ("source_type", ctypes.c_char * 16),
+        ("local", ctypes.c_int),
+        ("inherited", ctypes.c_int),
+        ("unsafe_store", ctypes.c_int),
+        ("storage_mode", ctypes.c_char * 16),
+        ("key_visibility", ctypes.c_char * 16),
+        ("value_access", ctypes.c_char * 16),
+        ("sandbox_inject", ctypes.c_char * 16),
+    ]
+
+
+class _KeyMetadataList(ctypes.Structure):
+    _fields_ = [
+        ("items", ctypes.POINTER(_KeyMetadata)),
+        ("count", ctypes.c_size_t),
+    ]
+
+
+class _StoreMetadata(ctypes.Structure):
+    _fields_ = [
+        ("name", ctypes.c_char * PATH_MAX),
+    ]
+
+
+class _StoreMetadataList(ctypes.Structure):
+    _fields_ = [
+        ("items", ctypes.POINTER(_StoreMetadata)),
+        ("count", ctypes.c_size_t),
+    ]
+
+
+class _DomainMetadata(ctypes.Structure):
+    _fields_ = [
+        ("root", ctypes.c_char * PATH_MAX),
+        ("unlocked", ctypes.c_int),
+        ("key_source", ctypes.c_int),
+        ("effective_source", ctypes.c_int),
+        ("session_expires_at", ctypes.c_long),
+        ("remaining_seconds", ctypes.c_long),
+        ("related_domain_root", ctypes.c_char * PATH_MAX),
+        ("store_count", ctypes.c_size_t),
+        ("visible_key_count", ctypes.c_size_t),
+        ("orphaned_domain", ctypes.c_int),
+        ("wrapped_master_key_present", ctypes.c_int),
+    ]
+
+
+class _DomainMetadataList(ctypes.Structure):
+    _fields_ = [
+        ("items", ctypes.POINTER(_DomainMetadata)),
+        ("count", ctypes.c_size_t),
+    ]
+
+
 @dataclass
 class StatusSummary:
     store_count: int
@@ -60,10 +139,50 @@ class StatusSummary:
     related_domain_root: str
 
 
+@dataclass
+class KeyMetadata:
+    key: str
+    store: str
+    canonical_keyref: str
+    source_domain: str
+    source_type: str
+    local: bool
+    inherited: bool
+    unsafe_store: bool
+    storage_mode: str
+    key_visibility: str
+    value_access: str
+    sandbox_inject: str
+
+
+@dataclass
+class StoreMetadata:
+    name: str
+
+
+@dataclass
+class DomainMetadata:
+    root: str
+    unlocked: bool
+    key_source: KeySource
+    effective_source: EffectiveSource
+    session_expires_at: int
+    remaining_seconds: int
+    related_domain_root: str
+    store_count: int
+    visible_key_count: int
+    orphaned_domain: bool
+    wrapped_master_key_present: bool
+
+
 def _encode_optional(value: str | None) -> bytes | None:
     if value is None:
         return None
     return value.encode()
+
+
+def _decode_char_array(value) -> str:
+    return bytes(value).split(b"\0", 1)[0].decode()
 
 
 def _load_library(library_path: str | None) -> ctypes.CDLL:
@@ -139,6 +258,32 @@ def _load_library(library_path: str | None) -> ctypes.CDLL:
         ctypes.POINTER(_StatusSummary),
     ]
     library.secdat_sdk_collect_status.restype = ctypes.c_int
+
+    library.secdat_sdk_list_keys.argtypes = [
+        ctypes.POINTER(_Options),
+        ctypes.POINTER(_ListFilters),
+        ctypes.POINTER(_KeyMetadataList),
+    ]
+    library.secdat_sdk_list_keys.restype = ctypes.c_int
+
+    library.secdat_sdk_list_stores.argtypes = [
+        ctypes.POINTER(_Options),
+        ctypes.POINTER(_StoreMetadataList),
+    ]
+    library.secdat_sdk_list_stores.restype = ctypes.c_int
+
+    library.secdat_sdk_list_domains.argtypes = [
+        ctypes.POINTER(_Options),
+        ctypes.POINTER(_DomainFilters),
+        ctypes.POINTER(_DomainMetadataList),
+    ]
+    library.secdat_sdk_list_domains.restype = ctypes.c_int
+
+    library.secdat_sdk_wait_unlock.argtypes = [
+        ctypes.POINTER(_Options),
+        ctypes.c_long,
+    ]
+    library.secdat_sdk_wait_unlock.restype = ctypes.c_int
 
     library.secdat_sdk_free.argtypes = [ctypes.c_void_p]
     library.secdat_sdk_free.restype = None
@@ -231,7 +376,6 @@ class Secdat:
         result = self._lib.secdat_sdk_collect_status(ctypes.byref(options), ctypes.byref(summary))
         if result != 0:
             raise SecdatError(f"secdat_sdk_collect_status failed with status {result}; see stderr for details")
-        related_domain_root = bytes(summary.related_domain_root).split(b"\0", 1)[0].decode()
         return StatusSummary(
             store_count=int(summary.store_count),
             visible_key_count=int(summary.visible_key_count),
@@ -239,5 +383,115 @@ class Secdat:
             key_source=KeySource(summary.key_source),
             effective_source=EffectiveSource(summary.effective_source),
             session_expires_at=int(summary.session_expires_at),
-            related_domain_root=related_domain_root,
+            related_domain_root=_decode_char_array(summary.related_domain_root),
         )
+
+    def list_keys(
+        self,
+        *,
+        dir: str | None = None,
+        domain: str | None = None,
+        store: str | None = None,
+        include_pattern: str | None = None,
+        exclude_pattern: str | None = None,
+        safe: bool = False,
+        unsafe_store: bool = False,
+        sandbox_injectable: bool = False,
+    ) -> list[KeyMetadata]:
+        options = self._options(dir=dir, domain=domain, store=store)
+        filters = _ListFilters(
+            _encode_optional(include_pattern),
+            _encode_optional(exclude_pattern),
+            int(safe),
+            int(unsafe_store),
+            int(sandbox_injectable),
+        )
+        result_list = _KeyMetadataList()
+        result = self._lib.secdat_sdk_list_keys(ctypes.byref(options), ctypes.byref(filters), ctypes.byref(result_list))
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_list_keys failed with status {result}; see stderr for details")
+        try:
+            if result_list.count == 0:
+                return []
+            return [
+                KeyMetadata(
+                    key=_decode_char_array(item.key),
+                    store=_decode_char_array(item.store),
+                    canonical_keyref=_decode_char_array(item.canonical_keyref),
+                    source_domain=_decode_char_array(item.source_domain),
+                    source_type=_decode_char_array(item.source_type),
+                    local=bool(item.local),
+                    inherited=bool(item.inherited),
+                    unsafe_store=bool(item.unsafe_store),
+                    storage_mode=_decode_char_array(item.storage_mode),
+                    key_visibility=_decode_char_array(item.key_visibility),
+                    value_access=_decode_char_array(item.value_access),
+                    sandbox_inject=_decode_char_array(item.sandbox_inject),
+                )
+                for item in result_list.items[: result_list.count]
+            ]
+        finally:
+            self._lib.secdat_sdk_free(ctypes.cast(result_list.items, ctypes.c_void_p))
+
+    def list_stores(self, *, dir: str | None = None, domain: str | None = None, store: str | None = None) -> list[StoreMetadata]:
+        options = self._options(dir=dir, domain=domain, store=store)
+        result_list = _StoreMetadataList()
+        result = self._lib.secdat_sdk_list_stores(ctypes.byref(options), ctypes.byref(result_list))
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_list_stores failed with status {result}; see stderr for details")
+        try:
+            if result_list.count == 0:
+                return []
+            return [StoreMetadata(name=_decode_char_array(item.name)) for item in result_list.items[: result_list.count]]
+        finally:
+            self._lib.secdat_sdk_free(ctypes.cast(result_list.items, ctypes.c_void_p))
+
+    def list_domains(
+        self,
+        *,
+        dir: str | None = None,
+        domain: str | None = None,
+        store: str | None = None,
+        pattern: str | None = None,
+        include_ancestors: bool = False,
+        include_descendants: bool = False,
+        include_inherited: bool = False,
+    ) -> list[DomainMetadata]:
+        options = self._options(dir=dir, domain=domain, store=store)
+        filters = _DomainFilters(
+            _encode_optional(pattern),
+            int(include_ancestors),
+            int(include_descendants),
+            int(include_inherited),
+        )
+        result_list = _DomainMetadataList()
+        result = self._lib.secdat_sdk_list_domains(ctypes.byref(options), ctypes.byref(filters), ctypes.byref(result_list))
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_list_domains failed with status {result}; see stderr for details")
+        try:
+            if result_list.count == 0:
+                return []
+            return [
+                DomainMetadata(
+                    root=_decode_char_array(item.root),
+                    unlocked=bool(item.unlocked),
+                    key_source=KeySource(item.key_source),
+                    effective_source=EffectiveSource(item.effective_source),
+                    session_expires_at=int(item.session_expires_at),
+                    remaining_seconds=int(item.remaining_seconds),
+                    related_domain_root=_decode_char_array(item.related_domain_root),
+                    store_count=int(item.store_count),
+                    visible_key_count=int(item.visible_key_count),
+                    orphaned_domain=bool(item.orphaned_domain),
+                    wrapped_master_key_present=bool(item.wrapped_master_key_present),
+                )
+                for item in result_list.items[: result_list.count]
+            ]
+        finally:
+            self._lib.secdat_sdk_free(ctypes.cast(result_list.items, ctypes.c_void_p))
+
+    def wait_unlock(self, *, dir: str | None = None, domain: str | None = None, store: str | None = None, timeout_seconds: int = 0) -> None:
+        options = self._options(dir=dir, domain=domain, store=store)
+        result = self._lib.secdat_sdk_wait_unlock(ctypes.byref(options), timeout_seconds)
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_wait_unlock failed with status {result}; see stderr for details")

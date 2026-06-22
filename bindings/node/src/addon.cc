@@ -13,6 +13,51 @@ struct OwnedOptions {
     OwnedOptions() : raw{NULL, NULL, NULL} {}
 };
 
+struct OwnedListFilters {
+    std::string include_pattern;
+    std::string exclude_pattern;
+    struct secdat_sdk_list_filters raw;
+
+    OwnedListFilters() : raw{NULL, NULL, 0, 0, 0} {}
+};
+
+struct OwnedDomainFilters {
+    std::string pattern;
+    struct secdat_sdk_domain_filters raw;
+
+    OwnedDomainFilters() : raw{NULL, 0, 0, 0} {}
+};
+
+const char *KeySourceName(int value)
+{
+    switch (value) {
+    case SECDAT_SDK_KEY_SOURCE_ENVIRONMENT:
+        return "environment";
+    case SECDAT_SDK_KEY_SOURCE_SESSION:
+        return "session";
+    default:
+        return "locked";
+    }
+}
+
+const char *EffectiveSourceName(int value)
+{
+    switch (value) {
+    case SECDAT_SDK_EFFECTIVE_SOURCE_ENVIRONMENT:
+        return "environment";
+    case SECDAT_SDK_EFFECTIVE_SOURCE_LOCAL_SESSION:
+        return "local_session";
+    case SECDAT_SDK_EFFECTIVE_SOURCE_INHERITED_SESSION:
+        return "inherited_session";
+    case SECDAT_SDK_EFFECTIVE_SOURCE_EXPLICIT_LOCK:
+        return "explicit_lock";
+    case SECDAT_SDK_EFFECTIVE_SOURCE_BLOCKED:
+        return "blocked";
+    default:
+        return "locked";
+    }
+}
+
 OwnedOptions ParseOptions(const Napi::Env &env, const Napi::Value &value, bool *ok)
 {
     OwnedOptions options;
@@ -57,6 +102,119 @@ OwnedOptions ParseOptions(const Napi::Env &env, const Napi::Value &value, bool *
     }
 
     return options;
+}
+
+OwnedListFilters ParseListFilters(const Napi::Env &env, const Napi::Value &value, bool *ok)
+{
+    OwnedListFilters filters;
+    *ok = true;
+
+    if (value.IsUndefined() || value.IsNull()) {
+        return filters;
+    }
+    if (!value.IsObject()) {
+        Napi::TypeError::New(env, "filters must be an object").ThrowAsJavaScriptException();
+        *ok = false;
+        return filters;
+    }
+
+    Napi::Object object = value.As<Napi::Object>();
+    if (object.Has("includePattern")) {
+        if (!object.Get("includePattern").IsString()) {
+            Napi::TypeError::New(env, "filters.includePattern must be a string").ThrowAsJavaScriptException();
+            *ok = false;
+            return filters;
+        }
+        filters.include_pattern = object.Get("includePattern").As<Napi::String>().Utf8Value();
+        filters.raw.include_pattern = filters.include_pattern.c_str();
+    }
+    if (object.Has("excludePattern")) {
+        if (!object.Get("excludePattern").IsString()) {
+            Napi::TypeError::New(env, "filters.excludePattern must be a string").ThrowAsJavaScriptException();
+            *ok = false;
+            return filters;
+        }
+        filters.exclude_pattern = object.Get("excludePattern").As<Napi::String>().Utf8Value();
+        filters.raw.exclude_pattern = filters.exclude_pattern.c_str();
+    }
+    if (object.Has("safe")) {
+        if (!object.Get("safe").IsBoolean()) {
+            Napi::TypeError::New(env, "filters.safe must be a boolean").ThrowAsJavaScriptException();
+            *ok = false;
+            return filters;
+        }
+        filters.raw.safe = object.Get("safe").As<Napi::Boolean>().Value() ? 1 : 0;
+    }
+    if (object.Has("unsafeStore")) {
+        if (!object.Get("unsafeStore").IsBoolean()) {
+            Napi::TypeError::New(env, "filters.unsafeStore must be a boolean").ThrowAsJavaScriptException();
+            *ok = false;
+            return filters;
+        }
+        filters.raw.unsafe_store = object.Get("unsafeStore").As<Napi::Boolean>().Value() ? 1 : 0;
+    }
+    if (object.Has("sandboxInjectable")) {
+        if (!object.Get("sandboxInjectable").IsBoolean()) {
+            Napi::TypeError::New(env, "filters.sandboxInjectable must be a boolean").ThrowAsJavaScriptException();
+            *ok = false;
+            return filters;
+        }
+        filters.raw.sandbox_injectable = object.Get("sandboxInjectable").As<Napi::Boolean>().Value() ? 1 : 0;
+    }
+
+    return filters;
+}
+
+OwnedDomainFilters ParseDomainFilters(const Napi::Env &env, const Napi::Value &value, bool *ok)
+{
+    OwnedDomainFilters filters;
+    *ok = true;
+
+    if (value.IsUndefined() || value.IsNull()) {
+        return filters;
+    }
+    if (!value.IsObject()) {
+        Napi::TypeError::New(env, "filters must be an object").ThrowAsJavaScriptException();
+        *ok = false;
+        return filters;
+    }
+
+    Napi::Object object = value.As<Napi::Object>();
+    if (object.Has("pattern")) {
+        if (!object.Get("pattern").IsString()) {
+            Napi::TypeError::New(env, "filters.pattern must be a string").ThrowAsJavaScriptException();
+            *ok = false;
+            return filters;
+        }
+        filters.pattern = object.Get("pattern").As<Napi::String>().Utf8Value();
+        filters.raw.pattern = filters.pattern.c_str();
+    }
+    if (object.Has("includeAncestors")) {
+        if (!object.Get("includeAncestors").IsBoolean()) {
+            Napi::TypeError::New(env, "filters.includeAncestors must be a boolean").ThrowAsJavaScriptException();
+            *ok = false;
+            return filters;
+        }
+        filters.raw.include_ancestors = object.Get("includeAncestors").As<Napi::Boolean>().Value() ? 1 : 0;
+    }
+    if (object.Has("includeDescendants")) {
+        if (!object.Get("includeDescendants").IsBoolean()) {
+            Napi::TypeError::New(env, "filters.includeDescendants must be a boolean").ThrowAsJavaScriptException();
+            *ok = false;
+            return filters;
+        }
+        filters.raw.include_descendants = object.Get("includeDescendants").As<Napi::Boolean>().Value() ? 1 : 0;
+    }
+    if (object.Has("includeInherited")) {
+        if (!object.Get("includeInherited").IsBoolean()) {
+            Napi::TypeError::New(env, "filters.includeInherited must be a boolean").ThrowAsJavaScriptException();
+            *ok = false;
+            return filters;
+        }
+        filters.raw.include_inherited = object.Get("includeInherited").As<Napi::Boolean>().Value() ? 1 : 0;
+    }
+
+    return filters;
 }
 
 Napi::Value Get(const Napi::CallbackInfo &info)
@@ -347,10 +505,148 @@ Napi::Value CollectStatus(const Napi::CallbackInfo &info)
     result.Set("visibleKeyCount", Napi::Number::New(env, static_cast<double>(summary.visible_key_count)));
     result.Set("wrappedMasterKeyPresent", Napi::Boolean::New(env, summary.wrapped_master_key_present != 0));
     result.Set("keySource", Napi::Number::New(env, summary.key_source));
+    result.Set("keySourceName", Napi::String::New(env, KeySourceName(summary.key_source)));
     result.Set("effectiveSource", Napi::Number::New(env, summary.effective_source));
+    result.Set("effectiveSourceName", Napi::String::New(env, EffectiveSourceName(summary.effective_source)));
     result.Set("sessionExpiresAt", Napi::Number::New(env, static_cast<double>(summary.session_expires_at)));
     result.Set("relatedDomainRoot", Napi::String::New(env, summary.related_domain_root));
     return result;
+}
+
+Napi::Value ListKeys(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    struct secdat_sdk_key_metadata_list result_list;
+    bool ok;
+
+    OwnedOptions options = ParseOptions(env, info.Length() > 0 ? info[0] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+    OwnedListFilters filters = ParseListFilters(env, info.Length() > 1 ? info[1] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+
+    if (secdat_sdk_list_keys(&options.raw, &filters.raw, &result_list) != 0) {
+        Napi::Error::New(env, "secdat_sdk_list_keys failed; see stderr for details").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    Napi::Array result = Napi::Array::New(env, result_list.count);
+    for (size_t index = 0; index < result_list.count; index += 1) {
+        const struct secdat_sdk_key_metadata &item = result_list.items[index];
+        Napi::Object row = Napi::Object::New(env);
+        row.Set("key", Napi::String::New(env, item.key));
+        row.Set("store", Napi::String::New(env, item.store));
+        row.Set("canonicalKeyref", Napi::String::New(env, item.canonical_keyref));
+        row.Set("sourceDomain", Napi::String::New(env, item.source_domain));
+        row.Set("sourceType", Napi::String::New(env, item.source_type));
+        row.Set("local", Napi::Boolean::New(env, item.local != 0));
+        row.Set("inherited", Napi::Boolean::New(env, item.inherited != 0));
+        row.Set("unsafeStore", Napi::Boolean::New(env, item.unsafe_store != 0));
+        row.Set("storageMode", Napi::String::New(env, item.storage_mode));
+        row.Set("keyVisibility", Napi::String::New(env, item.key_visibility));
+        row.Set("valueAccess", Napi::String::New(env, item.value_access));
+        row.Set("sandboxInject", Napi::String::New(env, item.sandbox_inject));
+        result.Set(index, row);
+    }
+    secdat_sdk_free(result_list.items);
+    return result;
+}
+
+Napi::Value ListStores(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    struct secdat_sdk_store_metadata_list result_list;
+    bool ok;
+
+    OwnedOptions options = ParseOptions(env, info.Length() > 0 ? info[0] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+
+    if (secdat_sdk_list_stores(&options.raw, &result_list) != 0) {
+        Napi::Error::New(env, "secdat_sdk_list_stores failed; see stderr for details").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    Napi::Array result = Napi::Array::New(env, result_list.count);
+    for (size_t index = 0; index < result_list.count; index += 1) {
+        Napi::Object row = Napi::Object::New(env);
+        row.Set("name", Napi::String::New(env, result_list.items[index].name));
+        result.Set(index, row);
+    }
+    secdat_sdk_free(result_list.items);
+    return result;
+}
+
+Napi::Value ListDomains(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    struct secdat_sdk_domain_metadata_list result_list;
+    bool ok;
+
+    OwnedOptions options = ParseOptions(env, info.Length() > 0 ? info[0] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+    OwnedDomainFilters filters = ParseDomainFilters(env, info.Length() > 1 ? info[1] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+
+    if (secdat_sdk_list_domains(&options.raw, &filters.raw, &result_list) != 0) {
+        Napi::Error::New(env, "secdat_sdk_list_domains failed; see stderr for details").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    Napi::Array result = Napi::Array::New(env, result_list.count);
+    for (size_t index = 0; index < result_list.count; index += 1) {
+        const struct secdat_sdk_domain_metadata &item = result_list.items[index];
+        Napi::Object row = Napi::Object::New(env);
+        row.Set("root", Napi::String::New(env, item.root));
+        row.Set("unlocked", Napi::Boolean::New(env, item.unlocked != 0));
+        row.Set("keySource", Napi::Number::New(env, item.key_source));
+        row.Set("keySourceName", Napi::String::New(env, KeySourceName(item.key_source)));
+        row.Set("effectiveSource", Napi::Number::New(env, item.effective_source));
+        row.Set("effectiveSourceName", Napi::String::New(env, EffectiveSourceName(item.effective_source)));
+        row.Set("sessionExpiresAt", Napi::Number::New(env, static_cast<double>(item.session_expires_at)));
+        row.Set("remainingSeconds", Napi::Number::New(env, static_cast<double>(item.remaining_seconds)));
+        row.Set("relatedDomainRoot", Napi::String::New(env, item.related_domain_root));
+        row.Set("storeCount", Napi::Number::New(env, static_cast<double>(item.store_count)));
+        row.Set("visibleKeyCount", Napi::Number::New(env, static_cast<double>(item.visible_key_count)));
+        row.Set("orphanedDomain", Napi::Boolean::New(env, item.orphaned_domain != 0));
+        row.Set("wrappedMasterKeyPresent", Napi::Boolean::New(env, item.wrapped_master_key_present != 0));
+        result.Set(index, row);
+    }
+    secdat_sdk_free(result_list.items);
+    return result;
+}
+
+Napi::Value WaitUnlock(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    bool ok;
+    time_t timeout_seconds = 0;
+
+    OwnedOptions options = ParseOptions(env, info.Length() > 0 ? info[0] : env.Undefined(), &ok);
+    if (!ok) {
+        return env.Null();
+    }
+    if (info.Length() > 1) {
+        if (!info[1].IsNumber()) {
+            Napi::TypeError::New(env, "timeoutSeconds must be a number").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        timeout_seconds = static_cast<time_t>(info[1].As<Napi::Number>().Int64Value());
+    }
+
+    if (secdat_sdk_wait_unlock(&options.raw, timeout_seconds) != 0) {
+        Napi::Error::New(env, "secdat_sdk_wait_unlock failed; see stderr for details").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    return env.Undefined();
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports)
@@ -366,6 +662,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     exports.Set("unlock", Napi::Function::New(env, Unlock));
     exports.Set("lock", Napi::Function::New(env, Lock));
     exports.Set("collectStatus", Napi::Function::New(env, CollectStatus));
+    exports.Set("listKeys", Napi::Function::New(env, ListKeys));
+    exports.Set("listStores", Napi::Function::New(env, ListStores));
+    exports.Set("listDomains", Napi::Function::New(env, ListDomains));
+    exports.Set("waitUnlock", Napi::Function::New(env, WaitUnlock));
     return exports;
 }
 

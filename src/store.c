@@ -6917,6 +6917,198 @@ int secdat_collect_user_global_status_summary(struct secdat_domain_status_summar
     return secdat_collect_domain_status_summary_for_chain(&chain, summary);
 }
 
+static void secdat_sdk_copy_status_summary(
+    const struct secdat_domain_status_summary *internal_summary,
+    struct secdat_sdk_status_summary *summary
+)
+{
+    summary->store_count = internal_summary->store_count;
+    summary->visible_key_count = internal_summary->visible_key_count;
+    summary->wrapped_master_key_present = internal_summary->wrapped_master_key_present;
+    summary->key_source = (enum secdat_sdk_key_source_type)internal_summary->key_source;
+    summary->effective_source = (enum secdat_sdk_effective_source_type)internal_summary->effective_source;
+    summary->session_expires_at = internal_summary->session_expires_at;
+    memcpy(summary->related_domain_root, internal_summary->related_domain_root, sizeof(summary->related_domain_root));
+}
+
+static int secdat_sdk_domain_root_list_contains(const struct secdat_domain_root_list *list, const char *value)
+{
+    size_t index;
+
+    for (index = 0; index < list->count; index += 1) {
+        if (strcmp(list->roots[index], value) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_sdk_collect_inherited_domain_roots(
+    const struct secdat_domain_chain *chain,
+    struct secdat_domain_root_list *roots
+)
+{
+    size_t index;
+    char root_path[PATH_MAX];
+
+    for (index = 0; index < chain->count; index += 1) {
+        if (secdat_domain_root_path(chain->ids[index], root_path, sizeof(root_path)) != 0) {
+            return 1;
+        }
+        if (!secdat_sdk_domain_root_list_contains(roots, root_path)
+            && secdat_domain_root_list_append(roots, root_path) != 0) {
+            return 1;
+        }
+    }
+    if (!secdat_sdk_domain_root_list_contains(roots, "*default*")
+        && secdat_domain_root_list_append(roots, "*default*") != 0) {
+        return 1;
+    }
+
+    return 0;
+}
+
+static int secdat_sdk_path_has_directory_prefix(const char *path, const char *prefix)
+{
+    size_t prefix_length;
+
+    if (prefix == NULL || prefix[0] == '\0') {
+        return 1;
+    }
+    if (strcmp(prefix, "/") == 0) {
+        return path[0] == '/';
+    }
+
+    prefix_length = strlen(prefix);
+    return strncmp(path, prefix, prefix_length) == 0 && (path[prefix_length] == '/' || path[prefix_length] == '\0');
+}
+
+static int secdat_sdk_fill_domain_metadata(
+    const char *root,
+    const struct secdat_domain_status_summary *summary,
+    struct secdat_sdk_domain_metadata *metadata
+)
+{
+    memset(metadata, 0, sizeof(*metadata));
+    if (secdat_copy_string(metadata->root, sizeof(metadata->root), root) != 0
+        || secdat_copy_string(metadata->related_domain_root, sizeof(metadata->related_domain_root), summary->related_domain_root) != 0) {
+        return 1;
+    }
+    metadata->unlocked = strcmp(secdat_effective_state_json_name(summary->effective_source), "unlocked") == 0;
+    metadata->key_source = (enum secdat_sdk_key_source_type)summary->key_source;
+    metadata->effective_source = (enum secdat_sdk_effective_source_type)summary->effective_source;
+    metadata->session_expires_at = summary->session_expires_at;
+    metadata->remaining_seconds = summary->session_expires_at > 0 ? (time_t)secdat_remaining_seconds(summary->session_expires_at) : 0;
+    metadata->store_count = summary->store_count;
+    metadata->visible_key_count = summary->visible_key_count;
+    metadata->orphaned_domain = summary->orphaned_domain;
+    metadata->wrapped_master_key_present = summary->wrapped_master_key_present;
+    return 0;
+}
+
+int secdat_sdk_list_domains(
+    const struct secdat_sdk_options *options,
+    const struct secdat_sdk_domain_filters *filters,
+    struct secdat_sdk_domain_metadata_list *result_out
+)
+{
+    struct secdat_domain_root_list roots = {0};
+    struct secdat_domain_root_list inherited_roots = {0};
+    struct secdat_domain_chain current_chain = {0};
+    struct secdat_sdk_domain_metadata *items = NULL;
+    char scope_base[PATH_MAX];
+    const char *pattern = filters != NULL ? filters->pattern : NULL;
+    int include_ancestors = filters != NULL ? filters->include_ancestors : 0;
+    int include_descendants = filters != NULL ? filters->include_descendants : 0;
+    int include_inherited = filters != NULL ? filters->include_inherited : 0;
+    size_t index;
+    size_t count = 0;
+
+    if (result_out == NULL) {
+        return 1;
+    }
+    memset(result_out, 0, sizeof(*result_out));
+
+    if (!include_ancestors && !include_descendants) {
+        include_ancestors = 1;
+        include_descendants = 1;
+    }
+    if (secdat_canonicalize_directory_path(secdat_sdk_domain_base(options), scope_base, sizeof(scope_base)) != 0) {
+        return 1;
+    }
+    if (secdat_collect_registered_domain_roots(&roots) != 0) {
+        return 1;
+    }
+    if (include_inherited) {
+        if (secdat_domain_resolve_chain(secdat_sdk_domain_base(options), &current_chain) != 0
+            || secdat_sdk_collect_inherited_domain_roots(&current_chain, &inherited_roots) != 0) {
+            secdat_domain_chain_free(&current_chain);
+            secdat_domain_root_list_free(&inherited_roots);
+            secdat_domain_root_list_free(&roots);
+            return 1;
+        }
+    }
+
+    if (roots.count > 0 || (include_inherited && secdat_sdk_domain_root_list_contains(&inherited_roots, "*default*"))) {
+        items = calloc(roots.count + (include_inherited ? 1 : 0), sizeof(*items));
+        if (items == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            secdat_domain_chain_free(&current_chain);
+            secdat_domain_root_list_free(&inherited_roots);
+            secdat_domain_root_list_free(&roots);
+            return 1;
+        }
+    }
+
+    for (index = 0; index < roots.count; index += 1) {
+        struct secdat_domain_status_summary summary;
+        int matches_ancestor = secdat_sdk_path_has_directory_prefix(scope_base, roots.roots[index]);
+        int matches_descendant = secdat_sdk_path_has_directory_prefix(roots.roots[index], scope_base);
+        int matches_inherited = include_inherited && secdat_sdk_domain_root_list_contains(&inherited_roots, roots.roots[index]);
+
+        if (!matches_inherited
+            && (!include_ancestors || !matches_ancestor)
+            && (!include_descendants || !matches_descendant)) {
+            continue;
+        }
+        if (pattern != NULL && fnmatch(pattern, roots.roots[index], 0) != 0) {
+            continue;
+        }
+        if (secdat_collect_registered_domain_status_summary(roots.roots[index], &summary) != 0
+            || secdat_sdk_fill_domain_metadata(roots.roots[index], &summary, &items[count]) != 0) {
+            free(items);
+            secdat_domain_chain_free(&current_chain);
+            secdat_domain_root_list_free(&inherited_roots);
+            secdat_domain_root_list_free(&roots);
+            return 1;
+        }
+        count += 1;
+    }
+
+    if (include_inherited
+        && secdat_sdk_domain_root_list_contains(&inherited_roots, "*default*")
+        && (pattern == NULL || fnmatch(pattern, "*default*", 0) == 0)) {
+        struct secdat_domain_status_summary summary;
+
+        if (secdat_collect_user_global_status_summary(&summary) != 0
+            || secdat_sdk_fill_domain_metadata("*default*", &summary, &items[count]) != 0) {
+            free(items);
+            secdat_domain_chain_free(&current_chain);
+            secdat_domain_root_list_free(&inherited_roots);
+            secdat_domain_root_list_free(&roots);
+            return 1;
+        }
+        count += 1;
+    }
+
+    secdat_domain_chain_free(&current_chain);
+    secdat_domain_root_list_free(&inherited_roots);
+    secdat_domain_root_list_free(&roots);
+    result_out->items = items;
+    result_out->count = count;
+    return 0;
+}
+
 int secdat_sdk_collect_status(
     const struct secdat_sdk_options *options,
     struct secdat_sdk_status_summary *summary
@@ -6946,13 +7138,7 @@ int secdat_sdk_collect_status(
         return status;
     }
 
-    summary->store_count = internal_summary.store_count;
-    summary->visible_key_count = internal_summary.visible_key_count;
-    summary->wrapped_master_key_present = internal_summary.wrapped_master_key_present;
-    summary->key_source = (enum secdat_sdk_key_source_type)internal_summary.key_source;
-    summary->effective_source = (enum secdat_sdk_effective_source_type)internal_summary.effective_source;
-    summary->session_expires_at = internal_summary.session_expires_at;
-    memcpy(summary->related_domain_root, internal_summary.related_domain_root, sizeof(summary->related_domain_root));
+    secdat_sdk_copy_status_summary(&internal_summary, summary);
     return 0;
 }
 
@@ -7190,6 +7376,39 @@ int secdat_sdk_lock(const struct secdat_sdk_options *options)
     secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_LOCK, 0, NULL);
     cli.store = NULL;
     return secdat_command_lock(&cli);
+}
+
+int secdat_sdk_wait_unlock(
+    const struct secdat_sdk_options *options,
+    time_t timeout_seconds
+)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_session_record record = {0};
+    struct secdat_wait_unlock_options wait_options;
+    int status;
+
+    if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
+        return 0;
+    }
+    if (secdat_domain_resolve_chain(secdat_sdk_domain_base(options), &chain) != 0) {
+        return 1;
+    }
+    if (secdat_session_agent_status(&chain, &record) == 0) {
+        secdat_session_record_reset(&record);
+        secdat_domain_chain_free(&chain);
+        return 0;
+    }
+
+    memset(&wait_options, 0, sizeof(wait_options));
+    wait_options.quiet = 1;
+    if (timeout_seconds > 0) {
+        wait_options.timeout_configured = 1;
+        wait_options.timeout_seconds = timeout_seconds;
+    }
+    status = secdat_wait_for_unlock(&chain, &wait_options);
+    secdat_domain_chain_free(&chain);
+    return status;
 }
 
 void secdat_sdk_free(void *pointer)
@@ -10252,6 +10471,197 @@ static int secdat_command_ls(const struct secdat_cli *cli)
     secdat_key_list_free(&options.exclude_patterns);
     secdat_domain_chain_free(&chain);
     secdat_key_list_free(&visible_keys);
+    return 0;
+}
+
+static int secdat_sdk_fill_key_metadata(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *fallback_domain_path,
+    const char *key,
+    const struct secdat_effective_entry *entry,
+    const struct secdat_secret_attrs *attrs,
+    int entry_is_unsafe,
+    struct secdat_sdk_key_metadata *metadata
+)
+{
+    char source_domain[PATH_MAX];
+    const char *effective_store = secdat_effective_store_name(store_name);
+    const char *source_type;
+
+    memset(metadata, 0, sizeof(*metadata));
+    source_domain[0] = '\0';
+    if (entry->resolved_index < chain->count) {
+        if (secdat_domain_root_path(chain->ids[entry->resolved_index], source_domain, sizeof(source_domain)) != 0) {
+            return 1;
+        }
+    }
+    if (source_domain[0] == '\0' && fallback_domain_path != NULL) {
+        if (secdat_copy_string(source_domain, sizeof(source_domain), fallback_domain_path) != 0) {
+            return 1;
+        }
+    }
+
+    if (chain->count == 0 || entry->resolved_index == 0) {
+        source_type = "local";
+        metadata->local = 1;
+    } else {
+        source_type = "inherited";
+        metadata->inherited = 1;
+    }
+
+    if (secdat_copy_string(metadata->key, sizeof(metadata->key), key) != 0
+        || secdat_copy_string(metadata->store, sizeof(metadata->store), effective_store) != 0
+        || secdat_copy_string(metadata->source_domain, sizeof(metadata->source_domain), source_domain) != 0
+        || secdat_copy_string(metadata->source_type, sizeof(metadata->source_type), source_type) != 0
+        || secdat_copy_string(metadata->storage_mode, sizeof(metadata->storage_mode), entry_is_unsafe ? "unsafe" : "safe") != 0
+        || secdat_copy_string(metadata->key_visibility, sizeof(metadata->key_visibility), secdat_key_visibility_name(attrs->key_visibility)) != 0
+        || secdat_copy_string(metadata->value_access, sizeof(metadata->value_access), secdat_value_access_name(attrs->value_access)) != 0
+        || secdat_copy_string(metadata->sandbox_inject, sizeof(metadata->sandbox_inject), secdat_sandbox_inject_name(attrs->sandbox_inject)) != 0) {
+        return 1;
+    }
+
+    metadata->unsafe_store = entry_is_unsafe;
+    return secdat_format_canonical_key(
+        metadata->canonical_keyref,
+        sizeof(metadata->canonical_keyref),
+        key,
+        source_domain,
+        effective_store,
+        1,
+        1
+    );
+}
+
+int secdat_sdk_list_keys(
+    const struct secdat_sdk_options *options,
+    const struct secdat_sdk_list_filters *filters,
+    struct secdat_sdk_key_metadata_list *result_out
+)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_key_list visible_keys = {0};
+    struct secdat_key_list include_patterns = {0};
+    struct secdat_key_list exclude_patterns = {0};
+    struct secdat_sdk_key_metadata *items = NULL;
+    char canonical_base_dir[PATH_MAX];
+    size_t index;
+    size_t count = 0;
+    int filter_by_storage;
+
+    if (result_out == NULL) {
+        return 1;
+    }
+    memset(result_out, 0, sizeof(*result_out));
+
+    if (filters != NULL && filters->include_pattern != NULL
+        && secdat_key_list_append(&include_patterns, filters->include_pattern) != 0) {
+        return 1;
+    }
+    if (filters != NULL && filters->exclude_pattern != NULL
+        && secdat_key_list_append(&exclude_patterns, filters->exclude_pattern) != 0) {
+        secdat_key_list_free(&include_patterns);
+        return 1;
+    }
+
+    if (secdat_domain_resolve_chain(secdat_sdk_domain_base(options), &chain) != 0
+        || secdat_canonicalize_directory_path(secdat_sdk_domain_base(options), canonical_base_dir, sizeof(canonical_base_dir)) != 0
+        || secdat_collect_visible_keys(&chain, options != NULL ? options->store : NULL, &include_patterns, &exclude_patterns, &visible_keys) != 0) {
+        secdat_key_list_free(&include_patterns);
+        secdat_key_list_free(&exclude_patterns);
+        secdat_domain_chain_free(&chain);
+        secdat_key_list_free(&visible_keys);
+        return 1;
+    }
+
+    if (visible_keys.count > 0) {
+        items = calloc(visible_keys.count, sizeof(*items));
+        if (items == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            secdat_key_list_free(&include_patterns);
+            secdat_key_list_free(&exclude_patterns);
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+    }
+
+    filter_by_storage = filters != NULL && (filters->safe || filters->unsafe_store);
+    for (index = 0; index < visible_keys.count; index += 1) {
+        struct secdat_effective_entry entry = {0};
+        struct secdat_secret_attrs attrs;
+        int entry_is_unsafe;
+
+        if (secdat_resolve_effective_entry(&chain, options != NULL ? options->store : NULL, visible_keys.items[index], 0, &entry) != 0) {
+            free(items);
+            secdat_key_list_free(&include_patterns);
+            secdat_key_list_free(&exclude_patterns);
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+
+        if (entry.from_overlay) {
+            entry_is_unsafe = entry.unsafe_store;
+            secdat_secret_attrs_default(entry_is_unsafe, &attrs);
+        } else if (entry.from_v2) {
+            if (secdat_load_v2_secret_attrs(chain.ids[entry.resolved_index], options != NULL ? options->store : NULL, &entry, &attrs, &entry_is_unsafe) != 0) {
+                secdat_effective_entry_reset(&entry);
+                free(items);
+                secdat_key_list_free(&include_patterns);
+                secdat_key_list_free(&exclude_patterns);
+                secdat_domain_chain_free(&chain);
+                secdat_key_list_free(&visible_keys);
+                return 1;
+            }
+        } else if (secdat_entry_uses_plaintext_storage(entry.path, &entry_is_unsafe) != 0
+            || secdat_read_secret_attrs(chain.ids[entry.resolved_index], options != NULL ? options->store : NULL, visible_keys.items[index], entry_is_unsafe, &attrs) != 0) {
+            secdat_effective_entry_reset(&entry);
+            free(items);
+            secdat_key_list_free(&include_patterns);
+            secdat_key_list_free(&exclude_patterns);
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+
+        if (filter_by_storage
+            && ((filters->safe && entry_is_unsafe) || (filters->unsafe_store && !entry_is_unsafe))) {
+            secdat_effective_entry_reset(&entry);
+            continue;
+        }
+        if (filters != NULL && filters->sandbox_injectable && !secdat_sandbox_inject_allows_bulk_selection(&attrs)) {
+            secdat_effective_entry_reset(&entry);
+            continue;
+        }
+
+        if (secdat_sdk_fill_key_metadata(
+                &chain,
+                options != NULL ? options->store : NULL,
+                canonical_base_dir,
+                visible_keys.items[index],
+                &entry,
+                &attrs,
+                entry_is_unsafe,
+                &items[count]) != 0) {
+            secdat_effective_entry_reset(&entry);
+            free(items);
+            secdat_key_list_free(&include_patterns);
+            secdat_key_list_free(&exclude_patterns);
+            secdat_domain_chain_free(&chain);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+        count += 1;
+        secdat_effective_entry_reset(&entry);
+    }
+
+    secdat_key_list_free(&include_patterns);
+    secdat_key_list_free(&exclude_patterns);
+    secdat_domain_chain_free(&chain);
+    secdat_key_list_free(&visible_keys);
+    result_out->items = items;
+    result_out->count = count;
     return 0;
 }
 
@@ -14828,6 +15238,49 @@ static int secdat_collect_store_names(const char *domain_id, const char *pattern
 
     closedir(directory);
     qsort(stores->items, stores->count, sizeof(*stores->items), secdat_compare_strings);
+    return 0;
+}
+
+int secdat_sdk_list_stores(
+    const struct secdat_sdk_options *options,
+    struct secdat_sdk_store_metadata_list *result_out
+)
+{
+    char current_domain_id[PATH_MAX];
+    struct secdat_key_list stores = {0};
+    struct secdat_sdk_store_metadata *items = NULL;
+    size_t index;
+
+    if (result_out == NULL) {
+        return 1;
+    }
+    memset(result_out, 0, sizeof(*result_out));
+
+    if (secdat_domain_resolve_current(secdat_sdk_domain_base(options), current_domain_id, sizeof(current_domain_id)) != 0
+        || secdat_collect_store_names(current_domain_id, NULL, &stores) != 0) {
+        secdat_key_list_free(&stores);
+        return 1;
+    }
+
+    if (stores.count > 0) {
+        items = calloc(stores.count, sizeof(*items));
+        if (items == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            secdat_key_list_free(&stores);
+            return 1;
+        }
+    }
+    for (index = 0; index < stores.count; index += 1) {
+        if (secdat_copy_string(items[index].name, sizeof(items[index].name), stores.items[index]) != 0) {
+            free(items);
+            secdat_key_list_free(&stores);
+            return 1;
+        }
+    }
+
+    result_out->items = items;
+    result_out->count = stores.count;
+    secdat_key_list_free(&stores);
     return 0;
 }
 

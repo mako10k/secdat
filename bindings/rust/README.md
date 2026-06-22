@@ -21,6 +21,10 @@ The crate currently exposes:
 - `set`
 - `exists`
 - `collect_status`
+- `list_keys`
+- `list_stores`
+- `list_domains`
+- `wait_unlock`
 - `remove`
 - `mv`
 - `cp`
@@ -28,6 +32,8 @@ The crate currently exposes:
 - `unmask`
 - `unlock`
 - `lock`
+
+`list_keys` returns metadata such as key name, store, canonical keyref, source domain, source type, storage mode, and non-secret attributes. It does not return plaintext secret values.
 
 ## Example
 

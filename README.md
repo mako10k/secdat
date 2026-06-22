@@ -64,7 +64,12 @@ The first SDK surface is intentionally small:
 - `secdat_sdk_unlock()` and `secdat_sdk_lock()` for session control
 - `secdat_sdk_exists()` for presence checks
 - `secdat_sdk_collect_status()` for the current domain summary
+- `secdat_sdk_list_keys()` for metadata-only key rows with names, store, canonical keyref, source domain, source type, storage mode, and non-secret attributes
+- `secdat_sdk_list_stores()` and `secdat_sdk_list_domains()` for metadata-only store and domain inventory
+- `secdat_sdk_wait_unlock()` for the same programmatic wait behavior as `wait-unlock` without reading a secret value; `timeout_seconds <= 0` waits without a timeout
 - `secdat_sdk_free()` for buffers returned by the library
+
+List APIs allocate their returned item arrays in `libsecdat`; callers own those arrays and release `result.items` with `secdat_sdk_free()`. Key metadata APIs never return plaintext values or decrypted value buffers.
 
 The public header is [src/secdat-sdk.h](src/secdat-sdk.h). Minimal bindings live under [bindings](bindings): Python uses `ctypes`, Go uses `cgo`, Rust uses `extern "C"`, and Node uses a small N-API addon.
 Release tagging and package publication steps are captured in [docs/release-workflow.md](docs/release-workflow.md).

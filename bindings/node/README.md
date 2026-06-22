@@ -21,6 +21,10 @@ The module currently exports:
 - `set`
 - `exists`
 - `collectStatus`
+- `listKeys`
+- `listStores`
+- `listDomains`
+- `waitUnlock`
 - `rm`
 - `mv`
 - `cp`
@@ -28,6 +32,8 @@ The module currently exports:
 - `unmask`
 - `unlock`
 - `lock`
+
+`listKeys` returns metadata such as key name, store, canonical keyref, source domain, source type, storage mode, and non-secret attributes. It does not return plaintext secret values.
 
 ## Example
 

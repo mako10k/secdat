@@ -1,6 +1,6 @@
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int, c_uchar, c_void};
 use std::os::raw::c_long;
+use std::os::raw::{c_char, c_int, c_uchar, c_void};
 use std::ptr;
 use std::slice;
 
@@ -43,6 +43,77 @@ struct RawStatusSummary {
     related_domain_root: [c_char; PATH_MAX],
 }
 
+#[repr(C)]
+struct RawListFilters {
+    include_pattern: *const c_char,
+    exclude_pattern: *const c_char,
+    safe: c_int,
+    unsafe_store: c_int,
+    sandbox_injectable: c_int,
+}
+
+#[repr(C)]
+struct RawDomainFilters {
+    pattern: *const c_char,
+    include_ancestors: c_int,
+    include_descendants: c_int,
+    include_inherited: c_int,
+}
+
+#[repr(C)]
+struct RawKeyMetadata {
+    key: [c_char; PATH_MAX],
+    store: [c_char; PATH_MAX],
+    canonical_keyref: [c_char; PATH_MAX * 2],
+    source_domain: [c_char; PATH_MAX],
+    source_type: [c_char; 16],
+    local: c_int,
+    inherited: c_int,
+    unsafe_store: c_int,
+    storage_mode: [c_char; 16],
+    key_visibility: [c_char; 16],
+    value_access: [c_char; 16],
+    sandbox_inject: [c_char; 16],
+}
+
+#[repr(C)]
+struct RawKeyMetadataList {
+    items: *mut RawKeyMetadata,
+    count: usize,
+}
+
+#[repr(C)]
+struct RawStoreMetadata {
+    name: [c_char; PATH_MAX],
+}
+
+#[repr(C)]
+struct RawStoreMetadataList {
+    items: *mut RawStoreMetadata,
+    count: usize,
+}
+
+#[repr(C)]
+struct RawDomainMetadata {
+    root: [c_char; PATH_MAX],
+    unlocked: c_int,
+    key_source: c_int,
+    effective_source: c_int,
+    session_expires_at: c_long,
+    remaining_seconds: c_long,
+    related_domain_root: [c_char; PATH_MAX],
+    store_count: usize,
+    visible_key_count: usize,
+    orphaned_domain: c_int,
+    wrapped_master_key_present: c_int,
+}
+
+#[repr(C)]
+struct RawDomainMetadataList {
+    items: *mut RawDomainMetadata,
+    count: usize,
+}
+
 #[link(name = "secdat")]
 extern "C" {
     fn secdat_sdk_get(
@@ -59,7 +130,11 @@ extern "C" {
         value_length: usize,
         unsafe_store: c_int,
     ) -> c_int;
-    fn secdat_sdk_rm(options: *const RawOptions, keyref: *const c_char, ignore_missing: c_int) -> c_int;
+    fn secdat_sdk_rm(
+        options: *const RawOptions,
+        keyref: *const c_char,
+        ignore_missing: c_int,
+    ) -> c_int;
     fn secdat_sdk_mv(
         options: *const RawOptions,
         source_keyref: *const c_char,
@@ -79,7 +154,25 @@ extern "C" {
         keyref: *const c_char,
         exists_out: *mut c_int,
     ) -> c_int;
-    fn secdat_sdk_collect_status(options: *const RawOptions, summary: *mut RawStatusSummary) -> c_int;
+    fn secdat_sdk_collect_status(
+        options: *const RawOptions,
+        summary: *mut RawStatusSummary,
+    ) -> c_int;
+    fn secdat_sdk_list_keys(
+        options: *const RawOptions,
+        filters: *const RawListFilters,
+        result_out: *mut RawKeyMetadataList,
+    ) -> c_int;
+    fn secdat_sdk_list_stores(
+        options: *const RawOptions,
+        result_out: *mut RawStoreMetadataList,
+    ) -> c_int;
+    fn secdat_sdk_list_domains(
+        options: *const RawOptions,
+        filters: *const RawDomainFilters,
+        result_out: *mut RawDomainMetadataList,
+    ) -> c_int;
+    fn secdat_sdk_wait_unlock(options: *const RawOptions, timeout_seconds: c_long) -> c_int;
     fn secdat_sdk_free(pointer: *mut c_void);
 }
 
@@ -99,6 +192,59 @@ pub struct StatusSummary {
     pub effective_source: EffectiveSource,
     pub session_expires_at: i128,
     pub related_domain_root: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ListFilters {
+    pub include_pattern: Option<String>,
+    pub exclude_pattern: Option<String>,
+    pub safe: bool,
+    pub unsafe_store: bool,
+    pub sandbox_injectable: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DomainFilters {
+    pub pattern: Option<String>,
+    pub include_ancestors: bool,
+    pub include_descendants: bool,
+    pub include_inherited: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct KeyMetadata {
+    pub key: String,
+    pub store: String,
+    pub canonical_keyref: String,
+    pub source_domain: String,
+    pub source_type: String,
+    pub local: bool,
+    pub inherited: bool,
+    pub unsafe_store: bool,
+    pub storage_mode: String,
+    pub key_visibility: String,
+    pub value_access: String,
+    pub sandbox_inject: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct StoreMetadata {
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct DomainMetadata {
+    pub root: String,
+    pub unlocked: bool,
+    pub key_source: KeySource,
+    pub effective_source: EffectiveSource,
+    pub session_expires_at: i128,
+    pub remaining_seconds: i128,
+    pub related_domain_root: String,
+    pub store_count: usize,
+    pub visible_key_count: usize,
+    pub orphaned_domain: bool,
+    pub wrapped_master_key_present: bool,
 }
 
 #[derive(Debug)]
@@ -166,6 +312,17 @@ struct PreparedOptions {
     _store: Option<CString>,
 }
 
+struct PreparedListFilters {
+    raw: RawListFilters,
+    _include_pattern: Option<CString>,
+    _exclude_pattern: Option<CString>,
+}
+
+struct PreparedDomainFilters {
+    raw: RawDomainFilters,
+    _pattern: Option<CString>,
+}
+
 impl PreparedOptions {
     fn new(options: &Options) -> Result<Self, Error> {
         let dir = to_cstring(&options.dir)?;
@@ -184,11 +341,56 @@ impl PreparedOptions {
     }
 }
 
+impl PreparedListFilters {
+    fn new(filters: &ListFilters) -> Result<Self, Error> {
+        let include_pattern = to_cstring(&filters.include_pattern)?;
+        let exclude_pattern = to_cstring(&filters.exclude_pattern)?;
+        Ok(Self {
+            raw: RawListFilters {
+                include_pattern: include_pattern
+                    .as_ref()
+                    .map_or(ptr::null(), |value| value.as_ptr()),
+                exclude_pattern: exclude_pattern
+                    .as_ref()
+                    .map_or(ptr::null(), |value| value.as_ptr()),
+                safe: i32::from(filters.safe),
+                unsafe_store: i32::from(filters.unsafe_store),
+                sandbox_injectable: i32::from(filters.sandbox_injectable),
+            },
+            _include_pattern: include_pattern,
+            _exclude_pattern: exclude_pattern,
+        })
+    }
+}
+
+impl PreparedDomainFilters {
+    fn new(filters: &DomainFilters) -> Result<Self, Error> {
+        let pattern = to_cstring(&filters.pattern)?;
+        Ok(Self {
+            raw: RawDomainFilters {
+                pattern: pattern.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+                include_ancestors: i32::from(filters.include_ancestors),
+                include_descendants: i32::from(filters.include_descendants),
+                include_inherited: i32::from(filters.include_inherited),
+            },
+            _pattern: pattern,
+        })
+    }
+}
+
 fn to_cstring(value: &Option<String>) -> Result<Option<CString>, Error> {
     match value {
-        Some(value) => CString::new(value.as_str()).map(Some).map_err(|_| Error::invalid_string()),
+        Some(value) => CString::new(value.as_str())
+            .map(Some)
+            .map_err(|_| Error::invalid_string()),
         None => Ok(None),
     }
+}
+
+fn c_char_array_to_string<const N: usize>(value: &[c_char; N]) -> String {
+    unsafe { CStr::from_ptr(value.as_ptr()) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 pub fn get(options: &Options, keyref: &str) -> Result<(Vec<u8>, bool), Error> {
@@ -246,7 +448,8 @@ pub fn remove(options: &Options, keyref: &str, ignore_missing: bool) -> Result<(
     let prepared = PreparedOptions::new(options)?;
     let keyref = CString::new(keyref).map_err(|_| Error::invalid_string())?;
 
-    let status = unsafe { secdat_sdk_rm(&prepared.raw, keyref.as_ptr(), i32::from(ignore_missing)) };
+    let status =
+        unsafe { secdat_sdk_rm(&prepared.raw, keyref.as_ptr(), i32::from(ignore_missing)) };
     if status != 0 {
         return Err(Error::failed());
     }
@@ -256,9 +459,16 @@ pub fn remove(options: &Options, keyref: &str, ignore_missing: bool) -> Result<(
 pub fn mv(options: &Options, source_keyref: &str, destination_keyref: &str) -> Result<(), Error> {
     let prepared = PreparedOptions::new(options)?;
     let source_keyref = CString::new(source_keyref).map_err(|_| Error::invalid_string())?;
-    let destination_keyref = CString::new(destination_keyref).map_err(|_| Error::invalid_string())?;
+    let destination_keyref =
+        CString::new(destination_keyref).map_err(|_| Error::invalid_string())?;
 
-    let status = unsafe { secdat_sdk_mv(&prepared.raw, source_keyref.as_ptr(), destination_keyref.as_ptr()) };
+    let status = unsafe {
+        secdat_sdk_mv(
+            &prepared.raw,
+            source_keyref.as_ptr(),
+            destination_keyref.as_ptr(),
+        )
+    };
     if status != 0 {
         return Err(Error::failed());
     }
@@ -268,9 +478,16 @@ pub fn mv(options: &Options, source_keyref: &str, destination_keyref: &str) -> R
 pub fn cp(options: &Options, source_keyref: &str, destination_keyref: &str) -> Result<(), Error> {
     let prepared = PreparedOptions::new(options)?;
     let source_keyref = CString::new(source_keyref).map_err(|_| Error::invalid_string())?;
-    let destination_keyref = CString::new(destination_keyref).map_err(|_| Error::invalid_string())?;
+    let destination_keyref =
+        CString::new(destination_keyref).map_err(|_| Error::invalid_string())?;
 
-    let status = unsafe { secdat_sdk_cp(&prepared.raw, source_keyref.as_ptr(), destination_keyref.as_ptr()) };
+    let status = unsafe {
+        secdat_sdk_cp(
+            &prepared.raw,
+            source_keyref.as_ptr(),
+            destination_keyref.as_ptr(),
+        )
+    };
     if status != 0 {
         return Err(Error::failed());
     }
@@ -363,4 +580,128 @@ pub fn collect_status(options: &Options) -> Result<StatusSummary, Error> {
         session_expires_at: summary.session_expires_at as i128,
         related_domain_root,
     })
+}
+
+pub fn list_keys(options: &Options, filters: &ListFilters) -> Result<Vec<KeyMetadata>, Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let prepared_filters = PreparedListFilters::new(filters)?;
+    let mut result = RawKeyMetadataList {
+        items: ptr::null_mut(),
+        count: 0,
+    };
+
+    let status = unsafe { secdat_sdk_list_keys(&prepared.raw, &prepared_filters.raw, &mut result) };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+
+    let metadata = if result.count == 0 {
+        Vec::new()
+    } else {
+        unsafe { slice::from_raw_parts(result.items, result.count) }
+            .iter()
+            .map(|item| KeyMetadata {
+                key: c_char_array_to_string(&item.key),
+                store: c_char_array_to_string(&item.store),
+                canonical_keyref: c_char_array_to_string(&item.canonical_keyref),
+                source_domain: c_char_array_to_string(&item.source_domain),
+                source_type: c_char_array_to_string(&item.source_type),
+                local: item.local != 0,
+                inherited: item.inherited != 0,
+                unsafe_store: item.unsafe_store != 0,
+                storage_mode: c_char_array_to_string(&item.storage_mode),
+                key_visibility: c_char_array_to_string(&item.key_visibility),
+                value_access: c_char_array_to_string(&item.value_access),
+                sandbox_inject: c_char_array_to_string(&item.sandbox_inject),
+            })
+            .collect()
+    };
+    unsafe {
+        secdat_sdk_free(result.items.cast::<c_void>());
+    }
+    Ok(metadata)
+}
+
+pub fn list_stores(options: &Options) -> Result<Vec<StoreMetadata>, Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let mut result = RawStoreMetadataList {
+        items: ptr::null_mut(),
+        count: 0,
+    };
+
+    let status = unsafe { secdat_sdk_list_stores(&prepared.raw, &mut result) };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+
+    let metadata = if result.count == 0 {
+        Vec::new()
+    } else {
+        unsafe { slice::from_raw_parts(result.items, result.count) }
+            .iter()
+            .map(|item| StoreMetadata {
+                name: c_char_array_to_string(&item.name),
+            })
+            .collect()
+    };
+    unsafe {
+        secdat_sdk_free(result.items.cast::<c_void>());
+    }
+    Ok(metadata)
+}
+
+pub fn list_domains(
+    options: &Options,
+    filters: &DomainFilters,
+) -> Result<Vec<DomainMetadata>, Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let prepared_filters = PreparedDomainFilters::new(filters)?;
+    let mut result = RawDomainMetadataList {
+        items: ptr::null_mut(),
+        count: 0,
+    };
+
+    let status =
+        unsafe { secdat_sdk_list_domains(&prepared.raw, &prepared_filters.raw, &mut result) };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+
+    let metadata = if result.count == 0 {
+        Ok(Vec::new())
+    } else {
+        unsafe { slice::from_raw_parts(result.items, result.count) }
+            .iter()
+            .map(|item| {
+                let key_source = KeySource::from_raw(item.key_source)?;
+                let effective_source = EffectiveSource::from_raw(item.effective_source)?;
+                Ok(DomainMetadata {
+                    root: c_char_array_to_string(&item.root),
+                    unlocked: item.unlocked != 0,
+                    key_source,
+                    effective_source,
+                    session_expires_at: item.session_expires_at as i128,
+                    remaining_seconds: item.remaining_seconds as i128,
+                    related_domain_root: c_char_array_to_string(&item.related_domain_root),
+                    store_count: item.store_count,
+                    visible_key_count: item.visible_key_count,
+                    orphaned_domain: item.orphaned_domain != 0,
+                    wrapped_master_key_present: item.wrapped_master_key_present != 0,
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()
+    };
+    unsafe {
+        secdat_sdk_free(result.items.cast::<c_void>());
+    }
+    metadata
+}
+
+pub fn wait_unlock(options: &Options, timeout_seconds: i128) -> Result<(), Error> {
+    let prepared = PreparedOptions::new(options)?;
+    let status = unsafe { secdat_sdk_wait_unlock(&prepared.raw, timeout_seconds as c_long) };
+    if status != 0 {
+        return Err(Error::failed());
+    }
+    Ok(())
 }

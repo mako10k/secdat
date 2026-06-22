@@ -21,6 +21,10 @@ The package currently exports:
 - `Set`
 - `Exists`
 - `CollectStatus`
+- `ListKeys`
+- `ListStores`
+- `ListDomains`
+- `WaitUnlock`
 - `Remove`
 - `Move`
 - `Copy`
@@ -28,6 +32,8 @@ The package currently exports:
 - `Unmask`
 - `Unlock`
 - `Lock`
+
+`ListKeys` returns metadata such as key name, store, canonical keyref, source domain, source type, storage mode, and non-secret attributes. It does not return plaintext secret values.
 
 ## Example
 
