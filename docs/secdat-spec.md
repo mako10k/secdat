@@ -59,9 +59,9 @@ secdat [--dir DIR] [--store STORE] ln SRC_KEYREF|@UUID DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] [--sandbox-injectable] [--] CMD [ARGS...]
 
-secdat [--dir DIR] unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]
+secdat [--dir DIR] unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH]
 secdat [--dir DIR] inherit
-secdat passwd
+secdat passwd [--askpass PATH]
 secdat [--dir DIR] lock [-i|--inherit] [-s|--save]
 secdat [--dir DIR] status [--quiet|--json]
 secdat [--dir DIR] wait-unlock [-t SECONDS|--timeout SECONDS] [-q|--quiet]
@@ -119,7 +119,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat help concepts` prints detailed explanations of domains, stores, inheritance, explicit locks, sessions, and `KEYREF` resolution
 - `unlock` caches the current master key in a domain-scoped runtime location
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit override for non-interactive `unlock` and `passwd` flows
-- `SECDAT_ASKPASS`, or `SSH_ASKPASS` when `SECDAT_ASKPASS` is unset, may provide an askpass helper for non-terminal passphrase prompts; the helper receives the prompt as argv[1] and prints the passphrase on stdout
+- `unlock --askpass PATH` and `passwd --askpass PATH` choose an executable askpass helper for that command; otherwise `SECDAT_ASKPASS`, or `SSH_ASKPASS` when `SECDAT_ASKPASS` is unset, may provide an askpass helper for non-terminal passphrase prompts; the helper receives the prompt as argv[1] and prints the passphrase on stdout
 - `status` reports whether a master-key session is active for the current domain scope
 - `lock` clears the current domain's local master-key session
 - `wait-unlock` waits until the current domain scope becomes unlocked without reading any secret value
@@ -353,7 +353,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] status --json` prints stable JSON for scripts, including `unlocked`, `key_source`, `effective_state`, `effective_source`, session expiry/remaining fields, `session_mode`, `related_domain`, and `wrapped_master_key_present`
 - `status --json` keeps the normal status exit-code contract: zero when unlocked and non-zero when locked
 - `status --quiet` and `status --json` are mutually exclusive
-- `secdat [--dir DIR] unlock [--duration TTL] [--until TIME] [--inherit] [--volatile|--readonly] [--descendants] [--yes]` creates or refreshes a domain-scoped cache of the current master key
+- `secdat [--dir DIR] unlock [--duration TTL] [--until TIME] [--inherit] [--volatile|--readonly] [--descendants] [--yes] [--askpass PATH]` creates or refreshes a domain-scoped cache of the current master key
 - `secdat [--dir DIR] wait-unlock [--timeout SECONDS] [--quiet]` waits for the current effective domain scope to become unlocked and is intended for scripts that handle external notifications separately
 - `wait-unlock` exits successfully immediately when the scope is already unlocked, returns non-zero on timeout, and prints unlock guidance to standard error unless `--quiet` is used
 - if no wrapped persistent master key exists, `unlock` prompts twice through terminal input or askpass, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
@@ -366,7 +366,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `--readonly` and `--volatile` are mutually exclusive, and neither may be combined with `unlock --inherit`
 - if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `unlock`
-- when standard input is not a terminal and no explicit passphrase override applies, `unlock` may read the passphrase through `SECDAT_ASKPASS` or fallback `SSH_ASKPASS`
+- when standard input is not a terminal and no explicit passphrase override applies, `unlock` may read the passphrase through `--askpass`, `SECDAT_ASKPASS`, or fallback `SSH_ASKPASS`
 - otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent
 - `unlock --duration TTL` sets the remaining unlock time for the session being created or refreshed
 - plain numeric `TTL` values are interpreted as minutes
@@ -398,10 +398,10 @@ To make the requested behavior implementable, the following are treated as norma
 
 #### FR-7d Wrapped-Key Passphrase Rotation
 
-- `secdat passwd` re-wraps the persistent master key under a new passphrase without changing stored secret payloads
+- `secdat passwd [--askpass PATH]` re-wraps the persistent master key under a new passphrase without changing stored secret payloads
 - `secdat passwd` requires an initialized wrapped master key and fails clearly if bootstrap has not happened yet
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `passwd`
-- when standard input is not a terminal, `passwd` may read passphrase prompts that are not covered by `SECDAT_MASTER_KEY_PASSPHRASE` through `SECDAT_ASKPASS` or fallback `SSH_ASKPASS`
+- when standard input is not a terminal, `passwd` may read passphrase prompts that are not covered by `SECDAT_MASTER_KEY_PASSPHRASE` through `--askpass`, `SECDAT_ASKPASS`, or fallback `SSH_ASKPASS`
 - new wrapped master-key writes use PBKDF2 with 200000 iterations by default
 - `SECDAT_MASTER_KEY_PBKDF2_ITERATIONS` may set the PBKDF2 iteration count for new wrapped master-key writes to an integer from 200000 through 10000000
 - the configured KDF cost applies to `unlock` bootstrap and `passwd` re-wrap writes only; reading an existing wrapped-key file always uses the iteration count stored in that file

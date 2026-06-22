@@ -146,6 +146,25 @@ if mode != "plain":
 for expected in ["--masked", "--safe", "--unsafe", "--sandbox-injectable", "--public-value", "--secret-value"]:
     assert_contains(values, expected, "list options")
 
+mode, values = run_completion("unlock", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: unlock option completion mode mismatch: {mode!r}")
+for expected in ["--duration", "--until", "--descendants", "--yes", "--askpass"]:
+    assert_contains(values, expected, "unlock options")
+
+mode, values = run_completion("unlock", "--askpass", "")
+if mode != "file" or values:
+    raise SystemExit(f"FAIL: unlock --askpass completion mode mismatch: mode={mode!r} values={values!r}")
+
+mode, values = run_completion("passwd", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: passwd option completion mode mismatch: {mode!r}")
+assert_contains(values, "--askpass", "passwd options")
+
+mode, values = run_completion("passwd", "--askpass", "")
+if mode != "file" or values:
+    raise SystemExit(f"FAIL: passwd --askpass completion mode mismatch: mode={mode!r} values={values!r}")
+
 mode, values = run_completion("attr", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: attr option completion mode mismatch: {mode!r}")

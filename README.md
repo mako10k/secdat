@@ -124,7 +124,7 @@ fi
 
 That keeps plain `get` fail-fast in automation while making interactive terminal use wait up to 90 seconds for another terminal to run `secdat unlock`.
 
-For explicit non-interactive use, `SECDAT_MASTER_KEY_PASSPHRASE` can provide the current wrapped-key passphrase to `unlock`. This is an override path rather than the default recommendation, because environment variables are easier to expose than terminal prompts. When standard input is not a terminal and no passphrase override is set, `SECDAT_ASKPASS` can point to an executable askpass helper; if unset, `SSH_ASKPASS` is used as a fallback. The helper receives the prompt text as its first argument and must print the passphrase on stdout. TTY input remains the default whenever a terminal is available.
+For explicit non-interactive use, `SECDAT_MASTER_KEY_PASSPHRASE` can provide the current wrapped-key passphrase to `unlock`. This is an override path rather than the default recommendation, because environment variables are easier to expose than terminal prompts. When standard input is not a terminal and no passphrase override is set, `unlock --askpass /path/to/helper` or `passwd --askpass /path/to/helper` can choose an executable askpass helper for that command. Without `--askpass`, `SECDAT_ASKPASS` is used, or `SSH_ASKPASS` when `SECDAT_ASKPASS` is unset. The helper receives the prompt text as its first argument and must print the passphrase on stdout. TTY input remains the default whenever a terminal is available.
 
 For a session that does not write through unless explicitly saved, `unlock --volatile` keeps subsequent `set`, `rm`, `mask`, `unmask`, `cp`, `mv`, `load`, and read-side resolution changes in the session agent's memory instead of writing through to the real store files. `ln` is a persisted v2 graph operation and is not supported in a volatile overlay. `lock` clears that overlay, and `lock --save` first writes supported overlay changes into the real store files before locking. This is intended for dry-run validation and read-only filesystems.
 
@@ -370,6 +370,7 @@ You can rotate the wrapped-master-key passphrase without changing stored secret 
 
 ```sh
 ./src/secdat passwd
+./src/secdat passwd --askpass /path/to/helper
 SECDAT_MASTER_KEY_PASSPHRASE='current-passphrase' ./src/secdat passwd
 ```
 

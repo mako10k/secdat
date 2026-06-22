@@ -57,6 +57,8 @@ child_domain = root_domain / "child-domain"
 grandchild_domain = child_domain / "grandchild-domain"
 sibling_domain = isolated_root / "sibling-domain"
 askpass_path = isolated_root / "askpass.py"
+cancel_askpass_path = isolated_root / "cancel-askpass.py"
+unsupported_askpass_path = isolated_root / "unsupported-askpass.py"
 askpass_log = isolated_root / "askpass.log"
 
 askpass_path.write_text(
@@ -68,8 +70,19 @@ askpass_path.write_text(
     "print(os.environ['SECDAT_TEST_ASKPASS_VALUE'])\n"
 )
 askpass_path.chmod(0o700)
+cancel_askpass_path.write_text(
+    "#!/usr/bin/env python3\n"
+    "import sys\n"
+    "sys.exit(1)\n"
+)
+cancel_askpass_path.chmod(0o700)
+unsupported_askpass_path.write_text("#!/usr/bin/env python3\nprint('unused')\n")
 askpass_env = {
     "SECDAT_ASKPASS": str(askpass_path),
+    "SECDAT_TEST_ASKPASS_LOG": str(askpass_log),
+    "SECDAT_TEST_ASKPASS_VALUE": passphrase,
+}
+askpass_value_env = {
     "SECDAT_TEST_ASKPASS_LOG": str(askpass_log),
     "SECDAT_TEST_ASKPASS_VALUE": passphrase,
 }
@@ -556,7 +569,7 @@ for args, marker in [
     ([bin_path, "-h", "status"], "[-d DIR|--dir DIR] status [-q|--quiet|--json]"),
     ([bin_path, "status", "--help"], "[-d DIR|--dir DIR] status [-q|--quiet|--json]"),
     ([bin_path, "status", "-h"], "[-d DIR|--dir DIR] status [-q|--quiet|--json]"),
-    ([bin_path, "help", "unlock"], "unlock [-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]"),
+    ([bin_path, "help", "unlock"], "unlock [-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH]"),
     ([bin_path, "help", "inherit"], "[-d DIR|--dir DIR] inherit"),
     ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [-i|--inherit] [-s|--save]"),
     ([bin_path, "help", "list"], "list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--sandbox-injectable]"),
@@ -575,7 +588,7 @@ for args, marker in [
     ([bin_path, "help", "ln"], "ln SRC_KEYREF|@UUID DST_KEYREF"),
     ([bin_path, "help", "set"], "set KEYREF [-u|--unsafe|--public-value|--secret-value]"),
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--sandbox-injectable]"),
-    ([bin_path, "help", "passwd"], "passwd"),
+    ([bin_path, "help", "passwd"], "passwd [--askpass PATH]"),
     ([bin_path, "help", "store"], "store migrate STORE --to-format v2 [--dry-run]"),
     ([bin_path, "help", "store", "migrate"], "store migrate STORE --to-format v2 [--dry-run]"),
     ([bin_path, "--help", "store", "migrate"], "store migrate STORE --to-format v2 [--dry-run]"),
@@ -990,6 +1003,59 @@ if read_wrapped_iterations() != 200000:
 rc, stdout, stderr = run(scoped(["lock"], root_domain))
 if rc != 0 or stdout.strip() != "session locked":
     fail(f"lock after askpass unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["unlock"], root_domain))
+if rc == 0 or stdout != "" or "missing askpass provider; this command requires a terminal for passphrase input" not in stderr:
+    fail(f"non-tty unlock without askpass should distinguish missing provider: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+missing_askpass_path = isolated_root / "missing-askpass.py"
+rc, stdout, stderr = run(scoped(["unlock", "--askpass", str(missing_askpass_path)], root_domain), askpass_value_env)
+if rc == 0 or stdout != "" or f"missing askpass provider: {missing_askpass_path}" not in stderr:
+    fail(f"unlock --askpass missing provider failed unexpectedly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["unlock", "--askpass", str(unsupported_askpass_path)], root_domain), askpass_value_env)
+if rc == 0 or stdout != "" or f"unsupported askpass provider: {unsupported_askpass_path}" not in stderr:
+    fail(f"unlock --askpass unsupported provider failed unexpectedly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["unlock", "--askpass", str(cancel_askpass_path)], root_domain), askpass_value_env)
+if rc == 0 or stdout != "" or "askpass prompt cancelled" not in stderr:
+    fail(f"unlock --askpass cancellation should be distinct: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+bad_askpass_env = askpass_value_env.copy()
+bad_askpass_env["SECDAT_TEST_ASKPASS_VALUE"] = "wrong-passphrase"
+askpass_log.write_text("")
+rc, stdout, stderr = run(scoped(["unlock", "--askpass", str(askpass_path)], root_domain), bad_askpass_env)
+if rc == 0 or stdout != "" or "failed to unlock persistent master key" not in stderr:
+    fail(f"unlock --askpass bad passphrase should be distinct: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(askpass_log.read_text(), "Enter secdat passphrase:", "bad askpass unlock prompt")
+
+askpass_log.write_text("")
+rc, stdout, stderr = run(scoped(["unlock", "--askpass", str(askpass_path)], root_domain), askpass_value_env)
+if rc != 0 or "session unlocked\n" not in stdout or "note: 2 descendant domains remain locked under this branch\n" not in stdout:
+    fail(f"unlock --askpass failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if f"resolved domain: {root_domain}\n" not in stderr:
+    fail(f"unlock --askpass prompt context missing: stderr={stderr!r}")
+assert_contains(askpass_log.read_text(), "Enter secdat passphrase:", "unlock --askpass prompt")
+
+rc, stdout, stderr = run(scoped(["status", "--json"], root_domain))
+if rc != 0 or stderr != "":
+    fail(f"status --json after unlock --askpass failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+askpass_status = json.loads(stdout)
+if not askpass_status["unlocked"] or askpass_status["key_source"] != "session" or askpass_status["effective_source"] != "local_unlock":
+    fail(f"status --json after unlock --askpass unexpected: {askpass_status!r}")
+
+askpass_log.write_text("")
+rc, stdout, stderr = run([bin_path, "passwd", "--askpass", str(askpass_path)], askpass_value_env)
+if rc != 0 or stdout != "persistent master key passphrase updated\n" or stderr != "":
+    fail(f"passwd --askpass failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+passwd_askpass_prompts = askpass_log.read_text()
+assert_contains(passwd_askpass_prompts, "Enter secdat passphrase:", "passwd --askpass current prompt")
+assert_contains(passwd_askpass_prompts, "Create new secdat passphrase:", "passwd --askpass create prompt")
+assert_contains(passwd_askpass_prompts, "Confirm new secdat passphrase:", "passwd --askpass confirm prompt")
+
+rc, stdout, stderr = run(scoped(["lock"], root_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"lock after explicit askpass unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
 if rc != 0 or "session unlocked\n" not in stdout or "note: 2 descendant domains remain locked under this branch\n" not in stdout:

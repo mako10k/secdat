@@ -945,8 +945,15 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
             return "none";
         }
     } else if (strcmp(command, "unlock") == 0) {
+        if (strcmp(previous, "--askpass") == 0) {
+            return "file";
+        }
         if (strcmp(previous, "--duration") == 0 || strcmp(previous, "-t") == 0 || strcmp(previous, "--until") == 0) {
             return "none";
+        }
+    } else if (strcmp(command, "passwd") == 0) {
+        if (strcmp(previous, "--askpass") == 0) {
+            return "file";
         }
     } else if (strcmp(command, "wait-unlock") == 0) {
         if (strcmp(previous, "--timeout") == 0 || strcmp(previous, "-t") == 0) {
@@ -1114,7 +1121,10 @@ int secdat_cli_complete(int argc, char **argv)
     };
     static const char *const unlock_options[] = {
         "--duration", "-t", "--until", "--inherit", "-i", "--volatile", "-v", "--readonly", "-r",
-        "--descendants", "-d", "--yes", "-y", "--help", "-h", NULL,
+        "--descendants", "-d", "--yes", "-y", "--askpass", "--help", "-h", NULL,
+    };
+    static const char *const passwd_options[] = {
+        "--askpass", "--help", "-h", NULL,
     };
     static const char *const lock_options[] = {
         "--inherit", "-i", "--save", "-s", "--help", "-h", NULL,
@@ -1206,6 +1216,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, export_options);
     } else if (strcmp(command, "unlock") == 0) {
         secdat_cli_completion_print_candidates(current, unlock_options);
+    } else if (strcmp(command, "passwd") == 0) {
+        secdat_cli_completion_print_candidates(current, passwd_options);
     } else if (strcmp(command, "lock") == 0) {
         secdat_cli_completion_print_candidates(current, lock_options);
     } else if (strcmp(command, "status") == 0) {
@@ -1387,13 +1399,13 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "load", "FILE");
         break;
     case SECDAT_COMMAND_UNLOCK:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH]");
         break;
     case SECDAT_COMMAND_INHERIT:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "inherit", "");
         break;
     case SECDAT_COMMAND_PASSWD:
-        secdat_cli_print_usage_columns(program_name, "", "passwd", "");
+        secdat_cli_print_usage_columns(program_name, "", "passwd", "[--askpass PATH]");
         break;
     case SECDAT_COMMAND_LOCK:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "lock", "[-i|--inherit] [-s|--save]");

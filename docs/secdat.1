@@ -180,7 +180,7 @@ Write the current visible secrets into a passphrase-protected bundle.
 .B load FILE
 Load a passphrase-protected bundle into the current domain/store context.
 .TP
-.B [\-d DIR|\-\-dir DIR] unlock [\-t TTL|\-\-duration TTL] [\-\-until TIME] [\-i|\-\-inherit] [\-v|\-\-volatile|\-r|\-\-readonly] [\-d|\-\-descendants] [\-y|\-\-yes]
+.B [\-d DIR|\-\-dir DIR] unlock [\-t TTL|\-\-duration TTL] [\-\-until TIME] [\-i|\-\-inherit] [\-v|\-\-volatile|\-r|\-\-readonly] [\-d|\-\-descendants] [\-y|\-\-yes] [\-\-askpass PATH]
 Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked. With
 .B --duration
 the command sets the remaining unlock time for the session being created or refreshed. Plain numbers are interpreted as minutes, suffixed combinations such as
@@ -221,7 +221,7 @@ targets. Before prompting, the command reports the resolved domain it is about t
 .B *default*
 to mean that no registered domain resolved and the top-level inherited fallback scope is active. When descendants exist under that branch, reusable descendants may be summarized count-only while descendants that remain locked are listed explicitly.
 .TP
-.B passwd
+.B passwd [\-\-askpass PATH]
 Change the passphrase used to wrap the persistent master key.
 .TP
 .B [\-d DIR|\-\-dir DIR] inherit
@@ -358,12 +358,18 @@ may provide the current master-key passphrase to
 and
 .B passwd
 before falling back to prompts.
+.B unlock \-\-askpass PATH
+and
+.B passwd \-\-askpass PATH
+choose an executable prompt helper for that command.
 .B SECDAT_ASKPASS ,
 or
 .B SSH_ASKPASS
 when
 .B SECDAT_ASKPASS
-is unset, may provide a prompt helper when standard input is not a terminal. The helper is executed directly with the prompt text as its first argument and must print the passphrase on stdout.
+is unset, may provide a prompt helper when standard input is not a terminal and
+.B \-\-askpass
+was not given. The helper is executed directly with the prompt text as its first argument and must print the passphrase on stdout.
 
 This is an explicit override path, not the recommended default, because environment variables may be exposed through process inspection or shell history.
 .P
@@ -405,6 +411,7 @@ secdat status --json
 secdat --dir ~/project --store app export
 source <(secdat --dir ~/project --store app export)
 SECDAT_MASTER_KEY_PASSPHRASE=secret secdat unlock
+secdat unlock --askpass /path/to/helper
 SECDAT_MASTER_KEY_PBKDF2_ITERATIONS=250000 secdat passwd
 .fi
 .SH SEE ALSO
