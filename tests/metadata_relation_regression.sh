@@ -182,6 +182,48 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "search", 
 if rc != 0 or stderr != "":
     fail(f"relation search absent member role failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_eq(stdout, "", "relation search absent member role")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-refresh", "BILLING_ID"])
+if rc != 0 or stderr != "":
+    fail(f"relation suggest-refresh public id failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, "", "relation suggest-refresh public id")
+expected_refresh = f"high\tbilling-login\tpassword\tpassword\t{domain}/BILLING_PASSWORD:default\tleaked-secret-member\n"
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-refresh", "BILLING_PASSWORD"])
+if rc != 0 or stderr != "":
+    fail(f"relation suggest-refresh password failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, expected_refresh, "relation suggest-refresh password")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "meta", "mark-leaked", "BILLING_PASSWORD"])
+if rc != 0 or stderr != "":
+    fail(f"meta mark-leaked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, expected_refresh, "meta mark-leaked suggestions")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "meta", "get", "BILLING_PASSWORD"])
+if rc != 0 or stderr != "":
+    fail(f"meta get leaked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "leaked=true\n", "meta mark-leaked stores metadata")
+
+for key, value in [
+    ("GENERIC_PRIMARY", "primary-value"),
+    ("GENERIC_SECONDARY", "secondary-value"),
+]:
+    rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", key, "--value", value])
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"set {key} failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "relation", "set", "generic-pair",
+    "--kind", "credential",
+    "--member", "primary=GENERIC_PRIMARY",
+    "--member", "secondary=GENERIC_SECONDARY",
+    "--security", "combination-sensitive",
+])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"generic relation set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+expected_generic_refresh = (
+    f"high\tgeneric-pair\tprimary\tprimary\t{domain}/GENERIC_PRIMARY:default\tleaked-relation-member\n"
+    f"high\tgeneric-pair\tprimary\tsecondary\t{domain}/GENERIC_SECONDARY:default\tcombination-sensitive-relation\n"
+)
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-refresh", "GENERIC_PRIMARY"])
+if rc != 0 or stderr != "":
+    fail(f"relation suggest-refresh generic role failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, expected_generic_refresh, "relation suggest-refresh generic role")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "unlock", "--readonly"])
 if rc != 0 or "readonly session unlocked from environment" not in stdout:
@@ -194,17 +236,61 @@ assert_contains(stdout, "security=combination-sensitive\n", "readonly relation s
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "ls"], extra_env=readonly_env)
 if rc != 0 or stderr != "":
     fail(f"relation ls should work in readonly session: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, "billing-login\n", "readonly relation ls")
+assert_eq(stdout, "billing-login\ngeneric-pair\n", "readonly relation ls")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "search", "member.password=*BILLING_PASSWORD:default"], extra_env=readonly_env)
 if rc != 0 or stderr != "":
     fail(f"relation search should work in readonly session: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_eq(stdout, "billing-login\n", "readonly relation search")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-refresh", "BILLING_PASSWORD"], extra_env=readonly_env)
+if rc != 0 or stderr != "":
+    fail(f"relation suggest-refresh should work in readonly session: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, expected_refresh, "readonly relation suggest-refresh")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "set", "readonly-blocked", "--member", "id=BILLING_ID", "--member", "password=BILLING_PASSWORD"], extra_env=readonly_env)
 if rc == 0 or "current session is readonly and cannot run relation set" not in stderr:
     fail(f"relation set should be blocked in readonly session: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "lock"], extra_env=readonly_env)
 if rc != 0 or stdout != "session locked\n" or stderr != "":
     fail(f"lock after readonly relation checks failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+refresh_consumer = work_root / "refresh-consumer"
+refresh_consumer.mkdir(parents=True)
+rc, stdout, stderr = run([bin_path, "--dir", str(refresh_consumer), "domain", "create"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"refresh consumer domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(refresh_consumer), "set", "CONSUMER_TOKEN", "--value", "consumer-token"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"refresh consumer token set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(refresh_consumer), "relation", "set", "external-login",
+    "--member", f"password={domain}/BILLING_PASSWORD",
+    "--member", "token=CONSUMER_TOKEN",
+    "--security", "combination-sensitive",
+])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"cross-domain refresh relation set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+expected_cross_refresh = (
+    expected_refresh
+    + f"high\texternal-login\tpassword\tpassword\t{domain}/BILLING_PASSWORD:default\tleaked-secret-member\n"
+    + f"high\texternal-login\tpassword\ttoken\t{refresh_consumer}/CONSUMER_TOKEN:default\tcombination-sensitive-relation\n"
+)
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-refresh", "BILLING_PASSWORD"])
+if rc != 0 or stderr != "":
+    fail(f"relation suggest-refresh cross-domain failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, expected_cross_refresh, "relation suggest-refresh cross-domain")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "meta", "mark-leaked", "BILLING_PASSWORD"])
+if rc != 0 or stderr != "":
+    fail(f"meta mark-leaked cross-domain failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, expected_cross_refresh, "meta mark-leaked cross-domain")
+outside_domain = work_root / "outside"
+outside_domain.mkdir(parents=True)
+rc, stdout, stderr = run([bin_path, "--dir", str(outside_domain), "relation", "suggest-refresh", f"{domain}/BILLING_PASSWORD"])
+if rc != 0 or stderr != "":
+    fail(f"relation suggest-refresh absolute key outside domain failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, expected_cross_refresh, "relation suggest-refresh absolute key outside domain")
+rc, stdout, stderr = run([bin_path, "--dir", str(outside_domain), "meta", "mark-leaked", f"{domain}/BILLING_PASSWORD"])
+if rc != 0 or stderr != "":
+    fail(f"meta mark-leaked absolute key outside domain failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, expected_cross_refresh, "meta mark-leaked absolute key outside domain")
 
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "relation", "set", "bad-relation",

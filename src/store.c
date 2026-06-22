@@ -14740,6 +14740,59 @@ static int secdat_meta_resolve_key(
     return 0;
 }
 
+static int secdat_print_relation_refresh_suggestions(const struct secdat_cli *cli, const char *raw_keyref);
+
+static int secdat_set_key_metadata_field(
+    const struct secdat_cli *cli,
+    const char *keyref,
+    const char *field,
+    const char *value,
+    const char *operation
+)
+{
+    struct secdat_key_reference reference;
+    struct secdat_domain_chain chain = {0};
+    struct secdat_effective_entry entry = {0};
+    struct secdat_metadata_list metadata = {0};
+    int status = 1;
+
+    if (!secdat_metadata_name_is_valid(field)) {
+        fprintf(stderr, _("invalid metadata field: %s\n"), field);
+        return 2;
+    }
+    if (secdat_meta_resolve_key(cli, keyref, &reference, &chain, &entry) != 0) {
+        goto cleanup;
+    }
+    if (entry.resolved_index != 0) {
+        fprintf(stderr, _("cannot update inherited key metadata: %s\n"), reference.key);
+        goto cleanup;
+    }
+    if (entry.from_overlay || secdat_active_overlay_enabled(&chain)) {
+        fprintf(stderr, _("key metadata cannot be changed for a volatile session overlay\n"));
+        goto cleanup;
+    }
+    if (entry.from_v2 && entry.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+        fprintf(stderr, _("key metadata cannot be set for hidden v2 key: %s\n"), reference.key);
+        goto cleanup;
+    }
+    if (secdat_require_mutable_session_chain(&chain, operation) != 0
+        || secdat_require_writable_domain_chain(&chain) != 0) {
+        goto cleanup;
+    }
+    if (secdat_read_key_metadata(chain.ids[0], reference.store_value, reference.key, &metadata, 0) != 0
+        || secdat_metadata_list_set(&metadata, field, value) != 0
+        || secdat_write_key_metadata(chain.ids[0], reference.store_value, reference.key, &metadata) != 0) {
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    secdat_metadata_list_free(&metadata);
+    secdat_effective_entry_reset(&entry);
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
 static int secdat_command_meta_get(const struct secdat_cli *cli)
 {
     struct secdat_key_reference reference;
@@ -14778,52 +14831,28 @@ cleanup:
 
 static int secdat_command_meta_set(const struct secdat_cli *cli)
 {
-    struct secdat_key_reference reference;
-    struct secdat_domain_chain chain = {0};
-    struct secdat_effective_entry entry = {0};
-    struct secdat_metadata_list metadata = {0};
-    int status = 1;
-
     if (cli->argc != 3) {
         fprintf(stderr, cli->argc == 0 ? _("missing key for meta set\n") : _("invalid arguments for meta set\n"));
         secdat_cli_print_try_help(cli, "meta");
         return 2;
     }
-    if (!secdat_metadata_name_is_valid(cli->argv[1])) {
-        fprintf(stderr, _("invalid metadata field: %s\n"), cli->argv[1]);
+    return secdat_set_key_metadata_field(cli, cli->argv[0], cli->argv[1], cli->argv[2], "meta set");
+}
+
+static int secdat_command_meta_mark_leaked(const struct secdat_cli *cli)
+{
+    int status;
+
+    if (cli->argc != 1) {
+        fprintf(stderr, cli->argc == 0 ? _("missing key for meta mark-leaked\n") : _("invalid arguments for meta mark-leaked\n"));
+        secdat_cli_print_try_help(cli, "meta");
         return 2;
     }
-    if (secdat_meta_resolve_key(cli, cli->argv[0], &reference, &chain, &entry) != 0) {
-        goto cleanup;
+    status = secdat_set_key_metadata_field(cli, cli->argv[0], "leaked", "true", "meta mark-leaked");
+    if (status != 0) {
+        return status;
     }
-    if (entry.resolved_index != 0) {
-        fprintf(stderr, _("cannot update inherited key metadata: %s\n"), reference.key);
-        goto cleanup;
-    }
-    if (entry.from_overlay || secdat_active_overlay_enabled(&chain)) {
-        fprintf(stderr, _("key metadata cannot be changed for a volatile session overlay\n"));
-        goto cleanup;
-    }
-    if (entry.from_v2 && entry.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
-        fprintf(stderr, _("key metadata cannot be set for hidden v2 key: %s\n"), reference.key);
-        goto cleanup;
-    }
-    if (secdat_require_mutable_session_chain(&chain, "meta set") != 0
-        || secdat_require_writable_domain_chain(&chain) != 0) {
-        goto cleanup;
-    }
-    if (secdat_read_key_metadata(chain.ids[0], reference.store_value, reference.key, &metadata, 0) != 0
-        || secdat_metadata_list_set(&metadata, cli->argv[1], cli->argv[2]) != 0
-        || secdat_write_key_metadata(chain.ids[0], reference.store_value, reference.key, &metadata) != 0) {
-        goto cleanup;
-    }
-    status = 0;
-
-cleanup:
-    secdat_metadata_list_free(&metadata);
-    secdat_effective_entry_reset(&entry);
-    secdat_domain_chain_free(&chain);
-    return status;
+    return secdat_print_relation_refresh_suggestions(cli, cli->argv[0]);
 }
 
 static int secdat_command_meta_unset(const struct secdat_cli *cli)
@@ -15157,6 +15186,264 @@ static int secdat_relation_matches_filters(const struct secdat_relation_info *re
     return 1;
 }
 
+static int secdat_ascii_contains_ci(const char *value, const char *needle)
+{
+    size_t value_length;
+    size_t needle_length;
+    size_t index;
+
+    if (value == NULL || needle == NULL) {
+        return 0;
+    }
+    value_length = strlen(value);
+    needle_length = strlen(needle);
+    if (needle_length == 0 || value_length < needle_length) {
+        return 0;
+    }
+    for (index = 0; index + needle_length <= value_length; index += 1) {
+        size_t offset;
+        int matches = 1;
+
+        for (offset = 0; offset < needle_length; offset += 1) {
+            unsigned char left = (unsigned char)value[index + offset];
+            unsigned char right = (unsigned char)needle[offset];
+
+            if (tolower(left) != tolower(right)) {
+                matches = 0;
+                break;
+            }
+        }
+        if (matches) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_relation_role_is_public(const char *role)
+{
+    static const char *const exact_public_roles[] = {
+        "id", "identifier", "user", "username", "email", "account", "client_id", "tenant", "login", "name", NULL,
+    };
+    size_t index;
+    size_t role_length;
+
+    if (role == NULL || role[0] == '\0') {
+        return 0;
+    }
+    for (index = 0; exact_public_roles[index] != NULL; index += 1) {
+        if (strcasecmp(role, exact_public_roles[index]) == 0) {
+            return 1;
+        }
+    }
+    if (secdat_ascii_contains_ci(role, "public")) {
+        return 1;
+    }
+    role_length = strlen(role);
+    if (role_length > 3
+        && tolower((unsigned char)role[role_length - 2]) == 'i'
+        && tolower((unsigned char)role[role_length - 1]) == 'd'
+        && (role[role_length - 3] == '_' || role[role_length - 3] == '-' || role[role_length - 3] == '.')) {
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_relation_role_is_sensitive(const char *role)
+{
+    static const char *const sensitive_terms[] = {
+        "password", "passwd", "passphrase", "secret", "token", "api_key", "key", "salt", "private", "credential", "otp", "refresh", "access", "auth", "cert", NULL,
+    };
+    size_t index;
+
+    if (role == NULL || role[0] == '\0' || secdat_relation_role_is_public(role)) {
+        return 0;
+    }
+    for (index = 0; sensitive_terms[index] != NULL; index += 1) {
+        if (secdat_ascii_contains_ci(role, sensitive_terms[index])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_relation_field_has_high_risk_term(const char *value)
+{
+    static const char *const risk_terms[] = {
+        "combination", "sensitive", "credential", "secret", "password", "token", "salt", "private", "compromise", "leak", "breach", "takeover", "high", "critical", "must remain secret", NULL,
+    };
+    size_t index;
+
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+    for (index = 0; risk_terms[index] != NULL; index += 1) {
+        if (secdat_ascii_contains_ci(value, risk_terms[index])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_relation_is_high_risk(const struct secdat_relation_info *relation)
+{
+    return secdat_relation_field_has_high_risk_term(relation->kind)
+        || secdat_relation_field_has_high_risk_term(relation->security)
+        || secdat_relation_field_has_high_risk_term(relation->exposure)
+        || secdat_relation_field_has_high_risk_term(relation->impact)
+        || secdat_relation_field_has_high_risk_term(relation->note)
+        || (relation->impact != NULL && relation->impact[0] != '\0' && !secdat_ascii_contains_ci(relation->impact, "low"));
+}
+
+static const char *secdat_relation_refresh_reason(
+    const struct secdat_relation_info *relation,
+    const struct secdat_relation_member *leaked_member,
+    const struct secdat_relation_member *refresh_member
+)
+{
+    if (strcmp(leaked_member->keyref, refresh_member->keyref) == 0
+        && strcmp(leaked_member->role, refresh_member->role) == 0) {
+        return secdat_relation_role_is_sensitive(refresh_member->role) ? "leaked-secret-member" : "leaked-relation-member";
+    }
+    if (secdat_ascii_contains_ci(relation->security, "combination")) {
+        return "combination-sensitive-relation";
+    }
+    if (relation->impact != NULL && relation->impact[0] != '\0') {
+        return "relation-impact";
+    }
+    return "sensitive-relation-member";
+}
+
+static void secdat_print_relation_refresh_suggestions_for_relation(
+    const struct secdat_relation_info *relation,
+    const char *canonical_keyref
+)
+{
+    int relation_high_risk = secdat_relation_is_high_risk(relation);
+    size_t leaked_index;
+
+    for (leaked_index = 0; leaked_index < relation->member_count; leaked_index += 1) {
+        const struct secdat_relation_member *leaked_member = &relation->members[leaked_index];
+        int leaked_public;
+        int leaked_sensitive;
+        size_t refresh_index;
+
+        if (strcmp(leaked_member->keyref, canonical_keyref) != 0) {
+            continue;
+        }
+        leaked_public = secdat_relation_role_is_public(leaked_member->role);
+        leaked_sensitive = secdat_relation_role_is_sensitive(leaked_member->role);
+        if (leaked_public && !leaked_sensitive) {
+            continue;
+        }
+        for (refresh_index = 0; refresh_index < relation->member_count; refresh_index += 1) {
+            const struct secdat_relation_member *refresh_member = &relation->members[refresh_index];
+            int refresh_public;
+            int refresh_sensitive;
+            const char *reason;
+
+            refresh_public = secdat_relation_role_is_public(refresh_member->role);
+            refresh_sensitive = secdat_relation_role_is_sensitive(refresh_member->role);
+            if (refresh_public && !refresh_sensitive) {
+                continue;
+            }
+            if (!refresh_sensitive && !relation_high_risk) {
+                continue;
+            }
+            if (strcmp(leaked_member->keyref, refresh_member->keyref) != 0
+                && !relation_high_risk) {
+                continue;
+            }
+            reason = secdat_relation_refresh_reason(relation, leaked_member, refresh_member);
+            printf("high\t%s\t%s\t%s\t%s\t%s\n", relation->relation_id, leaked_member->role, refresh_member->role, refresh_member->keyref, reason);
+        }
+    }
+}
+
+static int secdat_print_relation_refresh_suggestions_for_domain_store(
+    const char *domain_id,
+    const char *store_name,
+    const char *canonical_keyref
+)
+{
+    struct secdat_key_list relation_ids = {0};
+    char relation_dir[PATH_MAX];
+    size_t index;
+    int status = 1;
+
+    if (secdat_relations_dir(domain_id, store_name, relation_dir, sizeof(relation_dir)) != 0
+        || secdat_collect_directory_keys(relation_dir, ".rel", &relation_ids) != 0) {
+        goto cleanup;
+    }
+    if (relation_ids.count > 1) {
+        qsort(relation_ids.items, relation_ids.count, sizeof(*relation_ids.items), secdat_compare_strings);
+    }
+    for (index = 0; index < relation_ids.count; index += 1) {
+        struct secdat_relation_info relation = {0};
+
+        if (secdat_read_relation(domain_id, store_name, relation_ids.items[index], &relation, 0) != 0) {
+            secdat_relation_info_reset(&relation);
+            goto cleanup;
+        }
+        secdat_print_relation_refresh_suggestions_for_relation(&relation, canonical_keyref);
+        secdat_relation_info_reset(&relation);
+    }
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&relation_ids);
+    return status;
+}
+
+static int secdat_print_relation_refresh_suggestions(const struct secdat_cli *cli, const char *raw_keyref)
+{
+    struct secdat_domain_root_list roots = {0};
+    struct secdat_domain_chain chain = {0};
+    struct secdat_key_list stores = {0};
+    char canonical_keyref[PATH_MAX * 2];
+    size_t root_index;
+    size_t store_index;
+    int status = 1;
+
+    if (secdat_canonicalize_existing_keyref(
+            raw_keyref,
+            secdat_cli_domain_base(cli),
+            cli->store,
+            canonical_keyref,
+            sizeof(canonical_keyref)) != 0) {
+        return 1;
+    }
+    if (secdat_collect_registered_domain_roots(&roots) != 0) {
+        goto cleanup;
+    }
+    for (root_index = 0; root_index < roots.count; root_index += 1) {
+        if (secdat_domain_resolve_registered_root_chain(roots.roots[root_index], &chain) != 0) {
+            goto cleanup;
+        }
+        if (chain.count == 0) {
+            secdat_domain_chain_free(&chain);
+            continue;
+        }
+        if (secdat_collect_store_names(chain.ids[0], NULL, &stores) != 0) {
+            goto cleanup;
+        }
+        for (store_index = 0; store_index < stores.count; store_index += 1) {
+            if (secdat_print_relation_refresh_suggestions_for_domain_store(chain.ids[0], stores.items[store_index], canonical_keyref) != 0) {
+                goto cleanup;
+            }
+        }
+        secdat_key_list_free(&stores);
+        secdat_domain_chain_free(&chain);
+    }
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&stores);
+    secdat_domain_chain_free(&chain);
+    secdat_domain_root_list_free(&roots);
+    return status;
+}
+
 static int secdat_command_relation_ls(const struct secdat_cli *cli)
 {
     struct secdat_key_list relation_ids = {0};
@@ -15268,6 +15555,16 @@ cleanup:
     secdat_metadata_filter_list_free(&filters);
     secdat_key_list_free(&relation_ids);
     return status;
+}
+
+static int secdat_command_relation_suggest_refresh(const struct secdat_cli *cli)
+{
+    if (cli->argc != 1) {
+        fprintf(stderr, cli->argc == 0 ? _("missing key for relation suggest-refresh\n") : _("invalid arguments for relation suggest-refresh\n"));
+        secdat_cli_print_try_help(cli, "relation");
+        return 2;
+    }
+    return secdat_print_relation_refresh_suggestions(cli, cli->argv[0]);
 }
 
 static int secdat_command_relation_show(const struct secdat_cli *cli)
@@ -19416,12 +19713,16 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_meta_unset(cli);
     case SECDAT_COMMAND_META_SEARCH:
         return secdat_command_meta_search(cli);
+    case SECDAT_COMMAND_META_MARK_LEAKED:
+        return secdat_command_meta_mark_leaked(cli);
     case SECDAT_COMMAND_RELATION_SET:
         return secdat_command_relation_set(cli);
     case SECDAT_COMMAND_RELATION_LS:
         return secdat_command_relation_ls(cli);
     case SECDAT_COMMAND_RELATION_SEARCH:
         return secdat_command_relation_search(cli);
+    case SECDAT_COMMAND_RELATION_SUGGEST_REFRESH:
+        return secdat_command_relation_suggest_refresh(cli);
     case SECDAT_COMMAND_RELATION_SHOW:
         return secdat_command_relation_show(cli);
     case SECDAT_COMMAND_RELATION_RM:

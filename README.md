@@ -258,10 +258,11 @@ For non-secret lookup information, use `meta`. Metadata values are stored as sea
 ./src/secdat meta set BILLING_ID meaning "public identifier"
 ./src/secdat meta get BILLING_ID
 ./src/secdat meta search service=bill*
+./src/secdat meta mark-leaked BILLING_PASSWORD
 ./src/secdat meta unset BILLING_ID meaning
 ```
 
-`meta set` and `meta unset` update only current-domain local keys; inherited keys must be materialized before their local metadata can be changed. `meta search` lists visible keys whose metadata has all requested `FIELD` or `FIELD=GLOB` filters. `cp` and `mv` preserve searchable metadata, and `rm` removes local searchable metadata for the removed key. v2 hidden keys (`key_visibility=unlocked`) cannot have searchable metadata, because metadata paths are plaintext key-name indexed.
+`meta set`, `meta unset`, and `meta mark-leaked` update only local keys in the target KEYREF's domain chain; inherited keys must be materialized before their local metadata can be changed. `meta mark-leaked KEYREF` stores `leaked=true` as non-secret metadata and then prints the same high-risk refresh suggestions as `relation suggest-refresh KEYREF`. `meta search` lists visible keys whose metadata has all requested `FIELD` or `FIELD=GLOB` filters. `cp` and `mv` preserve searchable metadata, and `rm` removes local searchable metadata for the removed key. v2 hidden keys (`key_visibility=unlocked`) cannot have searchable metadata, because metadata paths are plaintext key-name indexed.
 
 To describe how multiple keys belong together, use `relation`. A relation connects two or more role-named key references and records non-secret security meaning for the combination:
 
@@ -276,9 +277,10 @@ To describe how multiple keys belong together, use `relation`. A relation connec
 ./src/secdat relation show billing-login
 ./src/secdat relation ls BILLING_PASSWORD
 ./src/secdat relation search kind=credential security=combination-*
+./src/secdat relation suggest-refresh BILLING_PASSWORD
 ```
 
-Relation members are validated as existing keys when the relation is written. Relation output never reads secret values; it stores the canonical member KEYREFs and the supplied non-secret meaning fields. `relation search` filters relation records with `FIELD` or `FIELD=GLOB`; supported fields are `relation_id`, `kind`, `security`, `exposure`, `impact`, `note`, `member`, and `member.ROLE`. v2 hidden keys cannot be relation members, and a visible key with existing relation membership cannot be changed to `key_visibility=unlocked` until those relation records are removed.
+Relation members are validated as existing keys when the relation is written. Relation output never reads secret values; it stores the canonical member KEYREFs and the supplied non-secret meaning fields. `relation search` filters relation records with `FIELD` or `FIELD=GLOB`; supported fields are `relation_id`, `kind`, `security`, `exposure`, `impact`, `note`, `member`, and `member.ROLE`. `relation suggest-refresh KEYREF` treats the resolved key as leaked and scans registered relation records for matching canonical KEYREFs, including cross-domain references. It prints tab-separated high-risk suggestions as `high RELATION_ID LEAKED_ROLE REFRESH_ROLE REFRESH_KEYREF REASON`, using role names and relation security fields only. v2 hidden keys cannot be relation members, and a visible key with existing relation membership cannot be changed to `key_visibility=unlocked` until those relation records are removed.
 
 The storage v2 layout moves from one domain-local file per key to a directory/inode-like split between domain entries and secret objects. Domain entries own key names and key visibility; secret objects own values and value access. The current v2 path includes linked secrets (`ln`) across v2 domains/stores, secret UUID references, object address metadata, object-owned payloads for new or rewritten v2 values, refcount/orphan checks, cached refcount repair, and a migration-first compatibility path from the current v1 store. Direct source-object links such as `ln @UUID DST_KEYREF` are supported only when the current context can authorize the UUID through an existing visible or unlocked domain entry; `@UUID` is a source operand, not a destination. See [docs/secdat-spec.md](docs/secdat-spec.md#510-store-v2-domain-entries-and-secret-objects).
 

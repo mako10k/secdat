@@ -42,9 +42,11 @@ secdat [--dir DIR] [--store STORE] meta get KEYREF
 secdat [--dir DIR] [--store STORE] meta set KEYREF FIELD VALUE
 secdat [--dir DIR] [--store STORE] meta unset KEYREF FIELD
 secdat [--dir DIR] [--store STORE] meta search [FIELD|FIELD=GLOB]...
+secdat [--dir DIR] [--store STORE] meta mark-leaked KEYREF
 secdat [--dir DIR] [--store STORE] relation set RELATION_ID --kind KIND --member ROLE=KEYREF --member ROLE=KEYREF [--security TEXT] [--exposure TEXT] [--impact TEXT] [--note TEXT]
 secdat [--dir DIR] [--store STORE] relation ls [KEYREF]
 secdat [--dir DIR] [--store STORE] relation search [FIELD|FIELD=GLOB]...
+secdat [--dir DIR] [--store STORE] relation suggest-refresh KEYREF
 secdat [--dir DIR] [--store STORE] relation show RELATION_ID
 secdat [--dir DIR] [--store STORE] relation rm RELATION_ID
 secdat [--dir DIR] [--store STORE] fsck [--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]
@@ -333,15 +335,16 @@ To make the requested behavior implementable, the following are treated as norma
 #### FR-3ad Searchable Metadata and Semantic Relations
 
 - `secdat meta get KEYREF` prints the effective non-secret searchable metadata for one visible key as `FIELD=VALUE` rows
-- `secdat meta set KEYREF FIELD VALUE` adds or replaces one non-secret searchable metadata field on a current-domain local key
-- `secdat meta unset KEYREF FIELD` removes one searchable metadata field from a current-domain local key
+- `secdat meta set KEYREF FIELD VALUE` adds or replaces one non-secret searchable metadata field on a local key in the target KEYREF's domain chain
+- `secdat meta unset KEYREF FIELD` removes one searchable metadata field from a local key in the target KEYREF's domain chain
 - `secdat meta search` lists visible keys with any searchable metadata
 - `secdat meta search FIELD` lists visible keys whose metadata contains `FIELD`
 - `secdat meta search FIELD=GLOB` lists visible keys whose metadata field value matches the shell glob
 - multiple `meta search` filters are conjunctive
+- `secdat meta mark-leaked KEYREF` stores `leaked=true` as non-secret metadata on a local key in the target KEYREF's domain chain and prints relation-derived refresh suggestions for the same key
 - metadata field names accept alphanumeric characters, `_`, `-`, and `.`
 - searchable metadata must not contain secret values; it is intended for labels, ownership, service names, non-secret meaning, and lookup hints
-- `meta set` and `meta unset` reject inherited keys; inherited keys must be materialized locally before their current-domain metadata can be changed
+- `meta set`, `meta unset`, and `meta mark-leaked` reject inherited keys; inherited keys must be materialized locally before their metadata can be changed
 - `cp` and `mv` preserve searchable metadata; `rm` removes searchable metadata for a removed local key
 - v2 `key_visibility=unlocked` keys reject searchable metadata, and keys with existing searchable metadata cannot be changed to `key_visibility=unlocked`, because metadata files are indexed by plaintext key name
 - `secdat relation set RELATION_ID --kind KIND --member ROLE=KEYREF --member ROLE=KEYREF ...` creates or replaces one relation with at least two member key references
@@ -359,6 +362,9 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat relation search FIELD=GLOB` lists relation IDs whose relation field value matches the shell glob
 - multiple `relation search` filters are conjunctive
 - relation search fields are `relation_id`, `kind`, `security`, `exposure`, `impact`, `note`, `member`, and `member.ROLE`; `member` and `member.ROLE` match canonical member KEYREFs
+- `secdat relation suggest-refresh KEYREF` treats the resolved key as leaked and lists high-risk refresh suggestions from registered relation records without reading secret values
+- `relation suggest-refresh` output is tab-separated as `high RELATION_ID LEAKED_ROLE REFRESH_ROLE REFRESH_KEYREF REASON`
+- refresh suggestions are derived from relation member roles and non-secret relation fields, including cross-domain relation members that reference the leaked canonical KEYREF; public-looking roles such as `id` are not emitted as high-risk refresh targets by themselves
 - `secdat relation rm RELATION_ID` removes one relation record
 - relation writes reject volatile overlay sessions and readonly sessions
 

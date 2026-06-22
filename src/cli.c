@@ -35,9 +35,11 @@ static const struct secdat_cli_subcommand_entry secdat_cli_subcommand_registry[]
     {"meta", "set", "meta set", SECDAT_COMMAND_META_SET},
     {"meta", "unset", "meta unset", SECDAT_COMMAND_META_UNSET},
     {"meta", "search", "meta search", SECDAT_COMMAND_META_SEARCH},
+    {"meta", "mark-leaked", "meta mark-leaked", SECDAT_COMMAND_META_MARK_LEAKED},
     {"relation", "set", "relation set", SECDAT_COMMAND_RELATION_SET},
     {"relation", "ls", "relation ls", SECDAT_COMMAND_RELATION_LS},
     {"relation", "search", "relation search", SECDAT_COMMAND_RELATION_SEARCH},
+    {"relation", "suggest-refresh", "relation suggest-refresh", SECDAT_COMMAND_RELATION_SUGGEST_REFRESH},
     {"relation", "show", "relation show", SECDAT_COMMAND_RELATION_SHOW},
     {"relation", "rm", "relation rm", SECDAT_COMMAND_RELATION_RM},
     {"store", "create", "store create", SECDAT_COMMAND_STORE_CREATE},
@@ -748,7 +750,10 @@ static int secdat_cli_completion_is_command_with_key_operand(const char *command
             || strcmp(command, "attr") == 0
             || (strcmp(command, "meta") == 0
                 && subcommand != NULL
-                && (strcmp(subcommand, "get") == 0 || strcmp(subcommand, "set") == 0 || strcmp(subcommand, "unset") == 0))
+                && (strcmp(subcommand, "get") == 0 || strcmp(subcommand, "set") == 0 || strcmp(subcommand, "unset") == 0 || strcmp(subcommand, "mark-leaked") == 0))
+            || (strcmp(command, "relation") == 0
+                && subcommand != NULL
+                && strcmp(subcommand, "suggest-refresh") == 0)
             || strcmp(command, "rm") == 0 || strcmp(command, "mask") == 0
             || strcmp(command, "unmask") == 0 || strcmp(command, "set") == 0
             || strcmp(command, "cp") == 0 || strcmp(command, "mv") == 0 || strcmp(command, "ln") == 0);
@@ -1390,6 +1395,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
     case SECDAT_COMMAND_META_SEARCH:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "meta search", "[FIELD|FIELD=GLOB]...");
         break;
+    case SECDAT_COMMAND_META_MARK_LEAKED:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "meta mark-leaked", "KEYREF");
+        break;
     case SECDAT_COMMAND_RELATION_SET:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation set", "RELATION_ID --kind KIND --member ROLE=KEYREF --member ROLE=KEYREF [--security TEXT] [--exposure TEXT] [--impact TEXT] [--note TEXT]");
         break;
@@ -1398,6 +1406,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_RELATION_SEARCH:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation search", "[FIELD|FIELD=GLOB]...");
+        break;
+    case SECDAT_COMMAND_RELATION_SUGGEST_REFRESH:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation suggest-refresh", "KEYREF");
         break;
     case SECDAT_COMMAND_RELATION_SHOW:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation show", "RELATION_ID");
@@ -1599,6 +1610,8 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and sandbox injection attributes\n"));
     secdat_cli_print_detail_line(_("  meta: manage non-secret searchable metadata without reading secret values\n"));
     secdat_cli_print_detail_line(_("  relation: record semantic links between keys and the security meaning of those links\n"));
+    secdat_cli_print_detail_line(_("  meta mark-leaked: mark one key as leaked metadata and suggest high-risk refresh targets\n"));
+    secdat_cli_print_detail_line(_("  relation suggest-refresh: suggest high-risk refresh targets related to one leaked key\n"));
     secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and limited repair\n"));
     secdat_cli_print_detail_line(_("  gc: remove unreachable or dangling v2 graph files after review\n"));
     secdat_cli_print_detail_line(_("  mask: create a local tombstone to hide one inherited key\n"));
@@ -1676,6 +1689,10 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  meta search: list visible keys whose non-secret metadata contains all requested fields or glob-matched values\n"));
         return;
     }
+    if (target != NULL && strcmp(target, "meta mark-leaked") == 0) {
+        secdat_cli_print_detail_line(_("  meta mark-leaked: mark one key as leaked metadata and print high-risk relation refresh suggestions\n"));
+        return;
+    }
     if (target != NULL && strcmp(target, "relation") == 0) {
         secdat_cli_print_detail_line(_("  relation: record semantic links between multiple key references and the non-secret security meaning of the combination\n"));
         return;
@@ -1690,6 +1707,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "relation search") == 0) {
         secdat_cli_print_detail_line(_("  relation search: list relation identifiers whose non-secret relation fields match all filters\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "relation suggest-refresh") == 0) {
+        secdat_cli_print_detail_line(_("  relation suggest-refresh: suggest high-risk refresh targets related to one leaked key without reading secret values\n"));
         return;
     }
     if (target != NULL && strcmp(target, "relation show") == 0) {
@@ -1893,19 +1914,23 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         secdat_cli_print_detail_line(buffer);
         return;
     }
-    if (strcmp(target, "meta") == 0 || strcmp(target, "meta set") == 0 || strcmp(target, "meta search") == 0) {
+    if (strcmp(target, "meta") == 0 || strcmp(target, "meta set") == 0 || strcmp(target, "meta search") == 0 || strcmp(target, "meta mark-leaked") == 0) {
         char buffer[512];
         snprintf(buffer, sizeof(buffer), _("  tag one key for search: %s meta set API_TOKEN service billing\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  find keys by metadata: %s meta search service=bill*\n"), program_name);
         secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  mark a leaked key and suggest refresh targets: %s meta mark-leaked BILLING_PASSWORD\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
         return;
     }
-    if (strcmp(target, "relation") == 0 || strcmp(target, "relation set") == 0 || strcmp(target, "relation search") == 0 || strcmp(target, "relation show") == 0) {
+    if (strcmp(target, "relation") == 0 || strcmp(target, "relation set") == 0 || strcmp(target, "relation search") == 0 || strcmp(target, "relation suggest-refresh") == 0 || strcmp(target, "relation show") == 0) {
         char buffer[512];
         snprintf(buffer, sizeof(buffer), _("  record a credential pair: %s relation set billing-login --kind credential --member id=BILLING_ID --member password=BILLING_PASSWORD --security combination-sensitive\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  find credential relations: %s relation search kind=credential security=combination-*\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  suggest refresh targets after a leak: %s relation suggest-refresh BILLING_PASSWORD\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  inspect relation metadata: %s relation show billing-login\n"), program_name);
         secdat_cli_print_detail_line(buffer);
@@ -2297,7 +2322,8 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
     secdat_cli_print_usage_line(program_name, command);
     if (command == SECDAT_COMMAND_LS || command == SECDAT_COMMAND_LIST || command == SECDAT_COMMAND_ATTR
         || command == SECDAT_COMMAND_META_GET || command == SECDAT_COMMAND_META_SET || command == SECDAT_COMMAND_META_UNSET
-        || command == SECDAT_COMMAND_RELATION_SET || command == SECDAT_COMMAND_RELATION_LS
+        || command == SECDAT_COMMAND_META_MARK_LEAKED
+        || command == SECDAT_COMMAND_RELATION_SET || command == SECDAT_COMMAND_RELATION_LS || command == SECDAT_COMMAND_RELATION_SUGGEST_REFRESH
         || command == SECDAT_COMMAND_MASK || command == SECDAT_COMMAND_UNMASK
         || command == SECDAT_COMMAND_EXISTS || command == SECDAT_COMMAND_ID || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
         || command == SECDAT_COMMAND_RM || command == SECDAT_COMMAND_MV || command == SECDAT_COMMAND_CP || command == SECDAT_COMMAND_LN) {
