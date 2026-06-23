@@ -16,6 +16,7 @@ Current status:
 - `secret status` is implemented for read-only v2 secret-object metadata inspection by UUID
 - `export` is implemented for shell-friendly setup without embedding raw secret values
 - `save` and `load` are implemented for passphrase-protected secret bundles scoped to the current view
+- optional `secdat-fuse` read-only mounting is available when configured with `--enable-fuse`
 - `domain create`, `domain delete`, `domain ls`, and `domain status` are implemented
 - `store create`, `store delete`, `store ls`, `store migrate`, and `store finalize-migration` are implemented
 - `unlock`, `lock`, and `status` are implemented with domain-scoped session agents and a wrapped persistent master key
@@ -39,6 +40,14 @@ The session-agent path relies on normal OS user separation and private XDG runti
 ./autogen.sh --profile build
 ./configure
 make
+```
+
+FUSE support is optional and disabled by default. To build the separate read-only mount helper, install the FUSE 3 development headers and configure explicitly:
+
+```sh
+./configure --enable-fuse
+make
+./src/secdat-fuse --help
 ```
 
 For a fuller local setup, including language-binding toolchains and debugging/search tools, install the `dev` profile once:
@@ -364,6 +373,8 @@ source <(./src/secdat --dir ~/example/project --store app export)
 The output is shell-ready text such as `eval "export API_TOKEN=$(./src/secdat ... get API_TOKEN --shellescaped)"`; it does not print raw secret values directly. `get --shellescaped` emits a single-quoted shell literal for one secret value, and `export` reuses that path. In bash, you can either `eval "$(...)"` or source it with process substitution as `source <(...)` / `. <(...)`. Plain `. $(...)` is not valid here because `.` expects a file path, not command text. The current implementation is bash-oriented, single-quote escapes command arguments, and key names already follow shell-identifier syntax.
 
 For command injection into a child process, `exec` accepts repeated `--pattern` and `--pattern-exclude` filters. Include patterns are ORed together, and exclude patterns are applied afterward. `--sandbox-injectable` further restricts `exec` to keys whose effective `sandbox_inject` allows bulk selection. `export --sandbox-injectable` applies the same bulk-selection filter to emitted shell setup lines. A key with `sandbox_inject=explicit` is excluded by `--sandbox-injectable`; plain `--pattern` remains a direct visible-key selector unless that policy gate is also present. `--env-map-sed EXPR` adds one sed-style environment-name remapping rule for `exec`; when present, only keys matched by the substitution are injected, and the replacement text becomes the environment variable name. `--require-key KEY` may be repeated to refuse execution unless each named key remains selected for injection after pattern, sandbox, and mapping filters. The current minimal subset accepts one `s///` expression, with an optional leading `/ADDRESS/` filter, and supports `&` plus `\1` through `\9` in the replacement. As with sed, the delimiter after `s` may be any non-alphanumeric, non-backslash character, so forms like `s|...|...|` and `s#...#...#` also work. `exec --dry-run` reports the command argv, key names, generated environment variable names, and injection count without running the child or reading secret values; add `--json` to make that preflight output machine-readable. For real executions, `--json-summary` writes a machine-readable audit summary to standard error after the child exits, so child standard output remains parseable; it cannot be combined with `--dry-run`. Mapping errors such as invalid generated names and duplicate generated environment names are included as `mapping_errors` in JSON output. JSON output also includes `required_keys` and `missing_required_keys`. Use `--` before `CMD` when the command itself or its first argument starts with `-`.
+
+When built with `--enable-fuse`, `secdat-fuse` mounts selected keys as read-only files through FUSE 3. It uses the SDK list/get path instead of store internals, accepts the same domain/store context options plus one include and exclude pattern, and supports `--sandbox-injectable`. `--dry-run MOUNTPOINT` prints the file names that would be exposed without mounting or reading secret values. A real mount exposes plaintext through normal file reads, so use a private mountpoint, keep `allow_other` disabled, and unmount as soon as the consuming process no longer needs the files.
 
 Bash completion source is in `completions/secdat.bash`, and `make install` installs it as `secdat` under the system bash-completion directory when bash-completion is installed and loaded by the shell. The script now asks `secdat __completion --bash` for the current command surface instead of hardcoding command tables, which keeps completion aligned with new commands and options as the CLI evolves while preserving the normal fallback that treats unknown leading operands as keys. Completion still depends on being able to execute `secdat`, so in-tree or custom-prefix testing needs the binary to resolve `libsecdat`. `make install` also installs the command reference into the system manpath from `docs/secdat.1`. For direct system installs into standard library directories such as `/usr/local/lib`, the install step also refreshes the dynamic linker cache with `ldconfig` when available so the installed `secdat` binary can resolve `libsecdat` immediately.
 

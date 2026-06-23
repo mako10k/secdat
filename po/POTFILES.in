@@ -1,3 +1,4 @@
 src/cli.c
 src/main.c
+src/secdat-fuse.c
 src/store.c

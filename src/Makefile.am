@@ -27,6 +27,17 @@ secdat_SOURCES = \
 	main.c \
 	i18n.h
 
+if ENABLE_FUSE
+bin_PROGRAMS += secdat-fuse
+secdat_fuse_CPPFLAGS = $(AM_CPPFLAGS) $(FUSE3_CFLAGS)
+secdat_fuse_LDADD = libsecdat.la $(FUSE3_LIBS)
+secdat_fuse_SOURCES = \
+	secdat-fuse.c \
+	domain.h \
+	i18n.h \
+	secdat-sdk.h
+endif
+
 secdat_local_headers = \
 	cli.h \
 	domain.h \

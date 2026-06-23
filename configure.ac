@@ -9,6 +9,19 @@ AM_PROG_AR
 LT_INIT
 PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES([OPENSSL], [openssl])
+
+AC_ARG_ENABLE(
+    [fuse],
+    [AS_HELP_STRING([--enable-fuse], [build the optional secdat-fuse read-only mount helper])],
+    [],
+    [enable_fuse=no]
+)
+AS_IF(
+    [test "x$enable_fuse" = "xyes"],
+    [PKG_CHECK_MODULES([FUSE3], [fuse3])]
+)
+AM_CONDITIONAL([ENABLE_FUSE], [test "x$enable_fuse" = "xyes"])
+
 AM_GNU_GETTEXT_VERSION([0.21])
 AM_GNU_GETTEXT([external])
 

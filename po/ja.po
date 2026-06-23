@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: secdat 0.2.2\n"
 "Report-Msgid-Bugs-To: noreply@example.invalid\n"
-"POT-Creation-Date: 2026-06-22 20:53+0900\n"
+"POT-Creation-Date: 2026-06-23 12:10+0900\n"
 "PO-Revision-Date: 2026-04-13 00:00+0000\n"
 "Last-Translator: GitHub Copilot <noreply@example.invalid>\n"
 "Language-Team: ja\n"
@@ -49,12 +49,12 @@ msgstr "--domain に値が必要です\n"
 msgid "missing value for --store\n"
 msgstr "--store に値が必要です\n"
 
-#: src/cli.c:699
+#: src/cli.c:699 src/secdat-fuse.c:483
 #, c-format
 msgid "missing option value\n"
 msgstr "オプション値が不足しています\n"
 
-#: src/cli.c:703
+#: src/cli.c:703 src/secdat-fuse.c:487
 #, c-format
 msgid "unknown option: %s\n"
 msgstr "不明なオプションです: %s\n"
@@ -1421,6 +1421,82 @@ msgstr "Issue 報告先: %s\n"
 msgid "Author: %s\n"
 msgstr "Author: %s\n"
 
+#: src/secdat-fuse.c:60
+#, c-format
+msgid ""
+"Usage: %s [OPTIONS] MOUNTPOINT\n"
+"\n"
+"Mount selected secdat keys as read-only files.\n"
+"\n"
+"Options:\n"
+"  -d, --dir DIR              set the base directory used for domain "
+"resolution\n"
+"      --domain DIR           require one exact registered domain root\n"
+"  -s, --store STORE          select the store namespace\n"
+"  -p, --pattern GLOB         include only matching keys\n"
+"  -x, --pattern-exclude GLOB exclude matching keys\n"
+"      --sandbox-injectable   include only keys allowed for bulk sandbox "
+"injection\n"
+"      --dry-run              list files that would be mounted without "
+"mounting\n"
+"  -f, --foreground           keep the FUSE process in the foreground\n"
+"      --debug                enable FUSE debug output\n"
+"  -h, --help                 show this help\n"
+"  -V, --version              print the secdat-fuse version\n"
+msgstr ""
+"Usage: %s [OPTIONS] MOUNTPOINT\n"
+"\n"
+"選択した secdat key を read-only file として mount します。\n"
+"\n"
+"オプション:\n"
+"  -d, --dir DIR              domain 解決に使う基準ディレクトリを指定します\n"
+"      --domain DIR           登録済みの正確な domain root を必須にします\n"
+"  -s, --store STORE          store namespace を選択します\n"
+"  -p, --pattern GLOB         一致する key だけを含めます\n"
+"  -x, --pattern-exclude GLOB 一致する key を除外します\n"
+"      --sandbox-injectable   bulk sandbox injection が許可された key だけを含"
+"めます\n"
+"      --dry-run              mount せずに mount 対象 file を一覧表示します\n"
+"  -f, --foreground           FUSE process を foreground に維持します\n"
+"      --debug                FUSE debug output を有効にします\n"
+"  -h, --help                 この help を表示します\n"
+"  -V, --version              secdat-fuse のバージョンを表示します\n"
+
+#: src/secdat-fuse.c:115 src/store.c:1098
+#, c-format
+msgid "failed to resolve directory: %s\n"
+msgstr "ディレクトリの解決に失敗しました: %s\n"
+
+#: src/secdat-fuse.c:119 src/store.c:1085 src/store.c:1103 src/store.c:2582
+#: src/store.c:3485 src/store.c:3747 src/store.c:3895 src/store.c:3922
+#: src/store.c:3949 src/store.c:4251 src/store.c:4348 src/store.c:4469
+#: src/store.c:4492 src/store.c:4508 src/store.c:5125 src/store.c:5561
+#: src/store.c:5588 src/store.c:6574 src/store.c:9881 src/store.c:9891
+#: src/store.c:9909 src/store.c:9944 src/store.c:9995 src/store.c:11115
+#: src/store.c:11913 src/store.c:11932 src/store.c:12897 src/store.c:12911
+#: src/store.c:12925 src/store.c:13383 src/store.c:13501 src/store.c:13790
+#: src/store.c:13896 src/store.c:14101 src/store.c:14140 src/store.c:14201
+#: src/store.c:14356 src/store.c:14417 src/store.c:16664 src/store.c:16801
+#: src/store.c:16898
+#, c-format
+msgid "path is too long\n"
+msgstr "パスが長すぎます\n"
+
+#: src/secdat-fuse.c:493
+#, c-format
+msgid "--dir and --domain cannot be combined\n"
+msgstr "--dir と --domain は同時に指定できません\n"
+
+#: src/secdat-fuse.c:497
+#, c-format
+msgid "missing mountpoint\n"
+msgstr "mountpoint が不足しています\n"
+
+#: src/secdat-fuse.c:501
+#, c-format
+msgid "invalid arguments\n"
+msgstr "引数が不正です\n"
+
 #: src/store.c:751 src/store.c:767 src/store.c:838 src/store.c:874
 #: src/store.c:919 src/store.c:1009 src/store.c:1018 src/store.c:1035
 #: src/store.c:1044 src/store.c:1058 src/store.c:1064 src/store.c:3583
@@ -1441,25 +1517,6 @@ msgstr "Author: %s\n"
 #, c-format
 msgid "out of memory\n"
 msgstr "メモリ不足です\n"
-
-#: src/store.c:1085 src/store.c:1103 src/store.c:2582 src/store.c:3485
-#: src/store.c:3747 src/store.c:3895 src/store.c:3922 src/store.c:3949
-#: src/store.c:4251 src/store.c:4348 src/store.c:4469 src/store.c:4492
-#: src/store.c:4508 src/store.c:5125 src/store.c:5561 src/store.c:5588
-#: src/store.c:6574 src/store.c:9881 src/store.c:9891 src/store.c:9909
-#: src/store.c:9944 src/store.c:9995 src/store.c:11115 src/store.c:11913
-#: src/store.c:11932 src/store.c:12897 src/store.c:12911 src/store.c:12925
-#: src/store.c:13383 src/store.c:13501 src/store.c:13790 src/store.c:13896
-#: src/store.c:14101 src/store.c:14140 src/store.c:14201 src/store.c:14356
-#: src/store.c:14417 src/store.c:16664 src/store.c:16801 src/store.c:16898
-#, c-format
-msgid "path is too long\n"
-msgstr "パスが長すぎます\n"
-
-#: src/store.c:1098
-#, c-format
-msgid "failed to resolve directory: %s\n"
-msgstr "ディレクトリの解決に失敗しました: %s\n"
 
 #: src/store.c:1143
 #, c-format

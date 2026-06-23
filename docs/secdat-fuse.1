@@ -1,0 +1,68 @@
+.TH SECDAT-FUSE 1 "2026-06-23" "secdat 0.2.2" "User Commands"
+.SH NAME
+secdat-fuse \- mount selected secdat keys as read-only files
+.SH SYNOPSIS
+.B secdat-fuse
+[\-d DIR|\-\-dir DIR] [\-\-domain DIR] [\-s STORE|\-\-store STORE]
+[\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]
+[\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN]
+[\-\-sandbox-injectable] [\-\-dry-run] [\-f|\-\-foreground] [\-\-debug]
+.I MOUNTPOINT
+.SH DESCRIPTION
+.B secdat-fuse
+is an optional FUSE 3 helper built only when
+.B secdat
+is configured with
+.BR \-\-enable-fuse .
+It exposes the selected visible keys as read-only files under
+.IR MOUNTPOINT .
+File reads decrypt values through the public
+.B libsecdat
+SDK; the helper does not read store internals directly.
+.PP
+The helper is intentionally read-only. It does not support writes, creates, deletes, renames, chmod, chown, or truncation through the mounted filesystem.
+.SH OPTIONS
+.TP
+.B \-d, \-\-dir DIR
+Set the base directory used for domain resolution.
+.TP
+.B \-\-domain DIR
+Require one exact registered domain root instead of normal ancestor-based discovery.
+.TP
+.B \-s, \-\-store STORE
+Select the store namespace inside the resolved domain.
+.TP
+.B \-p, \-\-pattern GLOBPATTERN
+Expose only matching keys. The initial helper accepts one include pattern.
+.TP
+.B \-x, \-\-pattern-exclude GLOBPATTERN
+Exclude matching keys. The initial helper accepts one exclude pattern.
+.TP
+.B \-\-sandbox-injectable
+Expose only keys whose effective sandbox injection policy allows bulk selection.
+.TP
+.B \-\-dry-run
+Print the mountpoint and selected file names without mounting or reading secret values.
+.TP
+.B \-f, \-\-foreground
+Keep the FUSE process in the foreground.
+.TP
+.B \-\-debug
+Enable FUSE debug output.
+.TP
+.B \-h, \-\-help
+Show usage.
+.TP
+.B \-V, \-\-version
+Print the secdat-fuse version.
+.SH SECURITY
+Mounting secrets as files exposes plaintext values through normal file reads. Use a private mountpoint, leave
+.B allow_other
+disabled, and unmount promptly after the consuming process no longer needs the files. The helper disables kernel caching for the mounted filesystem, but plaintext can still exist transiently in process memory and reader buffers.
+.SH EXAMPLES
+.nf
+secdat-fuse --dir ~/project --pattern 'APP_*' --dry-run /tmp/secdat-app
+secdat-fuse --dir ~/project --pattern 'APP_*' --foreground /tmp/secdat-app
+.fi
+.SH SEE ALSO
+.BR secdat (1)

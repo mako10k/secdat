@@ -115,6 +115,7 @@ curl
 gdb
 strace
 locales
+libfuse3-dev
 python3
 python3-pip
 python3-venv
@@ -137,6 +138,7 @@ gdb
 strace
 glibc-langpack-en
 glibc-langpack-ja
+fuse3-devel
 python3
 python3-pip
 nodejs

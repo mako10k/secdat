@@ -79,6 +79,8 @@ secdat [--dir DIR] [--store STORE] ln SRC_KEYREF|@UUID DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 
+secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [--sandbox-injectable] [--dry-run] [--foreground] [--debug] MOUNTPOINT
+
 secdat [--dir DIR] unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH]
 secdat [--dir DIR] inherit
 secdat passwd [--askpass PATH]
@@ -297,6 +299,17 @@ To make the requested behavior implementable, the following are treated as norma
 - preflight output and JSON summaries must not contain secret values
 - the parent process environment is not modified
 - resolved values are decrypted and passed through an `execve`-style API
+
+#### FR-7b FUSE Mount Helper
+
+- FUSE support is optional and built only when `./configure --enable-fuse` is used
+- the FUSE command is a separate binary, `secdat-fuse`, not a subcommand of `secdat`
+- the initial helper is read-only and exposes selected visible keys as one file per key
+- `secdat-fuse` uses the public SDK list/get operations and must not read store internals directly
+- `--pattern`, `--pattern-exclude`, and `--sandbox-injectable` limit the mounted file set
+- `--dry-run MOUNTPOINT` prints the selected file names without mounting or reading secret values
+- writes, creates, deletes, renames, chmod, chown, and truncation through the mount fail as read-only operations
+- real mounts expose plaintext values through normal file reads, so the mountpoint should be private and `allow_other` should remain disabled by default
 
 #### FR-7e Local State Inspection
 
@@ -805,6 +818,19 @@ Examples:
 
 - `api/token` -> `SECDAT_API_TOKEN`
 - `db.password` -> `SECDAT_DB_PASSWORD`
+
+### 4.8a `secdat-fuse`
+
+```text
+secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [--sandbox-injectable] [--dry-run] [--foreground] [--debug] MOUNTPOINT
+```
+
+- this command is built only when configured with `--enable-fuse`
+- without `--dry-run`, it mounts the selected keys as read-only files under `MOUNTPOINT`
+- `--dry-run` prints the mountpoint, selected file count, and file names without mounting or reading values
+- file names are key names; file reads return the corresponding secret value bytes
+- file metadata reports regular read-only files without decrypting values for size discovery
+- write-like filesystem operations return read-only errors
 
 ### 4.9 `domain`
 

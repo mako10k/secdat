@@ -117,6 +117,8 @@ Examples:
 
 Use `--profile build` for CI or release-like toolchains. Use `--profile dev` when working on the C core and language bindings in one environment.
 
+The `dev` profile also installs FUSE 3 development headers for the optional `./configure --enable-fuse` build. The default `build` profile does not require FUSE because `secdat-fuse` is not built unless that configure flag is set.
+
 ## Dev Container
 
 The repository now ships a VS Code devcontainer under [.devcontainer](../.devcontainer).

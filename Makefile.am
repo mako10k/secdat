@@ -1,9 +1,12 @@
 SUBDIRS = po src
 dist_doc_DATA = README.md docs/secdat-spec.md
 dist_man1_MANS = docs/secdat.1
+if ENABLE_FUSE
+dist_man1_MANS += docs/secdat-fuse.1
+endif
 dist_noinst_DATA = completions/secdat.bash
 bashcompletiondir = $(datadir)/bash-completion/completions
-EXTRA_DIST = completions/secdat.bash docs/release-workflow.md docs/release-notes/v0.2.1.md docs/release-notes/v0.2.2.md tests/keyref_regression.sh tests/session_regression.sh tests/sdk_regression.sh tests/e2e_regression.sh tests/save_load_regression.sh tests/export_regression.sh tests/lower_level_regression.sh tests/completion_regression.sh tests/attribute_regression.sh tests/metadata_relation_regression.sh tests/fsck_regression.sh tests/v2_fsck_regression.sh tests/migrate_regression.sh
+EXTRA_DIST = completions/secdat.bash docs/secdat-fuse.1 docs/release-workflow.md docs/release-notes/v0.2.1.md docs/release-notes/v0.2.2.md tests/keyref_regression.sh tests/session_regression.sh tests/sdk_regression.sh tests/e2e_regression.sh tests/save_load_regression.sh tests/export_regression.sh tests/lower_level_regression.sh tests/completion_regression.sh tests/attribute_regression.sh tests/metadata_relation_regression.sh tests/fsck_regression.sh tests/v2_fsck_regression.sh tests/migrate_regression.sh tests/fuse_regression.sh
 
 install-data-local:
 	$(MKDIR_P) "$(DESTDIR)$(bashcompletiondir)"
@@ -59,6 +62,7 @@ check-local:
 	bash $(srcdir)/tests/e2e_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/save_load_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/export_regression.sh "$(abs_top_builddir)/src/secdat"
+	bash $(srcdir)/tests/fuse_regression.sh "$(abs_top_builddir)/src/secdat" "$(abs_top_builddir)/src/secdat-fuse"
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = libsecdat.pc
