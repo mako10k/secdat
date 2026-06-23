@@ -68,7 +68,7 @@ def normalize_spaces(text):
 
 for args, marker in [
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--sandbox-injectable]"),
-    ([bin_path, "help", "exec"], "exec [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--sandbox-injectable] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
+    ([bin_path, "help", "exec"], "exec [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--sandbox-injectable] [--require-key KEY] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
     ([bin_path, "export", "--help"], "emit shell-ready export lines"),
     ([bin_path, "help", "get"], "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [-o|--stdout|-e|--shellescaped]"),
     ([bin_path, "help", "usecases"], "inject secrets into one subprocess only:"),
@@ -263,6 +263,41 @@ rc, stdout, stderr = run([
     "--dir",
     str(child_dir),
     "exec",
+    "--pattern",
+    "CONTROL_*",
+    "--require-key",
+    "CONTROL_TOKEN",
+    "python3",
+    "-c",
+    "import os,sys; sys.stdout.write(repr(os.environ['CONTROL_TOKEN']))",
+])
+if rc != 0 or stderr != "" or stdout != repr(control_payload):
+    fail(f"required-key exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+required_marker = work_root / "REQUIRED_KEY_RAN"
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--pattern",
+    "CONTROL_*",
+    "--require-key",
+    "ROOT_TOKEN",
+    "python3",
+    "-c",
+    f"from pathlib import Path; Path({str(required_marker)!r}).write_text('ran')",
+])
+if rc == 0 or stdout != "" or "required key is not selected for exec injection: ROOT_TOKEN" not in stderr:
+    fail(f"missing required key exec unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if required_marker.exists():
+    fail("missing required key exec unexpectedly ran child command")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
     "--sandbox-injectable",
     "python3",
     "-c",
@@ -349,6 +384,29 @@ rc, stdout, stderr = run([
     "--dir",
     str(child_dir),
     "exec",
+    "--env-map-sed",
+    r"s/^MY_REDMINE_\(.\+\)$/SPV_REDMINE_\1/",
+    "--require-key",
+    "CONTROL_TOKEN",
+    "--dry-run",
+    "--json",
+    "python3",
+    "-c",
+    "print('unreachable')",
+])
+if rc == 0 or stderr != "":
+    fail(f"missing required key json dry-run did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+preflight = json.loads(stdout)
+if preflight["required_keys"] != ["CONTROL_TOKEN"] or preflight["missing_required_keys"] != ["CONTROL_TOKEN"]:
+    fail(f"unexpected missing required key json dry-run summary: {preflight!r}")
+if preflight["injected_key_count"] != 2 or preflight["exit_status"] is not None:
+    fail(f"unexpected missing required key json dry-run status: {preflight!r}")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
     "--dry-run",
     "--json-summary",
     "python3",
@@ -381,6 +439,28 @@ if summary["duration_ms"] is None or summary["duration_ms"] < 0:
     fail(f"unexpected json-summary duration: {summary!r}")
 if "first" in stderr or "second" in stderr or control_payload in stderr:
     fail(f"json-summary leaked secret values: {stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(child_dir),
+    "exec",
+    "--pattern",
+    "CONTROL_*",
+    "--require-key",
+    "ROOT_TOKEN",
+    "--json-summary",
+    "python3",
+    "-c",
+    f"from pathlib import Path; Path({str(required_marker)!r}).write_text('ran')",
+])
+if rc == 0 or stdout != "":
+    fail(f"missing required key json-summary did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+summary = json.loads(stderr)
+if summary["required_keys"] != ["ROOT_TOKEN"] or summary["missing_required_keys"] != ["ROOT_TOKEN"]:
+    fail(f"unexpected missing required key json-summary: {summary!r}")
+if required_marker.exists():
+    fail("missing required key json-summary unexpectedly ran child command")
 
 rc, stdout, stderr = run([
     bin_path,

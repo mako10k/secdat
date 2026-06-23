@@ -113,6 +113,7 @@ struct secdat_store_ls_options {
 struct secdat_exec_options {
     struct secdat_key_list include_patterns;
     struct secdat_key_list exclude_patterns;
+    struct secdat_key_list required_keys;
     regex_t env_map_address_regex;
     regex_t env_map_regex;
     char *env_map_replacement;
@@ -420,6 +421,7 @@ static void secdat_exec_options_reset(struct secdat_exec_options *options)
 {
     secdat_key_list_free(&options->include_patterns);
     secdat_key_list_free(&options->exclude_patterns);
+    secdat_key_list_free(&options->required_keys);
     if (options->env_map_has_address) {
         regfree(&options->env_map_address_regex);
     }
@@ -2711,6 +2713,7 @@ static int secdat_parse_exec_options(const struct secdat_cli *cli, struct secdat
         {"dry-run", no_argument, NULL, 1002},
         {"json", no_argument, NULL, 1003},
         {"json-summary", no_argument, NULL, 1004},
+        {"require-key", required_argument, NULL, 1005},
         {NULL, 0, NULL, 0},
     };
     char *argv[cli->argc + 2];
@@ -2908,6 +2911,12 @@ static int secdat_parse_exec_options(const struct secdat_cli *cli, struct secdat
             break;
         case 1004:
             options->json_summary = 1;
+            break;
+        case 1005:
+            if (secdat_key_list_append(&options->required_keys, optarg) != 0) {
+                secdat_exec_options_reset(options);
+                return 1;
+            }
             break;
         case '?':
         case ':':
@@ -19030,6 +19039,61 @@ static size_t secdat_exec_injected_count(char **env_names, size_t count)
     return injected_count;
 }
 
+static int secdat_exec_key_is_injected(
+    const struct secdat_key_list *visible_keys,
+    char **env_names,
+    const char *key
+)
+{
+    size_t index;
+
+    for (index = 0; index < visible_keys->count; index += 1) {
+        if (env_names[index] != NULL && strcmp(visible_keys->items[index], key) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static size_t secdat_exec_missing_required_count(
+    const struct secdat_exec_options *options,
+    const struct secdat_key_list *visible_keys,
+    char **env_names
+)
+{
+    size_t index;
+    size_t missing_count = 0;
+
+    for (index = 0; index < options->required_keys.count; index += 1) {
+        if (!secdat_exec_key_is_injected(visible_keys, env_names, options->required_keys.items[index])) {
+            missing_count += 1;
+        }
+    }
+    return missing_count;
+}
+
+static int secdat_exec_validate_required_keys(
+    const struct secdat_exec_options *options,
+    const struct secdat_key_list *visible_keys,
+    char **env_names,
+    int emit_human_error
+)
+{
+    size_t index;
+    int missing = 0;
+
+    for (index = 0; index < options->required_keys.count; index += 1) {
+        if (secdat_exec_key_is_injected(visible_keys, env_names, options->required_keys.items[index])) {
+            continue;
+        }
+        missing = 1;
+        if (emit_human_error) {
+            fprintf(stderr, _("required key is not selected for exec injection: %s\n"), options->required_keys.items[index]);
+        }
+    }
+    return missing ? 1 : 0;
+}
+
 static long long secdat_monotonic_millis(void)
 {
     struct timespec now;
@@ -19064,6 +19128,30 @@ static void secdat_exec_write_json_string_list(FILE *stream, const struct secdat
             fputs(", ", stream);
         }
         secdat_write_json_string(stream, list->items[index]);
+    }
+    fputc(']', stream);
+}
+
+static void secdat_exec_write_json_missing_required_keys(
+    FILE *stream,
+    const struct secdat_exec_options *options,
+    const struct secdat_key_list *visible_keys,
+    char **env_names
+)
+{
+    size_t index;
+    size_t emitted = 0;
+
+    fputc('[', stream);
+    for (index = 0; index < options->required_keys.count; index += 1) {
+        if (secdat_exec_key_is_injected(visible_keys, env_names, options->required_keys.items[index])) {
+            continue;
+        }
+        if (emitted > 0) {
+            fputs(", ", stream);
+        }
+        secdat_write_json_string(stream, options->required_keys.items[index]);
+        emitted += 1;
     }
     fputc(']', stream);
 }
@@ -19161,6 +19249,10 @@ static void secdat_exec_write_json_report(
     secdat_exec_write_json_string_list(stream, &options->include_patterns);
     fputs(",\n  \"exclude_patterns\": ", stream);
     secdat_exec_write_json_string_list(stream, &options->exclude_patterns);
+    fputs(",\n  \"required_keys\": ", stream);
+    secdat_exec_write_json_string_list(stream, &options->required_keys);
+    fputs(",\n  \"missing_required_keys\": ", stream);
+    secdat_exec_write_json_missing_required_keys(stream, options, visible_keys, env_names);
     fputs(",\n  \"sandbox_injectable\": ", stream);
     fputs(options->sandbox_injectable ? "true" : "false", stream);
     fputs(",\n  \"env_map_configured\": ", stream);
@@ -19196,6 +19288,7 @@ static void secdat_exec_write_json_report(
 static void secdat_exec_print_text_preflight(
     const struct secdat_domain_chain *chain,
     const struct secdat_cli *cli,
+    const struct secdat_exec_options *options,
     const struct secdat_key_list *visible_keys,
     char **env_names,
     char **command_argv
@@ -19216,6 +19309,18 @@ static void secdat_exec_print_text_preflight(
         fputs(command_argv[index], stdout);
     }
     fputc('\n', stdout);
+    if (options->required_keys.count > 0) {
+        fputs("required_keys:", stdout);
+        for (index = 0; index < options->required_keys.count; index += 1) {
+            fputc(' ', stdout);
+            fputs(options->required_keys.items[index], stdout);
+        }
+        fputc('\n', stdout);
+        printf(
+            "missing_required_key_count: %zu\n",
+            secdat_exec_missing_required_count(options, visible_keys, env_names)
+        );
+    }
     printf("injected_key_count: %zu\n", secdat_exec_injected_count(env_names, visible_keys->count));
     for (index = 0; index < visible_keys->count; index += 1) {
         if (env_names[index] == NULL) {
@@ -19463,6 +19568,14 @@ static int secdat_command_exec(const struct secdat_cli *cli)
         &mapping_error,
         emit_human_mapping_error
     );
+    if (status == 0) {
+        status = secdat_exec_validate_required_keys(
+            &options,
+            &visible_keys,
+            env_names,
+            !(options.json || options.json_summary)
+        );
+    }
     if (status != 0) {
         if (options.dry_run && options.json) {
             secdat_exec_write_json_report(
@@ -19520,7 +19633,7 @@ static int secdat_command_exec(const struct secdat_cli *cli)
                 NULL
             );
         } else {
-            secdat_exec_print_text_preflight(&chain, cli, &visible_keys, env_names, command_argv);
+            secdat_exec_print_text_preflight(&chain, cli, &options, &visible_keys, env_names, command_argv);
         }
         secdat_exec_mapping_error_reset(&mapping_error);
         secdat_exec_free_env_names(env_names, visible_keys.count);

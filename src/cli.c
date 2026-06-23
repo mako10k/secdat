@@ -964,7 +964,8 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
     } else if (strcmp(command, "exec") == 0) {
         if (strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0
             || strcmp(previous, "--pattern-exclude") == 0 || strcmp(previous, "-x") == 0
-            || strcmp(previous, "--env-map-sed") == 0) {
+            || strcmp(previous, "--env-map-sed") == 0
+            || strcmp(previous, "--require-key") == 0) {
             return "none";
         }
     } else if (strcmp(command, "export") == 0) {
@@ -1145,7 +1146,7 @@ int secdat_cli_complete(int argc, char **argv)
     };
     static const char *const exec_options[] = {
         "--pattern", "-p", "--pattern-exclude", "-x", "--env-map-sed", "--sandbox-injectable",
-        "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
+        "--require-key", "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
     };
     static const char *const export_options[] = {
         "--pattern", "-p", "--sandbox-injectable", "--help", "-h", NULL,
@@ -1453,7 +1454,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "SRC_KEYREF|@UUID DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--sandbox-injectable] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--sandbox-injectable] [--require-key KEY] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]");
         break;
     case SECDAT_COMMAND_EXPORT:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "export", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [--sandbox-injectable]");

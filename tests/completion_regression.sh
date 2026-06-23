@@ -260,7 +260,7 @@ for expected in ["--public-value", "--secret-value", "--key-visibility", "--valu
 mode, values = run_completion("exec", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: exec option completion mode mismatch: {mode!r}")
-for expected in ["--pattern", "--pattern-exclude", "--env-map-sed", "--sandbox-injectable", "--dry-run", "--json", "--json-summary"]:
+for expected in ["--pattern", "--pattern-exclude", "--env-map-sed", "--sandbox-injectable", "--require-key", "--dry-run", "--json", "--json-summary"]:
     assert_contains(values, expected, "exec options")
 
 mode, values = run_completion("export", "--")
