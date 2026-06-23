@@ -10630,9 +10630,33 @@ static int secdat_sdk_fill_key_metadata(
     );
 }
 
-int secdat_sdk_list_keys(
+static int secdat_sdk_append_list_filter_patterns(
+    struct secdat_key_list *patterns,
+    const char *single_pattern,
+    const char *const *pattern_list,
+    size_t pattern_count
+)
+{
+    size_t index;
+
+    if (single_pattern != NULL && secdat_key_list_append(patterns, single_pattern) != 0) {
+        return 1;
+    }
+    for (index = 0; pattern_list != NULL && index < pattern_count; index += 1) {
+        if (pattern_list[index] != NULL && secdat_key_list_append(patterns, pattern_list[index]) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int secdat_sdk_list_keys_with_patterns(
     const struct secdat_sdk_options *options,
     const struct secdat_sdk_list_filters *filters,
+    const char *const *include_pattern_list,
+    size_t include_pattern_count,
+    const char *const *exclude_pattern_list,
+    size_t exclude_pattern_count,
     struct secdat_sdk_key_metadata_list *result_out
 )
 {
@@ -10651,12 +10675,18 @@ int secdat_sdk_list_keys(
     }
     memset(result_out, 0, sizeof(*result_out));
 
-    if (filters != NULL && filters->include_pattern != NULL
-        && secdat_key_list_append(&include_patterns, filters->include_pattern) != 0) {
+    if (secdat_sdk_append_list_filter_patterns(
+            &include_patterns,
+            filters != NULL ? filters->include_pattern : NULL,
+            include_pattern_list,
+            include_pattern_count) != 0) {
         return 1;
     }
-    if (filters != NULL && filters->exclude_pattern != NULL
-        && secdat_key_list_append(&exclude_patterns, filters->exclude_pattern) != 0) {
+    if (secdat_sdk_append_list_filter_patterns(
+            &exclude_patterns,
+            filters != NULL ? filters->exclude_pattern : NULL,
+            exclude_pattern_list,
+            exclude_pattern_count) != 0) {
         secdat_key_list_free(&include_patterns);
         return 1;
     }
@@ -10760,6 +10790,15 @@ int secdat_sdk_list_keys(
     result_out->items = items;
     result_out->count = count;
     return 0;
+}
+
+int secdat_sdk_list_keys(
+    const struct secdat_sdk_options *options,
+    const struct secdat_sdk_list_filters *filters,
+    struct secdat_sdk_key_metadata_list *result_out
+)
+{
+    return secdat_sdk_list_keys_with_patterns(options, filters, NULL, 0, NULL, 0, result_out);
 }
 
 int secdat_print_completion_keys(

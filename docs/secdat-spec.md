@@ -22,7 +22,7 @@ Bindings for higher-level languages should prefer this C ABI over reimplementing
 
 The SDK includes metadata-only inventory calls for harness and UI backends:
 
-- `secdat_sdk_list_keys(options, filters, result_out)` returns key name, store, canonical keyref, source domain, local/inherited source metadata, safe/unsafe storage mode, and non-secret attributes
+- `secdat_sdk_list_keys(options, filters, result_out)` returns key name, store, canonical keyref, source domain, local/inherited source metadata, safe/unsafe storage mode, and non-secret attributes; `secdat_sdk_list_keys_with_patterns(options, filters, include_patterns, include_count, exclude_patterns, exclude_count, result_out)` accepts repeated include/exclude glob filters without changing the base filter ABI
 - `secdat_sdk_list_stores(options, result_out)` returns store names for the resolved current domain
 - `secdat_sdk_list_domains(options, filters, result_out)` returns registered-domain status metadata such as root, effective lock state, related domain, counts, and wrapped-key presence
 - `secdat_sdk_wait_unlock(options, timeout_seconds)` follows `wait-unlock` semantics for programmatic callers without reading a secret value; `timeout_seconds <= 0` waits without a timeout
@@ -79,7 +79,7 @@ secdat [--dir DIR] [--store STORE] ln SRC_KEYREF|@UUID DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 
-secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [--sandbox-injectable] [--dry-run] [--foreground] [--debug] MOUNTPOINT
+secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--foreground] [--debug] MOUNTPOINT
 
 secdat [--dir DIR] unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH]
 secdat [--dir DIR] inherit
@@ -306,8 +306,9 @@ To make the requested behavior implementable, the following are treated as norma
 - the FUSE command is a separate binary, `secdat-fuse`, not a subcommand of `secdat`
 - the initial helper is read-only and exposes selected visible keys as one file per key
 - `secdat-fuse` uses the public SDK list/get operations and must not read store internals directly
-- `--pattern`, `--pattern-exclude`, and `--sandbox-injectable` limit the mounted file set
-- `--dry-run MOUNTPOINT` prints the selected file names without mounting or reading secret values
+- repeated `--pattern` options are ORed, repeated `--pattern-exclude` options subtract matches afterward, and `--sandbox-injectable` further limits the mounted file set
+- repeated `--require-key KEY` options refuse dry-runs and mounts unless every named key remains selected after filters
+- `--dry-run MOUNTPOINT` prints the selected file names without mounting or reading secret values; `--dry-run --json MOUNTPOINT` reports the same preflight shape as JSON
 - writes, creates, deletes, renames, chmod, chown, and truncation through the mount fail as read-only operations
 - real mounts expose plaintext values through normal file reads, so the mountpoint should be private and `allow_other` should remain disabled by default
 
@@ -822,12 +823,15 @@ Examples:
 ### 4.8a `secdat-fuse`
 
 ```text
-secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [--sandbox-injectable] [--dry-run] [--foreground] [--debug] MOUNTPOINT
+secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--foreground] [--debug] MOUNTPOINT
 ```
 
 - this command is built only when configured with `--enable-fuse`
 - without `--dry-run`, it mounts the selected keys as read-only files under `MOUNTPOINT`
+- repeated `--pattern` options are ORed together, and repeated `--pattern-exclude` options subtract matches afterward
+- `--require-key KEY` may be repeated and fails before mounting when any required key is absent from the final selected file set
 - `--dry-run` prints the mountpoint, selected file count, and file names without mounting or reading values
+- `--dry-run --json` writes `ok`, `mountpoint`, `file_count`, `files`, include/exclude patterns, `sandbox_injectable`, required keys, and missing required keys as JSON
 - file names are key names; file reads return the corresponding secret value bytes
 - file metadata reports regular read-only files without decrypting values for size discovery
 - write-like filesystem operations return read-only errors

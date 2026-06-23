@@ -22,6 +22,7 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
 python3 - "$bin_path" "$fuse_bin" "$work_root" <<'PY'
 import os
+import json
 import shutil
 import subprocess
 import sys
@@ -44,6 +45,19 @@ def run(args, cwd=None):
     return completed.returncode, completed.stdout, completed.stderr
 
 
+def run_bytes(args, cwd=None):
+    completed = subprocess.run(args, capture_output=True, env=env, cwd=cwd)
+    return completed.returncode, completed.stdout, completed.stderr
+
+
+def corrupt_entry(key):
+    entries_root = Path(env["XDG_DATA_HOME"]) / "secdat" / "domains" / "by-id"
+    matches = list(entries_root.glob(f"*/stores/default/entries/{key}.sec"))
+    if len(matches) != 1:
+        fail(f"could not find one stored entry for {key}: {matches!r}")
+    matches[0].write_text("broken", encoding="utf-8")
+
+
 rc, stdout, stderr = run([fuse_bin, "--help"])
 if rc != 0 or "Mount selected secdat keys as read-only files." not in stdout or stderr != "":
     fail(f"secdat-fuse help failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -62,10 +76,14 @@ for args in [
     [bin_path, "--dir", str(domain), "set", "FUSE_TOKEN", "--value", "fuse-secret"],
     [bin_path, "--dir", str(domain), "set", "FUSE_SKIP", "--value", "skip-secret"],
     [bin_path, "--dir", str(domain), "set", "OTHER_TOKEN", "--value", "other-secret"],
+    [bin_path, "--dir", str(domain), "set", "ALT_TOKEN", "--value", "alt-secret"],
 ]:
     rc, stdout, stderr = run(args)
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"setup command failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+corrupt_entry("OTHER_TOKEN")
+corrupt_entry("ALT_TOKEN")
 
 rc, stdout, stderr = run([
     fuse_bin,
@@ -86,6 +104,118 @@ if "FUSE_SKIP" in stdout or "OTHER_TOKEN" in stdout:
     fail(f"secdat-fuse dry-run did not apply filters: {stdout!r}")
 if "fuse-secret" in stdout or "skip-secret" in stdout or "other-secret" in stdout:
     fail(f"secdat-fuse dry-run leaked secret value: {stdout!r}")
+
+rc, stdout, stderr = run([
+    fuse_bin,
+    "--dir",
+    str(domain),
+    "--pattern",
+    "FUSE_*",
+    "--pattern",
+    "ALT_*",
+    "--pattern-exclude",
+    "FUSE_SKIP",
+    "--pattern-exclude",
+    "ALT_*",
+    "--require-key",
+    "FUSE_TOKEN",
+    "--dry-run",
+    str(mountpoint),
+])
+if rc != 0 or stderr != "":
+    fail(f"secdat-fuse repeated filters failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if "file_count: 1\n" not in stdout or "FUSE_TOKEN\n" not in stdout:
+    fail(f"secdat-fuse repeated filters missing expected key: {stdout!r}")
+if "FUSE_SKIP" in stdout or "ALT_TOKEN" in stdout or "OTHER_TOKEN" in stdout:
+    fail(f"secdat-fuse repeated filters exposed excluded key: {stdout!r}")
+
+rc, stdout, stderr = run([
+    fuse_bin,
+    "--dir",
+    str(domain),
+    "--pattern",
+    "FUSE_*",
+    "--require-key",
+    "OTHER_TOKEN",
+    "--dry-run",
+    str(mountpoint),
+])
+if rc == 0 or stdout != "" or "required key is not selected for secdat-fuse mount: OTHER_TOKEN" not in stderr:
+    fail(f"secdat-fuse missing required key did not fail safely: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    fuse_bin,
+    "--dir",
+    str(domain),
+    "--pattern",
+    "FUSE_*",
+    "--pattern-exclude",
+    "FUSE_SKIP",
+    "--require-key",
+    "FUSE_TOKEN",
+    "--dry-run",
+    "--json",
+    str(mountpoint),
+])
+if rc != 0 or stderr != "":
+    fail(f"secdat-fuse JSON dry-run failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+report = json.loads(stdout)
+if report != {
+    "ok": True,
+    "mountpoint": str(mountpoint),
+    "file_count": 1,
+    "files": ["FUSE_TOKEN"],
+    "include_patterns": ["FUSE_*"],
+    "exclude_patterns": ["FUSE_SKIP"],
+    "sandbox_injectable": False,
+    "required_keys": ["FUSE_TOKEN"],
+    "missing_required_keys": [],
+}:
+    fail(f"secdat-fuse JSON dry-run payload mismatch: {report!r}")
+if "fuse-secret" in stdout or "skip-secret" in stdout or "other-secret" in stdout or "alt-secret" in stdout:
+    fail(f"secdat-fuse JSON dry-run leaked secret value: {stdout!r}")
+
+rc, stdout_bytes, stderr_bytes = run_bytes([
+    os.fsencode(fuse_bin),
+    b"--dir",
+    os.fsencode(domain),
+    b"--pattern",
+    b"\xff",
+    b"--dry-run",
+    b"--json",
+    os.fsencode(mountpoint),
+])
+if rc != 0 or stderr_bytes != b"":
+    fail(f"secdat-fuse JSON invalid UTF-8 dry-run failed: rc={rc} stdout={stdout_bytes!r} stderr={stderr_bytes!r}")
+if b"\xff" in stdout_bytes:
+    fail(f"secdat-fuse JSON dry-run emitted raw invalid UTF-8: {stdout_bytes!r}")
+report = json.loads(stdout_bytes)
+if report["include_patterns"] != [chr(0xff)]:
+    fail(f"secdat-fuse JSON invalid UTF-8 pattern was not escaped consistently: {report!r}")
+
+rc, stdout, stderr = run([
+    fuse_bin,
+    "--dir",
+    str(domain),
+    "--pattern",
+    "FUSE_*",
+    "--require-key",
+    "OTHER_TOKEN",
+    "--dry-run",
+    "--json",
+    str(mountpoint),
+])
+if rc == 0 or stderr != "":
+    fail(f"secdat-fuse JSON missing required key did not fail as JSON: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+report = json.loads(stdout)
+if report["ok"] is not False or report["files"] != [] or report["file_count"] != 0 or report["missing_required_keys"] != ["OTHER_TOKEN"]:
+    fail(f"secdat-fuse JSON missing required payload mismatch: {report!r}")
+if "FUSE_TOKEN" in stdout or "FUSE_SKIP" in stdout:
+    fail(f"secdat-fuse JSON missing required exposed selected files: {stdout!r}")
+
+rc, stdout, stderr = run([fuse_bin, "--json", str(mountpoint)])
+if rc == 0 or "--json requires --dry-run" not in stderr:
+    fail(f"secdat-fuse --json without --dry-run did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([
     fuse_bin,

@@ -7,6 +7,7 @@
 #include "secdat-sdk.h"
 
 #include <errno.h>
+#include <fnmatch.h>
 #include <fcntl.h>
 #include <fuse.h>
 #include <getopt.h>
@@ -24,15 +25,25 @@
 #define SECDAT_BUILD_ID ""
 #endif
 
+struct secdat_fuse_string_list {
+    const char **items;
+    size_t count;
+    size_t capacity;
+};
+
 struct secdat_fuse_state {
     struct secdat_sdk_options options;
     struct secdat_sdk_list_filters filters;
+    struct secdat_fuse_string_list include_patterns;
+    struct secdat_fuse_string_list exclude_patterns;
+    struct secdat_fuse_string_list required_keys;
     char dir_buffer[PATH_MAX];
     char domain_buffer[PATH_MAX];
     const char *mountpoint;
     int foreground;
     int debug;
     int dry_run;
+    int json;
 };
 
 static void secdat_fuse_i18n_init(void)
@@ -65,10 +76,12 @@ static void secdat_fuse_print_usage(const char *program_name, FILE *stream)
           "  -d, --dir DIR              set the base directory used for domain resolution\n"
           "      --domain DIR           require one exact registered domain root\n"
           "  -s, --store STORE          select the store namespace\n"
-          "  -p, --pattern GLOB         include only matching keys\n"
-          "  -x, --pattern-exclude GLOB exclude matching keys\n"
+          "  -p, --pattern GLOB         include matching keys; may be repeated\n"
+          "  -x, --pattern-exclude GLOB exclude matching keys; may be repeated\n"
           "      --sandbox-injectable   include only keys allowed for bulk sandbox injection\n"
+          "      --require-key KEY      fail unless KEY remains selected; may be repeated\n"
           "      --dry-run              list files that would be mounted without mounting\n"
+          "      --json                 write dry-run output as JSON\n"
           "  -f, --foreground           keep the FUSE process in the foreground\n"
           "      --debug                enable FUSE debug output\n"
           "  -h, --help                 show this help\n"
@@ -84,6 +97,49 @@ static void secdat_fuse_print_version(void)
         printf(" (%s)", SECDAT_BUILD_ID);
     }
     putchar('\n');
+}
+
+static void secdat_fuse_string_list_free(struct secdat_fuse_string_list *list)
+{
+    free(list->items);
+    list->items = NULL;
+    list->count = 0;
+    list->capacity = 0;
+}
+
+static int secdat_fuse_string_list_contains(const struct secdat_fuse_string_list *list, const char *value)
+{
+    size_t index;
+
+    for (index = 0; index < list->count; index += 1) {
+        if (strcmp(list->items[index], value) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_fuse_string_list_append(struct secdat_fuse_string_list *list, const char *value)
+{
+    const char **new_items;
+    size_t new_capacity;
+
+    if (secdat_fuse_string_list_contains(list, value)) {
+        return 0;
+    }
+    if (list->count == list->capacity) {
+        new_capacity = list->capacity == 0 ? 4 : list->capacity * 2;
+        new_items = realloc(list->items, sizeof(*new_items) * new_capacity);
+        if (new_items == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        list->items = new_items;
+        list->capacity = new_capacity;
+    }
+    list->items[list->count] = value;
+    list->count += 1;
+    return 0;
 }
 
 static int secdat_fuse_path_to_key(const char *path, const char **key_out)
@@ -123,13 +179,102 @@ static int secdat_fuse_canonicalize_dir(const char *path, char *buffer, size_t s
     return 0;
 }
 
+static int secdat_fuse_pattern_list_matches(const struct secdat_fuse_string_list *patterns, const char *key)
+{
+    size_t index;
+
+    for (index = 0; index < patterns->count; index += 1) {
+        if (fnmatch(patterns->items[index], key, 0) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_fuse_key_matches_selection(const struct secdat_fuse_state *state, const char *key)
+{
+    if (state->include_patterns.count > 0
+        && !secdat_fuse_pattern_list_matches(&state->include_patterns, key)) {
+        return 0;
+    }
+    if (state->exclude_patterns.count > 0
+        && secdat_fuse_pattern_list_matches(&state->exclude_patterns, key)) {
+        return 0;
+    }
+    return 1;
+}
+
+static int secdat_fuse_collect_selected_keys(
+    const struct secdat_fuse_state *state,
+    struct secdat_sdk_key_metadata_list *keys
+)
+{
+    size_t read_index;
+    size_t write_index = 0;
+
+    memset(keys, 0, sizeof(*keys));
+    if (secdat_sdk_list_keys_with_patterns(
+            &state->options,
+            &state->filters,
+            state->include_patterns.items,
+            state->include_patterns.count,
+            state->exclude_patterns.items,
+            state->exclude_patterns.count,
+            keys) != 0) {
+        return 1;
+    }
+
+    for (read_index = 0; read_index < keys->count; read_index += 1) {
+        if (!secdat_fuse_key_matches_selection(state, keys->items[read_index].key)) {
+            continue;
+        }
+        if (write_index != read_index) {
+            keys->items[write_index] = keys->items[read_index];
+        }
+        write_index += 1;
+    }
+    keys->count = write_index;
+    return 0;
+}
+
+static int secdat_fuse_selected_keys_contain(
+    const struct secdat_sdk_key_metadata_list *keys,
+    const char *required_key
+)
+{
+    size_t index;
+
+    for (index = 0; index < keys->count; index += 1) {
+        if (strcmp(keys->items[index].key, required_key) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_fuse_missing_required_count(
+    const struct secdat_fuse_state *state,
+    const struct secdat_sdk_key_metadata_list *keys
+)
+{
+    size_t index;
+    int missing_count = 0;
+
+    for (index = 0; index < state->required_keys.count; index += 1) {
+        if (!secdat_fuse_selected_keys_contain(keys, state->required_keys.items[index])) {
+            missing_count += 1;
+        }
+    }
+    return missing_count;
+}
+
 static int secdat_fuse_key_is_selected(struct secdat_fuse_state *state, const char *key)
 {
     struct secdat_sdk_key_metadata_list keys = {0};
     size_t index;
     int selected = 0;
 
-    if (secdat_sdk_list_keys(&state->options, &state->filters, &keys) != 0) {
+    if (secdat_fuse_collect_selected_keys(state, &keys) != 0) {
         return -EACCES;
     }
 
@@ -212,7 +357,7 @@ static int secdat_fuse_readdir(
         return -ENOENT;
     }
 
-    if (secdat_sdk_list_keys(&state->options, &state->filters, &keys) != 0) {
+    if (secdat_fuse_collect_selected_keys(state, &keys) != 0) {
         return -EACCES;
     }
 
@@ -406,12 +551,266 @@ static const struct fuse_operations secdat_fuse_operations = {
     .create = secdat_fuse_create,
 };
 
+static int secdat_fuse_is_utf8_continuation(unsigned char value)
+{
+    return (value & 0xc0) == 0x80;
+}
+
+static size_t secdat_fuse_valid_utf8_sequence_length(const unsigned char *cursor)
+{
+    unsigned char first = cursor[0];
+
+    if (first < 0x80) {
+        return 1;
+    }
+    if (first >= 0xc2 && first <= 0xdf) {
+        return secdat_fuse_is_utf8_continuation(cursor[1]) ? 2 : 0;
+    }
+    if (cursor[1] == '\0') {
+        return 0;
+    }
+    if (first == 0xe0) {
+        return cursor[1] >= 0xa0 && cursor[1] <= 0xbf
+                && secdat_fuse_is_utf8_continuation(cursor[2])
+            ? 3
+            : 0;
+    }
+    if (first >= 0xe1 && first <= 0xec) {
+        return secdat_fuse_is_utf8_continuation(cursor[1])
+                && secdat_fuse_is_utf8_continuation(cursor[2])
+            ? 3
+            : 0;
+    }
+    if (first == 0xed) {
+        return cursor[1] >= 0x80 && cursor[1] <= 0x9f
+                && secdat_fuse_is_utf8_continuation(cursor[2])
+            ? 3
+            : 0;
+    }
+    if (first >= 0xee && first <= 0xef) {
+        return secdat_fuse_is_utf8_continuation(cursor[1])
+                && secdat_fuse_is_utf8_continuation(cursor[2])
+            ? 3
+            : 0;
+    }
+    if (cursor[2] == '\0' || cursor[3] == '\0') {
+        return 0;
+    }
+    if (first == 0xf0) {
+        return cursor[1] >= 0x90 && cursor[1] <= 0xbf
+                && secdat_fuse_is_utf8_continuation(cursor[2])
+                && secdat_fuse_is_utf8_continuation(cursor[3])
+            ? 4
+            : 0;
+    }
+    if (first >= 0xf1 && first <= 0xf3) {
+        return secdat_fuse_is_utf8_continuation(cursor[1])
+                && secdat_fuse_is_utf8_continuation(cursor[2])
+                && secdat_fuse_is_utf8_continuation(cursor[3])
+            ? 4
+            : 0;
+    }
+    if (first == 0xf4) {
+        return cursor[1] >= 0x80 && cursor[1] <= 0x8f
+                && secdat_fuse_is_utf8_continuation(cursor[2])
+                && secdat_fuse_is_utf8_continuation(cursor[3])
+            ? 4
+            : 0;
+    }
+
+    return 0;
+}
+
+static void secdat_fuse_write_json_string(FILE *stream, const char *value)
+{
+    const unsigned char *cursor = (const unsigned char *)(value != NULL ? value : "");
+
+    fputc('"', stream);
+    while (*cursor != '\0') {
+        switch (*cursor) {
+        case '"':
+            fputs("\\\"", stream);
+            break;
+        case '\\':
+            fputs("\\\\", stream);
+            break;
+        case '\b':
+            fputs("\\b", stream);
+            break;
+        case '\f':
+            fputs("\\f", stream);
+            break;
+        case '\n':
+            fputs("\\n", stream);
+            break;
+        case '\r':
+            fputs("\\r", stream);
+            break;
+        case '\t':
+            fputs("\\t", stream);
+            break;
+        default:
+            if (*cursor < 0x20) {
+                fprintf(stream, "\\u%04x", (unsigned int)*cursor);
+            } else {
+                size_t sequence_length = secdat_fuse_valid_utf8_sequence_length(cursor);
+                if (sequence_length == 0) {
+                    fprintf(stream, "\\u%04x", (unsigned int)*cursor);
+                } else {
+                    fwrite(cursor, 1, sequence_length, stream);
+                    cursor += sequence_length - 1;
+                }
+            }
+            break;
+        }
+        cursor += 1;
+    }
+    fputc('"', stream);
+}
+
+static void secdat_fuse_write_json_string_list(FILE *stream, const struct secdat_fuse_string_list *list)
+{
+    size_t index;
+
+    fputc('[', stream);
+    for (index = 0; index < list->count; index += 1) {
+        if (index > 0) {
+            fputs(", ", stream);
+        }
+        secdat_fuse_write_json_string(stream, list->items[index]);
+    }
+    fputc(']', stream);
+}
+
+static void secdat_fuse_write_json_missing_required_keys(
+    FILE *stream,
+    const struct secdat_fuse_state *state,
+    const struct secdat_sdk_key_metadata_list *keys
+)
+{
+    size_t index;
+    int emitted = 0;
+
+    fputc('[', stream);
+    for (index = 0; index < state->required_keys.count; index += 1) {
+        if (secdat_fuse_selected_keys_contain(keys, state->required_keys.items[index])) {
+            continue;
+        }
+        if (emitted) {
+            fputs(", ", stream);
+        }
+        secdat_fuse_write_json_string(stream, state->required_keys.items[index]);
+        emitted = 1;
+    }
+    fputc(']', stream);
+}
+
+static void secdat_fuse_write_json_files(
+    FILE *stream,
+    const struct secdat_sdk_key_metadata_list *keys,
+    int include_files
+)
+{
+    size_t index;
+    size_t emitted = 0;
+
+    fputc('[', stream);
+    if (include_files) {
+        for (index = 0; index < keys->count; index += 1) {
+            if (emitted > 0) {
+                fputs(", ", stream);
+            }
+            secdat_fuse_write_json_string(stream, keys->items[index].key);
+            emitted += 1;
+        }
+    }
+    fputc(']', stream);
+}
+
+static void secdat_fuse_write_json_dry_run(
+    const struct secdat_fuse_state *state,
+    const struct secdat_sdk_key_metadata_list *keys,
+    int missing_required_count
+)
+{
+    int include_files = missing_required_count == 0;
+
+    fputs("{\n  \"ok\": ", stdout);
+    fputs(missing_required_count == 0 ? "true" : "false", stdout);
+    fputs(",\n  \"mountpoint\": ", stdout);
+    secdat_fuse_write_json_string(stdout, state->mountpoint);
+    fputs(",\n  \"file_count\": ", stdout);
+    printf("%zu", include_files ? keys->count : 0);
+    fputs(",\n  \"files\": ", stdout);
+    secdat_fuse_write_json_files(stdout, keys, include_files);
+    fputs(",\n  \"include_patterns\": ", stdout);
+    secdat_fuse_write_json_string_list(stdout, &state->include_patterns);
+    fputs(",\n  \"exclude_patterns\": ", stdout);
+    secdat_fuse_write_json_string_list(stdout, &state->exclude_patterns);
+    fputs(",\n  \"sandbox_injectable\": ", stdout);
+    fputs(state->filters.sandbox_injectable ? "true" : "false", stdout);
+    fputs(",\n  \"required_keys\": ", stdout);
+    secdat_fuse_write_json_string_list(stdout, &state->required_keys);
+    fputs(",\n  \"missing_required_keys\": ", stdout);
+    secdat_fuse_write_json_missing_required_keys(stdout, state, keys);
+    fputs("\n}\n", stdout);
+}
+
+static void secdat_fuse_print_missing_required_keys(
+    const struct secdat_fuse_state *state,
+    const struct secdat_sdk_key_metadata_list *keys
+)
+{
+    size_t index;
+
+    for (index = 0; index < state->required_keys.count; index += 1) {
+        if (!secdat_fuse_selected_keys_contain(keys, state->required_keys.items[index])) {
+            fprintf(stderr, _("required key is not selected for secdat-fuse mount: %s\n"), state->required_keys.items[index]);
+        }
+    }
+}
+
+static int secdat_fuse_validate_required_keys(const struct secdat_fuse_state *state)
+{
+    struct secdat_sdk_key_metadata_list keys = {0};
+    int missing_required_count;
+
+    if (state->required_keys.count == 0) {
+        return 0;
+    }
+    if (secdat_fuse_collect_selected_keys(state, &keys) != 0) {
+        return 1;
+    }
+    missing_required_count = secdat_fuse_missing_required_count(state, &keys);
+    if (missing_required_count > 0) {
+        secdat_fuse_print_missing_required_keys(state, &keys);
+        secdat_sdk_free(keys.items);
+        return 1;
+    }
+    secdat_sdk_free(keys.items);
+    return 0;
+}
+
 static int secdat_fuse_print_dry_run(const struct secdat_fuse_state *state)
 {
     struct secdat_sdk_key_metadata_list keys = {0};
     size_t index;
+    int missing_required_count;
 
-    if (secdat_sdk_list_keys(&state->options, &state->filters, &keys) != 0) {
+    if (secdat_fuse_collect_selected_keys(state, &keys) != 0) {
+        return 1;
+    }
+    missing_required_count = secdat_fuse_missing_required_count(state, &keys);
+
+    if (state->json) {
+        secdat_fuse_write_json_dry_run(state, &keys, missing_required_count);
+        secdat_sdk_free(keys.items);
+        return missing_required_count == 0 ? 0 : 1;
+    }
+
+    if (missing_required_count > 0) {
+        secdat_fuse_print_missing_required_keys(state, &keys);
+        secdat_sdk_free(keys.items);
         return 1;
     }
 
@@ -434,8 +833,10 @@ static int secdat_fuse_parse_args(int argc, char **argv, struct secdat_fuse_stat
         {"pattern-exclude", required_argument, NULL, 'x'},
         {"sandbox-injectable", no_argument, NULL, 1001},
         {"dry-run", no_argument, NULL, 1002},
+        {"require-key", required_argument, NULL, 1003},
         {"foreground", no_argument, NULL, 'f'},
-        {"debug", no_argument, NULL, 1003},
+        {"debug", no_argument, NULL, 1004},
+        {"json", no_argument, NULL, 1005},
         {"help", no_argument, NULL, 'h'},
         {"version", no_argument, NULL, 'V'},
         {NULL, 0, NULL, 0},
@@ -456,10 +857,14 @@ static int secdat_fuse_parse_args(int argc, char **argv, struct secdat_fuse_stat
             state->options.store = optarg;
             break;
         case 'p':
-            state->filters.include_pattern = optarg;
+            if (secdat_fuse_string_list_append(&state->include_patterns, optarg) != 0) {
+                return 1;
+            }
             break;
         case 'x':
-            state->filters.exclude_pattern = optarg;
+            if (secdat_fuse_string_list_append(&state->exclude_patterns, optarg) != 0) {
+                return 1;
+            }
             break;
         case 1001:
             state->filters.sandbox_injectable = 1;
@@ -467,11 +872,19 @@ static int secdat_fuse_parse_args(int argc, char **argv, struct secdat_fuse_stat
         case 1002:
             state->dry_run = 1;
             break;
+        case 1003:
+            if (secdat_fuse_string_list_append(&state->required_keys, optarg) != 0) {
+                return 1;
+            }
+            break;
         case 'f':
             state->foreground = 1;
             break;
-        case 1003:
+        case 1004:
             state->debug = 1;
+            break;
+        case 1005:
+            state->json = 1;
             break;
         case 'h':
             secdat_fuse_print_usage(argv[0], stdout);
@@ -491,6 +904,10 @@ static int secdat_fuse_parse_args(int argc, char **argv, struct secdat_fuse_stat
 
     if (state->options.dir != NULL && state->options.domain != NULL) {
         fprintf(stderr, _("--dir and --domain cannot be combined\n"));
+        return 2;
+    }
+    if (state->json && !state->dry_run) {
+        fprintf(stderr, _("--json requires --dry-run\n"));
         return 2;
     }
     if (optind >= argc) {
@@ -520,6 +937,13 @@ static int secdat_fuse_parse_args(int argc, char **argv, struct secdat_fuse_stat
     return 0;
 }
 
+static void secdat_fuse_state_clear(struct secdat_fuse_state *state)
+{
+    secdat_fuse_string_list_free(&state->include_patterns);
+    secdat_fuse_string_list_free(&state->exclude_patterns);
+    secdat_fuse_string_list_free(&state->required_keys);
+}
+
 int main(int argc, char **argv)
 {
     struct secdat_fuse_state state;
@@ -541,7 +965,14 @@ int main(int argc, char **argv)
     }
 
     if (state.dry_run) {
-        return secdat_fuse_print_dry_run(&state);
+        status = secdat_fuse_print_dry_run(&state);
+        secdat_fuse_state_clear(&state);
+        return status;
+    }
+
+    if (secdat_fuse_validate_required_keys(&state) != 0) {
+        secdat_fuse_state_clear(&state);
+        return 1;
     }
 
     fuse_argv[fuse_argc++] = argv[0];
@@ -556,5 +987,7 @@ int main(int argc, char **argv)
     fuse_argv[fuse_argc++] = (char *)state.mountpoint;
     fuse_argv[fuse_argc] = NULL;
 
-    return fuse_main(fuse_argc, fuse_argv, &secdat_fuse_operations, &state);
+    status = fuse_main(fuse_argc, fuse_argv, &secdat_fuse_operations, &state);
+    secdat_fuse_state_clear(&state);
+    return status;
 }

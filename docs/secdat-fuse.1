@@ -4,9 +4,9 @@ secdat-fuse \- mount selected secdat keys as read-only files
 .SH SYNOPSIS
 .B secdat-fuse
 [\-d DIR|\-\-dir DIR] [\-\-domain DIR] [\-s STORE|\-\-store STORE]
-[\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]
-[\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN]
-[\-\-sandbox-injectable] [\-\-dry-run] [\-f|\-\-foreground] [\-\-debug]
+[\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]...
+[\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN]...
+[\-\-sandbox-injectable] [\-\-require-key KEY]... [\-\-dry-run] [\-\-json] [\-f|\-\-foreground] [\-\-debug]
 .I MOUNTPOINT
 .SH DESCRIPTION
 .B secdat-fuse
@@ -33,16 +33,25 @@ Require one exact registered domain root instead of normal ancestor-based discov
 Select the store namespace inside the resolved domain.
 .TP
 .B \-p, \-\-pattern GLOBPATTERN
-Expose only matching keys. The initial helper accepts one include pattern.
+Expose matching keys. May be repeated; repeated include patterns are ORed together.
 .TP
 .B \-x, \-\-pattern-exclude GLOBPATTERN
-Exclude matching keys. The initial helper accepts one exclude pattern.
+Exclude matching keys. May be repeated; exclude patterns are applied after include filtering.
 .TP
 .B \-\-sandbox-injectable
 Expose only keys whose effective sandbox injection policy allows bulk selection.
 .TP
+.B \-\-require-key KEY
+Fail before dry-run output or mounting unless
+.I KEY
+remains selected after all filters. May be repeated.
+.TP
 .B \-\-dry-run
 Print the mountpoint and selected file names without mounting or reading secret values.
+.TP
+.B \-\-json
+Write dry-run output as JSON. Requires
+.BR \-\-dry-run .
 .TP
 .B \-f, \-\-foreground
 Keep the FUSE process in the foreground.
@@ -62,6 +71,7 @@ disabled, and unmount promptly after the consuming process no longer needs the f
 .SH EXAMPLES
 .nf
 secdat-fuse --dir ~/project --pattern 'APP_*' --dry-run /tmp/secdat-app
+secdat-fuse --dir ~/project --pattern 'APP_*' --require-key APP_TOKEN --dry-run --json /tmp/secdat-app
 secdat-fuse --dir ~/project --pattern 'APP_*' --foreground /tmp/secdat-app
 .fi
 .SH SEE ALSO

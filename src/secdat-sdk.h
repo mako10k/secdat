@@ -165,6 +165,15 @@ int secdat_sdk_list_keys(
     const struct secdat_sdk_list_filters *filters,
     struct secdat_sdk_key_metadata_list *result_out
 );
+int secdat_sdk_list_keys_with_patterns(
+    const struct secdat_sdk_options *options,
+    const struct secdat_sdk_list_filters *filters,
+    const char *const *include_patterns,
+    size_t include_pattern_count,
+    const char *const *exclude_patterns,
+    size_t exclude_pattern_count,
+    struct secdat_sdk_key_metadata_list *result_out
+);
 int secdat_sdk_list_stores(
     const struct secdat_sdk_options *options,
     struct secdat_sdk_store_metadata_list *result_out
