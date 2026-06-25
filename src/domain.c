@@ -9,8 +9,10 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fnmatch.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <openssl/rand.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,6 +44,11 @@ struct secdat_domain_ls_row {
     size_t store_count;
     size_t visible_key_count;
     const char *wrapped;
+};
+
+struct secdat_domain_identity {
+    uintmax_t device;
+    uintmax_t inode;
 };
 
 static void secdat_format_remaining_duration(time_t expires_at, char *buffer, size_t size)
@@ -723,6 +730,20 @@ static int secdat_domain_root_for_id(const char *domain_id, char *buffer, size_t
     return 0;
 }
 
+static int secdat_domain_meta_file_for_id(const char *domain_id, const char *name, char *buffer, size_t size)
+{
+    char domain_root[PATH_MAX];
+    char meta_dir[PATH_MAX];
+
+    if (secdat_domain_root_for_id(domain_id, domain_root, sizeof(domain_root)) != 0) {
+        return 1;
+    }
+    if (secdat_join_path(meta_dir, sizeof(meta_dir), domain_root, "meta") != 0) {
+        return 1;
+    }
+    return secdat_join_path(buffer, size, meta_dir, name);
+}
+
 static int secdat_ensure_directory(const char *path, mode_t mode)
 {
     struct stat status;
@@ -763,6 +784,44 @@ static int secdat_ensure_directory(const char *path, mode_t mode)
     return 0;
 }
 
+static void secdat_domain_identity_from_stat(const struct stat *status, struct secdat_domain_identity *identity)
+{
+    identity->device = (uintmax_t)status->st_dev;
+    identity->inode = (uintmax_t)status->st_ino;
+}
+
+static int secdat_format_domain_identity(
+    const struct secdat_domain_identity *identity,
+    char *buffer,
+    size_t size
+)
+{
+    int written;
+
+    written = snprintf(
+        buffer,
+        size,
+        "dev=%" PRIuMAX " ino=%" PRIuMAX,
+        identity->device,
+        identity->inode
+    );
+    if (written < 0 || (size_t)written >= size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_parse_domain_identity(const char *text, struct secdat_domain_identity *identity)
+{
+    char trailing;
+
+    if (sscanf(text, "dev=%" SCNuMAX " ino=%" SCNuMAX "%c", &identity->device, &identity->inode, &trailing) != 2) {
+        return 1;
+    }
+    return 0;
+}
+
 static int secdat_read_text_file(const char *path, char *buffer, size_t size)
 {
     FILE *stream;
@@ -791,6 +850,96 @@ static int secdat_read_text_file(const char *path, char *buffer, size_t size)
     }
 
     return 0;
+}
+
+static int secdat_read_domain_root_identity(
+    const char *domain_id,
+    struct secdat_domain_identity *identity,
+    int *present
+)
+{
+    char identity_path[PATH_MAX];
+    char identity_text[128];
+    int read_status;
+
+    *present = 0;
+    if (secdat_domain_meta_file_for_id(domain_id, "root-identity", identity_path, sizeof(identity_path)) != 0) {
+        return 1;
+    }
+
+    read_status = secdat_read_text_file(identity_path, identity_text, sizeof(identity_text));
+    if (read_status == 1) {
+        return 0;
+    }
+    if (read_status != 0) {
+        fprintf(stderr, _("failed to read file: %s\n"), identity_path);
+        return 1;
+    }
+    if (secdat_parse_domain_identity(identity_text, identity) != 0) {
+        fprintf(stderr, _("invalid domain root identity metadata: %s\n"), identity_path);
+        return 1;
+    }
+    *present = 1;
+    return 0;
+}
+
+static int secdat_check_domain_root_identity(
+    const char *root_path,
+    const char *domain_id,
+    int quiet,
+    int *mismatch
+)
+{
+    struct secdat_domain_identity recorded;
+    struct secdat_domain_identity current;
+    struct stat link_status;
+    struct stat status;
+    int present;
+
+    *mismatch = 0;
+    if (secdat_read_domain_root_identity(domain_id, &recorded, &present) != 0) {
+        return 1;
+    }
+    if (!present) {
+        return 0;
+    }
+
+    if (lstat(root_path, &link_status) != 0
+        || S_ISLNK(link_status.st_mode)
+        || !S_ISDIR(link_status.st_mode)) {
+        if (!quiet) {
+            fprintf(stderr, _("domain root identity mismatch for: %s\n"), root_path);
+        }
+        *mismatch = 1;
+        return 0;
+    }
+
+    if (stat(root_path, &status) != 0 || !S_ISDIR(status.st_mode)) {
+        if (!quiet) {
+            fprintf(stderr, _("domain root identity mismatch for: %s\n"), root_path);
+        }
+        *mismatch = 1;
+        return 0;
+    }
+
+    secdat_domain_identity_from_stat(&status, &current);
+    if (recorded.device != current.device || recorded.inode != current.inode) {
+        if (!quiet) {
+            fprintf(stderr, _("domain root identity mismatch for: %s\n"), root_path);
+        }
+        *mismatch = 1;
+    }
+    return 0;
+}
+
+static int secdat_verify_domain_root_identity(const char *root_path, const char *domain_id)
+{
+    int mismatch;
+
+    if (secdat_check_domain_root_identity(root_path, domain_id, 0, &mismatch) != 0) {
+        return 1;
+    }
+    return mismatch ? 1 : 0;
 }
 
 static int secdat_atomic_write_text_file(const char *path, const char *value)
@@ -883,6 +1032,110 @@ static int secdat_canonicalize_directory(const char *input, char *buffer, size_t
     return 0;
 }
 
+static int secdat_append_logical_component(char *buffer, size_t size, size_t *length, const char *component, size_t component_length)
+{
+    if (component_length == 0 || (component_length == 1 && component[0] == '.')) {
+        return 0;
+    }
+    if (component_length == 2 && component[0] == '.' && component[1] == '.') {
+        if (*length > 1) {
+            while (*length > 1 && buffer[*length - 1] != '/') {
+                *length -= 1;
+            }
+            if (*length > 1) {
+                *length -= 1;
+            }
+            buffer[*length] = '\0';
+        }
+        return 0;
+    }
+
+    if (*length > 1) {
+        if (*length + 1 >= size) {
+            fprintf(stderr, _("path is too long\n"));
+            return 1;
+        }
+        buffer[*length] = '/';
+        *length += 1;
+    }
+    if (*length + component_length >= size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    memcpy(buffer + *length, component, component_length);
+    *length += component_length;
+    buffer[*length] = '\0';
+    return 0;
+}
+
+static int secdat_logical_absolute_path(const char *input, char *buffer, size_t size)
+{
+    const char *resolved_input = input == NULL ? "." : input;
+    char combined[PATH_MAX];
+    char cwd[PATH_MAX];
+    const char *pwd;
+    const char *cursor;
+    const char *component_start;
+    struct stat pwd_status;
+    struct stat dot_status;
+    int written;
+    size_t length;
+
+    if (resolved_input[0] == '/') {
+        written = snprintf(combined, sizeof(combined), "%s", resolved_input);
+    } else {
+        pwd = getenv("PWD");
+        if (pwd != NULL
+            && pwd[0] == '/'
+            && stat(pwd, &pwd_status) == 0
+            && stat(".", &dot_status) == 0
+            && S_ISDIR(pwd_status.st_mode)
+            && pwd_status.st_dev == dot_status.st_dev
+            && pwd_status.st_ino == dot_status.st_ino) {
+            written = snprintf(cwd, sizeof(cwd), "%s", pwd);
+            if (written < 0 || (size_t)written >= sizeof(cwd)) {
+                fprintf(stderr, _("path is too long\n"));
+                return 1;
+            }
+        } else {
+            if (getcwd(cwd, sizeof(cwd)) == NULL) {
+                fprintf(stderr, _("failed to resolve directory: %s\n"), ".");
+                return 1;
+            }
+        }
+        written = snprintf(combined, sizeof(combined), "%s/%s", cwd, resolved_input);
+    }
+    if (written < 0 || (size_t)written >= sizeof(combined)) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    if (size < 2) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+
+    buffer[0] = '/';
+    buffer[1] = '\0';
+    length = 1;
+    cursor = combined;
+    while (*cursor == '/') {
+        cursor += 1;
+    }
+    while (*cursor != '\0') {
+        component_start = cursor;
+        while (*cursor != '\0' && *cursor != '/') {
+            cursor += 1;
+        }
+        if (secdat_append_logical_component(buffer, size, &length, component_start, (size_t)(cursor - component_start)) != 0) {
+            return 1;
+        }
+        while (*cursor == '/') {
+            cursor += 1;
+        }
+    }
+    return 0;
+}
+
 static void secdat_parent_path(char *path)
 {
     char *slash;
@@ -904,7 +1157,12 @@ static void secdat_parent_path(char *path)
     }
 }
 
-static int secdat_lookup_domain_id_for_root(const char *root_path, char *buffer, size_t size)
+static int secdat_lookup_domain_id_for_root_internal(
+    const char *root_path,
+    char *buffer,
+    size_t size,
+    int verify_identity
+)
 {
     char registry_path[PATH_MAX];
     int status;
@@ -918,8 +1176,106 @@ static int secdat_lookup_domain_id_for_root(const char *root_path, char *buffer,
     if (status == 1) {
         return 1;
     }
+    if (status == 0 && verify_identity && secdat_verify_domain_root_identity(root_path, buffer) != 0) {
+        return 2;
+    }
 
     return status == 0 ? 0 : 2;
+}
+
+static int secdat_lookup_domain_id_for_root(const char *root_path, char *buffer, size_t size)
+{
+    return secdat_lookup_domain_id_for_root_internal(root_path, buffer, size, 1);
+}
+
+static int secdat_lookup_registered_domain_id_for_root(const char *root_path, char *buffer, size_t size)
+{
+    return secdat_lookup_domain_id_for_root_internal(root_path, buffer, size, 0);
+}
+
+static int secdat_registered_or_canonical_root_path(const char *input, char *buffer, size_t size)
+{
+    char logical_path[PATH_MAX];
+    char domain_id[PATH_MAX];
+    int lookup_status;
+
+    if (secdat_logical_absolute_path(input, logical_path, sizeof(logical_path)) != 0) {
+        return 1;
+    }
+    lookup_status = secdat_lookup_registered_domain_id_for_root(logical_path, domain_id, sizeof(domain_id));
+    if (lookup_status == 0) {
+        if (strlen(logical_path) >= size) {
+            fprintf(stderr, _("path is too long\n"));
+            return 1;
+        }
+        strcpy(buffer, logical_path);
+        return 0;
+    }
+    if (lookup_status != 1) {
+        return 1;
+    }
+    return secdat_canonicalize_directory(input, buffer, size);
+}
+
+static int secdat_check_logical_registered_root_identities(const char *dir_override)
+{
+    char current_path[PATH_MAX];
+    char domain_id[PATH_MAX];
+    int lookup_status;
+
+    if (secdat_logical_absolute_path(dir_override, current_path, sizeof(current_path)) != 0) {
+        return 1;
+    }
+
+    for (;;) {
+        lookup_status = secdat_lookup_domain_id_for_root(current_path, domain_id, sizeof(domain_id));
+        if (lookup_status != 0 && lookup_status != 1) {
+            return 1;
+        }
+        if (strcmp(current_path, "/") == 0) {
+            break;
+        }
+        secdat_parent_path(current_path);
+    }
+    return 0;
+}
+
+int secdat_domain_registered_root_is_stale(const char *registered_root, int *stale)
+{
+    char domain_id[PATH_MAX];
+    struct secdat_domain_identity identity;
+    struct stat status;
+    int lookup_status;
+    int identity_present;
+    int identity_mismatch;
+
+    *stale = 0;
+    lookup_status = secdat_lookup_registered_domain_id_for_root(registered_root, domain_id, sizeof(domain_id));
+    if (lookup_status != 0) {
+        return lookup_status == 1 ? 1 : lookup_status;
+    }
+
+    if (secdat_read_domain_root_identity(domain_id, &identity, &identity_present) != 0) {
+        return 1;
+    }
+    if (identity_present) {
+        if (secdat_check_domain_root_identity(registered_root, domain_id, 1, &identity_mismatch) != 0) {
+            return 1;
+        }
+        *stale = identity_mismatch;
+        return 0;
+    }
+
+    if (stat(registered_root, &status) != 0) {
+        if (errno == ENOENT || errno == ENOTDIR) {
+            *stale = 1;
+            return 0;
+        }
+        fprintf(stderr, _("failed to stat path: %s\n"), registered_root);
+        return 1;
+    }
+    *stale = S_ISDIR(status.st_mode) ? 0 : 1;
+    return 0;
 }
 
 int secdat_domain_validate_root(const char *domain_root, char *buffer, size_t size)
@@ -927,6 +1283,9 @@ int secdat_domain_validate_root(const char *domain_root, char *buffer, size_t si
     char domain_id[PATH_MAX];
     int lookup_status;
 
+    if (secdat_check_logical_registered_root_identities(domain_root) != 0) {
+        return 1;
+    }
     if (secdat_canonicalize_directory(domain_root, buffer, size) != 0) {
         return 1;
     }
@@ -1207,6 +1566,9 @@ int secdat_domain_resolve_chain(const char *dir_override, struct secdat_domain_c
     chain->count = 0;
     chain->current_path[0] = '\0';
 
+    if (secdat_check_logical_registered_root_identities(dir_override) != 0) {
+        return 1;
+    }
     if (secdat_canonicalize_directory(dir_override, current_path, sizeof(current_path)) != 0) {
         return 1;
     }
@@ -1259,7 +1621,7 @@ int secdat_domain_resolve_registered_root_chain(const char *registered_root, str
     strcpy(chain->current_path, registered_root);
 
     for (;;) {
-        lookup_status = secdat_lookup_domain_id_for_root(current_path, domain_id, sizeof(domain_id));
+        lookup_status = secdat_lookup_registered_domain_id_for_root(current_path, domain_id, sizeof(domain_id));
         if (lookup_status == 0) {
             if (secdat_string_list_append(&ids, domain_id) != 0) {
                 secdat_string_list_free(&ids);
@@ -1427,6 +1789,10 @@ static int secdat_domain_command_create(const struct secdat_cli *cli)
     char domain_root[PATH_MAX];
     char meta_dir[PATH_MAX];
     char root_file[PATH_MAX];
+    char identity_file[PATH_MAX];
+    char identity_text[128];
+    struct secdat_domain_identity identity;
+    struct stat root_status;
     char existing_id[PATH_MAX];
     int lookup_status;
 
@@ -1441,6 +1807,14 @@ static int secdat_domain_command_create(const struct secdat_cli *cli)
     }
 
     if (secdat_canonicalize_directory(cli->domain != NULL ? cli->domain : cli->dir, root_path, sizeof(root_path)) != 0) {
+        return 1;
+    }
+    if (stat(root_path, &root_status) != 0 || !S_ISDIR(root_status.st_mode)) {
+        fprintf(stderr, _("not a directory: %s\n"), root_path);
+        return 1;
+    }
+    secdat_domain_identity_from_stat(&root_status, &identity);
+    if (secdat_format_domain_identity(&identity, identity_text, sizeof(identity_text)) != 0) {
         return 1;
     }
 
@@ -1471,6 +1845,9 @@ static int secdat_domain_command_create(const struct secdat_cli *cli)
     if (secdat_join_path(root_file, sizeof(root_file), meta_dir, "root") != 0) {
         return 1;
     }
+    if (secdat_join_path(identity_file, sizeof(identity_file), meta_dir, "root-identity") != 0) {
+        return 1;
+    }
 
     if (secdat_ensure_directory(registry_dir, 0700) != 0) {
         return 1;
@@ -1482,6 +1859,9 @@ static int secdat_domain_command_create(const struct secdat_cli *cli)
         return 1;
     }
     if (secdat_atomic_write_text_file(root_file, root_path) != 0) {
+        return 1;
+    }
+    if (secdat_atomic_write_text_file(identity_file, identity_text) != 0) {
         return 1;
     }
     return secdat_atomic_write_text_file(registry_path, domain_id);
@@ -1502,16 +1882,16 @@ static int secdat_domain_command_delete(const struct secdat_cli *cli)
         return 2;
     }
 
-    if (secdat_require_writable_session_access(cli->domain != NULL ? cli->domain : cli->dir, "domain delete") != 0) {
+    if (secdat_registered_or_canonical_root_path(cli->domain != NULL ? cli->domain : cli->dir, root_path, sizeof(root_path)) != 0) {
         return 1;
     }
 
-    if (secdat_canonicalize_directory(cli->domain != NULL ? cli->domain : cli->dir, root_path, sizeof(root_path)) != 0) {
-        return 1;
-    }
-
-    if (secdat_lookup_domain_id_for_root(root_path, domain_id, sizeof(domain_id)) != 0) {
+    if (secdat_lookup_registered_domain_id_for_root(root_path, domain_id, sizeof(domain_id)) != 0) {
         fprintf(stderr, _("domain not found for: %s\n"), root_path);
+        return 1;
+    }
+
+    if (secdat_require_writable_registered_domain_access(root_path, "domain delete") != 0) {
         return 1;
     }
 
@@ -1542,6 +1922,138 @@ static int secdat_domain_command_delete(const struct secdat_cli *cli)
     }
 
     return secdat_remove_tree(domain_root);
+}
+
+static int secdat_domain_command_move(const struct secdat_cli *cli)
+{
+    static const struct option long_options[] = {
+        {"from", required_argument, NULL, 1000},
+        {"to", required_argument, NULL, 1001},
+        {"allow-same-root", no_argument, NULL, 1002},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc = cli->argc + 1;
+    int option;
+    size_t index;
+    const char *from_arg = NULL;
+    const char *to_arg = NULL;
+    int allow_same_root = 0;
+    char source_root[PATH_MAX];
+    char destination_root[PATH_MAX];
+    char source_domain_id[PATH_MAX];
+    char destination_domain_id[PATH_MAX];
+    char source_registry_path[PATH_MAX];
+    char destination_registry_path[PATH_MAX];
+    char root_file[PATH_MAX];
+    char identity_file[PATH_MAX];
+    char identity_text[128];
+    struct secdat_domain_identity identity;
+    struct stat destination_status;
+    int lookup_status;
+    int same_root;
+
+    argv[0] = "domain move";
+    for (index = 0; index < (size_t)cli->argc; index += 1) {
+        argv[index + 1] = cli->argv[index];
+    }
+    argv[argc] = NULL;
+
+    opterr = 0;
+    optind = 0;
+    while ((option = getopt_long(argc, argv, ":", long_options, NULL)) != -1) {
+        switch (option) {
+        case 1000:
+            from_arg = optarg;
+            break;
+        case 1001:
+            to_arg = optarg;
+            break;
+        case 1002:
+            allow_same_root = 1;
+            break;
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for domain move\n"));
+            secdat_cli_print_try_help(cli, "domain");
+            return 2;
+        }
+    }
+    if (optind < argc || from_arg == NULL) {
+        fprintf(stderr, _("invalid arguments for domain move\n"));
+        secdat_cli_print_try_help(cli, "domain");
+        return 2;
+    }
+
+    if (secdat_logical_absolute_path(from_arg, source_root, sizeof(source_root)) != 0) {
+        return 1;
+    }
+    lookup_status = secdat_lookup_registered_domain_id_for_root(source_root, source_domain_id, sizeof(source_domain_id));
+    if (lookup_status != 0) {
+        if (lookup_status == 1) {
+            fprintf(stderr, _("domain not found for: %s\n"), source_root);
+        }
+        return 1;
+    }
+
+    if (secdat_require_writable_registered_domain_access(source_root, "domain move") != 0) {
+        return 1;
+    }
+
+    if (secdat_canonicalize_directory(to_arg != NULL ? to_arg : (cli->domain != NULL ? cli->domain : cli->dir), destination_root, sizeof(destination_root)) != 0) {
+        return 1;
+    }
+    if (stat(destination_root, &destination_status) != 0 || !S_ISDIR(destination_status.st_mode)) {
+        fprintf(stderr, _("not a directory: %s\n"), destination_root);
+        return 1;
+    }
+    secdat_domain_identity_from_stat(&destination_status, &identity);
+    if (secdat_format_domain_identity(&identity, identity_text, sizeof(identity_text)) != 0) {
+        return 1;
+    }
+
+    same_root = strcmp(source_root, destination_root) == 0;
+    if (same_root && !allow_same_root) {
+        fprintf(stderr, _("source and destination domain roots are the same; use --allow-same-root\n"));
+        return 1;
+    }
+    if (!same_root && secdat_require_writable_session_access(destination_root, "domain move") != 0) {
+        return 1;
+    }
+
+    lookup_status = secdat_lookup_registered_domain_id_for_root(destination_root, destination_domain_id, sizeof(destination_domain_id));
+    if (lookup_status == 0 && strcmp(destination_domain_id, source_domain_id) != 0) {
+        fprintf(stderr, _("domain already exists for: %s\n"), destination_root);
+        return 1;
+    }
+    if (lookup_status != 0 && lookup_status != 1) {
+        return 1;
+    }
+
+    if (secdat_registry_path_for_root(source_root, source_registry_path, sizeof(source_registry_path)) != 0
+        || secdat_registry_path_for_root(destination_root, destination_registry_path, sizeof(destination_registry_path)) != 0
+        || secdat_domain_meta_file_for_id(source_domain_id, "root", root_file, sizeof(root_file)) != 0
+        || secdat_domain_meta_file_for_id(source_domain_id, "root-identity", identity_file, sizeof(identity_file)) != 0) {
+        return 1;
+    }
+
+    if (!same_root && lookup_status == 1) {
+        if (secdat_atomic_write_text_file(destination_registry_path, source_domain_id) != 0) {
+            return 1;
+        }
+    }
+    if (secdat_atomic_write_text_file(root_file, destination_root) != 0) {
+        return 1;
+    }
+    if (secdat_atomic_write_text_file(identity_file, identity_text) != 0) {
+        return 1;
+    }
+    if (!same_root && unlink(source_registry_path) != 0 && errno != ENOENT) {
+        fprintf(stderr, _("failed to remove file: %s\n"), source_registry_path);
+        return 1;
+    }
+
+    return 0;
 }
 
 static int secdat_collect_inherited_domain_roots(
@@ -2069,6 +2581,8 @@ int secdat_handle_domain_command(const struct secdat_cli *cli)
         return secdat_domain_command_create(cli);
     case SECDAT_COMMAND_DOMAIN_DELETE:
         return secdat_domain_command_delete(cli);
+    case SECDAT_COMMAND_DOMAIN_MOVE:
+        return secdat_domain_command_move(cli);
     case SECDAT_COMMAND_DOMAIN_LS:
         return secdat_domain_command_ls(cli);
     case SECDAT_COMMAND_DOMAIN_STATUS:

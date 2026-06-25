@@ -501,6 +501,17 @@ repair_guard_object_path.write_text(
 )
 
 readonly_env = {"SECDAT_MASTER_KEY": "readonly-master-key-for-tests"}
+readonly_move_source = isolated_root / "readonly-move-source-domain"
+readonly_move_destination = root_domain / "readonly-move-destination-domain"
+readonly_move_source.mkdir()
+readonly_move_destination.mkdir()
+rc, stdout, stderr = run([bin_path, "--dir", str(readonly_move_source), "domain", "create"], extra_env=readonly_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"readonly move source domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(readonly_move_source), "set", "READONLY_MOVE_KEY", "--value", "blocked"], extra_env=readonly_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"readonly move source set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+readonly_move_source.rmdir()
 
 rc, stdout, stderr = run(scoped(["unlock", "--readonly"]), extra_env=readonly_env)
 if rc != 0 or "readonly session unlocked from environment" not in stdout or "resolved domain:" not in stderr:
@@ -530,6 +541,13 @@ if rc == 0 or stdout != "" or "current session is readonly and cannot run fsck -
     fail(f"readonly fsck repair should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if "refcount=5\n" not in repair_guard_object_path.read_text(encoding="utf-8"):
     fail("readonly fsck repair mutated cached refcount")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(readonly_move_destination), "domain", "move", "--from", str(readonly_move_source)])
+if rc == 0 or stdout != "" or "current session is readonly and cannot run domain move" not in stderr or f"unlock writable session: secdat --dir {root_domain} unlock" not in stderr:
+    fail(f"readonly destination domain move should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(readonly_move_destination), "domain", "status", "--quiet"])
+if rc != 0 or stdout != f"{root_domain}\n" or stderr != "":
+    fail(f"readonly destination domain move changed destination registration: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["lock", "--save"]))
 if rc == 0 or "lock --save requires a local volatile session" not in stderr:

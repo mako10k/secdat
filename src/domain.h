@@ -31,6 +31,7 @@ int secdat_domain_validate_root(const char *domain_root, char *buffer, size_t si
 int secdat_domain_resolve_current(const char *dir_override, char *buffer, size_t size);
 int secdat_domain_resolve_chain(const char *dir_override, struct secdat_domain_chain *chain);
 int secdat_domain_resolve_registered_root_chain(const char *registered_root, struct secdat_domain_chain *chain);
+int secdat_domain_registered_root_is_stale(const char *registered_root, int *stale);
 int secdat_collect_registered_domain_roots(struct secdat_domain_root_list *list);
 int secdat_collect_descendant_domain_roots(const char *root_path, struct secdat_domain_root_list *list);
 int secdat_domain_data_root(const char *domain_id, char *buffer, size_t size);

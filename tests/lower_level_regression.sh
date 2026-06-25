@@ -24,7 +24,7 @@ import sys
 import unicodedata
 from pathlib import Path
 
-bin_path = sys.argv[1]
+bin_path = str(Path(sys.argv[1]).resolve())
 env = os.environ.copy()
 env["LC_ALL"] = "C"
 env["LANGUAGE"] = "C"
@@ -42,9 +42,10 @@ root_domain = work_root / "root-domain"
 child_domain = root_domain / "child-domain"
 grandchild_domain = child_domain / "grandchild-domain"
 sibling_domain = work_root / "sibling-domain"
+orphaned_domain = work_root / "orphaned-domain"
 long_named_domain = work_root / "domain-with-an-extremely-long-name-for-terminal-layout-check"
 
-for path in (root_domain, child_domain, grandchild_domain, sibling_domain, long_named_domain):
+for path in (root_domain, child_domain, grandchild_domain, sibling_domain, orphaned_domain, long_named_domain):
     path.mkdir(parents=True, exist_ok=True)
 
 
@@ -53,7 +54,7 @@ def fail(message):
     sys.exit(1)
 
 
-def run(args, extra_env=None):
+def run(args, extra_env=None, cwd=None):
     run_env = env.copy()
     if extra_env:
         for key, value in extra_env.items():
@@ -61,7 +62,7 @@ def run(args, extra_env=None):
                 run_env.pop(key, None)
             else:
                 run_env[key] = value
-    completed = subprocess.run(args, text=True, capture_output=True, env=run_env)
+    completed = subprocess.run(args, text=True, capture_output=True, env=run_env, cwd=cwd)
     return completed.returncode, completed.stdout, completed.stderr
 
 
@@ -123,7 +124,7 @@ def scoped(args, domain=root_domain):
     return [bin_path, "--dir", str(domain), *args]
 
 
-for domain in (root_domain, child_domain, grandchild_domain, sibling_domain, long_named_domain):
+for domain in (root_domain, child_domain, grandchild_domain, sibling_domain, orphaned_domain, long_named_domain):
     rc, stdout, stderr = run(scoped(["domain", "create"], domain))
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"domain create failed for {domain}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -142,18 +143,16 @@ if rc != 0 or stderr != "":
 assert_contains(stdout, "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n", "non-tty domain ls header")
 assert_contains(stdout, f"{long_named_domain}\t", "non-tty domain retains full path")
 
-rc, stdout, stderr = run(scoped(["set", "ORPHANED_KEY", "orphaned-value"], sibling_domain))
+rc, stdout, stderr = run(scoped(["set", "ORPHANED_KEY", "orphaned-value"], orphaned_domain))
 if rc != 0 or stdout != "" or stderr != "":
-    fail(f"sibling set before orphaning failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"orphaned-domain set before orphaning failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-sibling_domain.rmdir()
+orphaned_domain.rmdir()
 
 rc, stdout, stderr = run([bin_path, "--dir", str(work_root), "domain", "ls", "-l", "--descendants"])
 if rc != 0 or stderr != "":
     fail(f"domain ls -l with orphaned root failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, f"{sibling_domain}\torphaned\torphaned\t-\torphaned-domain\t1\t1\tpresent", "domain ls orphaned row")
-
-sibling_domain.mkdir(parents=True, exist_ok=True)
+assert_contains(stdout, f"{orphaned_domain}\torphaned\torphaned\t-\torphaned-domain\t1\t1\tpresent", "domain ls orphaned row")
 
 rc, transcript = run_pty([bin_path, "--dir", str(work_root), "domain", "ls", "-l"])
 if rc != 0:
@@ -335,6 +334,178 @@ if rc != 0 or stderr != "":
     fail(f"grandchild inherited status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "effective source: inherited unlock\n", "grandchild inherited state")
 assert_contains(stdout, f"inherited from: {child_domain}\n", "grandchild inherited source")
+
+mismatch_domain = work_root / "identity-mismatch-domain"
+mismatch_moved_domain = work_root / "identity-mismatch-domain-moved"
+mismatch_domain.mkdir()
+rc, stdout, stderr = run(
+    scoped(["domain", "create"], mismatch_domain),
+    {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"identity mismatch domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+mismatch_domain.rename(mismatch_moved_domain)
+mismatch_domain.mkdir()
+rc, stdout, stderr = run(scoped(["domain", "status", "--quiet"], mismatch_domain))
+if rc == 0 or stdout != "" or f"domain root identity mismatch for: {mismatch_domain}\n" not in stderr:
+    fail(f"replacement domain did not fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(work_root), "domain", "ls", "-l", "--descendants"])
+if rc != 0 or stderr != "":
+    fail(f"domain ls with identity mismatch failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, f"{mismatch_domain}\torphaned\torphaned\t-\torphaned-domain", "domain ls identity mismatch row")
+
+rc, stdout, stderr = run(scoped(["domain", "delete"], mismatch_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"identity mismatch domain delete failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(
+    scoped(["domain", "create"], mismatch_domain),
+    {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"identity mismatch replacement create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+symlink_domain = work_root / "identity-symlink-domain"
+symlink_moved_domain = work_root / "identity-symlink-domain-moved"
+symlink_domain.mkdir()
+rc, stdout, stderr = run(
+    scoped(["domain", "create"], symlink_domain),
+    {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"identity symlink domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+symlink_domain.rename(symlink_moved_domain)
+symlink_domain.symlink_to(symlink_moved_domain, target_is_directory=True)
+rc, stdout, stderr = run(scoped(["domain", "status", "--quiet"], symlink_domain))
+if rc == 0 or stdout != "" or f"domain root identity mismatch for: {symlink_domain}\n" not in stderr:
+    fail(f"symlink replacement did not fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(
+    [bin_path, "domain", "status", "--quiet"],
+    {"PWD": str(symlink_domain)},
+    cwd=symlink_domain,
+)
+if rc == 0 or stdout != "" or f"domain root identity mismatch for: {symlink_domain}\n" not in stderr:
+    fail(f"symlink cwd replacement did not fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(work_root), "domain", "ls", "-l", "--descendants"])
+if rc != 0 or stderr != "":
+    fail(f"domain ls with symlink identity mismatch failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, f"{symlink_domain}\torphaned\torphaned\t-\torphaned-domain", "domain ls symlink identity mismatch row")
+
+rc, stdout, stderr = run(scoped(["domain", "delete"], symlink_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"symlink identity mismatch domain delete failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+move_source_domain = work_root / "move-source-domain"
+move_destination_domain = work_root / "move-destination-domain"
+move_source_domain.mkdir()
+move_destination_domain.mkdir()
+rc, stdout, stderr = run(
+    scoped(["domain", "create"], move_source_domain),
+    {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"move source domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["set", "MOVED_KEY", "moved-secret"], move_source_domain),
+    {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"move source set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+move_source_domain.rmdir()
+
+rc, stdout, stderr = run([bin_path, "--dir", str(move_destination_domain), "domain", "move", "--from", str(move_source_domain)])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"missing-root domain move failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["domain", "status", "--quiet"], move_destination_domain))
+if rc != 0 or stdout != f"{move_destination_domain}\n" or stderr != "":
+    fail(f"moved domain status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["get", "MOVED_KEY", "--stdout"], move_destination_domain),
+    {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+)
+if rc != 0 or stdout != "moved-secret" or stderr != "":
+    fail(f"moved domain did not preserve secret: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+move_to_source_domain = work_root / "move-to-source-domain"
+move_to_destination_domain = work_root / "move-to-destination-domain"
+move_to_source_domain.mkdir()
+move_to_destination_domain.mkdir()
+rc, stdout, stderr = run(
+    scoped(["domain", "create"], move_to_source_domain),
+    {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"explicit-to source domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["set", "EXPLICIT_MOVED_KEY", "explicit-moved-secret"], move_to_source_domain),
+    {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"explicit-to source set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+move_to_source_domain.rmdir()
+
+rc, stdout, stderr = run([bin_path, "domain", "move", "--from", str(move_to_source_domain), "--to", str(move_to_destination_domain)])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"explicit-to domain move failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["get", "EXPLICIT_MOVED_KEY", "--stdout"], move_to_destination_domain),
+    {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+)
+if rc != 0 or stdout != "explicit-moved-secret" or stderr != "":
+    fail(f"explicit-to domain move did not preserve secret: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+move_collision_source_domain = work_root / "move-collision-source-domain"
+move_collision_destination_domain = work_root / "move-collision-destination-domain"
+move_collision_source_domain.mkdir()
+move_collision_destination_domain.mkdir()
+for collision_domain in (move_collision_source_domain, move_collision_destination_domain):
+    rc, stdout, stderr = run(
+        scoped(["domain", "create"], collision_domain),
+        {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+    )
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"collision domain create failed for {collision_domain}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+move_collision_source_domain.rmdir()
+
+rc, stdout, stderr = run([bin_path, "domain", "move", "--from", str(move_collision_source_domain), "--to", str(move_collision_destination_domain)])
+if rc == 0 or stdout != "" or f"domain already exists for: {move_collision_destination_domain}\n" not in stderr:
+    fail(f"domain move accepted registered destination: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+move_same_domain = work_root / "move-same-domain"
+move_same_domain.mkdir()
+rc, stdout, stderr = run(
+    scoped(["domain", "create"], move_same_domain),
+    {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-root move domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["set", "SAME_MOVED_KEY", "same-moved-secret"], move_same_domain),
+    {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-root move set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+move_same_domain.rmdir()
+move_same_domain.mkdir()
+
+rc, stdout, stderr = run([bin_path, "--dir", str(move_same_domain), "domain", "move", "--from", str(move_same_domain)])
+if rc == 0 or stdout != "" or "source and destination domain roots are the same; use --allow-same-root\n" not in stderr:
+    fail(f"same-root domain move without explicit allow did not fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(move_same_domain), "domain", "move", "--from", str(move_same_domain), "--allow-same-root"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-root domain move failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["get", "SAME_MOVED_KEY", "--stdout"], move_same_domain),
+    {"SECDAT_MASTER_KEY": "lower-level-test-master-key"},
+)
+if rc != 0 or stdout != "same-moved-secret" or stderr != "":
+    fail(f"same-root domain move did not preserve secret: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 PY
 
 printf 'PASS lower-level regression\n'

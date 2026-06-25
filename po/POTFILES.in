@@ -1,4 +1,5 @@
 src/cli.c
+src/domain.c
 src/main.c
 src/secdat-fuse.c
 src/store.c

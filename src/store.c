@@ -6422,6 +6422,19 @@ int secdat_require_writable_session_access(const char *dir_override, const char 
     return status;
 }
 
+int secdat_require_writable_registered_domain_access(const char *registered_root, const char *command_name)
+{
+    struct secdat_domain_chain chain = {0};
+    int status;
+
+    if (secdat_domain_resolve_registered_root_chain(registered_root, &chain) != 0) {
+        return 1;
+    }
+    status = secdat_require_mutable_session_chain(&chain, command_name);
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
 static const char *secdat_overlay_effective_store_name(const char *store_name)
 {
     return store_name != NULL && store_name[0] != '\0' ? store_name : NULL;
@@ -6954,20 +6967,6 @@ cleanup:
     return status;
 }
 
-static int secdat_registered_root_is_directory(const char *registered_root)
-{
-    struct stat status;
-
-    if (stat(registered_root, &status) == 0) {
-        return S_ISDIR(status.st_mode) ? 1 : 0;
-    }
-    if (errno == ENOENT || errno == ENOTDIR) {
-        return 0;
-    }
-    fprintf(stderr, _("failed to stat path: %s\n"), registered_root);
-    return -1;
-}
-
 int secdat_collect_domain_status_summary(const char *dir_override, struct secdat_domain_status_summary *summary)
 {
     struct secdat_domain_chain chain = {0};
@@ -6985,22 +6984,18 @@ int secdat_collect_domain_status_summary(const char *dir_override, struct secdat
 int secdat_collect_registered_domain_status_summary(const char *registered_root, struct secdat_domain_status_summary *summary)
 {
     struct secdat_domain_chain chain = {0};
-    int directory_status;
+    int stale = 0;
     int status;
 
-    directory_status = secdat_registered_root_is_directory(registered_root);
-    if (directory_status < 0) {
+    if (secdat_domain_registered_root_is_stale(registered_root, &stale) != 0) {
         return 1;
-    }
-    if (directory_status > 0) {
-        return secdat_collect_domain_status_summary(registered_root, summary);
     }
     if (secdat_domain_resolve_registered_root_chain(registered_root, &chain) != 0) {
         return 1;
     }
 
     status = secdat_collect_domain_status_summary_for_chain(&chain, summary);
-    if (status == 0) {
+    if (status == 0 && stale) {
         summary->orphaned_domain = 1;
     }
     secdat_domain_chain_free(&chain);
@@ -19937,6 +19932,7 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_secret_status(cli);
     case SECDAT_COMMAND_DOMAIN_CREATE:
     case SECDAT_COMMAND_DOMAIN_DELETE:
+    case SECDAT_COMMAND_DOMAIN_MOVE:
     case SECDAT_COMMAND_DOMAIN_LS:
     case SECDAT_COMMAND_DOMAIN_STATUS:
         return secdat_handle_domain_command(cli);

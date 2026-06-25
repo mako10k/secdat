@@ -50,6 +50,7 @@ static const struct secdat_cli_subcommand_entry secdat_cli_subcommand_registry[]
     {"secret", "status", "secret status", SECDAT_COMMAND_SECRET_STATUS},
     {"domain", "create", "domain create", SECDAT_COMMAND_DOMAIN_CREATE},
     {"domain", "delete", "domain delete", SECDAT_COMMAND_DOMAIN_DELETE},
+    {"domain", "move", "domain move", SECDAT_COMMAND_DOMAIN_MOVE},
     {"domain", "ls", "domain ls", SECDAT_COMMAND_DOMAIN_LS},
     {"domain", "status", "domain status", SECDAT_COMMAND_DOMAIN_STATUS},
     {NULL, NULL, NULL, SECDAT_COMMAND_HELP},
@@ -1001,6 +1002,10 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
             }
         }
     } else if (strcmp(command, "domain") == 0) {
+        if (subcommand != NULL && strcmp(subcommand, "move") == 0
+            && (strcmp(previous, "--from") == 0 || strcmp(previous, "--to") == 0)) {
+            return "path";
+        }
         if (subcommand != NULL && strcmp(subcommand, "ls") == 0
             && (strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0)) {
             return "none";
@@ -1179,6 +1184,9 @@ int secdat_cli_complete(int argc, char **argv)
     static const char *const domain_ls_options[] = {
         "--long", "-l", "--inherited", "-a", "--ancestors", "-A", "--descendants", "-R", "--pattern", "-p", "--json", "--help", "-h", NULL,
     };
+    static const char *const domain_move_options[] = {
+        "--from", "--to", "--allow-same-root", "--help", "-h", NULL,
+    };
     static const char *const domain_status_options[] = {
         "--quiet", "-q", "--json", "--help", "-h", NULL,
     };
@@ -1266,6 +1274,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, store_finalize_migration_options);
     } else if (strcmp(command, "domain") == 0 && subcommand != NULL && strcmp(subcommand, "ls") == 0) {
         secdat_cli_completion_print_candidates(current, domain_ls_options);
+    } else if (strcmp(command, "domain") == 0 && subcommand != NULL && strcmp(subcommand, "move") == 0) {
+        secdat_cli_completion_print_candidates(current, domain_move_options);
     } else if (strcmp(command, "domain") == 0 && subcommand != NULL && strcmp(subcommand, "status") == 0) {
         secdat_cli_completion_print_candidates(current, domain_status_options);
     }
@@ -1506,6 +1516,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_DOMAIN_DELETE:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain delete", "");
+        break;
+    case SECDAT_COMMAND_DOMAIN_MOVE:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain move", "--from OLD_ROOT [--to NEW_ROOT] [--allow-same-root]");
         break;
     case SECDAT_COMMAND_DOMAIN_LS:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain ls", "[-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [--json]");
@@ -1874,6 +1887,10 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  domain delete: unregister the resolved directory as a domain root\n"));
         return;
     }
+    if (target != NULL && strcmp(target, "domain move") == 0) {
+        secdat_cli_print_detail_line(_("  domain move: update a registered domain root path without deleting its stored secrets\n"));
+        return;
+    }
     if (target != NULL && strcmp(target, "domain ls") == 0) {
         secdat_cli_print_detail_line(_("  domain ls: list domain roots around the scoped directory\n"));
         return;
@@ -2066,6 +2083,8 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
     if (strcmp(target, "domain") == 0) {
         char buffer[512];
         snprintf(buffer, sizeof(buffer), _("  register the current directory as a domain root: %s domain create\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  recover a moved domain root: %s --dir /new/path domain move --from /old/path\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  inspect inherited and blocked descendants: %s domain ls -l --descendants\n"), program_name);
         secdat_cli_print_detail_line(buffer);
