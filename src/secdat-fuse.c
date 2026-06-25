@@ -14,11 +14,13 @@
 #include <libintl.h>
 #include <limits.h>
 #include <locale.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #ifndef SECDAT_BUILD_ID
@@ -40,10 +42,13 @@ struct secdat_fuse_state {
     char dir_buffer[PATH_MAX];
     char domain_buffer[PATH_MAX];
     const char *mountpoint;
+    char **command_argv;
+    int ready_fd;
     int foreground;
     int debug;
     int dry_run;
     int json;
+    int size_metadata;
 };
 
 static void secdat_fuse_i18n_init(void)
@@ -68,9 +73,10 @@ static void secdat_fuse_print_usage(const char *program_name, FILE *stream)
 {
     fprintf(
         stream,
-        _("Usage: %s [OPTIONS] MOUNTPOINT\n"
+        _("Usage: %s [OPTIONS] MOUNTPOINT [-- CMD [ARGS...]]\n"
           "\n"
           "Mount selected secdat keys as read-only files.\n"
+          "With CMD, mount, run the command, then unmount automatically.\n"
           "\n"
           "Options:\n"
           "  -d, --dir DIR              set the base directory used for domain resolution\n"
@@ -82,6 +88,7 @@ static void secdat_fuse_print_usage(const char *program_name, FILE *stream)
           "      --require-key KEY      fail unless KEY remains selected; may be repeated\n"
           "      --dry-run              list files that would be mounted without mounting\n"
           "      --json                 write dry-run output as JSON\n"
+          "      --size-metadata        report file sizes by reading secret values in getattr\n"
           "  -f, --foreground           keep the FUSE process in the foreground\n"
           "      --debug                enable FUSE debug output\n"
           "  -h, --help                 show this help\n"
@@ -290,6 +297,10 @@ static int secdat_fuse_key_is_selected(struct secdat_fuse_state *state, const ch
 
 static void *secdat_fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
 {
+    struct secdat_fuse_state *state = fuse_get_context()->private_data;
+    const char ready = '1';
+    ssize_t written;
+
     (void)conn;
 
     cfg->kernel_cache = 0;
@@ -298,13 +309,23 @@ static void *secdat_fuse_init(struct fuse_conn_info *conn, struct fuse_config *c
     cfg->attr_timeout = 0;
     cfg->negative_timeout = 0;
     cfg->direct_io = 1;
-    return fuse_get_context()->private_data;
+    if (state != NULL && state->ready_fd >= 0) {
+        do {
+            written = write(state->ready_fd, &ready, 1);
+        } while (written < 0 && errno == EINTR);
+        close(state->ready_fd);
+        state->ready_fd = -1;
+    }
+    return state;
 }
 
 static int secdat_fuse_getattr(const char *path, struct stat *status, struct fuse_file_info *file_info)
 {
     struct secdat_fuse_state *state = fuse_get_context()->private_data;
     const char *key = NULL;
+    unsigned char *value = NULL;
+    size_t value_length = 0;
+    int unsafe_store = 0;
     int result;
 
     (void)file_info;
@@ -331,6 +352,15 @@ static int secdat_fuse_getattr(const char *path, struct stat *status, struct fus
     status->st_mode = S_IFREG | 0400;
     status->st_nlink = 1;
     status->st_size = 0;
+    if (state->size_metadata) {
+        if (secdat_sdk_get(&state->options, key, &value, &value_length, &unsafe_store) != 0) {
+            return -EACCES;
+        }
+        (void)unsafe_store;
+        status->st_size = (off_t)value_length;
+        secdat_fuse_secure_clear(value, value_length);
+        secdat_sdk_free(value);
+    }
     status->st_uid = getuid();
     status->st_gid = getgid();
     return 0;
@@ -837,6 +867,7 @@ static int secdat_fuse_parse_args(int argc, char **argv, struct secdat_fuse_stat
         {"foreground", no_argument, NULL, 'f'},
         {"debug", no_argument, NULL, 1004},
         {"json", no_argument, NULL, 1005},
+        {"size-metadata", no_argument, NULL, 1006},
         {"help", no_argument, NULL, 'h'},
         {"version", no_argument, NULL, 'V'},
         {NULL, 0, NULL, 0},
@@ -844,6 +875,7 @@ static int secdat_fuse_parse_args(int argc, char **argv, struct secdat_fuse_stat
     int option;
 
     memset(state, 0, sizeof(*state));
+    state->ready_fd = -1;
     opterr = 0;
     while ((option = getopt_long(argc, argv, "+:d:s:p:x:fhV", long_options, NULL)) != -1) {
         switch (option) {
@@ -886,6 +918,9 @@ static int secdat_fuse_parse_args(int argc, char **argv, struct secdat_fuse_stat
         case 1005:
             state->json = 1;
             break;
+        case 1006:
+            state->size_metadata = 1;
+            break;
         case 'h':
             secdat_fuse_print_usage(argv[0], stdout);
             exit(0);
@@ -914,11 +949,20 @@ static int secdat_fuse_parse_args(int argc, char **argv, struct secdat_fuse_stat
         fprintf(stderr, _("missing mountpoint\n"));
         return 2;
     }
-    if (optind + 1 < argc) {
+    state->mountpoint = argv[optind];
+    optind += 1;
+
+    if (optind < argc) {
+        if (strcmp(argv[optind], "--") != 0 || optind + 1 >= argc) {
+            fprintf(stderr, _("invalid arguments\n"));
+            return 2;
+        }
+        state->command_argv = &argv[optind + 1];
+    }
+    if (state->dry_run && state->command_argv != NULL) {
         fprintf(stderr, _("invalid arguments\n"));
         return 2;
     }
-    state->mountpoint = argv[optind];
 
     if (state->options.domain != NULL) {
         if (secdat_domain_validate_root(
@@ -944,15 +988,188 @@ static void secdat_fuse_state_clear(struct secdat_fuse_state *state)
     secdat_fuse_string_list_free(&state->required_keys);
 }
 
-int main(int argc, char **argv)
+static int secdat_fuse_run_fuse_main(struct secdat_fuse_state *state, const char *program_name, int force_foreground)
 {
-    struct secdat_fuse_state state;
     char *fuse_argv[8];
     char foreground_option[] = "-f";
     char debug_option[] = "-d";
     char option_flag[] = "-o";
     char mount_options[] = "ro,default_permissions,fsname=secdat";
     int fuse_argc = 0;
+
+    fuse_argv[fuse_argc++] = (char *)program_name;
+    if (state->foreground || force_foreground) {
+        fuse_argv[fuse_argc++] = foreground_option;
+    }
+    if (state->debug) {
+        fuse_argv[fuse_argc++] = debug_option;
+    }
+    fuse_argv[fuse_argc++] = option_flag;
+    fuse_argv[fuse_argc++] = mount_options;
+    fuse_argv[fuse_argc++] = (char *)state->mountpoint;
+    fuse_argv[fuse_argc] = NULL;
+
+    return fuse_main(fuse_argc, fuse_argv, &secdat_fuse_operations, state);
+}
+
+static int secdat_fuse_wait_status_to_exit_code(int wait_status)
+{
+    if (WIFEXITED(wait_status)) {
+        return WEXITSTATUS(wait_status);
+    }
+    if (WIFSIGNALED(wait_status)) {
+        return 128 + WTERMSIG(wait_status);
+    }
+    return 1;
+}
+
+static int secdat_fuse_wait_for_mount_ready(pid_t mount_pid, int ready_fd)
+{
+    char ready;
+    ssize_t read_count;
+    int wait_status;
+    pid_t waited;
+
+    do {
+        read_count = read(ready_fd, &ready, 1);
+    } while (read_count < 0 && errno == EINTR);
+    close(ready_fd);
+    if (read_count == 1) {
+        return 0;
+    }
+
+    do {
+        waited = waitpid(mount_pid, &wait_status, WNOHANG);
+    } while (waited < 0 && errno == EINTR);
+    if (waited == 0) {
+        kill(mount_pid, SIGTERM);
+        usleep(100000);
+        kill(mount_pid, SIGKILL);
+        do {
+            waited = waitpid(mount_pid, &wait_status, 0);
+        } while (waited < 0 && errno == EINTR);
+    }
+    if (waited < 0) {
+        fprintf(stderr, _("failed to wait for secdat-fuse mount process\n"));
+    }
+    fprintf(stderr, _("failed to start secdat-fuse mount\n"));
+    return 1;
+}
+
+static int secdat_fuse_wait_for_child(pid_t pid, const char *label)
+{
+    int wait_status;
+
+    for (;;) {
+        if (waitpid(pid, &wait_status, 0) >= 0) {
+            return secdat_fuse_wait_status_to_exit_code(wait_status);
+        }
+        if (errno != EINTR) {
+            fprintf(stderr, _("failed to wait for %s\n"), label);
+            return 1;
+        }
+    }
+}
+
+static int secdat_fuse_run_command(char **command_argv)
+{
+    pid_t command_pid;
+
+    command_pid = fork();
+    if (command_pid < 0) {
+        fprintf(stderr, _("failed to fork\n"));
+        return 1;
+    }
+    if (command_pid == 0) {
+        execvp(command_argv[0], command_argv);
+        fprintf(stderr, _("failed to execute command: %s\n"), command_argv[0]);
+        _exit(127);
+    }
+    return secdat_fuse_wait_for_child(command_pid, "command");
+}
+
+static int secdat_fuse_unmount(const char *mountpoint)
+{
+    pid_t unmount_pid;
+    int status;
+
+    unmount_pid = fork();
+    if (unmount_pid < 0) {
+        fprintf(stderr, _("failed to fork\n"));
+        return 1;
+    }
+    if (unmount_pid == 0) {
+        execlp("fusermount3", "fusermount3", "-u", mountpoint, (char *)NULL);
+        fprintf(stderr, _("failed to execute command: %s\n"), "fusermount3");
+        _exit(127);
+    }
+
+    status = secdat_fuse_wait_for_child(unmount_pid, "fusermount3");
+    if (status != 0) {
+        fprintf(stderr, _("failed to unmount secdat-fuse mountpoint: %s\n"), mountpoint);
+    }
+    return status;
+}
+
+static int secdat_fuse_run_command_mode(struct secdat_fuse_state *state, const char *program_name)
+{
+    int ready_pipe[2];
+    pid_t mount_pid;
+    int command_status;
+    int unmount_status;
+    int mount_status;
+
+    if (pipe(ready_pipe) != 0) {
+        fprintf(stderr, _("failed to create pipe\n"));
+        return 1;
+    }
+
+    mount_pid = fork();
+    if (mount_pid < 0) {
+        close(ready_pipe[0]);
+        close(ready_pipe[1]);
+        fprintf(stderr, _("failed to fork\n"));
+        return 1;
+    }
+    if (mount_pid == 0) {
+        int status;
+
+        close(ready_pipe[0]);
+        state->ready_fd = ready_pipe[1];
+        status = secdat_fuse_run_fuse_main(state, program_name, 1);
+        if (state->ready_fd >= 0) {
+            close(state->ready_fd);
+            state->ready_fd = -1;
+        }
+        _exit(status == 0 ? 0 : 1);
+    }
+
+    close(ready_pipe[1]);
+    if (secdat_fuse_wait_for_mount_ready(mount_pid, ready_pipe[0]) != 0) {
+        return 1;
+    }
+
+    command_status = secdat_fuse_run_command(state->command_argv);
+    unmount_status = secdat_fuse_unmount(state->mountpoint);
+    if (unmount_status != 0) {
+        kill(mount_pid, SIGTERM);
+        usleep(100000);
+        kill(mount_pid, SIGKILL);
+    }
+    mount_status = secdat_fuse_wait_for_child(mount_pid, "secdat-fuse mount process");
+
+    if (command_status != 0) {
+        return command_status;
+    }
+    if (unmount_status != 0) {
+        return 1;
+    }
+    return mount_status == 0 ? 0 : 1;
+}
+
+int main(int argc, char **argv)
+{
+    struct secdat_fuse_state state;
     int status;
 
     secdat_fuse_i18n_init();
@@ -975,19 +1192,13 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    fuse_argv[fuse_argc++] = argv[0];
-    if (state.foreground) {
-        fuse_argv[fuse_argc++] = foreground_option;
+    if (state.command_argv != NULL) {
+        status = secdat_fuse_run_command_mode(&state, argv[0]);
+        secdat_fuse_state_clear(&state);
+        return status;
     }
-    if (state.debug) {
-        fuse_argv[fuse_argc++] = debug_option;
-    }
-    fuse_argv[fuse_argc++] = option_flag;
-    fuse_argv[fuse_argc++] = mount_options;
-    fuse_argv[fuse_argc++] = (char *)state.mountpoint;
-    fuse_argv[fuse_argc] = NULL;
 
-    status = fuse_main(fuse_argc, fuse_argv, &secdat_fuse_operations, &state);
+    status = secdat_fuse_run_fuse_main(&state, argv[0], 0);
     secdat_fuse_state_clear(&state);
     return status;
 }

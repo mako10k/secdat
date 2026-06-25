@@ -6,8 +6,11 @@ secdat-fuse \- mount selected secdat keys as read-only files
 [\-d DIR|\-\-dir DIR] [\-\-domain DIR] [\-s STORE|\-\-store STORE]
 [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]...
 [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN]...
-[\-\-sandbox-injectable] [\-\-require-key KEY]... [\-\-dry-run] [\-\-json] [\-f|\-\-foreground] [\-\-debug]
+[\-\-sandbox-injectable] [\-\-require-key KEY]... [\-\-dry-run] [\-\-json] [\-\-size-metadata] [\-f|\-\-foreground] [\-\-debug]
 .I MOUNTPOINT
+[\-\-
+.I CMD
+.RI [ ARGS ...]]
 .SH DESCRIPTION
 .B secdat-fuse
 is an optional FUSE 3 helper built only when
@@ -19,8 +22,21 @@ It exposes the selected visible keys as read-only files under
 File reads decrypt values through the public
 .B libsecdat
 SDK; the helper does not read store internals directly.
+File metadata reports size 0 by default so metadata lookup does not read or decrypt secret values.
 .PP
 The helper is intentionally read-only. It does not support writes, creates, deletes, renames, chmod, chown, or truncation through the mounted filesystem.
+.PP
+When
+.I CMD
+is provided after
+.I MOUNTPOINT
+and
+.BR \-\- ,
+the helper mounts in a child foreground FUSE process, waits for readiness, runs
+.IR CMD ,
+unmounts with
+.BR fusermount3 " " \-u ,
+and then waits for the mount process to exit. Command mode returns the command status, except that cleanup failure after a successful command returns failure.
 .SH OPTIONS
 .TP
 .B \-d, \-\-dir DIR
@@ -53,6 +69,9 @@ Print the mountpoint and selected file names without mounting or reading secret 
 Write dry-run output as JSON. Requires
 .BR \-\-dry-run .
 .TP
+.B \-\-size-metadata
+Report real file sizes by reading secret values during metadata lookup. This makes stat-like operations decrypt plaintext, and repeated metadata calls may repeat that work because FUSE caching is disabled.
+.TP
 .B \-f, \-\-foreground
 Keep the FUSE process in the foreground.
 .TP
@@ -65,7 +84,9 @@ Show usage.
 .B \-V, \-\-version
 Print the secdat-fuse version.
 .SH SECURITY
-Mounting secrets as files exposes plaintext values through normal file reads. Use a private mountpoint, leave
+Mounting secrets as files exposes plaintext values through normal file reads. With
+.BR \-\-size-metadata ,
+plaintext is also read transiently for file metadata requests. Use a private mountpoint, leave
 .B allow_other
 disabled, and unmount promptly after the consuming process no longer needs the files. The helper disables kernel caching for the mounted filesystem, but plaintext can still exist transiently in process memory and reader buffers.
 .SH EXAMPLES
@@ -73,6 +94,8 @@ disabled, and unmount promptly after the consuming process no longer needs the f
 secdat-fuse --dir ~/project --pattern 'APP_*' --dry-run /tmp/secdat-app
 secdat-fuse --dir ~/project --pattern 'APP_*' --require-key APP_TOKEN --dry-run --json /tmp/secdat-app
 secdat-fuse --dir ~/project --pattern 'APP_*' --foreground /tmp/secdat-app
+secdat-fuse --dir ~/project --pattern 'APP_*' --size-metadata /tmp/secdat-app
+secdat-fuse --dir ~/project --pattern 'APP_*' /tmp/secdat-app -- sh -c 'cat /tmp/secdat-app/APP_TOKEN >/dev/null'
 .fi
 .SH SEE ALSO
 .BR secdat (1)

@@ -217,6 +217,10 @@ rc, stdout, stderr = run([fuse_bin, "--json", str(mountpoint)])
 if rc == 0 or "--json requires --dry-run" not in stderr:
     fail(f"secdat-fuse --json without --dry-run did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([fuse_bin, "--dir", str(domain), "--dry-run", str(mountpoint), "--", "true"])
+if rc == 0 or stdout != "" or "invalid arguments" not in stderr:
+    fail(f"secdat-fuse dry-run command mode did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([
     fuse_bin,
     "--domain",
@@ -253,6 +257,7 @@ rc, stdout, stderr = run([
 if rc != 0 or stderr != "" or "file_count: 1\n" not in stdout or "FUSE_TOKEN\n" not in stdout:
     fail(f"secdat-fuse relative --dir dry-run failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+live_mount_available = False
 if Path("/dev/fuse").exists() and shutil.which("fusermount3") is not None:
     process = subprocess.Popen(
         [
@@ -278,8 +283,11 @@ if Path("/dev/fuse").exists() and shutil.which("fusermount3") is not None:
                 break
             time.sleep(0.1)
         if process.poll() is None and mounted_file.exists():
+            if mounted_file.stat().st_size != 0:
+                fail("mounted FUSE_TOKEN reported nonzero size without --size-metadata")
             if mounted_file.read_text() != "fuse-secret":
                 fail("mounted FUSE_TOKEN did not expose expected value")
+            live_mount_available = True
             try:
                 (mountpoint / "OTHER_TOKEN").read_text()
                 fail("mounted filesystem exposed a key outside the filters")
@@ -306,6 +314,44 @@ if Path("/dev/fuse").exists() and shutil.which("fusermount3") is not None:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+
+if live_mount_available:
+    rc, stdout, stderr = run([
+        fuse_bin,
+        "--dir",
+        str(domain),
+        "--pattern",
+        "FUSE_TOKEN",
+        str(mountpoint),
+        "--",
+        "python3",
+        "-c",
+        "from pathlib import Path; import sys; print(Path(sys.argv[1]).read_text(), end='')",
+        str(mountpoint / "FUSE_TOKEN"),
+    ])
+    if rc != 0 or stdout != "fuse-secret":
+        fail(f"secdat-fuse command mode failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    if (mountpoint / "FUSE_TOKEN").exists():
+        fail("secdat-fuse command mode left the mount active after command exit")
+
+    rc, stdout, stderr = run([
+        fuse_bin,
+        "--dir",
+        str(domain),
+        "--pattern",
+        "FUSE_TOKEN",
+        "--size-metadata",
+        str(mountpoint),
+        "--",
+        "python3",
+        "-c",
+        "from pathlib import Path; import sys; print(Path(sys.argv[1]).stat().st_size, end='')",
+        str(mountpoint / "FUSE_TOKEN"),
+    ])
+    if rc != 0 or stdout != str(len("fuse-secret")):
+        fail(f"secdat-fuse size metadata mode failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    if (mountpoint / "FUSE_TOKEN").exists():
+        fail("secdat-fuse size metadata command mode left the mount active after command exit")
 
 rc, stdout, stderr = run([fuse_bin, "--dry-run"])
 if rc == 0 or "missing mountpoint" not in stderr:
