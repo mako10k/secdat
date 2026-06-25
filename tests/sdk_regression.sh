@@ -9,7 +9,9 @@ fail() {
     exit 1
 }
 
-repo_root="$(cd "$(dirname "$bin_path")/.." && pwd)"
+build_root="$(cd "$(dirname "$bin_path")/.." && pwd)"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source_root="$(cd "$script_dir/.." && pwd)"
 work_root="$(mktemp -d)"
 trap 'rm -rf "$work_root"' EXIT
 
@@ -250,9 +252,9 @@ int main(int argc, char **argv)
 }
 C
 
-cc -I"$repo_root/src" "$work_root/sdk_harness.c" \
-    -L"$repo_root/src/.libs" -lsecdat -lssl -lcrypto \
-    -Wl,-rpath,"$repo_root/src/.libs" \
+cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_harness.c" \
+    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -Wl,-rpath,"$build_root/src/.libs" \
     -o "$work_root/sdk_harness"
 
 "$work_root/sdk_harness" "$root_domain" "$child_domain" "$orphaned_child_domain"
