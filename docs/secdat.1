@@ -344,8 +344,16 @@ rows for legacy entry files that still provide the only value material because t
 remove removable legacy fallback files only when no blockers remain; if any blocker is present, report it and remove nothing.
 The intended sequence is migrate dry-run, migrate, v2 fsck, rewrite or remove fallback-backed values, finalize dry-run, then finalize.
 .TP
-.B domain create|delete|status
+.B domain create|delete|move|status
 Manage domain roots and resolution state.
+.TP
+.B domain move \-\-from OLD_ROOT [\-\-to NEW_ROOT] [\-\-allow-same-root]
+Update a registered domain root path and root identity metadata without changing the domain ID or deleting stored secrets. If
+.B \-\-to
+is omitted, the destination is the scoped directory from
+.B \-\-dir
+or the current working directory. Moving to the same recreated root requires
+.BR \-\-allow-same-root .
 .TP
 .B domain ls [\-l|\-\-long] [\-a|\-\-inherited] [\-A|\-\-ancestors] [\-R|\-\-descendants] [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-json]
 List domain roots around the scoped directory. Use
@@ -367,6 +375,15 @@ for stable rows with root, key source, effective state/source, related domain, e
 .TP
 .B domain status [\-q|\-\-quiet|\-\-json]
 Report the resolved domain for the current context along with store count, visible key count, key source, wrapped-key presence, and effective access state. Effective access distinguishes environment, local unlock, inherited unlock, local lock, and inherited-lock outcomes.
+New domains record root-directory device/inode identity; when that metadata exists and the registered path now points at a different directory or a symbolic link,
+.B domain status
+and normal domain resolution fail closed with an identity mismatch.
+Stale registered roots remain visible in
+.B domain ls
+long output as orphaned-domain rows and can be recovered with
+.B domain move
+or discarded with
+.BR "domain delete" .
 When a session is active, the output also includes the remaining unlock time in a compact form such as
 .B 1h59m
 or
@@ -490,6 +507,7 @@ secdat relation search kind=credential security=combination-*
 secdat relation suggest-refresh BILLING_PASSWORD
 secdat relation show billing-login
 secdat --dir ~/project domain create
+secdat --dir ~/project-restored domain move --from ~/project
 secdat --dir ~/project/service domain status
 secdat --dir ~/project/service domain status --json
 secdat status --json

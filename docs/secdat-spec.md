@@ -79,7 +79,7 @@ secdat [--dir DIR] [--store STORE] ln SRC_KEYREF|@UUID DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 
-secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--foreground] [--debug] MOUNTPOINT
+secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--size-metadata] [--foreground] [--debug] MOUNTPOINT [-- CMD [ARGS...]]
 
 secdat [--dir DIR] unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH]
 secdat [--dir DIR] inherit
@@ -98,6 +98,7 @@ secdat [--dir DIR] [--store STORE] secret status UUID
 
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
+secdat [--dir DIR] domain move --from OLD_ROOT [--to NEW_ROOT] [--allow-same-root]
 secdat [--dir DIR] domain ls [-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]
 secdat [--dir DIR|--domain DIR] domain status [--quiet|--json]
 
@@ -309,6 +310,9 @@ To make the requested behavior implementable, the following are treated as norma
 - repeated `--pattern` options are ORed, repeated `--pattern-exclude` options subtract matches afterward, and `--sandbox-injectable` further limits the mounted file set
 - repeated `--require-key KEY` options refuse dry-runs and mounts unless every named key remains selected after filters
 - `--dry-run MOUNTPOINT` prints the selected file names without mounting or reading secret values; `--dry-run --json MOUNTPOINT` reports the same preflight shape as JSON
+- `MOUNTPOINT -- CMD [ARGS...]` mounts in a child foreground FUSE process, runs `CMD`, then unmounts `MOUNTPOINT` with `fusermount3 -u`
+- command mode returns the command status, except that a successful command followed by unmount or mount-process cleanup failure returns failure
+- file metadata reports size 0 by default without reading or decrypting secret values; `--size-metadata` opts in to reading secret values during `getattr` so consumers can see real file sizes
 - writes, creates, deletes, renames, chmod, chown, and truncation through the mount fail as read-only operations
 - real mounts expose plaintext values through normal file reads, so the mountpoint should be private and `allow_other` should remain disabled by default
 
@@ -536,6 +540,11 @@ To make the requested behavior implementable, the following are treated as norma
 - creating a domain for a directory that already has a domain is an error
 - `secdat [--dir DIR] domain delete` deletes the domain definition for the target directory
 - `domain delete` does not modify parent-domain data
+- `secdat [--dir DIR] domain move --from OLD_ROOT [--to NEW_ROOT]` moves an existing registered domain root to another existing directory without changing the domain ID or deleting store data
+- `domain move --from OLD_ROOT` uses `--dir DIR` or the current working directory as the destination when `--to` is omitted
+- `domain move` requires `OLD_ROOT` to be an explicit registered root path; this remains usable when that old directory no longer exists
+- `domain move --from OLD_ROOT --to OLD_ROOT` or an equivalent current-directory refresh requires `--allow-same-root`, and refreshes root identity metadata for the recreated directory
+- `domain move` fails if the destination root is already registered to a different domain
 - `secdat domain ls` without `--dir` uses the current working directory as the listing scope
 - `secdat domain ls PATTERN` and `secdat domain ls --pattern PATTERN` are equivalent
 - `secdat --dir DIR domain ls` restricts the listing scope to ancestor domains of `DIR`, the domain rooted at `DIR` itself, and descendant domains under `DIR`
@@ -567,7 +576,10 @@ To make the requested behavior implementable, the following are treated as norma
 - `set`, `mv`, `cp`, and `rm` apply changes to the current domain only
 - `store create`, `store delete`, `store ls`, and `store migrate` apply to the current domain only
 - for `domain create` and `domain delete`, `--dir` identifies the target directory
+- for `domain move`, `--from OLD_ROOT` identifies the source registered root, and `--to NEW_ROOT` or `--dir DIR` identifies the destination directory
 - for `domain ls`, `--dir` identifies the directory that constrains the listing scope; when omitted, that scope starts at the current working directory
+- newly created domains store the device and inode of the resolved root directory; when identity metadata exists, normal `--dir` and cwd resolution fails closed if the registered root path now points to a different directory or is replaced by a symbolic link
+- stale registered roots remain visible in `domain ls -l` as orphaned-domain rows; `domain move` can recover the existing domain state at a new or recreated root, while `domain delete` can discard the stale registration and stored domain state
 
 #### FR-12 Inheritance and Tombstones
 
@@ -668,6 +680,7 @@ secdat [--dir DIR] [--store STORE] <command> [options] [args]
 - `--version` prints the package version and, when Git metadata is available at build time, a short build identifier with `-dirty` appended for uncommitted worktrees
 - for store commands, `--dir` changes the directory context used for domain resolution
 - for `domain create` and `domain delete`, `--dir` selects the target directory
+- for `domain move`, `--from OLD_ROOT` selects the registered source root, and `--to NEW_ROOT` or `--dir DIR` selects the destination directory
 - for `domain ls`, `--dir` constrains the visible domain listing to ancestors, self, and descendants of the specified directory
 - if `--dir` is omitted, domain resolution starts from the current working directory
 - `--store` must appear before the command name
@@ -823,7 +836,7 @@ Examples:
 ### 4.8a `secdat-fuse`
 
 ```text
-secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--foreground] [--debug] MOUNTPOINT
+secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--size-metadata] [--foreground] [--debug] MOUNTPOINT [-- CMD [ARGS...]]
 ```
 
 - this command is built only when configured with `--enable-fuse`
@@ -832,8 +845,11 @@ secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... 
 - `--require-key KEY` may be repeated and fails before mounting when any required key is absent from the final selected file set
 - `--dry-run` prints the mountpoint, selected file count, and file names without mounting or reading values
 - `--dry-run --json` writes `ok`, `mountpoint`, `file_count`, `files`, include/exclude patterns, `sandbox_injectable`, required keys, and missing required keys as JSON
+- with `-- CMD [ARGS...]` after `MOUNTPOINT`, the helper mounts, waits for FUSE readiness, runs `CMD`, unmounts with `fusermount3 -u`, and then waits for the mount process to exit
+- `--dry-run` cannot be combined with command mode
 - file names are key names; file reads return the corresponding secret value bytes
 - file metadata reports regular read-only files without decrypting values for size discovery
+- `--size-metadata` changes file metadata to report real secret byte lengths by reading and clearing each value during `getattr`; this can make stat-like operations decrypt plaintext, and repeated metadata calls may repeat that work because FUSE caching is disabled
 - write-like filesystem operations return read-only errors
 
 ### 4.9 `domain`
@@ -841,12 +857,14 @@ secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... 
 ```text
 secdat [--dir DIR] domain create
 secdat [--dir DIR] domain delete
+secdat [--dir DIR] domain move --from OLD_ROOT [--to NEW_ROOT] [--allow-same-root]
 secdat [--dir DIR] domain ls [-l|--long] [-a|--inherited] [--ancestors] [--descendants] [--pattern GLOBPATTERN]
 secdat [--dir DIR] domain status [--quiet|--json]
 ```
 
 - `create` registers a domain rooted at the target directory
 - `delete` removes the domain definition for the target directory
+- `move` updates the registered root path and root identity metadata for an existing domain while preserving its stores and secrets
 - `ls` without `--dir` uses the current working directory as the listing scope
 - `domain ls --pattern` filters domain roots using a glob pattern
 - `domain ls -a` / `--inherited` adds the inherited parent chain for the current scope and may include a `*default*` fallback row when the user-global fallback scope participates in that chain
@@ -918,6 +936,7 @@ If `XDG_DATA_HOME` is not set, use `~/.local/share`.
 Notes:
 
 - `registry` maps absolute domain-root paths to domain IDs
+- `by-id/<id>/meta/root` stores the registered root path, and `by-id/<id>/meta/root-identity` stores the root directory device/inode for new domains
 - `default` is the per-user fallback domain that is not bound to any directory path
 - key names are escaped before being used as file names
 - `entries` remains flat for implementation simplicity
@@ -1016,9 +1035,10 @@ Responsibilities:
 #### `domain create`
 
 1. canonicalize the target directory to an absolute path
-2. verify that no domain is already registered for that path
-3. allocate a new domain ID
-4. create the registry entry and `by-id/<id>` state atomically
+2. record the target directory identity from `stat(2)` metadata
+3. verify that no domain is already registered for that path
+4. allocate a new domain ID
+5. create the registry entry and `by-id/<id>` state atomically, including root path and root identity metadata
 
 #### `domain delete`
 
@@ -1026,6 +1046,15 @@ Responsibilities:
 2. check whether child domains exist
 3. if allowed, remove the registry entry
 4. remove the corresponding on-disk state
+
+#### `domain move`
+
+1. normalize `--from OLD_ROOT` as an absolute registered root path without requiring the old directory to exist
+2. look up the existing domain ID from the registered source root
+3. canonicalize `--to NEW_ROOT`, or `--dir` / cwd when `--to` is omitted, to an existing destination directory
+4. fail if the destination is already registered to a different domain
+5. fail if source and destination roots are the same unless `--allow-same-root` is present
+6. write the destination registry entry, update `by-id/<id>/meta/root` and `meta/root-identity`, and then remove the old registry entry when the roots differ
 
 #### `domain ls`
 
@@ -1042,11 +1071,12 @@ Responsibilities:
 
 1. resolve the current domain from `--dir` or the current working directory using the same rule as normal store commands
 2. compute the resolved domain root path, or an emphasized fallback label such as `*default*` when no registered domain applies; that label means no registered domain resolved and the top-level inherited fallback scope is active
-3. count current-domain stores and currently visible keys for that context
-4. report whether key material currently comes from the environment, a session agent, or neither
-5. report whether effective access is unlocked via environment, local session, inherited session, or locked due to default locking, an explicit lock, or an explicit-lock block higher in the domain chain
-6. in `--quiet` mode, print only the resolved domain root identifier
-7. in `--json` mode, print stable machine-readable fields instead of human labels
+3. fail before reporting status if the registered root path has identity metadata and now points to a different directory
+4. count current-domain stores and currently visible keys for that context
+5. report whether key material currently comes from the environment, a session agent, or neither
+6. report whether effective access is unlocked via environment, local session, inherited session, or locked due to default locking, an explicit lock, or an explicit-lock block higher in the domain chain
+7. in `--quiet` mode, print only the resolved domain root identifier
+8. in `--json` mode, print stable machine-readable fields instead of human labels
 
 #### `unlock`
 
