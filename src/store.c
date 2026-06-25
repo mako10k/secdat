@@ -1227,8 +1227,10 @@ static void secdat_print_unlock_guidance(const char *current_domain_root)
     struct secdat_domain_status_summary summary;
     const size_t preview_limit = 3;
     const char *first_affected = NULL;
+    const char *first_orphaned = NULL;
     size_t descendant_count = 0;
     size_t affected_count = 0;
+    size_t orphaned_count = 0;
     size_t preview_count = 0;
     size_t index;
 
@@ -1243,6 +1245,20 @@ static void secdat_print_unlock_guidance(const char *current_domain_root)
     for (index = 0; index < descendants.count; index += 1) {
         if (strcmp(descendants.roots[index], current_domain_root) == 0) {
             continue;
+        }
+        {
+            int stale = 0;
+
+            if (secdat_domain_registered_root_is_stale(descendants.roots[index], &stale) != 0) {
+                continue;
+            }
+            if (stale) {
+                if (first_orphaned == NULL) {
+                    first_orphaned = descendants.roots[index];
+                }
+                orphaned_count += 1;
+                continue;
+            }
         }
         descendant_count += 1;
         if (secdat_collect_domain_status_summary(descendants.roots[index], &summary) != 0) {
@@ -1263,6 +1279,13 @@ static void secdat_print_unlock_guidance(const char *current_domain_root)
         if (descendant_count > 0) {
             printf(_("note: %zu descendant domains can now reuse this session\n"), descendant_count);
         }
+        if (orphaned_count > 0) {
+            printf(_("note: %zu orphaned descendant domains are not affected by unlock\n"), orphaned_count);
+            if (first_orphaned != NULL) {
+                printf(_("recover or delete orphaned descendant: secdat domain move --from %s --to NEW_ROOT\n"), first_orphaned);
+                printf(_("discard orphaned descendant: secdat --dir %s domain delete\n"), first_orphaned);
+            }
+        }
         secdat_domain_root_list_free(&descendants);
         return;
     }
@@ -1272,6 +1295,13 @@ static void secdat_print_unlock_guidance(const char *current_domain_root)
     for (index = 0; index < descendants.count && preview_count < preview_limit; index += 1) {
         if (strcmp(descendants.roots[index], current_domain_root) == 0) {
             continue;
+        }
+        {
+            int stale = 0;
+
+            if (secdat_domain_registered_root_is_stale(descendants.roots[index], &stale) != 0 || stale) {
+                continue;
+            }
         }
         if (secdat_collect_domain_status_summary(descendants.roots[index], &summary) != 0) {
             continue;
@@ -1285,6 +1315,13 @@ static void secdat_print_unlock_guidance(const char *current_domain_root)
     }
     if (affected_count > preview_limit) {
         printf(_("  ... and %zu more\n"), affected_count - preview_limit);
+    }
+    if (orphaned_count > 0) {
+        printf(_("note: %zu orphaned descendant domains are not affected by unlock\n"), orphaned_count);
+        if (first_orphaned != NULL) {
+            printf(_("recover or delete orphaned descendant: secdat domain move --from %s --to NEW_ROOT\n"), first_orphaned);
+            printf(_("discard orphaned descendant: secdat --dir %s domain delete\n"), first_orphaned);
+        }
     }
 
     printf(_("inspect descendants: secdat --dir %s domain ls -l --descendants\n"), current_domain_root);
@@ -1342,6 +1379,8 @@ const char *secdat_key_source_json_name(enum secdat_key_source_type source)
         return "environment";
     case SECDAT_KEY_SOURCE_SESSION:
         return "session";
+    case SECDAT_KEY_SOURCE_ORPHANED:
+        return "orphaned";
     default:
         return "locked";
     }
@@ -1360,6 +1399,8 @@ const char *secdat_effective_source_json_name(enum secdat_effective_source_type 
         return "local_lock";
     case SECDAT_EFFECTIVE_SOURCE_BLOCKED:
         return "inherited_lock";
+    case SECDAT_EFFECTIVE_SOURCE_ORPHANED:
+        return "orphaned_domain";
     default:
         return "locked";
     }
@@ -1367,6 +1408,9 @@ const char *secdat_effective_source_json_name(enum secdat_effective_source_type 
 
 const char *secdat_effective_state_json_name(enum secdat_effective_source_type source)
 {
+    if (source == SECDAT_EFFECTIVE_SOURCE_ORPHANED) {
+        return "orphaned";
+    }
     return source == SECDAT_EFFECTIVE_SOURCE_ENVIRONMENT
             || source == SECDAT_EFFECTIVE_SOURCE_LOCAL_SESSION
             || source == SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION
@@ -2408,6 +2452,23 @@ static int secdat_parse_lock_options(const struct secdat_cli *cli, struct secdat
     return 0;
 }
 
+static int secdat_fail_if_orphaned_descendant_unlock_target(const char *root_path)
+{
+    int stale = 0;
+
+    if (secdat_domain_registered_root_is_stale(root_path, &stale) != 0) {
+        return 1;
+    }
+    if (!stale) {
+        return 0;
+    }
+
+    fprintf(stderr, _("cannot unlock descendant domains because an orphaned registered domain is in this subtree: %s\n"), root_path);
+    fprintf(stderr, _("recover it with: secdat domain move --from %s --to NEW_ROOT\n"), root_path);
+    fprintf(stderr, _("or discard it with: secdat --dir %s domain delete\n"), root_path);
+    return 1;
+}
+
 static int secdat_collect_locked_descendant_roots(
     const char *current_domain_root,
     struct secdat_domain_root_list *targets,
@@ -2432,6 +2493,11 @@ static int secdat_collect_locked_descendant_roots(
     for (index = 0; index < descendants.count; index += 1) {
         if (strcmp(descendants.roots[index], current_domain_root) == 0) {
             continue;
+        }
+        if (secdat_fail_if_orphaned_descendant_unlock_target(descendants.roots[index]) != 0) {
+            secdat_domain_root_list_free(&descendants);
+            secdat_domain_root_list_free(targets);
+            return 1;
         }
         if (secdat_collect_domain_status_summary(descendants.roots[index], &summary) != 0) {
             secdat_domain_root_list_free(&descendants);
@@ -6967,6 +7033,15 @@ cleanup:
     return status;
 }
 
+static void secdat_domain_status_summary_mark_orphaned(struct secdat_domain_status_summary *summary)
+{
+    summary->orphaned_domain = 1;
+    summary->key_source = SECDAT_KEY_SOURCE_ORPHANED;
+    summary->effective_source = SECDAT_EFFECTIVE_SOURCE_ORPHANED;
+    summary->session_expires_at = 0;
+    summary->related_domain_root[0] = '\0';
+}
+
 int secdat_collect_domain_status_summary(const char *dir_override, struct secdat_domain_status_summary *summary)
 {
     struct secdat_domain_chain chain = {0};
@@ -6996,7 +7071,7 @@ int secdat_collect_registered_domain_status_summary(const char *registered_root,
 
     status = secdat_collect_domain_status_summary_for_chain(&chain, summary);
     if (status == 0 && stale) {
-        summary->orphaned_domain = 1;
+        secdat_domain_status_summary_mark_orphaned(summary);
     }
     secdat_domain_chain_free(&chain);
     return status;
@@ -8187,6 +8262,7 @@ static void secdat_print_json_nullable_remaining_field(const char *name, time_t 
 
 static void secdat_print_status_json(
     const char *resolved_domain,
+    const char *resolution_error,
     enum secdat_key_source_type key_source,
     enum secdat_effective_source_type effective_source,
     time_t session_expires_at,
@@ -8199,6 +8275,7 @@ static void secdat_print_status_json(
 {
     fputs("{\n", stdout);
     secdat_print_json_nullable_string_field("resolved_domain", resolved_domain, 1);
+    secdat_print_json_nullable_string_field("resolution_error", resolution_error, 1);
     printf("  \"unlocked\": %s,\n", strcmp(secdat_effective_state_json_name(effective_source), "unlocked") == 0 ? "true" : "false");
     printf("  \"key_source\": ");
     secdat_write_json_string(stdout, secdat_key_source_json_name(key_source));
@@ -8248,11 +8325,28 @@ static int secdat_command_status_json(const struct secdat_cli *cli, int wrapped_
         }
     }
 
+    if (!chain_resolved) {
+        secdat_print_status_json(
+            NULL,
+            "domain_resolution_failed",
+            key_source,
+            effective_source,
+            0,
+            NULL,
+            NULL,
+            wrapped_present,
+            0,
+            0);
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
+
     if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
         key_source = SECDAT_KEY_SOURCE_ENVIRONMENT;
         effective_source = SECDAT_EFFECTIVE_SOURCE_ENVIRONMENT;
         secdat_print_status_json(
             resolved_domain[0] != '\0' ? resolved_domain : NULL,
+            NULL,
             key_source,
             effective_source,
             0,
@@ -8294,6 +8388,7 @@ static int secdat_command_status_json(const struct secdat_cli *cli, int wrapped_
 
     secdat_print_status_json(
         resolved_domain[0] != '\0' ? resolved_domain : NULL,
+        NULL,
         key_source,
         effective_source,
         session_expires_at,

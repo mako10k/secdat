@@ -56,6 +56,7 @@ root_domain = isolated_root / "domain-root"
 child_domain = root_domain / "child-domain"
 grandchild_domain = child_domain / "grandchild-domain"
 sibling_domain = isolated_root / "sibling-domain"
+orphaned_descendant_domain = root_domain / "orphaned-descendant-domain"
 askpass_path = isolated_root / "askpass.py"
 cancel_askpass_path = isolated_root / "cancel-askpass.py"
 unsupported_askpass_path = isolated_root / "unsupported-askpass.py"
@@ -1308,6 +1309,26 @@ assert_contains(stdout, "effective source: local unlock\n", "grandchild local st
 rc, stdout, stderr = run(scoped(["status", "-q"], sibling_domain))
 if rc != 1 or stdout != "" or stderr != "":
     fail(f"sibling unexpectedly unlocked by child session: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+orphaned_descendant_domain.mkdir()
+rc, stdout, stderr = run(
+    scoped(["domain", "create"], orphaned_descendant_domain),
+    {"SECDAT_MASTER_KEY": "orphaned-descendant-master-key"},
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"orphaned descendant domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+orphaned_descendant_domain.rmdir()
+
+rc, stdout, stderr = run(scoped(["unlock", "--descendants", "--yes"], root_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+if rc == 0 or stdout != "":
+    fail(f"descendant unlock with orphaned domain should fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(
+    stderr,
+    f"cannot unlock descendant domains because an orphaned registered domain is in this subtree: {orphaned_descendant_domain}\n",
+    "orphaned descendant unlock error",
+)
+assert_contains(stderr, f"recover it with: secdat domain move --from {orphaned_descendant_domain} --to NEW_ROOT\n", "orphaned descendant recovery guidance")
+assert_contains(stderr, f"or discard it with: secdat --dir {orphaned_descendant_domain} domain delete\n", "orphaned descendant delete guidance")
 
 new_passphrase = "rotated-passphrase-for-session-test"
 rc, transcript = run_pty(

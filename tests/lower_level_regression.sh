@@ -19,6 +19,7 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 python3 - "$bin_path" <<'PY'
 import os
 import pty
+import json
 import subprocess
 import sys
 import unicodedata
@@ -153,6 +154,22 @@ rc, stdout, stderr = run([bin_path, "--dir", str(work_root), "domain", "ls", "-l
 if rc != 0 or stderr != "":
     fail(f"domain ls -l with orphaned root failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, f"{orphaned_domain}\torphaned\torphaned\t-\torphaned-domain\t1\t1\tpresent", "domain ls orphaned row")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(work_root), "domain", "ls", "--json", "--descendants"])
+if rc != 0 or stderr != "":
+    fail(f"domain ls --json with orphaned root failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+domain_rows = json.loads(stdout)["domains"]
+orphaned_rows = [row for row in domain_rows if row["root"] == str(orphaned_domain)]
+if len(orphaned_rows) != 1:
+    fail(f"domain ls --json orphaned row count mismatch: {domain_rows!r}")
+orphaned_row = orphaned_rows[0]
+if orphaned_row["unlocked"]:
+    fail(f"orphaned domain JSON row must not be unlocked: {orphaned_row!r}")
+assert_eq(orphaned_row["key_source"], "orphaned", "orphaned domain JSON key source")
+assert_eq(orphaned_row["effective_state"], "orphaned", "orphaned domain JSON effective state")
+assert_eq(orphaned_row["effective_source"], "orphaned_domain", "orphaned domain JSON effective source")
+if orphaned_row["session_expires_at"] is not None or orphaned_row["remaining_seconds"] is not None or orphaned_row["related_domain"] is not None:
+    fail(f"orphaned domain JSON row must not expose session inheritance: {orphaned_row!r}")
 
 rc, transcript = run_pty([bin_path, "--dir", str(work_root), "domain", "ls", "-l"])
 if rc != 0:
@@ -350,6 +367,13 @@ mismatch_domain.mkdir()
 rc, stdout, stderr = run(scoped(["domain", "status", "--quiet"], mismatch_domain))
 if rc == 0 or stdout != "" or f"domain root identity mismatch for: {mismatch_domain}\n" not in stderr:
     fail(f"replacement domain did not fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status", "--json"], mismatch_domain))
+if rc == 0 or f"domain root identity mismatch for: {mismatch_domain}\n" not in stderr:
+    fail(f"status --json did not fail closed on identity mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+mismatch_status = json.loads(stdout)
+if mismatch_status["unlocked"] or mismatch_status["resolution_error"] != "domain_resolution_failed" or mismatch_status["resolved_domain"] is not None:
+    fail(f"status --json did not expose resolution failure: {mismatch_status!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(work_root), "domain", "ls", "-l", "--descendants"])
 if rc != 0 or stderr != "":

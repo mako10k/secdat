@@ -20,6 +20,7 @@ enum secdat_sdk_key_source_type {
     SECDAT_SDK_KEY_SOURCE_LOCKED = 0,
     SECDAT_SDK_KEY_SOURCE_ENVIRONMENT,
     SECDAT_SDK_KEY_SOURCE_SESSION,
+    SECDAT_SDK_KEY_SOURCE_ORPHANED,
 };
 
 enum secdat_sdk_effective_source_type {
@@ -29,6 +30,7 @@ enum secdat_sdk_effective_source_type {
     SECDAT_SDK_EFFECTIVE_SOURCE_INHERITED_SESSION,
     SECDAT_SDK_EFFECTIVE_SOURCE_EXPLICIT_LOCK,
     SECDAT_SDK_EFFECTIVE_SOURCE_BLOCKED,
+    SECDAT_SDK_EFFECTIVE_SOURCE_ORPHANED,
 };
 
 struct secdat_sdk_options {

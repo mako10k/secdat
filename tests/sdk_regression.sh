@@ -22,7 +22,8 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
 root_domain="$work_root/root"
 child_domain="$root_domain/child"
-mkdir -p "$root_domain" "$child_domain"
+orphaned_child_domain="$root_domain/orphaned-child"
+mkdir -p "$root_domain" "$child_domain" "$orphaned_child_domain"
 
 run_secdat() {
     local stdout_path="$work_root/stdout"
@@ -40,9 +41,12 @@ run_secdat() {
 
 run_secdat --dir "$root_domain" domain create
 run_secdat --dir "$child_domain" domain create
+run_secdat --dir "$orphaned_child_domain" domain create
 run_secdat --dir "$root_domain" store create team
 run_secdat --dir "$root_domain" --store team set API_TOKEN --value sdk-secret-value
 run_secdat --dir "$root_domain" --store team set PUBLIC_URL --unsafe --value public-secret-value
+run_secdat --dir "$orphaned_child_domain" set ORPHANED_SDK_KEY --value orphaned-sdk-value
+rmdir "$orphaned_child_domain"
 
 cat >"$work_root/sdk_harness.c" <<'C'
 #include "secdat-sdk.h"
@@ -116,10 +120,26 @@ static int contains_domain(const struct secdat_sdk_domain_metadata_list *list, c
     return 0;
 }
 
+static const struct secdat_sdk_domain_metadata *find_domain(
+    const struct secdat_sdk_domain_metadata_list *list,
+    const char *root
+)
+{
+    size_t index;
+
+    for (index = 0; index < list->count; index += 1) {
+        if (strcmp(list->items[index].root, root) == 0) {
+            return &list->items[index];
+        }
+    }
+    return NULL;
+}
+
 int main(int argc, char **argv)
 {
     const char *root;
     const char *child;
+    const char *orphaned_child;
     struct secdat_sdk_options root_options = {0};
     struct secdat_sdk_options child_options = {0};
     struct secdat_sdk_list_filters public_filter = {0};
@@ -131,13 +151,15 @@ int main(int argc, char **argv)
     struct secdat_sdk_domain_metadata_list domains = {0};
     const struct secdat_sdk_key_metadata *api_token;
     const struct secdat_sdk_key_metadata *public_url;
+    const struct secdat_sdk_domain_metadata *orphaned_domain;
     size_t index;
 
-    if (argc != 3) {
-        fail("expected root and child paths");
+    if (argc != 4) {
+        fail("expected root, child, and orphaned child paths");
     }
     root = argv[1];
     child = argv[2];
+    orphaned_child = argv[3];
     root_options.dir = root;
     root_options.store = "team";
     child_options.dir = child;
@@ -204,6 +226,19 @@ int main(int argc, char **argv)
     if (!contains_domain(&domains, root) || !contains_domain(&domains, child)) {
         fail("domain metadata did not include root and child");
     }
+    orphaned_domain = find_domain(&domains, orphaned_child);
+    if (orphaned_domain == NULL) {
+        fail("domain metadata did not include orphaned child");
+    }
+    if (!orphaned_domain->orphaned_domain
+        || orphaned_domain->unlocked
+        || orphaned_domain->key_source != SECDAT_SDK_KEY_SOURCE_ORPHANED
+        || orphaned_domain->effective_source != SECDAT_SDK_EFFECTIVE_SOURCE_ORPHANED
+        || orphaned_domain->session_expires_at != 0
+        || orphaned_domain->remaining_seconds != 0
+        || orphaned_domain->related_domain_root[0] != '\0') {
+        fail("orphaned domain metadata exposed unlock state");
+    }
     secdat_sdk_free(domains.items);
 
     unsetenv("SECDAT_MASTER_KEY");
@@ -220,4 +255,4 @@ cc -I"$repo_root/src" "$work_root/sdk_harness.c" \
     -Wl,-rpath,"$repo_root/src/.libs" \
     -o "$work_root/sdk_harness"
 
-"$work_root/sdk_harness" "$root_domain" "$child_domain"
+"$work_root/sdk_harness" "$root_domain" "$child_domain" "$orphaned_child_domain"

@@ -12,6 +12,7 @@ enum secdat_key_source_type {
 	SECDAT_KEY_SOURCE_LOCKED = 0,
 	SECDAT_KEY_SOURCE_ENVIRONMENT,
 	SECDAT_KEY_SOURCE_SESSION,
+	SECDAT_KEY_SOURCE_ORPHANED,
 };
 
 enum secdat_effective_source_type {
@@ -21,6 +22,7 @@ enum secdat_effective_source_type {
 	SECDAT_EFFECTIVE_SOURCE_INHERITED_SESSION,
 	SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK,
 	SECDAT_EFFECTIVE_SOURCE_BLOCKED,
+	SECDAT_EFFECTIVE_SOURCE_ORPHANED,
 };
 
 struct secdat_domain_status_summary {
