@@ -439,8 +439,9 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat status` returns non-zero and reports `locked` when no active master-key source exists
 - `secdat [--dir DIR] status --quiet` suppresses output and reports state only through the exit code
 - `status` without `--quiet` reports the active source and whether a wrapped persistent master key is present
-- `secdat [--dir DIR] status --json` prints stable JSON for scripts, including `unlocked`, `key_source`, `effective_state`, `effective_source`, session expiry/remaining fields, `session_mode`, `related_domain`, and `wrapped_master_key_present`
+- `secdat [--dir DIR] status --json` prints stable JSON for scripts, including `resolved_domain`, `resolution_error`, `unlocked`, `key_source`, `effective_state`, `effective_source`, session expiry/remaining fields, `session_mode`, `related_domain`, and `wrapped_master_key_present`
 - `status --json` keeps the normal status exit-code contract: zero when unlocked and non-zero when locked
+- `status --json` reports `resolution_error: "domain_resolution_failed"` and returns non-zero when the current directory cannot be resolved as a valid domain context; this remains distinct from an ordinary locked state, whose `resolution_error` is `null`
 - `status --quiet` and `status --json` are mutually exclusive
 - `secdat [--dir DIR] unlock [--duration TTL] [--until TIME] [--inherit] [--volatile|--readonly] [--descendants] [--yes] [--askpass PATH]` creates or refreshes a domain-scoped cache of the current master key
 - `secdat [--dir DIR] wait-unlock [--timeout SECONDS] [--quiet]` waits for the current effective domain scope to become unlocked and is intended for scripts that handle external notifications separately
@@ -471,6 +472,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `unlock --inherit` is an error when no current-domain local lock or local unlock exists, or when the checked result would remain locked
 - `unlock --descendants` applies only to the resolved target domain plus registered descendants rooted beneath it; it must never affect ancestors, siblings, or unregistered directories
 - `unlock --descendants` must keep local locks intact and instead create or refresh local descendant unlocks where needed so blocked descendants become effectively unlocked for the current session lifetime
+- `unlock --descendants` must fail closed with explicit recovery guidance when an orphaned registered descendant exists in the target subtree
 - when `unlock --descendants` would broaden access beyond the current domain, it must print the affected descendant count, warn that local locks remain in force, and require confirmation unless `--yes` is present
 - when `unlock` succeeds for one domain while descendant domains remain effectively locked because of local-lock shadow state, the command must say so explicitly and print follow-up inspection/unlock commands using the correct `--dir` targets
 - when a secret read fails because no active session is available, the error must report the resolved domain context and print matching `domain status` / `unlock` follow-up commands so users can unlock the correct domain
@@ -557,6 +559,7 @@ To make the requested behavior implementable, the following are treated as norma
 - non-terminal `domain ls -l` output must keep the tab-separated full-path rows so scripts can continue to consume the current layout
 - `secdat [--dir DIR] domain ls -l` adds the key source, effective state, remaining unlock time, effective-state source, current-domain store count, visible key count, and wrapped-master-key presence for each listed domain
 - when a registered domain root no longer exists, `domain ls -l` must keep listing that row and mark its key source and effective state as `orphaned` with `orphaned-domain` as the effective-state source
+- when a registered domain root is orphaned, `domain ls --json` and SDK domain metadata must report it as not unlocked with orphaned key/effective source fields, even if an ancestor session or `SECDAT_MASTER_KEY` is available
 - the long-format effective-state source must distinguish `local-unlock`, `inherited-unlock-from:DOMAIN`, `local-lock`, `inherited-lock-from:DOMAIN`, plain `locked`, and `orphaned-domain`
 - `secdat [--dir DIR] domain status` reports the resolved current domain used by normal store commands
 - `secdat [--domain DIR] ...` uses that exact registered domain root as the current domain context
@@ -579,7 +582,9 @@ To make the requested behavior implementable, the following are treated as norma
 - for `domain move`, `--from OLD_ROOT` identifies the source registered root, and `--to NEW_ROOT` or `--dir DIR` identifies the destination directory
 - for `domain ls`, `--dir` identifies the directory that constrains the listing scope; when omitted, that scope starts at the current working directory
 - newly created domains store the device and inode of the resolved root directory; when identity metadata exists, normal `--dir` and cwd resolution fails closed if the registered root path now points to a different directory or is replaced by a symbolic link
+- device/inode identity is a filesystem identity hint, not a cryptographic directory identity; unusual inode reuse or filesystems with weak identity reporting can still require operator review
 - stale registered roots remain visible in `domain ls -l` as orphaned-domain rows; `domain move` can recover the existing domain state at a new or recreated root, while `domain delete` can discard the stale registration and stored domain state
+- `domain move` preserves the domain ID, so any still-active session scoped to that domain ID remains effective after explicit recovery
 
 #### FR-12 Inheritance and Tombstones
 

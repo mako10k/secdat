@@ -291,7 +291,11 @@ With
 .B --descendants
 the command performs an explicit subtree unlock for the resolved domain and its registered descendants, creating local descendant unlocks where needed while leaving local locks intact; broader-scope unlocks require confirmation unless
 .B --yes
-is present. If some descendant domains under the unlocked branch remain shadowed by local locks, plain
+is present. If an orphaned registered descendant exists under the target subtree, descendant unlock fails closed and prints recovery guidance for
+.B domain move
+or
+.BR "domain delete" .
+If some descendant domains under the unlocked branch remain shadowed by local locks, plain
 .B unlock
 prints follow-up inspection and descendant-specific unlock commands using the correct
 .B --dir
@@ -371,26 +375,33 @@ row when the chain reaches the user-global fallback scope.
 When long format is written to a terminal, shared parent directories are shown once as a heading and very long domain labels wrap before the metadata columns. Non-terminal long-format output keeps the tab-separated full-path rows.
 Use
 .B --json
-for stable rows with root, key source, effective state/source, related domain, expiry, remaining seconds, store count, visible key count, orphaned-domain state, and wrapped-key presence.
+for stable rows with root, key source, effective state/source, related domain, expiry, remaining seconds, store count, visible key count, orphaned-domain state, and wrapped-key presence. Orphaned rows are reported as not unlocked with orphaned key and effective source fields even when an ancestor unlock exists.
 .TP
 .B domain status [\-q|\-\-quiet|\-\-json]
 Report the resolved domain for the current context along with store count, visible key count, key source, wrapped-key presence, and effective access state. Effective access distinguishes environment, local unlock, inherited unlock, local lock, and inherited-lock outcomes.
 New domains record root-directory device/inode identity; when that metadata exists and the registered path now points at a different directory or a symbolic link,
 .B domain status
-and normal domain resolution fail closed with an identity mismatch.
+and normal domain resolution fail closed with an identity mismatch. Device/inode identity is a filesystem identity hint, not a cryptographic directory identity; unusual inode reuse or weak filesystem identity reporting can still require operator review.
 Stale registered roots remain visible in
 .B domain ls
 long output as orphaned-domain rows and can be recovered with
 .B domain move
 or discarded with
 .BR "domain delete" .
+Explicit
+.B domain move
+preserves the domain ID, so a still-active session scoped to that domain ID remains effective after recovery.
 When a session is active, the output also includes the remaining unlock time in a compact form such as
 .B 1h59m
 or
 .B 1m32s.
 Use
 .B --json
-for stable machine-readable fields such as resolved_domain, key_source, effective_source, counts, related_domain, and wrapped_master_key_present.
+for stable machine-readable fields such as resolved_domain, resolution_error, key_source, effective_source, counts, related_domain, and wrapped_master_key_present. Top-level
+.B status --json
+sets resolution_error to
+.B domain_resolution_failed
+when the current directory cannot be resolved as a valid domain context, distinct from an ordinary locked state where resolution_error is null.
 When no registered domain applies, user-facing output shows an emphasized fallback label such as
 .B *default*
 rather than any internal sentinel or a misleading registered-domain path. That label means no registered domain resolved and the top-level inherited fallback scope is active.
