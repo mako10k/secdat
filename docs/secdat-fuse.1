@@ -1,6 +1,6 @@
-.TH SECDAT-FUSE 1 "2026-06-25" "secdat 0.3.0" "User Commands"
+.TH SECDAT-FUSE 1 "2026-06-26" "secdat 0.3.0" "User Commands"
 .SH NAME
-secdat-fuse \- mount selected secdat keys as read-only files
+secdat-fuse \- mount selected secdat keys as files
 .SH SYNOPSIS
 .B secdat-fuse
 [\-d DIR|\-\-dir DIR] [\-\-domain DIR] [\-s STORE|\-\-store STORE]
@@ -17,14 +17,15 @@ is an optional FUSE 3 helper built only when
 .B secdat
 is configured with
 .BR \-\-enable-fuse .
-It exposes the selected visible keys as read-only files under
+It exposes the selected visible keys as files under
 .IR MOUNTPOINT .
-File reads decrypt values through the public
+File reads decrypt values and file writes update values through the public
 .B libsecdat
 SDK; the helper does not read store internals directly.
 File metadata reports size 0 by default so metadata lookup does not read or decrypt secret values.
 .PP
-The helper is intentionally read-only. It does not support writes, creates, deletes, renames, chmod, chown, or truncation through the mounted filesystem.
+Existing selected files can be overwritten, appended to, or truncated to update the corresponding key while preserving the key's current storage mode and non-secret attributes.
+The helper does not support creating new keys, deleting keys, renaming files, chmod, or chown through the mounted filesystem.
 .PP
 When
 .I CMD
@@ -84,7 +85,7 @@ Show usage.
 .B \-V, \-\-version
 Print the secdat-fuse version.
 .SH SECURITY
-Mounting secrets as files exposes plaintext values through normal file reads. With
+Mounting secrets as files exposes plaintext values through normal file reads and writes. With
 .BR \-\-size-metadata ,
 plaintext is also read transiently for file metadata requests. Use a private mountpoint, leave
 .B allow_other

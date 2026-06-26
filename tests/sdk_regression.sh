@@ -47,6 +47,7 @@ run_secdat --dir "$orphaned_child_domain" domain create
 run_secdat --dir "$root_domain" store create team
 run_secdat --dir "$root_domain" --store team set API_TOKEN --value sdk-secret-value
 run_secdat --dir "$root_domain" --store team set PUBLIC_URL --unsafe --value public-secret-value
+run_secdat --dir "$root_domain" --store team set BULK_TOKEN --sandbox-inject bulk --value bulk-secret-value
 run_secdat --dir "$orphaned_child_domain" set ORPHANED_SDK_KEY --value orphaned-sdk-value
 rmdir "$orphaned_child_domain"
 
@@ -145,15 +146,21 @@ int main(int argc, char **argv)
     struct secdat_sdk_options root_options = {0};
     struct secdat_sdk_options child_options = {0};
     struct secdat_sdk_list_filters public_filter = {0};
+    struct secdat_sdk_list_filters bulk_filter = {0};
     struct secdat_sdk_domain_filters domain_filters = {0};
     struct secdat_sdk_key_metadata_list keys = {0};
     struct secdat_sdk_key_metadata_list public_keys = {0};
+    struct secdat_sdk_key_metadata_list bulk_keys = {0};
     struct secdat_sdk_key_metadata_list child_keys = {0};
     struct secdat_sdk_store_metadata_list stores = {0};
     struct secdat_sdk_domain_metadata_list domains = {0};
     const struct secdat_sdk_key_metadata *api_token;
     const struct secdat_sdk_key_metadata *public_url;
+    const struct secdat_sdk_key_metadata *bulk_token;
     const struct secdat_sdk_domain_metadata *orphaned_domain;
+    unsigned char *value = NULL;
+    size_t value_length = 0;
+    int unsafe_store = 0;
     size_t index;
 
     if (argc != 4) {
@@ -183,7 +190,8 @@ int main(int argc, char **argv)
     }
     api_token = find_key(&keys, "API_TOKEN");
     public_url = find_key(&keys, "PUBLIC_URL");
-    if (api_token == NULL || public_url == NULL) {
+    bulk_token = find_key(&keys, "BULK_TOKEN");
+    if (api_token == NULL || public_url == NULL || bulk_token == NULL) {
         fail("key metadata did not include expected keys");
     }
     if (strcmp(api_token->storage_mode, "safe") != 0 || api_token->unsafe_store) {
@@ -195,7 +203,40 @@ int main(int argc, char **argv)
     if (!api_token->local || api_token->inherited || strcmp(api_token->source_type, "local") != 0) {
         fail("local source metadata was wrong");
     }
+    if (strcmp(bulk_token->sandbox_inject, "bulk") != 0) {
+        fail("bulk key metadata had wrong sandbox injection policy");
+    }
     secdat_sdk_free(keys.items);
+
+    if (secdat_sdk_set_preserve_attrs(
+            &root_options,
+            "BULK_TOKEN",
+            (const unsigned char *)"bulk-updated-value",
+            strlen("bulk-updated-value")) != 0) {
+        fail("secdat_sdk_set_preserve_attrs failed");
+    }
+    if (secdat_sdk_get(&root_options, "BULK_TOKEN", &value, &value_length, &unsafe_store) != 0) {
+        fail("secdat_sdk_get after preserve attrs failed");
+    }
+    if (unsafe_store || value_length != strlen("bulk-updated-value")
+        || memcmp(value, "bulk-updated-value", value_length) != 0) {
+        fail("secdat_sdk_set_preserve_attrs wrote the wrong value or storage mode");
+    }
+    secdat_sdk_free(value);
+    value = NULL;
+    value_length = 0;
+
+    bulk_filter.include_pattern = "BULK_*";
+    bulk_filter.sandbox_injectable = 1;
+    if (secdat_sdk_list_keys(&root_options, &bulk_filter, &bulk_keys) != 0) {
+        fail("bulk filtered secdat_sdk_list_keys failed");
+    }
+    if (bulk_keys.count != 1
+        || strcmp(bulk_keys.items[0].key, "BULK_TOKEN") != 0
+        || strcmp(bulk_keys.items[0].sandbox_inject, "bulk") != 0) {
+        fail("secdat_sdk_set_preserve_attrs did not preserve sandbox injection metadata");
+    }
+    secdat_sdk_free(bulk_keys.items);
 
     public_filter.include_pattern = "PUBLIC_*";
     public_filter.unsafe_store = 1;

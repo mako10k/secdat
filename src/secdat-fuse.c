@@ -51,6 +51,8 @@ struct secdat_fuse_state {
     int size_metadata;
 };
 
+static int secdat_fuse_truncate(const char *path, off_t size, struct fuse_file_info *file_info);
+
 static void secdat_fuse_i18n_init(void)
 {
     setlocale(LC_ALL, "");
@@ -75,7 +77,7 @@ static void secdat_fuse_print_usage(const char *program_name, FILE *stream)
         stream,
         _("Usage: %s [OPTIONS] MOUNTPOINT [-- CMD [ARGS...]]\n"
           "\n"
-          "Mount selected secdat keys as read-only files.\n"
+          "Mount selected secdat keys as files.\n"
           "With CMD, mount, run the command, then unmount automatically.\n"
           "\n"
           "Options:\n"
@@ -349,7 +351,7 @@ static int secdat_fuse_getattr(const char *path, struct stat *status, struct fus
         return result;
     }
 
-    status->st_mode = S_IFREG | 0400;
+    status->st_mode = S_IFREG | 0600;
     status->st_nlink = 1;
     status->st_size = 0;
     if (state->size_metadata) {
@@ -410,6 +412,7 @@ static int secdat_fuse_open(const char *path, struct fuse_file_info *file_info)
     struct secdat_fuse_state *state = fuse_get_context()->private_data;
     const char *key = NULL;
     int result;
+    int access_mode;
 
     result = secdat_fuse_path_to_key(path, &key);
     if (result != 0) {
@@ -418,10 +421,18 @@ static int secdat_fuse_open(const char *path, struct fuse_file_info *file_info)
     if (key == NULL) {
         return -EISDIR;
     }
-    if ((file_info->flags & O_ACCMODE) != O_RDONLY) {
-        return -EROFS;
+    access_mode = file_info->flags & O_ACCMODE;
+    if (access_mode != O_RDONLY && access_mode != O_WRONLY && access_mode != O_RDWR) {
+        return -EINVAL;
     }
-    return secdat_fuse_key_is_selected(state, key);
+    result = secdat_fuse_key_is_selected(state, key);
+    if (result != 0) {
+        return result;
+    }
+    if (access_mode != O_RDONLY && (file_info->flags & O_TRUNC) != 0) {
+        return secdat_fuse_truncate(path, 0, file_info);
+    }
+    return 0;
 }
 
 static int secdat_fuse_read(
@@ -531,12 +542,67 @@ static int secdat_fuse_chown(const char *path, uid_t uid, gid_t gid, struct fuse
     return secdat_fuse_readonly();
 }
 
+static int secdat_fuse_resize_key(struct secdat_fuse_state *state, const char *key, size_t new_length)
+{
+    unsigned char *value = NULL;
+    unsigned char *resized = NULL;
+    size_t value_length = 0;
+    size_t copy_length;
+    int unsafe_store = 0;
+    int result = 0;
+
+    if (secdat_sdk_get(&state->options, key, &value, &value_length, &unsafe_store) != 0) {
+        return -EACCES;
+    }
+
+    resized = malloc(new_length == 0 ? 1 : new_length);
+    if (resized == NULL) {
+        secdat_fuse_secure_clear(value, value_length);
+        secdat_sdk_free(value);
+        return -ENOMEM;
+    }
+    if (new_length > 0) {
+        memset(resized, 0, new_length);
+        copy_length = value_length < new_length ? value_length : new_length;
+        if (copy_length > 0) {
+            memcpy(resized, value, copy_length);
+        }
+    }
+
+    (void)unsafe_store;
+    if (secdat_sdk_set_preserve_attrs(&state->options, key, resized, new_length) != 0) {
+        result = -EACCES;
+    }
+    secdat_fuse_secure_clear(resized, new_length);
+    free(resized);
+    secdat_fuse_secure_clear(value, value_length);
+    secdat_sdk_free(value);
+    return result;
+}
+
 static int secdat_fuse_truncate(const char *path, off_t size, struct fuse_file_info *file_info)
 {
-    (void)path;
-    (void)size;
+    struct secdat_fuse_state *state = fuse_get_context()->private_data;
+    const char *key = NULL;
+    int result;
+
     (void)file_info;
-    return secdat_fuse_readonly();
+
+    result = secdat_fuse_path_to_key(path, &key);
+    if (result != 0) {
+        return result;
+    }
+    if (key == NULL) {
+        return -EISDIR;
+    }
+    if (size < 0) {
+        return -EINVAL;
+    }
+    result = secdat_fuse_key_is_selected(state, key);
+    if (result != 0) {
+        return result;
+    }
+    return secdat_fuse_resize_key(state, key, (size_t)size);
 }
 
 static int secdat_fuse_write(
@@ -547,12 +613,80 @@ static int secdat_fuse_write(
     struct fuse_file_info *file_info
 )
 {
-    (void)path;
-    (void)buffer;
-    (void)size;
-    (void)offset;
-    (void)file_info;
-    return secdat_fuse_readonly();
+    struct secdat_fuse_state *state = fuse_get_context()->private_data;
+    const char *key = NULL;
+    unsigned char *value = NULL;
+    unsigned char *updated = NULL;
+    size_t value_length = 0;
+    size_t write_offset;
+    size_t end_offset;
+    size_t updated_length;
+    int unsafe_store = 0;
+    int result;
+
+    if (size > INT_MAX) {
+        return -EFBIG;
+    }
+    if (offset < 0) {
+        return -EINVAL;
+    }
+
+    result = secdat_fuse_path_to_key(path, &key);
+    if (result != 0) {
+        return result;
+    }
+    if (key == NULL) {
+        return -EISDIR;
+    }
+    result = secdat_fuse_key_is_selected(state, key);
+    if (result != 0) {
+        return result;
+    }
+    if (size == 0) {
+        return 0;
+    }
+
+    if (secdat_sdk_get(&state->options, key, &value, &value_length, &unsafe_store) != 0) {
+        return -EACCES;
+    }
+    (void)unsafe_store;
+
+    if (file_info != NULL && (file_info->flags & O_APPEND) != 0) {
+        write_offset = value_length;
+    } else {
+        write_offset = (size_t)offset;
+    }
+    if (write_offset > (size_t)-1 - size) {
+        secdat_fuse_secure_clear(value, value_length);
+        secdat_sdk_free(value);
+        return -EFBIG;
+    }
+    end_offset = write_offset + size;
+
+    updated_length = value_length > end_offset ? value_length : end_offset;
+    updated = malloc(updated_length == 0 ? 1 : updated_length);
+    if (updated == NULL) {
+        secdat_fuse_secure_clear(value, value_length);
+        secdat_sdk_free(value);
+        return -ENOMEM;
+    }
+    memset(updated, 0, updated_length);
+    if (value_length > 0) {
+        memcpy(updated, value, value_length);
+    }
+    memcpy(updated + write_offset, buffer, size);
+
+    if (secdat_sdk_set_preserve_attrs(&state->options, key, updated, updated_length) != 0) {
+        result = -EACCES;
+    } else {
+        result = (int)size;
+    }
+
+    secdat_fuse_secure_clear(updated, updated_length);
+    free(updated);
+    secdat_fuse_secure_clear(value, value_length);
+    secdat_sdk_free(value);
+    return result;
 }
 
 static int secdat_fuse_create(const char *path, mode_t mode, struct fuse_file_info *file_info)
@@ -994,7 +1128,7 @@ static int secdat_fuse_run_fuse_main(struct secdat_fuse_state *state, const char
     char foreground_option[] = "-f";
     char debug_option[] = "-d";
     char option_flag[] = "-o";
-    char mount_options[] = "ro,default_permissions,fsname=secdat";
+    char mount_options[] = "default_permissions,fsname=secdat";
     int fuse_argc = 0;
 
     fuse_argv[fuse_argc++] = (char *)program_name;

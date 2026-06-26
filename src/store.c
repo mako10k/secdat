@@ -7382,18 +7382,22 @@ int secdat_sdk_get(
     return 0;
 }
 
-int secdat_sdk_set(
+static int secdat_sdk_set_value(
     const struct secdat_sdk_options *options,
     const char *keyref,
     const unsigned char *value,
     size_t value_length,
-    int unsafe_store
+    int unsafe_store,
+    int preserve_attrs
 )
 {
     struct secdat_key_reference reference;
     struct secdat_domain_chain chain = {0};
+    struct secdat_secret_attrs attrs;
     char current_domain_id[PATH_MAX];
     unsigned char *plaintext = NULL;
+    const struct secdat_secret_attrs *attrs_to_store = NULL;
+    int target_unsafe_store = unsafe_store;
     int status;
 
     if (keyref == NULL || (value == NULL && value_length != 0)) {
@@ -7413,6 +7417,13 @@ int secdat_sdk_set(
         secdat_domain_chain_free(&chain);
         return 1;
     }
+    if (preserve_attrs) {
+        if (secdat_load_resolved_secret_attrs(&chain, reference.store_value, reference.key, &attrs, &target_unsafe_store) != 0) {
+            secdat_domain_chain_free(&chain);
+            return 1;
+        }
+        attrs_to_store = &attrs;
+    }
 
     plaintext = malloc(value_length == 0 ? 1 : value_length);
     if (plaintext == NULL) {
@@ -7424,11 +7435,41 @@ int secdat_sdk_set(
         memcpy(plaintext, value, value_length);
     }
 
-    status = secdat_store_plaintext_for_chain(&chain, current_domain_id, reference.store_value, reference.key, plaintext, value_length, unsafe_store);
+    status = secdat_store_plaintext_attrs_for_chain(
+        &chain,
+        current_domain_id,
+        reference.store_value,
+        reference.key,
+        plaintext,
+        value_length,
+        target_unsafe_store,
+        attrs_to_store
+    );
     secdat_domain_chain_free(&chain);
     secdat_secure_clear(plaintext, value_length);
     free(plaintext);
     return status;
+}
+
+int secdat_sdk_set(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    const unsigned char *value,
+    size_t value_length,
+    int unsafe_store
+)
+{
+    return secdat_sdk_set_value(options, keyref, value, value_length, unsafe_store, 0);
+}
+
+int secdat_sdk_set_preserve_attrs(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    const unsigned char *value,
+    size_t value_length
+)
+{
+    return secdat_sdk_set_value(options, keyref, value, value_length, 0, 1);
 }
 
 int secdat_sdk_rm(

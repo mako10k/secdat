@@ -305,15 +305,16 @@ To make the requested behavior implementable, the following are treated as norma
 
 - FUSE support is optional and built only when `./configure --enable-fuse` is used
 - the FUSE command is a separate binary, `secdat-fuse`, not a subcommand of `secdat`
-- the initial helper is read-only and exposes selected visible keys as one file per key
-- `secdat-fuse` uses the public SDK list/get operations and must not read store internals directly
+- the helper exposes selected visible keys as one file per key
+- `secdat-fuse` uses the public SDK list/get/value-update operations and must not read store internals directly
 - repeated `--pattern` options are ORed, repeated `--pattern-exclude` options subtract matches afterward, and `--sandbox-injectable` further limits the mounted file set
 - repeated `--require-key KEY` options refuse dry-runs and mounts unless every named key remains selected after filters
 - `--dry-run MOUNTPOINT` prints the selected file names without mounting or reading secret values; `--dry-run --json MOUNTPOINT` reports the same preflight shape as JSON
 - `MOUNTPOINT -- CMD [ARGS...]` mounts in a child foreground FUSE process, runs `CMD`, then unmounts `MOUNTPOINT` with `fusermount3 -u`
 - command mode returns the command status, except that a successful command followed by unmount or mount-process cleanup failure returns failure
 - file metadata reports size 0 by default without reading or decrypting secret values; `--size-metadata` opts in to reading secret values during `getattr` so consumers can see real file sizes
-- writes, creates, deletes, renames, chmod, chown, and truncation through the mount fail as read-only operations
+- existing selected files can be overwritten, appended to, or truncated to update the corresponding key while preserving the key's current storage mode and non-secret attributes
+- creates, deletes, renames, chmod, and chown through the mount fail as unsupported write-like operations
 - real mounts expose plaintext values through normal file reads, so the mountpoint should be private and `allow_other` should remain disabled by default
 
 #### FR-7e Local State Inspection
@@ -845,17 +846,17 @@ secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... 
 ```
 
 - this command is built only when configured with `--enable-fuse`
-- without `--dry-run`, it mounts the selected keys as read-only files under `MOUNTPOINT`
+- without `--dry-run`, it mounts the selected keys as files under `MOUNTPOINT`
 - repeated `--pattern` options are ORed together, and repeated `--pattern-exclude` options subtract matches afterward
 - `--require-key KEY` may be repeated and fails before mounting when any required key is absent from the final selected file set
 - `--dry-run` prints the mountpoint, selected file count, and file names without mounting or reading values
 - `--dry-run --json` writes `ok`, `mountpoint`, `file_count`, `files`, include/exclude patterns, `sandbox_injectable`, required keys, and missing required keys as JSON
 - with `-- CMD [ARGS...]` after `MOUNTPOINT`, the helper mounts, waits for FUSE readiness, runs `CMD`, unmounts with `fusermount3 -u`, and then waits for the mount process to exit
 - `--dry-run` cannot be combined with command mode
-- file names are key names; file reads return the corresponding secret value bytes
-- file metadata reports regular read-only files without decrypting values for size discovery
+- file names are key names; file reads return the corresponding secret value bytes, and overwriting, appending to, or truncating an existing selected file updates that key through the SDK while preserving its non-secret attributes
+- file metadata reports regular owner-readable and owner-writable files without decrypting values for size discovery
 - `--size-metadata` changes file metadata to report real secret byte lengths by reading and clearing each value during `getattr`; this can make stat-like operations decrypt plaintext, and repeated metadata calls may repeat that work because FUSE caching is disabled
-- write-like filesystem operations return read-only errors
+- creating new keys, deleting keys, renaming files, chmod, and chown are not supported through the mount
 
 ### 4.9 `domain`
 

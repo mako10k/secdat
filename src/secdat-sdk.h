@@ -126,6 +126,12 @@ int secdat_sdk_set(
     size_t value_length,
     int unsafe_store
 );
+int secdat_sdk_set_preserve_attrs(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    const unsigned char *value,
+    size_t value_length
+);
 int secdat_sdk_rm(
     const struct secdat_sdk_options *options,
     const char *keyref,

@@ -12,7 +12,7 @@ PKG_CHECK_MODULES([OPENSSL], [openssl])
 
 AC_ARG_ENABLE(
     [fuse],
-    [AS_HELP_STRING([--enable-fuse], [build the optional secdat-fuse read-only mount helper])],
+    [AS_HELP_STRING([--enable-fuse], [build the optional secdat-fuse mount helper])],
     [],
     [enable_fuse=no]
 )

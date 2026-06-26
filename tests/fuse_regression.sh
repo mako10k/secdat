@@ -59,7 +59,7 @@ def corrupt_entry(key):
 
 
 rc, stdout, stderr = run([fuse_bin, "--help"])
-if rc != 0 or "Mount selected secdat keys as read-only files." not in stdout or stderr != "":
+if rc != 0 or "Mount selected secdat keys as files." not in stdout or stderr != "":
     fail(f"secdat-fuse help failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([fuse_bin, "--version"])
@@ -77,6 +77,7 @@ for args in [
     [bin_path, "--dir", str(domain), "set", "FUSE_SKIP", "--value", "skip-secret"],
     [bin_path, "--dir", str(domain), "set", "OTHER_TOKEN", "--value", "other-secret"],
     [bin_path, "--dir", str(domain), "set", "ALT_TOKEN", "--value", "alt-secret"],
+    [bin_path, "--dir", str(domain), "set", "BULK_TOKEN", "--sandbox-inject", "bulk", "--value", "bulk-secret"],
 ]:
     rc, stdout, stderr = run(args)
     if rc != 0 or stdout != "" or stderr != "":
@@ -287,6 +288,12 @@ if Path("/dev/fuse").exists() and shutil.which("fusermount3") is not None:
                 fail("mounted FUSE_TOKEN reported nonzero size without --size-metadata")
             if mounted_file.read_text() != "fuse-secret":
                 fail("mounted FUSE_TOKEN did not expose expected value")
+            mounted_file.write_text("fuse-updated")
+            rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "FUSE_TOKEN", "-o"])
+            if rc != 0 or stdout != "fuse-updated" or stderr != "":
+                fail(f"mounted FUSE_TOKEN write did not update the store: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+            if mounted_file.read_text() != "fuse-updated":
+                fail("mounted FUSE_TOKEN did not expose the updated value")
             live_mount_available = True
             try:
                 (mountpoint / "OTHER_TOKEN").read_text()
@@ -329,10 +336,87 @@ if live_mount_available:
         "from pathlib import Path; import sys; print(Path(sys.argv[1]).read_text(), end='')",
         str(mountpoint / "FUSE_TOKEN"),
     ])
-    if rc != 0 or stdout != "fuse-secret":
+    if rc != 0 or stdout != "fuse-updated":
         fail(f"secdat-fuse command mode failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
     if (mountpoint / "FUSE_TOKEN").exists():
         fail("secdat-fuse command mode left the mount active after command exit")
+
+    rc, stdout, stderr = run([
+        fuse_bin,
+        "--dir",
+        str(domain),
+        "--pattern",
+        "FUSE_TOKEN",
+        str(mountpoint),
+        "--",
+        "python3",
+        "-c",
+        "from pathlib import Path; import sys; Path(sys.argv[1]).write_text('command-updated')",
+        str(mountpoint / "FUSE_TOKEN"),
+    ])
+    if rc != 0 or stdout != "":
+        fail(f"secdat-fuse command mode write failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "FUSE_TOKEN", "-o"])
+    if rc != 0 or stdout != "command-updated" or stderr != "":
+        fail(f"secdat-fuse command mode write did not persist: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    if (mountpoint / "FUSE_TOKEN").exists():
+        fail("secdat-fuse command mode write left the mount active after command exit")
+
+    rc, stdout, stderr = run([
+        fuse_bin,
+        "--dir",
+        str(domain),
+        "--pattern",
+        "FUSE_TOKEN",
+        str(mountpoint),
+        "--",
+        "python3",
+        "-c",
+        "from pathlib import Path; import sys\nwith Path(sys.argv[1]).open('a') as stream:\n    stream.write('-tail')",
+        str(mountpoint / "FUSE_TOKEN"),
+    ])
+    if rc != 0 or stdout != "":
+        fail(f"secdat-fuse append write failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "FUSE_TOKEN", "-o"])
+    if rc != 0 or stdout != "command-updated-tail" or stderr != "":
+        fail(f"secdat-fuse append write did not persist: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    if (mountpoint / "FUSE_TOKEN").exists():
+        fail("secdat-fuse append write left the mount active after command exit")
+
+    rc, stdout, stderr = run([
+        fuse_bin,
+        "--dir",
+        str(domain),
+        "--pattern",
+        "BULK_*",
+        "--sandbox-injectable",
+        str(mountpoint),
+        "--",
+        "python3",
+        "-c",
+        "from pathlib import Path; import sys; Path(sys.argv[1]).write_text('bulk-updated')",
+        str(mountpoint / "BULK_TOKEN"),
+    ])
+    if rc != 0 or stdout != "":
+        fail(f"secdat-fuse sandbox-injectable write failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "BULK_TOKEN", "-o"])
+    if rc != 0 or stdout != "bulk-updated" or stderr != "":
+        fail(f"secdat-fuse sandbox-injectable write did not persist: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "BULK_TOKEN"])
+    if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=bulk\n" or stderr != "":
+        fail(f"secdat-fuse sandbox-injectable write did not preserve attributes: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    rc, stdout, stderr = run([
+        fuse_bin,
+        "--dir",
+        str(domain),
+        "--pattern",
+        "BULK_*",
+        "--sandbox-injectable",
+        "--dry-run",
+        str(mountpoint),
+    ])
+    if rc != 0 or "BULK_TOKEN\n" not in stdout or stderr != "":
+        fail(f"secdat-fuse sandbox-injectable write removed key from selection: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
     rc, stdout, stderr = run([
         fuse_bin,
@@ -348,7 +432,7 @@ if live_mount_available:
         "from pathlib import Path; import sys; print(Path(sys.argv[1]).stat().st_size, end='')",
         str(mountpoint / "FUSE_TOKEN"),
     ])
-    if rc != 0 or stdout != str(len("fuse-secret")):
+    if rc != 0 or stdout != str(len("command-updated-tail")):
         fail(f"secdat-fuse size metadata mode failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
     if (mountpoint / "FUSE_TOKEN").exists():
         fail("secdat-fuse size metadata command mode left the mount active after command exit")

@@ -1793,12 +1793,12 @@ msgstr "Issue 報告先: %s\n"
 msgid "Author: %s\n"
 msgstr "Author: %s\n"
 
-#: src/secdat-fuse.c:76
+#: src/secdat-fuse.c:78
 #, c-format
 msgid ""
 "Usage: %s [OPTIONS] MOUNTPOINT [-- CMD [ARGS...]]\n"
 "\n"
-"Mount selected secdat keys as read-only files.\n"
+"Mount selected secdat keys as files.\n"
 "With CMD, mount, run the command, then unmount automatically.\n"
 "\n"
 "Options:\n"
@@ -1824,7 +1824,7 @@ msgid ""
 msgstr ""
 "Usage: %s [OPTIONS] MOUNTPOINT [-- CMD [ARGS...]]\n"
 "\n"
-"選択した secdat key を read-only file として mount します。\n"
+"選択した secdat key を file として mount します。\n"
 "CMD 指定時は mount して command を実行し、その後自動で unmount します。\n"
 "\n"
 "オプション:\n"
