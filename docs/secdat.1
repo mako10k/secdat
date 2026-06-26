@@ -258,7 +258,7 @@ Write the current visible secrets into a passphrase-protected bundle.
 .B load FILE
 Load a passphrase-protected bundle into the current domain/store context.
 .TP
-.B [\-d DIR|\-\-dir DIR] unlock [\-t TTL|\-\-duration TTL] [\-\-until TIME] [\-i|\-\-inherit] [\-v|\-\-volatile|\-r|\-\-readonly] [\-d|\-\-descendants] [\-y|\-\-yes] [\-\-askpass PATH]
+.B [\-d DIR|\-\-dir DIR] unlock [\-t TTL|\-\-duration TTL] [\-\-until TIME] [\-i|\-\-inherit] [\-v|\-\-volatile|\-r|\-\-readonly] [\-d|\-\-descendants] [\-y|\-\-yes] [\-\-askpass PATH] [\-\-gui]
 Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked. With
 .B --duration
 the command sets the remaining unlock time for the session being created or refreshed. Plain numbers are interpreted as minutes, suffixed combinations such as
@@ -295,6 +295,9 @@ is present. If an orphaned registered descendant exists under the target subtree
 .B domain move
 or
 .BR "domain delete" .
+With
+.B --gui
+the command forces passphrase prompts through the selected askpass helper even when a terminal is available. This is a prompt-provider selection only; secdat does not store the passphrase in an OS Keychain.
 If some descendant domains under the unlocked branch remain shadowed by local locks, plain
 .B unlock
 prints follow-up inspection and descendant-specific unlock commands using the correct
@@ -526,6 +529,7 @@ secdat --dir ~/project --store app export
 source <(secdat --dir ~/project --store app export)
 SECDAT_MASTER_KEY_PASSPHRASE=secret secdat unlock
 secdat unlock --askpass /path/to/helper
+secdat unlock --gui --askpass ./contrib/secdat-askpass
 SECDAT_MASTER_KEY_PBKDF2_ITERATIONS=250000 secdat passwd
 .fi
 .SH SEE ALSO

@@ -175,7 +175,7 @@ for expected in ["--masked", "--safe", "--unsafe", "--sandbox-injectable", "--pu
 mode, values = run_completion("unlock", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: unlock option completion mode mismatch: {mode!r}")
-for expected in ["--duration", "--until", "--descendants", "--yes", "--askpass"]:
+for expected in ["--duration", "--until", "--descendants", "--yes", "--askpass", "--gui"]:
     assert_contains(values, expected, "unlock options")
 
 mode, values = run_completion("unlock", "--askpass", "")

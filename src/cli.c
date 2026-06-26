@@ -1158,7 +1158,7 @@ int secdat_cli_complete(int argc, char **argv)
     };
     static const char *const unlock_options[] = {
         "--duration", "-t", "--until", "--inherit", "-i", "--volatile", "-v", "--readonly", "-r",
-        "--descendants", "-d", "--yes", "-y", "--askpass", "--help", "-h", NULL,
+        "--descendants", "-d", "--yes", "-y", "--askpass", "--gui", "--help", "-h", NULL,
     };
     static const char *const passwd_options[] = {
         "--askpass", "--help", "-h", NULL,
@@ -1476,7 +1476,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "load", "FILE");
         break;
     case SECDAT_COMMAND_UNLOCK:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH] [--gui]");
         break;
     case SECDAT_COMMAND_INHERIT:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "inherit", "");
@@ -1805,6 +1805,7 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "unlock") == 0) {
         secdat_cli_print_detail_line(_("  unlock: start or refresh a local unlock for the current domain; --duration accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such as PT1H30M, --until accepts an absolute RFC 3339 timestamp, and --inherit drops the current domain's local override to fall back to inherited state\n"));
+        secdat_cli_print_detail_line(_("  --gui forces passphrase prompts through the askpass helper even when a terminal is available\n"));
         secdat_cli_print_detail_line(_("  --volatile keeps writes, deletes, tombstones, and read-side resolution changes in a session overlay; lock --save persists supported overlay changes before locking\n"));
         secdat_cli_print_detail_line(_("  persisted tombstone removal and v2 local-entry deletions still require a normal writable session\n"));
         return;

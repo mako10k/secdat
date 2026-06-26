@@ -1,0 +1,54 @@
+#!/bin/sh
+
+set -u
+
+prompt=${1:-"Enter secdat passphrase:"}
+prompt=$(printf '%s' "$prompt" | tr '\r\n' '  ')
+
+if command -v osascript >/dev/null 2>&1; then
+    SECDAT_ASKPASS_PROMPT=$prompt osascript <<'APPLESCRIPT'
+set promptText to system attribute "SECDAT_ASKPASS_PROMPT"
+set answer to display dialog promptText default answer "" with hidden answer buttons {"Cancel", "OK"} default button "OK" cancel button "Cancel"
+text returned of answer
+APPLESCRIPT
+    exit $?
+fi
+
+if command -v zenity >/dev/null 2>&1; then
+    zenity --password --title="secdat" --text="$prompt"
+    exit $?
+fi
+
+if command -v kdialog >/dev/null 2>&1; then
+    kdialog --title "secdat" --password "$prompt"
+    exit $?
+fi
+
+for candidate in pinentry-mac pinentry-gnome3 pinentry-qt pinentry-gtk-2 pinentry; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+        output=$(
+            {
+                printf 'SETTITLE secdat\n'
+                printf 'SETPROMPT %s\n' "$prompt"
+                printf 'GETPIN\n'
+                printf 'BYE\n'
+            } | "$candidate"
+        ) || exit 1
+        data=$(printf '%s\n' "$output" | sed -n 's/^D //p' | tail -n 1)
+        if test -n "$data"; then
+            if command -v python3 >/dev/null 2>&1; then
+                if ! printf '%s' "$data" | python3 -c 'import sys; from urllib.parse import unquote; print(unquote(sys.stdin.read()))'; then
+                    exit 1
+                fi
+            else
+                printf '%s\n' "secdat-askpass: python3 is required to decode pinentry output" >&2
+                exit 1
+            fi
+            exit 0
+        fi
+        exit 1
+    fi
+done
+
+printf '%s\n' "secdat-askpass: no supported GUI askpass provider found" >&2
+exit 1

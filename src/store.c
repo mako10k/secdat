@@ -688,6 +688,7 @@ struct secdat_unlock_options {
     int assume_yes;
     int volatile_mode;
     int readonly_mode;
+    int gui_mode;
 };
 
 struct secdat_lock_options {
@@ -2270,6 +2271,7 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
         {"descendants", no_argument, NULL, 'd'},
         {"yes", no_argument, NULL, 'y'},
         {"askpass", required_argument, NULL, 1000},
+        {"gui", no_argument, NULL, 1001},
         {NULL, 0, NULL, 0},
     };
     char *argv[cli->argc + 2];
@@ -2312,6 +2314,9 @@ static int secdat_parse_unlock_options(const struct secdat_cli *cli, struct secd
                 return 2;
             }
             options->askpass = optarg;
+            break;
+        case 1001:
+            options->gui_mode = 1;
             break;
         case '?':
         case ':':
@@ -5448,17 +5453,27 @@ static int secdat_read_secret_from_askpass(const char *askpass, const char *prom
     return secdat_finalize_passphrase_buffer(buffer);
 }
 
-static int secdat_read_secret_from_tty_with_askpass(const char *prompt, char *buffer, size_t size, const char *explicit_askpass)
+static int secdat_read_secret_from_tty_with_askpass_mode(
+    const char *prompt,
+    char *buffer,
+    size_t size,
+    const char *explicit_askpass,
+    int force_askpass
+)
 {
     struct termios old_settings;
     struct termios new_settings;
     int restored = 0;
     const char *askpass;
 
-    if (!isatty(STDIN_FILENO)) {
+    if (force_askpass || !isatty(STDIN_FILENO)) {
         askpass = secdat_askpass_command(explicit_askpass);
         if (askpass != NULL) {
             return secdat_read_secret_from_askpass(askpass, prompt, buffer, size);
+        }
+        if (force_askpass) {
+            fprintf(stderr, _("missing askpass provider; --gui requires --askpass, SECDAT_ASKPASS, or SSH_ASKPASS\n"));
+            return 1;
         }
         fprintf(stderr, _("missing askpass provider; this command requires a terminal for passphrase input\n"));
         return 1;
@@ -5498,19 +5513,24 @@ static int secdat_read_secret_from_tty_with_askpass(const char *prompt, char *bu
     return secdat_finalize_passphrase_buffer(buffer);
 }
 
+static int secdat_read_secret_from_tty_with_askpass(const char *prompt, char *buffer, size_t size, const char *explicit_askpass)
+{
+    return secdat_read_secret_from_tty_with_askpass_mode(prompt, buffer, size, explicit_askpass, 0);
+}
+
 static int secdat_read_secret_from_tty(const char *prompt, char *buffer, size_t size)
 {
     return secdat_read_secret_from_tty_with_askpass(prompt, buffer, size, NULL);
 }
 
-static int secdat_read_secret_confirmation_with_askpass(char *buffer, size_t size, const char *askpass)
+static int secdat_read_secret_confirmation_with_askpass_mode(char *buffer, size_t size, const char *askpass, int force_askpass)
 {
     char confirmation[512];
 
-    if (secdat_read_secret_from_tty_with_askpass(_("Create secdat passphrase: "), buffer, size, askpass) != 0) {
+    if (secdat_read_secret_from_tty_with_askpass_mode(_("Create secdat passphrase: "), buffer, size, askpass, force_askpass) != 0) {
         return 1;
     }
-    if (secdat_read_secret_from_tty_with_askpass(_("Confirm secdat passphrase: "), confirmation, sizeof(confirmation), askpass) != 0) {
+    if (secdat_read_secret_from_tty_with_askpass_mode(_("Confirm secdat passphrase: "), confirmation, sizeof(confirmation), askpass, force_askpass) != 0) {
         secdat_secure_clear(buffer, strlen(buffer));
         return 1;
     }
@@ -5523,6 +5543,11 @@ static int secdat_read_secret_confirmation_with_askpass(char *buffer, size_t siz
 
     secdat_secure_clear(confirmation, strlen(confirmation));
     return 0;
+}
+
+static int secdat_read_secret_confirmation_with_askpass(char *buffer, size_t size, const char *askpass)
+{
+    return secdat_read_secret_confirmation_with_askpass_mode(buffer, size, askpass, 0);
 }
 
 static int secdat_read_secret_confirmation(char *buffer, size_t size)
@@ -5568,7 +5593,7 @@ static const char *secdat_master_key_passphrase_env(void)
     return value;
 }
 
-static int secdat_read_unlock_passphrase_with_askpass(char *buffer, size_t size, const char *askpass)
+static int secdat_read_unlock_passphrase_with_askpass_mode(char *buffer, size_t size, const char *askpass, int force_askpass)
 {
     const char *env_passphrase = secdat_master_key_passphrase_env();
 
@@ -5578,7 +5603,12 @@ static int secdat_read_unlock_passphrase_with_askpass(char *buffer, size_t size,
         }
         return 0;
     }
-    return secdat_read_secret_from_tty_with_askpass(_("Enter secdat passphrase: "), buffer, size, askpass);
+    return secdat_read_secret_from_tty_with_askpass_mode(_("Enter secdat passphrase: "), buffer, size, askpass, force_askpass);
+}
+
+static int secdat_read_unlock_passphrase_with_askpass(char *buffer, size_t size, const char *askpass)
+{
+    return secdat_read_unlock_passphrase_with_askpass_mode(buffer, size, askpass, 0);
 }
 
 static int secdat_read_unlock_passphrase(char *buffer, size_t size)
@@ -5586,7 +5616,7 @@ static int secdat_read_unlock_passphrase(char *buffer, size_t size)
     return secdat_read_unlock_passphrase_with_askpass(buffer, size, NULL);
 }
 
-static int secdat_read_new_master_key_passphrase_with_askpass(char *buffer, size_t size, const char *askpass)
+static int secdat_read_new_master_key_passphrase_with_askpass_mode(char *buffer, size_t size, const char *askpass, int force_askpass)
 {
     const char *env_passphrase = secdat_master_key_passphrase_env();
 
@@ -5596,7 +5626,12 @@ static int secdat_read_new_master_key_passphrase_with_askpass(char *buffer, size
         }
         return 0;
     }
-    return secdat_read_secret_confirmation_with_askpass(buffer, size, askpass);
+    return secdat_read_secret_confirmation_with_askpass_mode(buffer, size, askpass, force_askpass);
+}
+
+static int secdat_read_new_master_key_passphrase_with_askpass(char *buffer, size_t size, const char *askpass)
+{
+    return secdat_read_new_master_key_passphrase_with_askpass_mode(buffer, size, askpass, 0);
 }
 
 static int secdat_read_new_master_key_passphrase(char *buffer, size_t size)
@@ -8681,7 +8716,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     }
 
     if (!wrapped_present && !options.volatile_mode && !options.readonly_mode) {
-        if (secdat_read_new_master_key_passphrase_with_askpass(passphrase, sizeof(passphrase), options.askpass) != 0) {
+        if (secdat_read_new_master_key_passphrase_with_askpass_mode(passphrase, sizeof(passphrase), options.askpass, options.gui_mode) != 0) {
             secdat_domain_root_list_free(&descendant_targets);
             secdat_domain_chain_free(&current_chain);
             return 1;
@@ -8797,7 +8832,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_read_unlock_passphrase_with_askpass(passphrase, sizeof(passphrase), options.askpass) != 0) {
+    if (secdat_read_unlock_passphrase_with_askpass_mode(passphrase, sizeof(passphrase), options.askpass, options.gui_mode) != 0) {
         secdat_domain_root_list_free(&descendant_targets);
         secdat_domain_chain_free(&current_chain);
         return 1;

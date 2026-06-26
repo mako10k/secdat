@@ -434,6 +434,14 @@ msgstr ""
 "ます。--inherit は現在の domain の local override を外して継承状態へ戻しま"
 "す\n"
 
+#: src/cli.c:1808
+msgid ""
+"  --gui forces passphrase prompts through the askpass helper even when a "
+"terminal is available\n"
+msgstr ""
+"  --gui は端末が利用可能な場合でも passphrase prompt を askpass helper 経由に"
+"強制します\n"
+
 #: src/cli.c:1646 src/cli.c:1813
 msgid ""
 "  inherit: force the current domain back to inherited state by removing a "
@@ -2487,6 +2495,15 @@ msgid ""
 msgstr ""
 "askpass provider が不足しています。このコマンドにはパスフレーズ入力用の端末が"
 "必要です\n"
+
+#: src/store.c:5464
+#, c-format
+msgid ""
+"missing askpass provider; --gui requires --askpass, SECDAT_ASKPASS, or "
+"SSH_ASKPASS\n"
+msgstr ""
+"askpass provider が不足しています。--gui には --askpass、SECDAT_ASKPASS、また"
+"は SSH_ASKPASS が必要です\n"
 
 #: src/store.c:5471
 #, c-format

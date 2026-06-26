@@ -20,6 +20,7 @@ python3 - "$bin_path" <<'PY'
 import os
 import pty
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -61,6 +62,9 @@ askpass_path = isolated_root / "askpass.py"
 cancel_askpass_path = isolated_root / "cancel-askpass.py"
 unsupported_askpass_path = isolated_root / "unsupported-askpass.py"
 askpass_log = isolated_root / "askpass.log"
+contrib_askpass_path = Path(bin_path).resolve().parent.parent / "contrib" / "secdat-askpass"
+fake_pinentry_bin = isolated_root / "fake-pinentry-bin"
+fake_python_bin = isolated_root / "fake-python-bin"
 
 askpass_path.write_text(
     "#!/usr/bin/env python3\n"
@@ -264,6 +268,69 @@ def run_pty(args, prompts, extra_env=None, eof_after_prompts=False):
         _, status = os.waitpid(pid, 0)
 
     return os.waitstatus_to_exitcode(status), "".join(chunks)
+
+def assert_contrib_askpass_pinentry_decode():
+    if not contrib_askpass_path.exists():
+        return
+
+    fake_pinentry_bin.mkdir()
+    fake_python_bin.mkdir()
+    for tool in ("sed", "tail", "tr"):
+        real_tool = shutil.which(tool)
+        if real_tool is None:
+            fail(f"missing required test helper: {tool}")
+        os.symlink(real_tool, fake_pinentry_bin / tool)
+    real_python = shutil.which("python3")
+    if real_python is None:
+        fail("missing required test helper: python3")
+    os.symlink(real_python, fake_python_bin / "python3")
+    fake_pinentry = fake_pinentry_bin / "pinentry"
+    fake_pinentry.write_text(
+        "#!/bin/sh\n"
+        "while IFS= read -r line; do\n"
+        "    case \"$line\" in\n"
+        "        GETPIN)\n"
+        "            printf '%s\\n' 'D pa%25ss%0Aword' 'OK'\n"
+        "            ;;\n"
+        "        BYE)\n"
+        "            exit 0\n"
+        "            ;;\n"
+        "    esac\n"
+        "done\n"
+    )
+    fake_pinentry.chmod(0o700)
+    for candidate in ("pinentry-mac", "pinentry-gnome3", "pinentry-qt", "pinentry-gtk-2"):
+        os.symlink(fake_pinentry, fake_pinentry_bin / candidate)
+
+    helper_env = env.copy()
+    helper_env["PATH"] = f"{fake_pinentry_bin}:{fake_python_bin}"
+    completed = subprocess.run(
+        [str(contrib_askpass_path), "Prompt"],
+        text=True,
+        capture_output=True,
+        env=helper_env,
+    )
+    if completed.returncode != 0 or completed.stdout != "pa%ss\nword\n":
+        fail(
+            "contrib askpass pinentry decode failed: "
+            f"rc={completed.returncode} stdout={completed.stdout!r} stderr={completed.stderr!r}"
+        )
+
+    no_python_env = env.copy()
+    no_python_env["PATH"] = str(fake_pinentry_bin)
+    completed = subprocess.run(
+        [str(contrib_askpass_path), "Prompt"],
+        text=True,
+        capture_output=True,
+        env=no_python_env,
+    )
+    if completed.returncode == 0 or "python3 is required to decode pinentry output" not in completed.stderr:
+        fail(
+            "contrib askpass must fail closed when pinentry decode support is unavailable: "
+            f"rc={completed.returncode} stdout={completed.stdout!r} stderr={completed.stderr!r}"
+        )
+
+assert_contrib_askpass_pinentry_decode()
 
 for domain in (root_domain, child_domain, grandchild_domain, sibling_domain):
     domain.mkdir(parents=True, exist_ok=True)
@@ -588,7 +655,7 @@ for args, marker in [
     ([bin_path, "-h", "status"], "[-d DIR|--dir DIR] status [-q|--quiet|--json]"),
     ([bin_path, "status", "--help"], "[-d DIR|--dir DIR] status [-q|--quiet|--json]"),
     ([bin_path, "status", "-h"], "[-d DIR|--dir DIR] status [-q|--quiet|--json]"),
-    ([bin_path, "help", "unlock"], "unlock [-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH]"),
+    ([bin_path, "help", "unlock"], "unlock [-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH] [--gui]"),
     ([bin_path, "help", "inherit"], "[-d DIR|--dir DIR] inherit"),
     ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [-i|--inherit] [-s|--save]"),
     ([bin_path, "help", "list"], "list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--sandbox-injectable]"),
@@ -1062,6 +1129,22 @@ if rc != 0 or stderr != "":
 askpass_status = json.loads(stdout)
 if not askpass_status["unlocked"] or askpass_status["key_source"] != "session" or askpass_status["effective_source"] != "local_unlock":
     fail(f"status --json after unlock --askpass unexpected: {askpass_status!r}")
+
+rc, stdout, stderr = run(scoped(["lock"], root_domain))
+if rc != 0 or stdout.strip() != "session locked":
+    fail(f"lock before unlock --gui failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, transcript = run_pty(scoped(["unlock", "--gui"], root_domain), [], askpass_value_env)
+if rc == 0 or "missing askpass provider; --gui requires --askpass, SECDAT_ASKPASS, or SSH_ASKPASS" not in transcript:
+    fail(f"unlock --gui without askpass provider should fail: rc={rc} transcript={transcript!r}")
+
+askpass_log.write_text("")
+rc, transcript = run_pty(scoped(["unlock", "--gui", "--askpass", str(askpass_path)], root_domain), [], askpass_value_env)
+if rc != 0 or f"resolved domain: {root_domain}" not in transcript or "session unlocked" not in transcript:
+    fail(f"unlock --gui --askpass failed: rc={rc} transcript={transcript!r}")
+if "Enter secdat passphrase:" in transcript:
+    fail(f"unlock --gui should not print the terminal passphrase prompt: transcript={transcript!r}")
+assert_contains(askpass_log.read_text(), "Enter secdat passphrase:", "unlock --gui askpass prompt")
 
 askpass_log.write_text("")
 rc, stdout, stderr = run([bin_path, "passwd", "--askpass", str(askpass_path)], askpass_value_env)

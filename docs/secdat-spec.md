@@ -81,7 +81,7 @@ secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]..
 
 secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--size-metadata] [--foreground] [--debug] MOUNTPOINT [-- CMD [ARGS...]]
 
-secdat [--dir DIR] unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH]
+secdat [--dir DIR] unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH] [--gui]
 secdat [--dir DIR] inherit
 secdat passwd [--askpass PATH]
 secdat [--dir DIR] lock [-i|--inherit] [-s|--save]
@@ -145,6 +145,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `unlock` caches the current master key in a domain-scoped runtime location
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit override for non-interactive `unlock` and `passwd` flows
 - `unlock --askpass PATH` and `passwd --askpass PATH` choose an executable askpass helper for that command; otherwise `SECDAT_ASKPASS`, or `SSH_ASKPASS` when `SECDAT_ASKPASS` is unset, may provide an askpass helper for non-terminal passphrase prompts; the helper receives the prompt as argv[1] and prints the passphrase on stdout
+- `unlock --gui` forces `unlock` passphrase prompts through the selected askpass helper even when standard input is a terminal; it does not store passphrases in an OS Keychain or add a core GUI dependency
 - `status` reports whether a master-key session is active for the current domain scope
 - `lock` clears the current domain's local master-key session
 - `wait-unlock` waits until the current domain scope becomes unlocked without reading any secret value
@@ -444,7 +445,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `status --json` keeps the normal status exit-code contract: zero when unlocked and non-zero when locked
 - `status --json` reports `resolution_error: "domain_resolution_failed"` and returns non-zero when the current directory cannot be resolved as a valid domain context; this remains distinct from an ordinary locked state, whose `resolution_error` is `null`
 - `status --quiet` and `status --json` are mutually exclusive
-- `secdat [--dir DIR] unlock [--duration TTL] [--until TIME] [--inherit] [--volatile|--readonly] [--descendants] [--yes] [--askpass PATH]` creates or refreshes a domain-scoped cache of the current master key
+- `secdat [--dir DIR] unlock [--duration TTL] [--until TIME] [--inherit] [--volatile|--readonly] [--descendants] [--yes] [--askpass PATH] [--gui]` creates or refreshes a domain-scoped cache of the current master key
 - `secdat [--dir DIR] wait-unlock [--timeout SECONDS] [--quiet]` waits for the current effective domain scope to become unlocked and is intended for scripts that handle external notifications separately
 - `wait-unlock` exits successfully immediately when the scope is already unlocked, returns non-zero on timeout, and prints unlock guidance to standard error unless `--quiet` is used
 - if no wrapped persistent master key exists, `unlock` prompts twice through terminal input or askpass, generates a fresh master key by default, stores a wrapped copy of it, and loads it into the session agent
@@ -458,6 +459,7 @@ To make the requested behavior implementable, the following are treated as norma
 - if `SECDAT_MASTER_KEY` is already set, `unlock` may reuse it as an explicit override or migration source instead of the generated bootstrap key
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `unlock`
 - when standard input is not a terminal and no explicit passphrase override applies, `unlock` may read the passphrase through `--askpass`, `SECDAT_ASKPASS`, or fallback `SSH_ASKPASS`
+- `unlock --gui` applies the same askpass selection while a terminal is present, allowing desktop helpers to supply the prompt without changing secdat's storage or session model
 - otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent
 - `unlock --duration TTL` sets the remaining unlock time for the session being created or refreshed
 - plain numeric `TTL` values are interpreted as minutes
