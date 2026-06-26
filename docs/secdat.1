@@ -453,6 +453,17 @@ when available so the installed
 binary can resolve
 .B libsecdat
 immediately.
+.P
+The optional GUI askpass helper is not installed by default. Run
+.B make install-askpass-helper
+to install it under
+.B libexec/secdat
+for the configured prefix, then pass that path through
+.B \-\-askpass
+or
+.B SECDAT_ASKPASS
+when using
+.B unlock \-\-gui .
 .SH PASSPHRASE SOURCES
 By default,
 .B unlock ,
@@ -529,6 +540,8 @@ secdat --dir ~/project --store app export
 source <(secdat --dir ~/project --store app export)
 SECDAT_MASTER_KEY_PASSPHRASE=secret secdat unlock
 secdat unlock --askpass /path/to/helper
+make install-askpass-helper
+SECDAT_ASKPASS=/usr/local/libexec/secdat/secdat-askpass secdat unlock --gui
 secdat unlock --gui --askpass ./contrib/secdat-askpass
 SECDAT_MASTER_KEY_PBKDF2_ITERATIONS=250000 secdat passwd
 .fi

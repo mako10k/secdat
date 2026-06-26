@@ -146,6 +146,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit override for non-interactive `unlock` and `passwd` flows
 - `unlock --askpass PATH` and `passwd --askpass PATH` choose an executable askpass helper for that command; otherwise `SECDAT_ASKPASS`, or `SSH_ASKPASS` when `SECDAT_ASKPASS` is unset, may provide an askpass helper for non-terminal passphrase prompts; the helper receives the prompt as argv[1] and prints the passphrase on stdout
 - `unlock --gui` forces `unlock` passphrase prompts through the selected askpass helper even when standard input is a terminal; it does not store passphrases in an OS Keychain or add a core GUI dependency
+- `make install-askpass-helper` may install the optional `contrib/secdat-askpass` helper under `libexec/secdat`, while default `make install` must not install or expose that helper
 - `status` reports whether a master-key session is active for the current domain scope
 - `lock` clears the current domain's local master-key session
 - `wait-unlock` waits until the current domain scope becomes unlocked without reading any secret value
@@ -460,6 +461,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit non-interactive override for `unlock`
 - when standard input is not a terminal and no explicit passphrase override applies, `unlock` may read the passphrase through `--askpass`, `SECDAT_ASKPASS`, or fallback `SSH_ASKPASS`
 - `unlock --gui` applies the same askpass selection while a terminal is present, allowing desktop helpers to supply the prompt without changing secdat's storage or session model
+- the bundled desktop helper remains an explicit install and selection path; default installation must not add it to the normal command surface or PATH
 - otherwise `unlock` prompts on a terminal with echo disabled and unwraps the stored master key into the session agent
 - `unlock --duration TTL` sets the remaining unlock time for the session being created or refreshed
 - plain numeric `TTL` values are interpreted as minutes
