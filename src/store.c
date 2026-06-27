@@ -3,6 +3,8 @@
 #include "secdat-sdk.h"
 
 #include "domain.h"
+#include "exec_inject.h"
+#include "store_exec_port.h"
 
 #include "i18n.h"
 
@@ -19727,155 +19729,7 @@ static int secdat_exec_run_with_summary(
 
 static int secdat_command_exec(const struct secdat_cli *cli)
 {
-    struct secdat_domain_chain chain = {0};
-    struct secdat_key_list visible_keys = {0};
-    struct secdat_exec_options options;
-    struct secdat_exec_mapping_error mapping_error = {0};
-    char **env_names = NULL;
-    char **command_argv;
-    int status;
-    int emit_human_mapping_error;
-
-    status = secdat_parse_exec_options(cli, &options);
-    if (status != 0) {
-        secdat_cli_print_try_help(cli, "exec");
-        return status;
-    }
-
-    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
-        secdat_exec_options_reset(&options);
-        return 1;
-    }
-    if (secdat_collect_visible_keys(&chain, cli->store, &options.include_patterns, &options.exclude_patterns, &visible_keys) != 0) {
-        secdat_exec_options_reset(&options);
-        secdat_domain_chain_free(&chain);
-        secdat_key_list_free(&visible_keys);
-        return 1;
-    }
-
-    env_names = calloc(visible_keys.count, sizeof(*env_names));
-    if (env_names == NULL && visible_keys.count > 0) {
-        fprintf(stderr, _("out of memory\n"));
-        secdat_exec_options_reset(&options);
-        secdat_domain_chain_free(&chain);
-        secdat_key_list_free(&visible_keys);
-        return 1;
-    }
-
-    command_argv = &cli->argv[options.command_index];
-    emit_human_mapping_error = !(options.json || options.json_summary);
-    status = secdat_exec_build_injection_plan(
-        &chain,
-        cli,
-        &visible_keys,
-        &options,
-        env_names,
-        &mapping_error,
-        emit_human_mapping_error
-    );
-    if (status == 0) {
-        status = secdat_exec_validate_required_keys(
-            &options,
-            &visible_keys,
-            env_names,
-            !(options.json || options.json_summary)
-        );
-    }
-    if (status != 0) {
-        if (options.dry_run && options.json) {
-            secdat_exec_write_json_report(
-                stdout,
-                &chain,
-                cli,
-                &options,
-                &visible_keys,
-                env_names,
-                command_argv,
-                1,
-                -1,
-                -1,
-                -1,
-                &mapping_error
-            );
-        } else if (options.json_summary) {
-            secdat_exec_write_json_report(
-                stderr,
-                &chain,
-                cli,
-                &options,
-                &visible_keys,
-                env_names,
-                command_argv,
-                options.dry_run,
-                -1,
-                -1,
-                -1,
-                &mapping_error
-            );
-        }
-        secdat_exec_mapping_error_reset(&mapping_error);
-        secdat_exec_free_env_names(env_names, visible_keys.count);
-        secdat_exec_options_reset(&options);
-        secdat_domain_chain_free(&chain);
-        secdat_key_list_free(&visible_keys);
-        return 1;
-    }
-
-    if (options.dry_run) {
-        if (options.json) {
-            secdat_exec_write_json_report(
-                stdout,
-                &chain,
-                cli,
-                &options,
-                &visible_keys,
-                env_names,
-                command_argv,
-                1,
-                -1,
-                -1,
-                -1,
-                NULL
-            );
-        } else {
-            secdat_exec_print_text_preflight(&chain, cli, &options, &visible_keys, env_names, command_argv);
-        }
-        secdat_exec_mapping_error_reset(&mapping_error);
-        secdat_exec_free_env_names(env_names, visible_keys.count);
-        secdat_exec_options_reset(&options);
-        secdat_domain_chain_free(&chain);
-        secdat_key_list_free(&visible_keys);
-        return 0;
-    }
-
-    if (options.json_summary) {
-        status = secdat_exec_run_with_summary(&chain, cli, &options, &visible_keys, env_names, command_argv);
-        secdat_exec_mapping_error_reset(&mapping_error);
-        secdat_exec_free_env_names(env_names, visible_keys.count);
-        secdat_exec_options_reset(&options);
-        secdat_domain_chain_free(&chain);
-        secdat_key_list_free(&visible_keys);
-        return status;
-    }
-
-    if (secdat_exec_apply_environment(&chain, cli, &visible_keys, env_names) != 0) {
-        secdat_exec_mapping_error_reset(&mapping_error);
-        secdat_exec_free_env_names(env_names, visible_keys.count);
-        secdat_exec_options_reset(&options);
-        secdat_domain_chain_free(&chain);
-        secdat_key_list_free(&visible_keys);
-        return 1;
-    }
-
-    secdat_exec_mapping_error_reset(&mapping_error);
-    secdat_exec_free_env_names(env_names, visible_keys.count);
-    secdat_exec_options_reset(&options);
-    execvp(command_argv[0], command_argv);
-
-    fprintf(stderr, _("failed to execute command: %s\n"), command_argv[0]);
-    secdat_domain_chain_free(&chain);
-    secdat_key_list_free(&visible_keys);
-    return 1;
+    return secdat_exec_command(cli);
 }
 
 static int secdat_command_save(const struct secdat_cli *cli)
@@ -20121,4 +19975,103 @@ int secdat_run_command(const struct secdat_cli *cli)
         status = 1;
         return status;
     }
+}
+
+int secdat_exec_port_collect_visible_keys(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    char ***keys_out,
+    size_t *count_out
+)
+{
+    struct secdat_key_list visible_keys = {0};
+    size_t index;
+
+    *keys_out = NULL;
+    *count_out = 0;
+    if (secdat_collect_visible_keys(chain, store_name, NULL, NULL, &visible_keys) != 0) {
+        return 1;
+    }
+    if (visible_keys.count == 0) {
+        secdat_key_list_free(&visible_keys);
+        return 0;
+    }
+    *keys_out = calloc(visible_keys.count, sizeof(**keys_out));
+    if (*keys_out == NULL) {
+        secdat_key_list_free(&visible_keys);
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    for (index = 0; index < visible_keys.count; index += 1) {
+        (*keys_out)[index] = strdup(visible_keys.items[index]);
+        if ((*keys_out)[index] == NULL) {
+            secdat_exec_port_free_keys(*keys_out, index);
+            secdat_key_list_free(&visible_keys);
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+    }
+    *count_out = visible_keys.count;
+    secdat_key_list_free(&visible_keys);
+    return 0;
+}
+
+void secdat_exec_port_free_keys(char **keys, size_t count)
+{
+    size_t index;
+
+    for (index = 0; index < count; index += 1) {
+        free(keys[index]);
+    }
+    free(keys);
+}
+
+int secdat_exec_port_key_allows_bulk_sandbox(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    int *allowed
+)
+{
+    return secdat_key_allows_bulk_sandbox_injection(chain, store_name, key, allowed);
+}
+
+int secdat_exec_port_load_plaintext(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    unsigned char **plaintext_out,
+    size_t *plaintext_length_out
+)
+{
+    return secdat_load_resolved_plaintext(
+        chain,
+        store_name,
+        key,
+        plaintext_out,
+        plaintext_length_out,
+        NULL,
+        NULL,
+        NULL
+    );
+}
+
+int secdat_exec_port_plaintext_to_env_value(
+    const char *key,
+    const unsigned char *plaintext,
+    size_t plaintext_length,
+    char **value_out
+)
+{
+    return secdat_plaintext_to_env_value(key, plaintext, plaintext_length, value_out);
+}
+
+void secdat_exec_port_secure_clear(void *buffer, size_t length)
+{
+    secdat_secure_clear(buffer, length);
+}
+
+const char *secdat_exec_port_effective_store_name(const char *store_name)
+{
+    return secdat_effective_store_name(store_name);
 }
