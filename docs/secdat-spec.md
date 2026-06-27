@@ -291,9 +291,8 @@ To make the requested behavior implementable, the following are treated as norma
 - `secret:only` and `secret:omit` match store keys or mapped environment names; `secret:require` and `secret:reject` match store keys
 - two secret keys mapping to the same environment name fail during planning
 - mapped environment variable names must remain valid identifiers; empty or otherwise invalid results are rejected
-- repeated `--pattern GLOBPATTERN` options widen the include set for `ls`; for `exec` they lower to `secret:only` during migration
-- repeated `--pattern-exclude GLOBPATTERN` options remove matches from the include set for `ls`; for `exec` they lower to `secret:omit` during migration
-- legacy `--require-key KEY` and `--env-map-sed EXPR` lower to `secret:require` and `secret:rename` during migration
+- repeated `--pattern GLOBPATTERN` options widen the include set for `ls`
+- repeated `--pattern-exclude GLOBPATTERN` options remove matches from the include set for `ls`
 - `secdat ls --safe` lists only effective keys whose resolved entry is stored encrypted at rest
 - `secdat ls --unsafe` lists only effective keys whose resolved entry is stored plaintext at rest
 - `secdat exec --dry-run CMD [ARGS...]` validates the injection plan and reports key names, environment names, injection count, and command argv without executing the child or reading secret values
@@ -835,8 +834,8 @@ secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inj
 
 Migration note:
 
-- legacy `--pattern`, `--pattern-exclude`, `--require-key`, and `--env-map-sed` lower to equivalent `--inject` rules and emit deprecation warnings
-- see `docs/exec-injection-design.md` for the canonical grammar, examples, and lowering table
+- removed legacy `exec` selection flags (`--pattern`, `--pattern-exclude`, `--require-key`, `--env-map-sed`, `--sandbox-injectable`) fail with a replacement hint naming the canonical `--inject` or `--inject-gate` option
+- see `docs/exec-injection-design.md` for the canonical grammar, examples, and historical lowering table
 
 ### 4.8a `secdat-fuse`
 

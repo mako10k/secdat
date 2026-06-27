@@ -66,11 +66,6 @@ struct secdat_exec_inject_policy {
     struct secdat_exec_pentad final;
     int sandbox_injectable;
     int explicit_inject_gate_sandbox;
-    int legacy_pattern;
-    int legacy_pattern_exclude;
-    int legacy_require_key;
-    int legacy_env_map_sed;
-    int legacy_sandbox_injectable;
     int explicit_secret_only;
     int explicit_secret_omit;
     int explicit_secret_require;
@@ -782,14 +777,16 @@ static int secdat_exec_append_inject_selectors(
     return 0;
 }
 
+static int secdat_exec_reject_removed_legacy_flag(const char *flag, const char *replacement)
+{
+    fprintf(stderr, _("exec: %s is no longer supported; use %s\n"), flag, replacement);
+    return 2;
+}
+
 int secdat_exec_apply_inject_gate(struct secdat_exec_inject_policy *policy, const char *value)
 {
     if (strcmp(value, "sandbox") != 0) {
         fprintf(stderr, _("invalid --inject-gate value: %s\n"), value);
-        return 2;
-    }
-    if (policy->legacy_sandbox_injectable) {
-        fprintf(stderr, _("exec: --sandbox-injectable conflicts with --inject-gate=sandbox\n"));
         return 2;
     }
     if (policy->explicit_inject_gate_sandbox) {
@@ -853,11 +850,6 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
     }
     if (strcmp(layer, "secret") == 0) {
         if (strcmp(kind, "rename") == 0) {
-            if (policy->legacy_env_map_sed) {
-                fprintf(stderr, _("exec: --env-map-sed conflicts with --inject secret:rename\n"));
-                free(rest);
-                return 2;
-            }
             if (policy->explicit_secret_rename) {
                 fprintf(stderr, _("secret rename may be specified at most once\n"));
                 free(rest);
@@ -872,25 +864,10 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
             return 0;
         }
         if (strcmp(kind, "only") == 0) {
-            if (policy->legacy_pattern) {
-                fprintf(stderr, _("exec: --pattern conflicts with --inject secret:only\n"));
-                free(rest);
-                return 2;
-            }
             policy->explicit_secret_only = 1;
         } else if (strcmp(kind, "omit") == 0) {
-            if (policy->legacy_pattern_exclude) {
-                fprintf(stderr, _("exec: --pattern-exclude conflicts with --inject secret:omit\n"));
-                free(rest);
-                return 2;
-            }
             policy->explicit_secret_omit = 1;
         } else if (strcmp(kind, "require") == 0) {
-            if (policy->legacy_require_key) {
-                fprintf(stderr, _("exec: --require-key conflicts with --inject secret:require\n"));
-                free(rest);
-                return 2;
-            }
             policy->explicit_secret_require = 1;
         }
         if (secdat_exec_append_inject_selectors(&policy->secret, kind, value) != 0) {
@@ -949,40 +926,6 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
     fprintf(stderr, _("invalid --inject layer: %s\n"), layer);
     free(rest);
     return 2;
-}
-
-static void secdat_exec_print_deprecation_warnings(const struct secdat_exec_inject_policy *policy)
-{
-    const char *clauses[5];
-    size_t clause_count = 0;
-    size_t index;
-
-    if (policy->legacy_pattern) {
-        clauses[clause_count++] = _("--pattern is deprecated; use --inject secret:only=GLOB");
-    }
-    if (policy->legacy_pattern_exclude) {
-        clauses[clause_count++] = _("--pattern-exclude is deprecated; use --inject secret:omit=GLOB");
-    }
-    if (policy->legacy_require_key) {
-        clauses[clause_count++] = _("--require-key is deprecated; use --inject secret:require=KEY");
-    }
-    if (policy->legacy_env_map_sed) {
-        clauses[clause_count++] = _("--env-map-sed is deprecated; use --inject secret:rename=EXPR");
-    }
-    if (policy->legacy_sandbox_injectable) {
-        clauses[clause_count++] = _("--sandbox-injectable is deprecated; use --inject-gate=sandbox");
-    }
-    if (clause_count == 0) {
-        return;
-    }
-
-    fputs(_("warning: exec: "), stderr);
-    fputs(clauses[0], stderr);
-    for (index = 1; index < clause_count; index += 1) {
-        fputs("; ", stderr);
-        fputs(clauses[index], stderr);
-    }
-    fputc('\n', stderr);
 }
 
 static void secdat_prepare_exec_option_argv(const struct secdat_cli *cli, int *argc_out, char **argv_out)
@@ -1046,42 +989,14 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
             }
             break;
         case 'p':
-            if (options->policy.explicit_secret_only) {
-                fprintf(stderr, _("exec: --pattern conflicts with --inject secret:only\n"));
-                secdat_exec_options_free(options);
-                return 2;
-            }
-            options->policy.legacy_pattern = 1;
-            if (secdat_exec_selector_list_append(&options->policy.secret.only, optarg) != 0) {
-                secdat_exec_options_free(options);
-                return 1;
-            }
-            break;
+            secdat_exec_options_free(options);
+            return secdat_exec_reject_removed_legacy_flag("--pattern (-p)", "--inject secret:only=GLOB");
         case 'x':
-            if (options->policy.explicit_secret_omit) {
-                fprintf(stderr, _("exec: --pattern-exclude conflicts with --inject secret:omit\n"));
-                secdat_exec_options_free(options);
-                return 2;
-            }
-            options->policy.legacy_pattern_exclude = 1;
-            if (secdat_exec_selector_list_append(&options->policy.secret.omit, optarg) != 0) {
-                secdat_exec_options_free(options);
-                return 1;
-            }
-            break;
+            secdat_exec_options_free(options);
+            return secdat_exec_reject_removed_legacy_flag("--pattern-exclude (-x)", "--inject secret:omit=GLOB");
         case 1001:
-            if (options->policy.explicit_secret_rename || options->policy.legacy_env_map_sed) {
-                fprintf(stderr, _("secret rename may be specified at most once\n"));
-                secdat_exec_options_free(options);
-                return 2;
-            }
-            options->policy.legacy_env_map_sed = 1;
-            status = secdat_exec_parse_rename_expression(optarg, &options->policy.secret_rename);
-            if (status != 0) {
-                secdat_exec_options_free(options);
-                return status;
-            }
-            break;
+            secdat_exec_options_free(options);
+            return secdat_exec_reject_removed_legacy_flag("--env-map-sed", "--inject secret:rename=EXPR");
         case 1008:
             status = secdat_exec_apply_inject_gate(&options->policy, optarg);
             if (status != 0) {
@@ -1090,19 +1005,8 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
             }
             break;
         case 1002:
-            if (options->policy.explicit_inject_gate_sandbox) {
-                fprintf(stderr, _("exec: --sandbox-injectable conflicts with --inject-gate=sandbox\n"));
-                secdat_exec_options_free(options);
-                return 2;
-            }
-            if (options->policy.legacy_sandbox_injectable) {
-                fprintf(stderr, _("--inject-gate=sandbox may be specified at most once\n"));
-                secdat_exec_options_free(options);
-                return 2;
-            }
-            options->policy.sandbox_injectable = 1;
-            options->policy.legacy_sandbox_injectable = 1;
-            break;
+            secdat_exec_options_free(options);
+            return secdat_exec_reject_removed_legacy_flag("--sandbox-injectable", "--inject-gate=sandbox");
         case 1003:
             options->dry_run = 1;
             break;
@@ -1113,17 +1017,8 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
             options->json_summary = 1;
             break;
         case 1006:
-            if (options->policy.explicit_secret_require) {
-                fprintf(stderr, _("exec: --require-key conflicts with --inject secret:require\n"));
-                secdat_exec_options_free(options);
-                return 2;
-            }
-            options->policy.legacy_require_key = 1;
-            if (secdat_exec_selector_list_append(&options->policy.secret.require, optarg) != 0) {
-                secdat_exec_options_free(options);
-                return 1;
-            }
-            break;
+            secdat_exec_options_free(options);
+            return secdat_exec_reject_removed_legacy_flag("--require-key", "--inject secret:require=KEY");
         case '?':
         case ':':
         default:
@@ -1157,7 +1052,6 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
         return 2;
     }
 
-    secdat_exec_print_deprecation_warnings(&options->policy);
     return 0;
 }
 

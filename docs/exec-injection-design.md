@@ -583,12 +583,9 @@ list it in the canonical exec reference.
 
 ```
 parse_exec():
-  1. Collect legacy flags → legacy_inject_ir[]
+  1. Reject legacy flags with replacement hints (Phase 3)
   2. Collect --inject / --inject-file → inject_ir[]
-  3. Lower legacy_inject_ir → inject_ir (append)
-  4. Conflict check (§15.6)
-  5. Build supply / route / demand from inject_ir
-  6. If any legacy flag seen → emit deprecation warning (stderr, once per run)
+  3. Build supply / route / demand from inject_ir
 ```
 
 Implementation must use **one** plan builder. Do not maintain parallel legacy
@@ -620,7 +617,7 @@ warning: exec: --pattern is deprecated; use --inject secret:only=GLOB; --pattern
 | --- | --- | --- |
 | **Phase 1** | First `--inject` release | Legacy flags work via lowering; deprecation warnings on stderr |
 | **Phase 2** | Following minor releases | User docs and help show `--inject` only; legacy documented in Migration appendix |
-| **Phase 3** | Next major (or v1.0) | Legacy flags removed; exit code 2 with replacement hint |
+| **Phase 3** | Current | Legacy flags removed; exit code 2 with replacement hint |
 
 ### 15.9 Documentation During Migration
 

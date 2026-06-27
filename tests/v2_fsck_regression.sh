@@ -245,7 +245,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
 if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=never\n" or stderr != "":
     fail(f"object-level inject deny should override entry bulk: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([
-    bin_path, "--dir", str(domain), "exec", "--sandbox-injectable",
+    bin_path, "--dir", str(domain), "exec", "--inject-gate", "sandbox",
     "python3", "-c", "import os; print('APP_TOKEN' in os.environ)",
 ])
 if rc != 0 or stdout != "False\n" or not exec_stderr_ok(stderr):
@@ -352,7 +352,9 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_EXPLICIT",
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 set explicit injectable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([
-    bin_path, "--dir", str(domain), "exec", "--sandbox-injectable", "--pattern", "APP_*",
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-gate", "sandbox",
+    "--inject", "secret:only=APP_*",
     "python3", "-c", "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k in ('APP_BULK', 'APP_EXPLICIT', 'APP_SECRET'))}, sort_keys=True))",
 ])
 if rc != 0 or not exec_stderr_ok(stderr):

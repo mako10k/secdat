@@ -364,48 +364,23 @@ rc, stdout, stderr = run([
 if rc == 0 or "exec inject forbidden variable in final child env: SECDAT_MASTER_KEY" not in stderr:
     fail(f"final reject present did not fail: rc={rc} stderr={stderr!r}")
 
-# §15.6 legacy + inject on different concerns.
-rc, stdout, stderr = run([
-    bin_path, "--dir", str(domain), "exec",
-    "--pattern", "APP_*",
-    "--inject", "route:MY_TOKEN=ambient",
-    "python3", "-c",
-    "import json, os; print(json.dumps({k: os.environ.get(k) for k in ('APP_TOKEN','MY_TOKEN')}, sort_keys=True))",
-])
-if rc != 0 or "warning: exec: --pattern is deprecated" not in stderr:
-    fail(f"legacy+inject combo failed: rc={rc} stderr={stderr!r}")
-warn_lines = [line for line in stderr.splitlines() if line.startswith("warning: exec:")]
-if len(warn_lines) != 1:
-    fail(f"legacy+inject combo emitted multiple deprecation lines: {warn_lines!r}")
-combo = json.loads(stdout)
-if combo["APP_TOKEN"] != "app-secret" or combo["MY_TOKEN"] != "ambient-token":
-    fail(f"legacy+inject combo payload unexpected: {combo!r}")
+# §15.8 Phase 3: removed legacy exec flags fail with replacement hints.
+for legacy_args, expected in [
+    (["--pattern", "APP_*"], "exec: --pattern (-p) is no longer supported; use --inject secret:only=GLOB"),
+    (["--pattern-exclude", "APP_DEBUG"], "exec: --pattern-exclude (-x) is no longer supported; use --inject secret:omit=GLOB"),
+    (["--require-key", "APP_TOKEN"], "exec: --require-key is no longer supported; use --inject secret:require=KEY"),
+    (["--env-map-sed", "s/^.*$/RENAMED/"], "exec: --env-map-sed is no longer supported; use --inject secret:rename=EXPR"),
+    (["--sandbox-injectable"], "exec: --sandbox-injectable is no longer supported; use --inject-gate=sandbox"),
+]:
+    rc, stdout, stderr = run([
+        bin_path, "--dir", str(domain), "exec",
+        *legacy_args,
+        "python3", "-c", "pass",
+    ])
+    if rc != 2 or expected not in stderr:
+        fail(f"legacy removal failed for {legacy_args}: rc={rc} stderr={stderr!r}")
 
-# §15.7 combined deprecation warning (one line for multiple legacy flags).
-rc, stdout, stderr = run([
-    bin_path, "--dir", str(domain), "exec",
-    "--pattern", "APP_*",
-    "--pattern-exclude", "APP_DEBUG",
-    "python3", "-c", "pass",
-])
-warn_lines = [line for line in stderr.splitlines() if line.startswith("warning: exec:")]
-if rc != 0 or len(warn_lines) != 1:
-    fail(f"combined deprecation failed: rc={rc} warn_lines={warn_lines!r} stderr={stderr!r}")
-combined = warn_lines[0]
-if "--pattern is deprecated" not in combined or "--pattern-exclude is deprecated" not in combined:
-    fail(f"combined deprecation missing clauses: {combined!r}")
-
-# §15.6 legacy + inject conflict on same pentad kind.
-rc, stdout, stderr = run([
-    bin_path, "--dir", str(domain), "exec",
-    "--pattern", "APP_*",
-    "--inject", "secret:only=OTHER_*",
-    "python3", "-c", "pass",
-])
-if rc != 2 or "exec: --pattern conflicts with --inject secret:only" not in stderr:
-    fail(f"legacy conflict did not fail: rc={rc} stderr={stderr!r}")
-
-# Native --inject secret:only equivalence to legacy --pattern.
+# Native --inject secret:only.
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
     "--inject", "secret:only=APP_*",
@@ -515,16 +490,6 @@ rc, stdout, stderr = run([
 if rc != 0 or stderr != "":
     fail(f"inject-gate sandbox exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_eq(json.loads(stdout), {"BULK_TOKEN": "bulk-secret"}, "inject-gate sandbox payload")
-
-# §15.6 legacy sandbox-injectable + inject-gate conflict.
-rc, stdout, stderr = run([
-    bin_path, "--dir", str(domain), "exec",
-    "--sandbox-injectable",
-    "--inject-gate", "sandbox",
-    "python3", "-c", "pass",
-])
-if rc != 2 or "exec: --sandbox-injectable conflicts with --inject-gate=sandbox" not in stderr:
-    fail(f"sandbox gate conflict did not fail: rc={rc} stderr={stderr!r}")
 
 # json-summary with native --inject.
 rc, stdout, stderr = run([

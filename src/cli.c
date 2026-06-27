@@ -964,10 +964,8 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
         }
     } else if (strcmp(command, "exec") == 0) {
         if (strcmp(previous, "--inject") == 0
-            || strcmp(previous, "--pattern") == 0 || strcmp(previous, "-p") == 0
-            || strcmp(previous, "--pattern-exclude") == 0 || strcmp(previous, "-x") == 0
-            || strcmp(previous, "--env-map-sed") == 0
-            || strcmp(previous, "--require-key") == 0) {
+            || strcmp(previous, "--inject-file") == 0
+            || strcmp(previous, "--inject-gate") == 0) {
             return "none";
         }
     } else if (strcmp(command, "export") == 0) {
@@ -1792,7 +1790,6 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  --inject LAYER:KIND=SELECTOR configures ambient, secret, route, or final rules; repeated --inject accumulates selectors of the same kind\n"));
         secdat_cli_print_detail_line(_("  --inject-file FILE loads a YAML policy; later --inject options override file entries\n"));
         secdat_cli_print_detail_line(_("  --inject-gate=sandbox applies the store sandbox_inject bulk pre-filter before secret supply\n"));
-        secdat_cli_print_detail_line(_("  legacy --pattern, --pattern-exclude, --require-key, --env-map-sed, and --sandbox-injectable still lower or alias during migration; see docs/exec-injection-design.md\n"));
         return;
     }
     if (target != NULL && strcmp(target, "export") == 0) {

@@ -246,18 +246,8 @@ to write that preflight report as JSON to standard output.
 .B --json-summary
 runs the child and writes a JSON audit summary to standard error after child exit, preserving child standard output. It cannot be combined with
 .B --dry-run .
-Legacy
-.BR --pattern ,
-.BR --pattern-exclude ,
-.BR --require-key ,
-and
-.B --env-map-sed
-lower to equivalent
-.B --inject
-rules during migration. JSON output includes supply, route, and final plan metadata, plus
-.B required_keys
-and
-.B missing_required_keys ,
+JSON output includes supply, route, final plan metadata, and
+.B inject_gate ,
 and never includes secret values.
 .TP
 .B export [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-sandbox-injectable]

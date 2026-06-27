@@ -718,17 +718,7 @@ msgstr ""
 "  --inject-gate=sandbox は secret supply の前に store sandbox_inject の bulk "
 "pre-filter を適用します\n"
 
-#: src/cli.c:1795
-msgid ""
-"  legacy --pattern, --pattern-exclude, --require-key, --env-map-sed, and --"
-"sandbox-injectable still lower or alias during migration; see docs/exec-"
-"injection-design.md\n"
-msgstr ""
-"  レガシー --pattern、--pattern-exclude、--require-key、--env-map-sed、--"
-"sandbox-injectable は移行期間中 lowering または別名として残ります。詳細は "
-"docs/exec-injection-design.md を参照してください\n"
-
-#: src/cli.c:1812
+#: src/cli.c:1811
 msgid ""
 "  --gui forces passphrase prompts through the askpass helper even when a "
 "terminal is available\n"
@@ -1935,34 +1925,10 @@ msgstr "route:prefer は 1 回だけ指定できます\n"
 msgid "invalid --inject layer: %s\n"
 msgstr "不正な --inject layer です: %s\n"
 
-#: src/exec_inject.c:941
-msgid "warning: exec: "
-msgstr "warning: exec: "
-
-#: src/exec_inject.c:944
-msgid "--pattern is deprecated; use --inject secret:only=GLOB"
-msgstr "--pattern は非推奨です。--inject secret:only=GLOB を使ってください"
-
-#: src/exec_inject.c:947
-msgid ""
-"--pattern-exclude is deprecated; use --inject secret:omit=GLOB"
-msgstr ""
-"--pattern-exclude は非推奨です。--inject secret:omit=GLOB を使ってください"
-
-#: src/exec_inject.c:950
-msgid "--require-key is deprecated; use --inject secret:require=KEY"
-msgstr ""
-"--require-key は非推奨です。--inject secret:require=KEY を使ってください"
-
-#: src/exec_inject.c:953
-msgid "--env-map-sed is deprecated; use --inject secret:rename=EXPR"
-msgstr ""
-"--env-map-sed は非推奨です。--inject secret:rename=EXPR を使ってください"
-
-#: src/exec_inject.c:956
-msgid "--sandbox-injectable is deprecated; use --inject-gate=sandbox"
-msgstr ""
-"--sandbox-injectable は非推奨です。--inject-gate=sandbox を使ってください"
+#: src/exec_inject.c:785
+#, c-format
+msgid "exec: %s is no longer supported; use %s\n"
+msgstr "exec: %s はサポートされなくなりました。%s を使ってください\n"
 
 #: src/exec_inject.c:1052
 #, c-format
