@@ -522,6 +522,24 @@ static int secdat_exec_parse_rename_expression(const char *expression, struct se
     return 0;
 }
 
+static int secdat_exec_env_name_identity(const char *key, char **env_name_out)
+{
+    char *env_name;
+
+    *env_name_out = NULL;
+    if (!secdat_exec_is_valid_env_name(key)) {
+        fprintf(stderr, _("key is not a valid environment variable name: %s\n"), key);
+        return 1;
+    }
+    env_name = strdup(key);
+    if (env_name == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    *env_name_out = env_name;
+    return 0;
+}
+
 static int secdat_exec_env_name_from_key(
     const struct secdat_exec_secret_rename *rename,
     const char *key,
@@ -537,23 +555,13 @@ static int secdat_exec_env_name_from_key(
     *env_name_out = NULL;
 
     if (!rename->configured) {
-        if (!secdat_exec_is_valid_env_name(key)) {
-            fprintf(stderr, _("key is not a valid environment variable name: %s\n"), key);
-            return 1;
-        }
-        env_name = strdup(key);
-        if (env_name == NULL) {
-            fprintf(stderr, _("out of memory\n"));
-            return 1;
-        }
-        *env_name_out = env_name;
-        return 0;
+        return secdat_exec_env_name_identity(key, env_name_out);
     }
 
     if (rename->has_address) {
         reg_status = regexec(&rename->address_regex, key, 0, NULL, 0);
         if (reg_status == REG_NOMATCH) {
-            return 2;
+            return secdat_exec_env_name_identity(key, env_name_out);
         }
         if (reg_status != 0) {
             fprintf(stderr, _("failed to match secret rename against key: %s\n"), key);
@@ -563,7 +571,7 @@ static int secdat_exec_env_name_from_key(
 
     reg_status = regexec(&rename->match_regex, key, (int)(sizeof(matches) / sizeof(matches[0])), matches, 0);
     if (reg_status == REG_NOMATCH) {
-        return 2;
+        return secdat_exec_env_name_identity(key, env_name_out);
     }
     if (reg_status != 0) {
         fprintf(stderr, _("failed to match secret rename against key: %s\n"), key);
@@ -1320,10 +1328,6 @@ static int secdat_exec_build_plan(
         }
 
         map_status = secdat_exec_env_name_from_key(&policy->secret_rename, key, &env_name);
-        if (map_status == 2) {
-            free(env_name);
-            continue;
-        }
         if (map_status != 0) {
             status = 1;
             goto cleanup;

@@ -342,6 +342,7 @@ if rc != 0 or not exec_stderr_ok(stderr):
 if json.loads(stdout) != {
     "SPV_REDMINE_API_KEY": "mapped-api-secret",
     "SPV_REDMINE_PROJECT": "mapped-project-secret",
+    "CONTROL_TOKEN": control_payload,
 }:
     fail(f"exec env-map-sed payload mismatch: {stdout!r}")
 
@@ -412,15 +413,18 @@ rc, stdout, stderr = run([
     "-c",
     "print('unreachable')",
 ])
-if rc == 0 or "exec inject required entry missing: CONTROL_TOKEN" not in stderr:
-    fail(f"missing required key json dry-run did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if rc != 0 or not exec_stderr_ok(stderr):
+    fail(f"rename identity fallback with require-key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 preflight = json.loads(stdout)
-if preflight["ok"] is not False:
-    fail(f"unexpected missing required key json dry-run ok flag: {preflight!r}")
-if preflight["supply"]["secret"]["missing_required"] != ["CONTROL_TOKEN"]:
-    fail(f"unexpected missing required key json dry-run summary: {preflight!r}")
-if preflight["injected_key_count"] != 2 or preflight["exit_status"] is not None:
-    fail(f"unexpected missing required key json dry-run status: {preflight!r}")
+if preflight["ok"] is not True:
+    fail(f"unexpected rename identity fallback json dry-run ok flag: {preflight!r}")
+if preflight["supply"]["secret"]["missing_required"]:
+    fail(f"unexpected missing required after rename identity fallback: {preflight!r}")
+injected = {item["key"]: item["env_name"] for item in preflight["injected_keys"]}
+if injected.get("CONTROL_TOKEN") != "CONTROL_TOKEN":
+    fail(f"CONTROL_TOKEN not injected with identity env name: {injected!r}")
+if injected.get("MY_REDMINE_API_KEY") != "SPV_REDMINE_API_KEY":
+    fail(f"MY_REDMINE_API_KEY not renamed: {injected!r}")
 
 rc, stdout, stderr = run([
     bin_path,

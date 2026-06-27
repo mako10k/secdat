@@ -248,6 +248,36 @@ rc, stdout, stderr = run([
 if rc != 0 or not exec_stderr_ok(stderr) or stdout != "other-secret":
     fail(f"secret rename exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+# secret:rename non-match keeps env_name = key (design §6 Phase 1).
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "secret:only=APP_*:OTHER_*",
+    "--inject", r"secret:rename=s/^OTHER_\(.*\)/RENAMED_\1/",
+    "python3", "-c",
+    "import json, os; print(json.dumps({k: os.environ.get(k) for k in ('APP_TOKEN', 'RENAMED_TOKEN')}, sort_keys=True))",
+])
+if rc != 0 or not exec_stderr_ok(stderr):
+    fail(f"secret rename identity fallback exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(
+    json.loads(stdout),
+    {"APP_TOKEN": "app-secret", "RENAMED_TOKEN": "other-secret"},
+    "secret rename identity fallback payload",
+)
+
+# secret:rename duplicate env_name is a plan error (design §6 Phase 1).
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "secret:only=APP_*:OTHER_*",
+    "--inject", r"secret:rename=s/^.*$/DUP_ENV/",
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc == 0 or "duplicate environment variable name from secret rename: DUP_ENV" not in stderr:
+    fail(f"secret rename duplicate env_name did not fail: rc={rc} stderr={stderr!r}")
+dup_plan = json.loads(stdout)
+if dup_plan["ok"] is not False:
+    fail(f"secret rename duplicate env_name ok flag unexpected: {dup_plan!r}")
+
 # §9 final:reject when a forbidden variable survives into the final plan.
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
