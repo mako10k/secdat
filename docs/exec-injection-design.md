@@ -465,18 +465,18 @@ stderr after a real run, using the same plan shape.
 
 ## 9. Error Messages (human)
 
-| Condition | Message intent |
+| Condition | Message |
 | --- | --- |
-| `ambient:reject` match in environ | ambient variable must not be present |
-| `secret:reject` match in VisibleKeys | secret key must not be present |
-| `secret:require` missing | required secret key not available for injection |
-| `ambient:require` missing | required ambient variable not available |
-| `route:prefer=error` collision | ambient/secret collision on NAME |
-| `final:require` missing | required variable missing from final child env |
-| `final:reject` present | forbidden variable in final child env |
-| rename duplicate env | multiple secret keys map to same env name |
-| invalid env name | key or rename produced invalid env identifier |
-| pentad conflict | require/omit or require/reject overlap in same layer |
+| `ambient:reject` match in environ | `exec inject ambient variable must not be present: NAME` |
+| `secret:reject` match in VisibleKeys | `exec inject secret key must not be present: KEY` |
+| `secret:require` missing | `exec inject required secret key not available for injection: KEY` |
+| `ambient:require` missing | `exec inject required ambient variable not available: NAME` |
+| `route:prefer=error` collision | `ambient/secret collision on environment variable: NAME` |
+| `final:require` missing | `exec inject required variable missing from final child env: NAME` |
+| `final:reject` present | `exec inject forbidden variable in final child env: NAME` |
+| rename duplicate env | `duplicate environment variable name from secret rename: NAME` |
+| invalid env name | `invalid environment variable name from secret rename: NAME` or `key is not a valid environment variable name: KEY` |
+| pentad conflict | `exec inject LAYER pentad conflict: require and omit overlap: SELECTOR` (and analogous require/reject or omit/reject forms) |
 
 ## 10. Relationship to Store Attributes
 

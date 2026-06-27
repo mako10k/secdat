@@ -306,7 +306,7 @@ rc, stdout, stderr = run([
     "-c",
     f"from pathlib import Path; Path({str(required_marker)!r}).write_text('ran')",
 ])
-if rc == 0 or stdout != "" or "exec inject required entry missing: ROOT_TOKEN" not in stderr:
+if rc == 0 or stdout != "" or "exec inject required secret key not available for injection: ROOT_TOKEN" not in stderr:
     fail(f"missing required key exec unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if required_marker.exists():
     fail("missing required key exec unexpectedly ran child command")

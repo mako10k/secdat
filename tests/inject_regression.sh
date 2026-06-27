@@ -172,7 +172,7 @@ rc, stdout, stderr = run([
     "--dry-run", "--json",
     "python3", "-c", "pass",
 ])
-if rc == 0 or "exec inject reject matched present entry: ROOT_TOKEN" not in stderr:
+if rc == 0 or "exec inject secret key must not be present: ROOT_TOKEN" not in stderr:
     fail(f"secret reject dry-run did not fail cleanly: rc={rc} stderr={stderr!r}")
 reject_plan = json.loads(stdout)
 if reject_plan["ok"] is not False:
@@ -301,7 +301,7 @@ rc, stdout, stderr = run([
     "--dry-run", "--json",
     "python3", "-c", "pass",
 ])
-if rc == 0 or "exec inject required entry missing: MISSING_AMBIENT_VAR" not in stderr:
+if rc == 0 or "exec inject required ambient variable not available: MISSING_AMBIENT_VAR" not in stderr:
     fail(f"ambient require missing did not fail: rc={rc} stderr={stderr!r}")
 ambient_req = json.loads(stdout)
 if ambient_req["supply"]["ambient"]["missing_required"] != ["MISSING_AMBIENT_VAR"]:
@@ -359,7 +359,7 @@ rc, stdout, stderr = run([
     "--dry-run", "--json",
     "python3", "-c", "pass",
 ])
-if rc == 0 or "exec inject final reject matched present entry: SECDAT_MASTER_KEY" not in stderr:
+if rc == 0 or "exec inject forbidden variable in final child env: SECDAT_MASTER_KEY" not in stderr:
     fail(f"final reject present did not fail: rc={rc} stderr={stderr!r}")
 
 # §15.6 legacy + inject on different concerns.
@@ -419,7 +419,7 @@ rc, stdout, stderr = run([
     "--inject", "secret:omit=APP_TOKEN",
     "python3", "-c", "pass",
 ])
-if rc != 2 or "exec inject contract conflict: require and omit overlap: APP_TOKEN" not in stderr:
+if rc != 2 or "exec inject secret pentad conflict: require and omit overlap: APP_TOKEN" not in stderr:
     fail(f"pentad conflict did not fail: rc={rc} stderr={stderr!r}")
 
 # §9 final:require missing.
@@ -430,7 +430,7 @@ rc, stdout, stderr = run([
     "--dry-run", "--json",
     "python3", "-c", "pass",
 ])
-if rc == 0 or "exec inject required entry missing: MISSING_ENV" not in stderr:
+if rc == 0 or "exec inject required variable missing from final child env: MISSING_ENV" not in stderr:
     fail(f"final require missing did not fail: rc={rc} stderr={stderr!r}")
 final_req = json.loads(stdout)
 if final_req["final"]["missing_required"] != ["MISSING_ENV"]:

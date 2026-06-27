@@ -90,6 +90,12 @@ enum secdat_exec_value_source {
     SECDAT_EXEC_VALUE_SECRET,
 };
 
+enum secdat_exec_pentad_layer {
+    SECDAT_EXEC_PENTAD_AMBIENT = 0,
+    SECDAT_EXEC_PENTAD_SECRET,
+    SECDAT_EXEC_PENTAD_FINAL,
+};
+
 struct secdat_exec_plan_entry {
     char *env_name;
     char *secret_key;
@@ -336,20 +342,63 @@ static int secdat_exec_selector_list_matches_primary_or_alternate(
     return 0;
 }
 
-static int secdat_exec_pentad_conflicts(const struct secdat_exec_pentad *pentad)
+static const char *secdat_exec_pentad_layer_name(enum secdat_exec_pentad_layer layer)
+{
+    switch (layer) {
+    case SECDAT_EXEC_PENTAD_AMBIENT:
+        return "ambient";
+    case SECDAT_EXEC_PENTAD_SECRET:
+        return "secret";
+    case SECDAT_EXEC_PENTAD_FINAL:
+    default:
+        return "final";
+    }
+}
+
+static void secdat_exec_print_reject_present(enum secdat_exec_pentad_layer layer, const char *name)
+{
+    switch (layer) {
+    case SECDAT_EXEC_PENTAD_AMBIENT:
+        fprintf(stderr, _("exec inject ambient variable must not be present: %s\n"), name);
+        return;
+    case SECDAT_EXEC_PENTAD_SECRET:
+    default:
+        fprintf(stderr, _("exec inject secret key must not be present: %s\n"), name);
+        return;
+    }
+}
+
+static void secdat_exec_print_required_missing(enum secdat_exec_pentad_layer layer, const char *name)
+{
+    switch (layer) {
+    case SECDAT_EXEC_PENTAD_AMBIENT:
+        fprintf(stderr, _("exec inject required ambient variable not available: %s\n"), name);
+        return;
+    case SECDAT_EXEC_PENTAD_SECRET:
+    default:
+        fprintf(stderr, _("exec inject required secret key not available for injection: %s\n"), name);
+        return;
+    }
+}
+
+static int secdat_exec_pentad_conflicts(
+    const struct secdat_exec_pentad *pentad,
+    enum secdat_exec_pentad_layer layer
+)
 {
     size_t require_index;
     size_t other_index;
+    const char *layer_name = secdat_exec_pentad_layer_name(layer);
 
     for (require_index = 0; require_index < pentad->require.count; require_index += 1) {
         const char *required = pentad->require.items[require_index];
 
         if (secdat_exec_selector_list_matches(&pentad->omit, required)) {
-            fprintf(stderr, _("exec inject contract conflict: require and omit overlap: %s\n"), required);
+            fprintf(stderr, _("exec inject %s pentad conflict: require and omit overlap: %s\n"), layer_name, required);
             return 1;
         }
         if (secdat_exec_selector_list_matches(&pentad->reject, required)) {
-            fprintf(stderr, _("exec inject contract conflict: require and reject overlap: %s\n"), required);
+            fprintf(stderr, _("exec inject %s pentad conflict: require and reject overlap: %s\n"), layer_name, required);
             return 1;
         }
     }
@@ -357,7 +406,7 @@ static int secdat_exec_pentad_conflicts(const struct secdat_exec_pentad *pentad)
         const char *omitted = pentad->omit.items[other_index];
 
         if (secdat_exec_selector_list_matches(&pentad->reject, omitted)) {
-            fprintf(stderr, _("exec inject contract conflict: omit and reject overlap: %s\n"), omitted);
+            fprintf(stderr, _("exec inject %s pentad conflict: omit and reject overlap: %s\n"), layer_name, omitted);
             return 1;
         }
     }
@@ -1078,9 +1127,9 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
         return 2;
     }
 
-    if (secdat_exec_pentad_conflicts(&options->policy.ambient) != 0
-        || secdat_exec_pentad_conflicts(&options->policy.secret) != 0
-        || secdat_exec_pentad_conflicts(&options->policy.final) != 0) {
+    if (secdat_exec_pentad_conflicts(&options->policy.ambient, SECDAT_EXEC_PENTAD_AMBIENT) != 0
+        || secdat_exec_pentad_conflicts(&options->policy.secret, SECDAT_EXEC_PENTAD_SECRET) != 0
+        || secdat_exec_pentad_conflicts(&options->policy.final, SECDAT_EXEC_PENTAD_FINAL) != 0) {
         secdat_exec_options_free(options);
         return 2;
     }
@@ -1178,10 +1227,10 @@ static int secdat_exec_snapshot_ambient(struct secdat_exec_name_value_list *ambi
 
 static int secdat_exec_pentad_select_names(
     const struct secdat_exec_pentad *pentad,
+    enum secdat_exec_pentad_layer layer,
     const char **available,
     size_t available_count,
     const char **alternate_names,
-    int reject_label_is_present,
     char ***selected_out,
     size_t *selected_count_out,
     char ***rejected_present_out,
@@ -1213,9 +1262,7 @@ static int secdat_exec_pentad_select_names(
             if (!secdat_exec_selector_matches(pentad->reject.items[selector_index], available[available_index])) {
                 continue;
             }
-            if (reject_label_is_present) {
-                fprintf(stderr, _("exec inject reject matched present entry: %s\n"), available[available_index]);
-            }
+            secdat_exec_print_reject_present(layer, available[available_index]);
             if (secdat_exec_string_list_append(rejected_present_out, rejected_present_count_out, available[available_index]) != 0) {
                 secdat_exec_string_list_free(selected, selected_count);
                 return 1;
@@ -1267,7 +1314,7 @@ static int secdat_exec_pentad_select_names(
             }
         }
         if (!found) {
-            fprintf(stderr, _("exec inject required entry missing: %s\n"), required);
+            secdat_exec_print_required_missing(layer, required);
             if (missing_required_out != NULL
                 && missing_required_count_out != NULL
                 && secdat_exec_string_list_append(missing_required_out, missing_required_count_out, required) != 0) {
@@ -1366,10 +1413,10 @@ static int secdat_exec_build_plan(
 
     if (secdat_exec_pentad_select_names(
             &policy->ambient,
+            SECDAT_EXEC_PENTAD_AMBIENT,
             (const char **)ambient_available,
             ambient_available_count,
             NULL,
-            1,
             &ambient_selected,
             &ambient_selected_count,
             &plan_out->rejected_ambient_present,
@@ -1453,10 +1500,10 @@ static int secdat_exec_build_plan(
 
     if (secdat_exec_pentad_select_names(
             &policy->secret,
+            SECDAT_EXEC_PENTAD_SECRET,
             (const char **)secret_available,
             secret_available_count,
             (const char **)secret_env_names,
-            1,
             &secret_selected,
             &secret_selected_count,
             &plan_out->rejected_secret_present,
@@ -1605,7 +1652,7 @@ static int secdat_exec_build_plan(
         if (!secdat_exec_selector_list_matches(&policy->final.reject, name)) {
             continue;
         }
-        fprintf(stderr, _("exec inject final reject matched present entry: %s\n"), name);
+        fprintf(stderr, _("exec inject forbidden variable in final child env: %s\n"), name);
         if (secdat_exec_string_list_append(&plan_out->rejected_final_present, &plan_out->rejected_final_present_count, name) != 0) {
             status = 1;
             goto cleanup;
@@ -1665,7 +1712,7 @@ static int secdat_exec_build_plan(
                 }
             }
             if (!found) {
-                fprintf(stderr, _("exec inject required entry missing: %s\n"), required);
+                fprintf(stderr, _("exec inject required variable missing from final child env: %s\n"), required);
                 if (secdat_exec_string_list_append(
                         &plan_out->missing_final_required,
                         &plan_out->missing_final_required_count,
