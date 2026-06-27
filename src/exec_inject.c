@@ -947,6 +947,74 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
     return 2;
 }
 
+static int secdat_exec_completion_is_global_option(const char *token)
+{
+    return token != NULL
+        && (strcmp(token, "--dir") == 0 || strcmp(token, "-d") == 0
+            || strcmp(token, "--domain") == 0
+            || strcmp(token, "--store") == 0 || strcmp(token, "-s") == 0);
+}
+
+static int secdat_exec_completion_option_takes_argument(const char *token)
+{
+    return token != NULL
+        && (strcmp(token, "--inject") == 0
+            || strcmp(token, "--inject-file") == 0
+            || strcmp(token, "--inject-gate") == 0
+            || strcmp(token, "--pattern") == 0 || strcmp(token, "-p") == 0
+            || strcmp(token, "--pattern-exclude") == 0 || strcmp(token, "-x") == 0
+            || strcmp(token, "--env-map-sed") == 0
+            || strcmp(token, "--require-key") == 0);
+}
+
+int secdat_exec_completion_command_index(int argc, char **argv)
+{
+    int exec_index = -1;
+    int index;
+
+    for (index = 0; index + 1 < argc; index += 1) {
+        const char *token = argv[index];
+
+        if (secdat_exec_completion_is_global_option(token)) {
+            index += 1;
+            continue;
+        }
+        if (strcmp(token, "--help") == 0 || strcmp(token, "-h") == 0
+            || strcmp(token, "--version") == 0 || strcmp(token, "-V") == 0) {
+            continue;
+        }
+        if (strcmp(token, "exec") == 0) {
+            exec_index = index;
+            break;
+        }
+        break;
+    }
+
+    if (exec_index < 0) {
+        return -1;
+    }
+
+    index = exec_index + 1;
+    while (index < argc - 1) {
+        const char *token = argv[index];
+
+        if (strcmp(token, "--") == 0) {
+            return index + 1;
+        }
+        if (token[0] == '-') {
+            if (secdat_exec_completion_option_takes_argument(token)) {
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+        return index;
+    }
+
+    return argc - 1;
+}
+
 static void secdat_prepare_exec_option_argv(const struct secdat_cli *cli, int *argc_out, char **argv_out)
 {
     size_t index;

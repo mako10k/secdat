@@ -1,5 +1,6 @@
 #include "cli.h"
 
+#include "exec_inject.h"
 #include "i18n.h"
 #include "store.h"
 
@@ -772,9 +773,12 @@ static int secdat_cli_completion_token_matches(const char *current, const char *
     return strncmp(candidate, current, strlen(current)) == 0;
 }
 
-static void secdat_cli_completion_print_mode(const char *mode)
+static void secdat_cli_completion_print_mode(const char *mode, int delegate_offset)
 {
     printf("__secdat_completion_mode=%s\n", mode);
+    if (strcmp(mode, "delegate") == 0) {
+        printf("__secdat_completion_offset=%d\n", delegate_offset);
+    }
 }
 
 static void secdat_cli_completion_print_candidate(const char *current, const char *candidate)
@@ -1194,12 +1198,27 @@ int secdat_cli_complete(int argc, char **argv)
     const char *current;
     const char *previous;
     const char *mode;
+    int delegate_offset = 0;
+    int exec_command_index;
 
     secdat_cli_completion_parse_context(argc, argv, &command, &subcommand, &current, &previous);
     mode = secdat_cli_completion_command_prev_option_mode(command, subcommand, previous);
-    secdat_cli_completion_print_mode(mode);
+    if (command != NULL && strcmp(command, "exec") == 0 && strcmp(mode, "plain") == 0) {
+        exec_command_index = secdat_exec_completion_command_index(argc, argv);
+        if (exec_command_index >= 0) {
+            if (argc - 1 > exec_command_index) {
+                mode = "delegate";
+                delegate_offset = exec_command_index + 1;
+            } else if (argc - 1 == exec_command_index
+                && (current[0] == '\0' || current[0] != '-')) {
+                mode = "command";
+            }
+        }
+    }
+    secdat_cli_completion_print_mode(mode, delegate_offset);
 
-    if (strcmp(mode, "dir") == 0 || strcmp(mode, "file") == 0 || strcmp(mode, "none") == 0) {
+    if (strcmp(mode, "dir") == 0 || strcmp(mode, "file") == 0 || strcmp(mode, "none") == 0
+        || strcmp(mode, "command") == 0 || strcmp(mode, "delegate") == 0) {
         return 0;
     }
     if (secdat_cli_completion_print_nested_help_targets(argc, argv, current)) {
