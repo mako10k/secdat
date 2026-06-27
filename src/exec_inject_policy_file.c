@@ -9,6 +9,7 @@
 
 struct secdat_exec_inject_policy;
 
+extern int secdat_exec_apply_inject_gate(struct secdat_exec_inject_policy *policy, const char *value);
 extern int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, const char *token);
 
 struct secdat_exec_yaml_string_list {
@@ -379,10 +380,24 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
             subsection = 0;
             if (strcmp(key, "supply") == 0) {
                 section = 1;
+                free(key);
+                free(value);
             } else if (strcmp(key, "route") == 0) {
                 section = 2;
+                free(key);
+                free(value);
             } else if (strcmp(key, "demand") == 0) {
                 section = 3;
+                free(key);
+                free(value);
+            } else if (strcmp(key, "gate") == 0) {
+                section = 0;
+                status = secdat_exec_apply_inject_gate(policy, value);
+                free(key);
+                free(value);
+                if (status != 0) {
+                    goto cleanup;
+                }
             } else {
                 fprintf(stderr, _("unknown inject policy file section: %s\n"), key);
                 status = 2;
@@ -390,8 +405,6 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
                 free(value);
                 goto cleanup;
             }
-            free(key);
-            free(value);
             continue;
         }
 

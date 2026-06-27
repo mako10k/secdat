@@ -395,6 +395,8 @@ CLI `--inject` after the file overrides file entries.
 #### `exec.env.yaml` schema
 
 ```yaml
+gate: sandbox
+
 supply:
   ambient:
     omit: ["SECDAT_*"]
@@ -415,8 +417,9 @@ demand:
     reject: ["AWS_SECRET_ACCESS_KEY"]
 ```
 
-YAML keys under `supply` map to pentad kinds. `demand.final` mirrors `final:`
-CLI rules.
+Top-level `gate` maps to `--inject-gate` (currently only `sandbox`). YAML keys
+under `supply` map to pentad kinds. `demand.final` mirrors `final:` CLI rules.
+`gate` and `--inject-gate` share the same at-most-once and conflict rules.
 
 ## 8. Preflight and JSON
 

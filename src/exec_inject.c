@@ -781,6 +781,25 @@ static int secdat_exec_append_inject_selectors(
     return 0;
 }
 
+int secdat_exec_apply_inject_gate(struct secdat_exec_inject_policy *policy, const char *value)
+{
+    if (strcmp(value, "sandbox") != 0) {
+        fprintf(stderr, _("invalid --inject-gate value: %s\n"), value);
+        return 2;
+    }
+    if (policy->legacy_sandbox_injectable) {
+        fprintf(stderr, _("exec: --sandbox-injectable conflicts with --inject-gate=sandbox\n"));
+        return 2;
+    }
+    if (policy->explicit_inject_gate_sandbox) {
+        fprintf(stderr, _("--inject-gate=sandbox may be specified at most once\n"));
+        return 2;
+    }
+    policy->explicit_inject_gate_sandbox = 1;
+    policy->sandbox_injectable = 1;
+    return 0;
+}
+
 int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, const char *token)
 {
     const char *separator = strchr(token, ':');
@@ -1063,23 +1082,11 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
             }
             break;
         case 1008:
-            if (strcmp(optarg, "sandbox") != 0) {
-                fprintf(stderr, _("invalid --inject-gate value: %s\n"), optarg);
+            status = secdat_exec_apply_inject_gate(&options->policy, optarg);
+            if (status != 0) {
                 secdat_exec_options_free(options);
-                return 2;
+                return status;
             }
-            if (options->policy.legacy_sandbox_injectable) {
-                fprintf(stderr, _("exec: --sandbox-injectable conflicts with --inject-gate=sandbox\n"));
-                secdat_exec_options_free(options);
-                return 2;
-            }
-            if (options->policy.explicit_inject_gate_sandbox) {
-                fprintf(stderr, _("--inject-gate=sandbox may be specified at most once\n"));
-                secdat_exec_options_free(options);
-                return 2;
-            }
-            options->policy.explicit_inject_gate_sandbox = 1;
-            options->policy.sandbox_injectable = 1;
             break;
         case 1002:
             if (options->policy.explicit_inject_gate_sandbox) {

@@ -453,6 +453,44 @@ final_req = json.loads(stdout)
 if final_req["final"]["missing_required"] != ["MISSING_ENV"]:
     fail(f"final require missing plan unexpected: {final_req!r}")
 
+# --inject-file gate: sandbox applies the same pre-filter as --inject-gate (§7.4).
+gate_policy_file = work_root / "exec.gate.yaml"
+gate_policy_file.write_text(
+    "gate: sandbox\n"
+    "supply:\n"
+    "  secret:\n"
+    "    only: [\"BULK_TOKEN\", \"EXPLICIT_TOKEN\", \"APP_TOKEN\"]\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(gate_policy_file),
+    "python3", "-c",
+    "import json, os; print(json.dumps({k: os.environ[k] for k in sorted(k for k in os.environ if k in ('BULK_TOKEN', 'EXPLICIT_TOKEN', 'APP_TOKEN'))}, sort_keys=True))",
+])
+if rc != 0 or not exec_stderr_ok(stderr):
+    fail(f"inject-file gate sandbox exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(json.loads(stdout), {"BULK_TOKEN": "bulk-secret"}, "inject-file gate sandbox payload")
+
+bad_gate_file = work_root / "bad.gate.yaml"
+bad_gate_file.write_text("gate: invalid\n", encoding="utf-8")
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(bad_gate_file),
+    "python3", "-c", "pass",
+])
+if rc != 2 or "invalid --inject-gate value: invalid" not in stderr:
+    fail(f"inject-file invalid gate did not fail: rc={rc} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(gate_policy_file),
+    "--inject-gate", "sandbox",
+    "python3", "-c", "pass",
+])
+if rc != 2 or "--inject-gate=sandbox may be specified at most once" not in stderr:
+    fail(f"inject-file gate duplicate did not fail: rc={rc} stderr={stderr!r}")
+
 # --inject-gate=sandbox applies bulk sandbox_inject pre-filter (§10).
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
