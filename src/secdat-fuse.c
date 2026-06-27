@@ -87,7 +87,7 @@ static void secdat_fuse_print_usage(const char *program_name, FILE *stream)
           "  -s, --store STORE          select the store namespace\n"
           "  -p, --pattern GLOB         include matching keys; may be repeated\n"
           "  -x, --pattern-exclude GLOB exclude matching keys; may be repeated\n"
-          "      --sandbox-injectable   include only keys allowed for bulk sandbox injection\n"
+          "      --inject-bulk-gate     include only keys allowed for bulk-gated selection\n"
           "      --require-key KEY      fail unless KEY remains selected; may be repeated\n"
           "      --dry-run              list files that would be mounted without mounting\n"
           "      --json                 write dry-run output as JSON\n"
@@ -795,8 +795,8 @@ static void secdat_fuse_write_json_dry_run(
     secdat_write_json_string_list(stdout, &state->include_patterns);
     fputs(",\n  \"exclude_patterns\": ", stdout);
     secdat_write_json_string_list(stdout, &state->exclude_patterns);
-    fputs(",\n  \"sandbox_injectable\": ", stdout);
-    fputs(state->filters.sandbox_injectable ? "true" : "false", stdout);
+    fputs(",\n  \"inject_bulk_gate\": ", stdout);
+    fputs(state->filters.inject_bulk_gate ? "true" : "false", stdout);
     fputs(",\n  \"required_keys\": ", stdout);
     secdat_write_json_string_list(stdout, &state->required_keys);
     fputs(",\n  \"missing_required_keys\": ", stdout);
@@ -871,6 +871,12 @@ static int secdat_fuse_print_dry_run(const struct secdat_fuse_state *state)
     return 0;
 }
 
+static int secdat_fuse_reject_removed_legacy_flag(const char *flag, const char *replacement)
+{
+    fprintf(stderr, _("secdat-fuse: %s is no longer supported; use %s\n"), flag, replacement);
+    return 2;
+}
+
 static int secdat_fuse_parse_args(int argc, char **argv, struct secdat_fuse_state *state)
 {
     static const struct option long_options[] = {
@@ -879,7 +885,8 @@ static int secdat_fuse_parse_args(int argc, char **argv, struct secdat_fuse_stat
         {"store", required_argument, NULL, 's'},
         {"pattern", required_argument, NULL, 'p'},
         {"pattern-exclude", required_argument, NULL, 'x'},
-        {"sandbox-injectable", no_argument, NULL, 1001},
+        {"inject-bulk-gate", no_argument, NULL, 1001},
+        {"sandbox-injectable", no_argument, NULL, 1007},
         {"dry-run", no_argument, NULL, 1002},
         {"require-key", required_argument, NULL, 1003},
         {"foreground", no_argument, NULL, 'f'},
@@ -917,8 +924,10 @@ static int secdat_fuse_parse_args(int argc, char **argv, struct secdat_fuse_stat
             }
             break;
         case 1001:
-            state->filters.sandbox_injectable = 1;
+            state->filters.inject_bulk_gate = 1;
             break;
+        case 1007:
+            return secdat_fuse_reject_removed_legacy_flag("--sandbox-injectable", "--inject-bulk-gate");
         case 1002:
             state->dry_run = 1;
             break;

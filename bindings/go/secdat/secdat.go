@@ -73,7 +73,7 @@ type ListFilters struct {
 	ExcludePattern    string
 	Safe              bool
 	UnsafeStore       bool
-	SandboxInjectable bool
+	InjectBulkGate bool
 }
 
 type DomainFilters struct {
@@ -105,7 +105,7 @@ type KeyMetadata struct {
 	StorageMode     string
 	KeyVisibility   string
 	ValueAccess     string
-	SandboxInject   string
+	InjectBulk      string
 }
 
 type StoreMetadata struct {
@@ -176,7 +176,7 @@ func newCListFilters(filters ListFilters) cListFilters {
 	prepared.raw.exclude_pattern = prepared.excludePattern
 	prepared.raw.safe = C.int(boolToInt(filters.Safe))
 	prepared.raw.unsafe_store = C.int(boolToInt(filters.UnsafeStore))
-	prepared.raw.sandbox_injectable = C.int(boolToInt(filters.SandboxInjectable))
+	prepared.raw.inject_bulk_gate = C.int(boolToInt(filters.InjectBulkGate))
 	return prepared
 }
 
@@ -395,7 +395,7 @@ func ListKeys(options Options, filters ListFilters) ([]KeyMetadata, error) {
 			StorageMode:     C.GoString(&item.storage_mode[0]),
 			KeyVisibility:   C.GoString(&item.key_visibility[0]),
 			ValueAccess:     C.GoString(&item.value_access[0]),
-			SandboxInject:   C.GoString(&item.sandbox_inject[0]),
+			InjectBulk:      C.GoString(&item.inject_bulk[0]),
 		})
 	}
 	return metadata, nil

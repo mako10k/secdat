@@ -64,8 +64,8 @@ struct secdat_exec_inject_policy {
     struct secdat_exec_route_rule *route_rules;
     size_t route_rule_count;
     struct secdat_exec_pentad final;
-    int sandbox_injectable;
-    int explicit_inject_gate_sandbox;
+    int inject_bulk_gate;
+    int explicit_inject_gate_bulk;
     int explicit_secret_only;
     int explicit_secret_omit;
     int explicit_secret_require;
@@ -785,16 +785,20 @@ static int secdat_exec_reject_removed_legacy_flag(const char *flag, const char *
 
 int secdat_exec_apply_inject_gate(struct secdat_exec_inject_policy *policy, const char *value)
 {
-    if (strcmp(value, "sandbox") != 0) {
+    if (strcmp(value, "sandbox") == 0) {
+        fprintf(stderr, _("invalid --inject-gate value: %s; use --inject-gate=bulk\n"), value);
+        return 2;
+    }
+    if (strcmp(value, "bulk") != 0) {
         fprintf(stderr, _("invalid --inject-gate value: %s\n"), value);
         return 2;
     }
-    if (policy->explicit_inject_gate_sandbox) {
-        fprintf(stderr, _("--inject-gate=sandbox may be specified at most once\n"));
+    if (policy->explicit_inject_gate_bulk) {
+        fprintf(stderr, _("--inject-gate=bulk may be specified at most once\n"));
         return 2;
     }
-    policy->explicit_inject_gate_sandbox = 1;
-    policy->sandbox_injectable = 1;
+    policy->explicit_inject_gate_bulk = 1;
+    policy->inject_bulk_gate = 1;
     return 0;
 }
 
@@ -1006,7 +1010,7 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
             break;
         case 1002:
             secdat_exec_options_free(options);
-            return secdat_exec_reject_removed_legacy_flag("--sandbox-injectable", "--inject-gate=sandbox");
+            return secdat_exec_reject_removed_legacy_flag("--sandbox-injectable", "--inject-gate=bulk");
         case 1003:
             options->dry_run = 1;
             break;
@@ -1374,7 +1378,7 @@ static int secdat_exec_build_plan(
         char *env_name = NULL;
         int map_status;
 
-        if (policy->sandbox_injectable) {
+        if (policy->inject_bulk_gate) {
             int allowed = 0;
 
             if (secdat_exec_port_key_allows_bulk_sandbox(chain, store_name, key, &allowed) != 0) {
@@ -1826,7 +1830,7 @@ static json_t *secdat_exec_build_json_report(
             || json_object_set_new(root, "domain", json_string(domain_label)) != 0
             || json_object_set_new(root, "store", json_string(secdat_exec_port_effective_store_name(cli->store))) != 0
             || json_object_set_new(root, "dry_run", json_boolean(dry_run)) != 0
-            || json_object_set_new(root, "inject_gate", options->policy.sandbox_injectable ? json_string("sandbox") : json_null()) != 0
+            || json_object_set_new(root, "inject_gate", options->policy.inject_bulk_gate ? json_string("bulk") : json_null()) != 0
             || json_object_set_new(root, "supply", supply) != 0
             || json_object_set_new(root, "route", route) != 0
             || json_object_set_new(root, "final", final) != 0

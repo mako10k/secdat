@@ -153,13 +153,13 @@ OwnedListFilters ParseListFilters(const Napi::Env &env, const Napi::Value &value
         }
         filters.raw.unsafe_store = object.Get("unsafeStore").As<Napi::Boolean>().Value() ? 1 : 0;
     }
-    if (object.Has("sandboxInjectable")) {
-        if (!object.Get("sandboxInjectable").IsBoolean()) {
-            Napi::TypeError::New(env, "filters.sandboxInjectable must be a boolean").ThrowAsJavaScriptException();
+    if (object.Has("injectBulkGate")) {
+        if (!object.Get("injectBulkGate").IsBoolean()) {
+            Napi::TypeError::New(env, "filters.injectBulkGate must be a boolean").ThrowAsJavaScriptException();
             *ok = false;
             return filters;
         }
-        filters.raw.sandbox_injectable = object.Get("sandboxInjectable").As<Napi::Boolean>().Value() ? 1 : 0;
+        filters.raw.inject_bulk_gate = object.Get("injectBulkGate").As<Napi::Boolean>().Value() ? 1 : 0;
     }
 
     return filters;
@@ -548,7 +548,7 @@ Napi::Value ListKeys(const Napi::CallbackInfo &info)
         row.Set("storageMode", Napi::String::New(env, item.storage_mode));
         row.Set("keyVisibility", Napi::String::New(env, item.key_visibility));
         row.Set("valueAccess", Napi::String::New(env, item.value_access));
-        row.Set("sandboxInject", Napi::String::New(env, item.sandbox_inject));
+        row.Set("injectBulk", Napi::String::New(env, item.inject_bulk));
         result.Set(index, row);
     }
     secdat_sdk_free(result_list.items);

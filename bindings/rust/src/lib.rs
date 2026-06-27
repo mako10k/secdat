@@ -49,7 +49,7 @@ struct RawListFilters {
     exclude_pattern: *const c_char,
     safe: c_int,
     unsafe_store: c_int,
-    sandbox_injectable: c_int,
+    inject_bulk_gate: c_int,
 }
 
 #[repr(C)]
@@ -73,7 +73,7 @@ struct RawKeyMetadata {
     storage_mode: [c_char; 16],
     key_visibility: [c_char; 16],
     value_access: [c_char; 16],
-    sandbox_inject: [c_char; 16],
+    inject_bulk: [c_char; 16],
 }
 
 #[repr(C)]
@@ -200,7 +200,7 @@ pub struct ListFilters {
     pub exclude_pattern: Option<String>,
     pub safe: bool,
     pub unsafe_store: bool,
-    pub sandbox_injectable: bool,
+    pub inject_bulk_gate: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -224,7 +224,7 @@ pub struct KeyMetadata {
     pub storage_mode: String,
     pub key_visibility: String,
     pub value_access: String,
-    pub sandbox_inject: String,
+    pub inject_bulk: String,
 }
 
 #[derive(Debug, Clone)]
@@ -355,7 +355,7 @@ impl PreparedListFilters {
                     .map_or(ptr::null(), |value| value.as_ptr()),
                 safe: i32::from(filters.safe),
                 unsafe_store: i32::from(filters.unsafe_store),
-                sandbox_injectable: i32::from(filters.sandbox_injectable),
+                inject_bulk_gate: i32::from(filters.inject_bulk_gate),
             },
             _include_pattern: include_pattern,
             _exclude_pattern: exclude_pattern,
@@ -612,7 +612,7 @@ pub fn list_keys(options: &Options, filters: &ListFilters) -> Result<Vec<KeyMeta
                 storage_mode: c_char_array_to_string(&item.storage_mode),
                 key_visibility: c_char_array_to_string(&item.key_visibility),
                 value_access: c_char_array_to_string(&item.value_access),
-                sandbox_inject: c_char_array_to_string(&item.sandbox_inject),
+                inject_bulk: c_char_array_to_string(&item.inject_bulk),
             })
             .collect()
     };

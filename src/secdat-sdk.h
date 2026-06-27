@@ -44,7 +44,7 @@ struct secdat_sdk_list_filters {
     const char *exclude_pattern;
     int safe;
     int unsafe_store;
-    int sandbox_injectable;
+    int inject_bulk_gate;
 };
 
 struct secdat_sdk_domain_filters {
@@ -76,7 +76,7 @@ struct secdat_sdk_key_metadata {
     char storage_mode[16];
     char key_visibility[16];
     char value_access[16];
-    char sandbox_inject[16];
+    char inject_bulk[16];
 };
 
 struct secdat_sdk_key_metadata_list {

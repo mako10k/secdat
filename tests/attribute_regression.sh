@@ -66,9 +66,19 @@ rc, stdout, stderr = run([bin_path, "--dir", str(child), "domain", "create"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"child domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "API_TOKEN", "--sandbox-inject", "named"])
+if rc != 2 or "--sandbox-inject is no longer supported; use --inject-bulk" not in stderr:
+    fail(f"legacy --sandbox-inject attr should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "set", "LEGACY_FLAG", "--value", "x", "--sandbox-inject", "named",
+])
+if rc != 2 or "--sandbox-inject is no longer supported; use --inject-bulk" not in stderr:
+    fail(f"legacy --sandbox-inject set should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "set", "API_TOKEN",
-    "--value", "token", "--sandbox-inject", "explicit",
+    "--value", "token", "--inject-bulk", "named",
 ])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set explicit inject failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -78,38 +88,38 @@ if rc != 0 or stderr != "":
     fail(f"attr API_TOKEN failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "key_visibility=always\n", "attr key visibility")
 assert_contains(stdout, "value_access=unlocked\n", "attr value access")
-assert_contains(stdout, "sandbox_inject=explicit\n", "attr inject")
+assert_contains(stdout, "inject_bulk=named\n", "attr inject")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--metadata"])
 if rc != 0 or stderr != "":
     fail(f"ls --metadata failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "API_TOKEN\tkey_visibility=always\tvalue_access=unlocked\tsandbox_inject=explicit\n", "ls metadata")
+assert_contains(stdout, "API_TOKEN\tkey_visibility=always\tvalue_access=unlocked\tinject_bulk=named\n", "ls metadata")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--sandbox-injectable"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--inject-bulk-gate"])
 if rc != 0 or stderr != "":
-    fail(f"ls --sandbox-injectable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, "", "explicit inject excluded from bulk sandbox-injectable list")
+    fail(f"ls --inject-bulk-gate failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, "", "explicit inject excluded from bulk inject-bulk-gate list")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "NO_INJECT", "--value", "nope"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set non-inject failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--sandbox-injectable"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--inject-bulk-gate"])
 if rc != 0 or stderr != "":
-    fail(f"ls sandbox-injectable after non-inject failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"ls inject-bulk-gate after non-inject failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_eq(stdout, "", "non-bulk keys excluded")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--sandbox-inject", "bulk"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--inject-bulk", "include"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"attr bulk failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "list", "--sandbox-injectable"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "list", "--inject-bulk-gate"])
 if rc != 0 or stderr != "":
-    fail(f"list sandbox-injectable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"list inject-bulk-gate failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "NO_INJECT\n", "list includes bulk key")
 if "API_TOKEN\n" in stdout:
-    fail(f"list sandbox-injectable unexpectedly included explicit key: {stdout!r}")
+    fail(f"list inject-bulk-gate unexpectedly included explicit key: {stdout!r}")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--sandbox-inject", "allow"])
-if rc == 0 or "invalid sandbox inject policy: allow" not in stderr:
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--inject-bulk", "allow"])
+if rc == 0 or "invalid inject bulk policy: allow; use include" not in stderr:
     fail(f"legacy allow CLI input should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 legacy_meta_files = list(Path(env["XDG_DATA_HOME"]).rglob("NO_INJECT.meta"))
@@ -122,8 +132,8 @@ legacy_meta_files[0].write_text(
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT"])
 if rc != 0 or stderr != "":
     fail(f"legacy allow metadata readback failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "sandbox_inject=bulk\n", "legacy allow metadata normalizes to bulk")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--sandbox-injectable"])
+assert_contains(stdout, "inject_bulk=include\n", "legacy allow metadata normalizes to bulk")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--inject-bulk-gate"])
 if rc != 0 or stdout != "NO_INJECT\n" or stderr != "":
     fail(f"legacy allow metadata should remain bulk-injectable: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
@@ -158,9 +168,9 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "API_TOKEN_COPY"])
 if rc != 0 or stderr != "":
     fail(f"attr copied key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "sandbox_inject=explicit\n", "copy preserves inject attr")
+assert_contains(stdout, "inject_bulk=named\n", "copy preserves inject attr")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(child), "attr", "API_TOKEN", "--sandbox-inject", "never"])
+rc, stdout, stderr = run([bin_path, "--dir", str(child), "attr", "API_TOKEN", "--inject-bulk", "exclude"])
 if rc == 0 or "cannot update inherited key attributes" not in stderr:
     fail(f"inherited attr update should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 

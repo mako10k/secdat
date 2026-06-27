@@ -47,7 +47,7 @@ run_secdat --dir "$orphaned_child_domain" domain create
 run_secdat --dir "$root_domain" store create team
 run_secdat --dir "$root_domain" --store team set API_TOKEN --value sdk-secret-value
 run_secdat --dir "$root_domain" --store team set PUBLIC_URL --unsafe --value public-secret-value
-run_secdat --dir "$root_domain" --store team set BULK_TOKEN --sandbox-inject bulk --value bulk-secret-value
+run_secdat --dir "$root_domain" --store team set BULK_TOKEN --inject-bulk include --value bulk-secret-value
 run_secdat --dir "$orphaned_child_domain" set ORPHANED_SDK_KEY --value orphaned-sdk-value
 rmdir "$orphaned_child_domain"
 
@@ -79,7 +79,7 @@ static void assert_no_key_value(const struct secdat_sdk_key_metadata *item)
         || string_has_secret(item->storage_mode)
         || string_has_secret(item->key_visibility)
         || string_has_secret(item->value_access)
-        || string_has_secret(item->sandbox_inject)) {
+        || string_has_secret(item->inject_bulk)) {
         fail("key metadata exposed a secret value");
     }
 }
@@ -203,8 +203,8 @@ int main(int argc, char **argv)
     if (!api_token->local || api_token->inherited || strcmp(api_token->source_type, "local") != 0) {
         fail("local source metadata was wrong");
     }
-    if (strcmp(bulk_token->sandbox_inject, "bulk") != 0) {
-        fail("bulk key metadata had wrong sandbox injection policy");
+    if (strcmp(bulk_token->inject_bulk, "include") != 0) {
+        fail("bulk key metadata had wrong inject bulk policy");
     }
     secdat_sdk_free(keys.items);
 
@@ -227,14 +227,14 @@ int main(int argc, char **argv)
     value_length = 0;
 
     bulk_filter.include_pattern = "BULK_*";
-    bulk_filter.sandbox_injectable = 1;
+    bulk_filter.inject_bulk_gate = 1;
     if (secdat_sdk_list_keys(&root_options, &bulk_filter, &bulk_keys) != 0) {
         fail("bulk filtered secdat_sdk_list_keys failed");
     }
     if (bulk_keys.count != 1
         || strcmp(bulk_keys.items[0].key, "BULK_TOKEN") != 0
-        || strcmp(bulk_keys.items[0].sandbox_inject, "bulk") != 0) {
-        fail("secdat_sdk_set_preserve_attrs did not preserve sandbox injection metadata");
+        || strcmp(bulk_keys.items[0].inject_bulk, "include") != 0) {
+        fail("secdat_sdk_set_preserve_attrs did not preserve inject bulk metadata");
     }
     secdat_sdk_free(bulk_keys.items);
 

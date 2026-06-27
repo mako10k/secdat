@@ -69,14 +69,14 @@ def exec_stderr_ok(stderr):
 
 def write_entry(path, eid, sid, key):
     path.write_text(
-        f"SECDATDENT1\nentry_id={eid}\nsecret_id={sid}\nkey_visibility=always\nkey={key}\nentry_inject=explicit\n",
+        f"SECDATDENT1\nentry_id={eid}\nsecret_id={sid}\nkey_visibility=always\nkey={key}\ninject_bulk_entry=named\n",
         encoding="utf-8",
     )
 
 
 def write_object(path, sid, refcount):
     path.write_text(
-        f"SECDATSECOBJ1\nsecret_id={sid}\nvalue_access=unlocked\nsecret_inject=allow\nrefcount={refcount}\n",
+        f"SECDATSECOBJ1\nsecret_id={sid}\nvalue_access=unlocked\ninject_bulk_value=include\nrefcount={refcount}\n",
         encoding="utf-8",
     )
 
@@ -170,7 +170,7 @@ if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"clean v2 fsck after duplicate removal failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--metadata"])
-if rc != 0 or stdout != "APP_TOKEN\tkey_visibility=always\tvalue_access=unlocked\tsandbox_inject=explicit\n" or stderr != "":
+if rc != 0 or stdout != "APP_TOKEN\tkey_visibility=always\tvalue_access=unlocked\tinject_bulk=named\n" or stderr != "":
     fail(f"clean v2 ls metadata failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "exists", "APP_TOKEN"])
@@ -189,7 +189,7 @@ for expected in (
     "object_domain=",
     "object_store=default\n",
     "value_access=unlocked\n",
-    "secret_inject=allow\n",
+    "inject_bulk_value=include\n",
     "refcount_cached=1\n",
     "refcount_actual=1\n",
     "orphaned=no\n",
@@ -204,55 +204,55 @@ if rc != 2 or stdout != "" or "invalid UUID for secret status: not-a-uuid\n" not
     fail(f"secret status invalid UUID should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=explicit\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\ninject_bulk=named\n" or stderr != "":
     fail(f"clean v2 attr failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--sandbox-injectable"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--inject-bulk-gate"])
 if rc != 0 or stdout != "" or stderr != "":
-    fail(f"explicit v2 key should be excluded from bulk sandbox-injectable list: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"explicit v2 key should be excluded from bulk inject-bulk-gate list: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN", "--sandbox-inject", "never"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN", "--inject-bulk", "exclude"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"clean v2 attr inject update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=never\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\ninject_bulk=exclude\n" or stderr != "":
     fail(f"clean v2 attr after inject update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 entry_text = (domain_entries_dir / f"{entry_id}.dent").read_text(encoding="utf-8")
 object_text = read_object_header_text(secret_objects_dir / f"{secret_id}.sec")
-if "entry_inject=never\n" not in entry_text:
+if "inject_bulk_entry=exclude\n" not in entry_text:
     fail("clean v2 attr did not update domain entry inject policy")
 if "object_domain=" not in entry_text or "object_store=default\n" not in entry_text:
     fail("clean v2 attr did not write object location metadata")
 if "wrapped_object_key=" not in entry_text:
     fail("clean v2 attr did not backfill the wrapped object key")
-if "secret_inject=allow\n" not in object_text or "refcount=1\n" not in object_text:
+if "inject_bulk_value=include\n" not in object_text or "refcount=1\n" not in object_text:
     fail("clean v2 attr did not preserve secret object metadata")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN", "--sandbox-inject", "bulk"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN", "--inject-bulk", "include"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"entry-level inject bulk re-enable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=bulk\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\ninject_bulk=include\n" or stderr != "":
     fail(f"v2 attr after entry bulk re-enable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 object_text = read_object_header_text(secret_objects_dir / f"{secret_id}.sec")
-(secret_objects_dir / f"{secret_id}.sec").write_text(object_text.replace("secret_inject=allow\n", "secret_inject=never\n"), encoding="utf-8")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN", "--sandbox-inject", "bulk"])
-if rc == 0 or "secret object forbids sandbox injection: APP_TOKEN" not in stderr:
+(secret_objects_dir / f"{secret_id}.sec").write_text(object_text.replace("inject_bulk_value=include\n", "inject_bulk_value=exclude\n"), encoding="utf-8")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN", "--inject-bulk", "include"])
+if rc == 0 or "secret object excludes inject bulk: APP_TOKEN" not in stderr:
     fail(f"object-level inject deny should reject bulk re-enable: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=never\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\ninject_bulk=exclude\n" or stderr != "":
     fail(f"v2 attr after rejected bulk re-enable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=never\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\ninject_bulk=exclude\n" or stderr != "":
     fail(f"object-level inject deny should override entry bulk: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([
-    bin_path, "--dir", str(domain), "exec", "--inject-gate", "sandbox",
+    bin_path, "--dir", str(domain), "exec", "--inject-gate", "bulk",
     "python3", "-c", "import os; print('APP_TOKEN' in os.environ)",
 ])
 if rc != 0 or stdout != "False\n" or not exec_stderr_ok(stderr):
-    fail(f"object-level inject deny should exclude sandbox exec: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "export", "--sandbox-injectable"])
+    fail(f"object-level inject deny should exclude bulk-gate exec: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "export", "--inject-bulk-gate"])
 if rc != 0 or stdout != "" or stderr != "":
-    fail(f"object-level inject deny should exclude sandbox export: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"object-level inject deny should exclude bulk-gate export: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"clean v2 fsck after attr update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -268,7 +268,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_TOKEN"])
 if rc != 0 or stdout != f"{secret_id}\n" or stderr != "":
     fail(f"pure v2 set should preserve existing secret id: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nsandbox_inject=never\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\ninject_bulk=exclude\n" or stderr != "":
     fail(f"pure v2 attr after public set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_TOKEN"], {"SECDAT_MASTER_KEY": ""})
 if rc != 0 or stdout != "public-token" or stderr != "":
@@ -303,7 +303,7 @@ remote_entry_id = "66666666-6666-4666-8666-666666666666"
     f"object_store={source_object_store}\n"
     "key_visibility=always\n"
     "key=REMOTE_PUBLIC\n"
-    "entry_inject=explicit\n",
+    "inject_bulk_entry=named\n",
     encoding="utf-8",
 )
 source_public_object_path = secret_objects_dir / f"{secret_id}.sec"
@@ -324,7 +324,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "get", "REMOT
 if rc != 0 or stdout != "public-token" or stderr != "":
     fail(f"remote public object get while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET", "--value", "secret-value", "--sandbox-inject", "explicit"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET", "--value", "secret-value", "--inject-bulk", "named"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 set new encrypted value failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET"])
@@ -345,29 +345,29 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET"], 
 if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
     fail(f"pure v2 encrypted object-key get while locked should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_BULK", "--value", "bulk-value", "--sandbox-inject", "bulk"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_BULK", "--value", "bulk-value", "--inject-bulk", "include"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 set bulk injectable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_EXPLICIT", "--value", "explicit-value", "--sandbox-inject", "explicit"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_EXPLICIT", "--value", "explicit-value", "--inject-bulk", "named"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 set explicit injectable failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
-    "--inject-gate", "sandbox",
+    "--inject-gate", "bulk",
     "--inject", "secret:only=APP_*",
     "python3", "-c", "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k in ('APP_BULK', 'APP_EXPLICIT', 'APP_SECRET'))}, sort_keys=True))",
 ])
 if rc != 0 or not exec_stderr_ok(stderr):
-    fail(f"pure v2 sandbox-injectable exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"pure v2 inject-bulk-gate exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if json.loads(stdout) != {"APP_BULK": "bulk-value"}:
-    fail(f"pure v2 sandbox-injectable exec payload mismatch: {stdout!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "export", "--sandbox-injectable", "--pattern", "APP_*"])
+    fail(f"pure v2 inject-bulk-gate exec payload mismatch: {stdout!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "export", "--inject-bulk-gate", "--pattern", "APP_*"])
 if rc != 0 or stderr != "":
-    fail(f"pure v2 sandbox-injectable export failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "get 'APP_BULK' --shellescaped)\"", "pure v2 sandbox export bulk key")
+    fail(f"pure v2 inject-bulk-gate export failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "get 'APP_BULK' --shellescaped)\"", "pure v2 bulk-gate export bulk key")
 for unexpected in ["APP_EXPLICIT", "APP_SECRET"]:
     if unexpected in stdout:
-        fail(f"pure v2 sandbox-injectable export unexpectedly included {unexpected}: {stdout!r}")
+        fail(f"pure v2 inject-bulk-gate export unexpectedly included {unexpected}: {stdout!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "APP_SECRET", "APP_SECRET_LINK"], {"SECDAT_MASTER_KEY": ""})
 if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
@@ -383,7 +383,7 @@ for expected in (
     "object_domain=",
     "object_store=default\n",
     "value_access=unlocked\n",
-    "secret_inject=allow\n",
+    "inject_bulk_value=include\n",
     "refcount_cached=2\n",
     "refcount_actual=2\n",
     "orphaned=no\n",
@@ -404,24 +404,24 @@ assert_wrapped_object_key_count(app_secret_id, 2, "pure v2 ln")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"pure v2 fsck after ln failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_SECRET", "--sandbox-inject", "bulk"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_SECRET", "--inject-bulk", "include"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 linked source attr bulk failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_SECRET_LINK", "--sandbox-inject", "never"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "APP_SECRET_LINK", "--inject-bulk", "exclude"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 linked target attr never failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--sandbox-injectable", "--pattern", "APP_SECRET*"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--inject-bulk-gate", "--pattern", "APP_SECRET*"])
 if rc != 0 or stderr != "":
-    fail(f"pure v2 linked sandbox attr isolation ls failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"pure v2 linked inject-bulk attr isolation ls failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if stdout != "APP_SECRET\n":
-    fail(f"pure v2 linked sandbox attr should remain per entry: {stdout!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET_LINK", "--value", "linked-value", "--sandbox-inject", "explicit"])
+    fail(f"pure v2 linked inject-bulk attr should remain per entry: {stdout!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET_LINK", "--value", "linked-value", "--inject-bulk", "named"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 set through linked key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET"])
 if rc != 0 or stdout != "linked-value" or stderr != "":
     fail(f"pure v2 linked set should update original key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET", "--value", "secret-value", "--sandbox-inject", "explicit"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET", "--value", "secret-value", "--inject-bulk", "named"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 restore original linked value failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "rm", "APP_SECRET_LINK"])
@@ -500,13 +500,13 @@ for fsck_domain, label in ((domain, "source"), (consumer_domain, "consumer")):
     rc, stdout, stderr = run([bin_path, "--dir", str(fsck_domain), "fsck", "--format", "v2"])
     if rc != 0 or stdout != "ok\n" or stderr != "":
         fail(f"cross-domain v2 fsck failed for {label}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "set", "REMOTE_SECRET", "--value", "remote-linked-value", "--sandbox-inject", "explicit"])
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "set", "REMOTE_SECRET", "--value", "remote-linked-value", "--inject-bulk", "named"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"cross-domain v2 set through linked key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "APP_SECRET"])
 if rc != 0 or stdout != "remote-linked-value" or stderr != "":
     fail(f"cross-domain v2 linked set should update original key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET", "--value", "secret-value", "--sandbox-inject", "explicit"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "APP_SECRET", "--value", "secret-value", "--inject-bulk", "named"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"cross-domain v2 restore original value failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "rm", "REMOTE_SECRET"])
@@ -566,7 +566,7 @@ if rc != 0 or stdout != "ok\n" or stderr != "":
 
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "set", "HIDDEN_TOKEN",
-    "--key-visibility", "unlocked", "--value", "hidden-value", "--sandbox-inject", "explicit",
+    "--key-visibility", "unlocked", "--value", "hidden-value", "--inject-bulk", "named",
 ])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 hidden key set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -592,12 +592,12 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "HIDDEN_TOKEN"]
 if rc != 0 or stdout != "hidden-value" or stderr != "":
     fail(f"pure v2 hidden key get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "HIDDEN_TOKEN"])
-if rc != 0 or stdout != "key_visibility=unlocked\nvalue_access=unlocked\nsandbox_inject=explicit\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=unlocked\nvalue_access=unlocked\ninject_bulk=named\n" or stderr != "":
     fail(f"pure v2 hidden key attr failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--metadata"])
 if rc != 0 or stderr != "":
     fail(f"pure v2 hidden key metadata list failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "HIDDEN_TOKEN\tkey_visibility=unlocked\tvalue_access=unlocked\tsandbox_inject=explicit\n", "hidden key metadata")
+assert_contains(stdout, "HIDDEN_TOKEN\tkey_visibility=unlocked\tvalue_access=unlocked\tinject_bulk=named\n", "hidden key metadata")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--metadata"], {"SECDAT_MASTER_KEY": ""})
 if rc != 0 or stderr != "":
     fail(f"pure v2 locked metadata list failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

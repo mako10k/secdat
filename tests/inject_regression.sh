@@ -82,8 +82,8 @@ for args in [
     [bin_path, "--dir", str(domain), "set", "ADMIN_TOKEN", "--value", "admin-secret"],
     [bin_path, "--dir", str(domain), "set", "MY_TOKEN", "--value", "secret-token"],
     [bin_path, "--dir", str(domain), "set", "OTHER_TOKEN", "--value", "other-secret"],
-    [bin_path, "--dir", str(domain), "set", "BULK_TOKEN", "--value", "bulk-secret", "--sandbox-inject", "bulk"],
-    [bin_path, "--dir", str(domain), "set", "EXPLICIT_TOKEN", "--value", "explicit-secret", "--sandbox-inject", "explicit"],
+    [bin_path, "--dir", str(domain), "set", "BULK_TOKEN", "--value", "bulk-secret", "--inject-bulk", "include"],
+    [bin_path, "--dir", str(domain), "set", "EXPLICIT_TOKEN", "--value", "explicit-secret", "--inject-bulk", "named"],
 ]:
     rc, stdout, stderr = run(args)
     if rc != 0 or stdout != "" or stderr != "":
@@ -370,7 +370,7 @@ for legacy_args, expected in [
     (["--pattern-exclude", "APP_DEBUG"], "exec: --pattern-exclude (-x) is no longer supported; use --inject secret:omit=GLOB"),
     (["--require-key", "APP_TOKEN"], "exec: --require-key is no longer supported; use --inject secret:require=KEY"),
     (["--env-map-sed", "s/^.*$/RENAMED/"], "exec: --env-map-sed is no longer supported; use --inject secret:rename=EXPR"),
-    (["--sandbox-injectable"], "exec: --sandbox-injectable is no longer supported; use --inject-gate=sandbox"),
+    (["--sandbox-injectable"], "exec: --sandbox-injectable is no longer supported; use --inject-gate=bulk"),
 ]:
     rc, stdout, stderr = run([
         bin_path, "--dir", str(domain), "exec",
@@ -379,6 +379,14 @@ for legacy_args, expected in [
     ])
     if rc != 2 or expected not in stderr:
         fail(f"legacy removal failed for {legacy_args}: rc={rc} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-gate", "sandbox",
+    "python3", "-c", "pass",
+])
+if rc != 2 or "invalid --inject-gate value: sandbox; use --inject-gate=bulk" not in stderr:
+    fail(f"legacy --inject-gate=sandbox should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 # Native --inject secret:only.
 rc, stdout, stderr = run([
@@ -450,10 +458,10 @@ final_req = json.loads(stdout)
 if final_req["final"]["missing_required"] != ["MISSING_ENV"]:
     fail(f"final require missing plan unexpected: {final_req!r}")
 
-# --inject-file gate: sandbox applies the same pre-filter as --inject-gate (§7.4).
+# --inject-file gate: bulk applies the same pre-filter as --inject-gate (§7.4).
 gate_policy_file = work_root / "exec.gate.yaml"
 gate_policy_file.write_text(
-    "gate: sandbox\n"
+    "gate: bulk\n"
     "supply:\n"
     "  secret:\n"
     "    only: [\"BULK_TOKEN\", \"EXPLICIT_TOKEN\", \"APP_TOKEN\"]\n",
@@ -466,8 +474,8 @@ rc, stdout, stderr = run([
     "import json, os; print(json.dumps({k: os.environ[k] for k in sorted(k for k in os.environ if k in ('BULK_TOKEN', 'EXPLICIT_TOKEN', 'APP_TOKEN'))}, sort_keys=True))",
 ])
 if rc != 0 or not exec_stderr_ok(stderr):
-    fail(f"inject-file gate sandbox exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(json.loads(stdout), {"BULK_TOKEN": "bulk-secret"}, "inject-file gate sandbox payload")
+    fail(f"inject-file gate bulk-gate exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(json.loads(stdout), {"BULK_TOKEN": "bulk-secret"}, "inject-file gate bulk payload")
 
 bad_gate_file = work_root / "bad.gate.yaml"
 bad_gate_file.write_text("gate: invalid\n", encoding="utf-8")
@@ -482,34 +490,34 @@ if rc != 2 or "invalid --inject-gate value: invalid" not in stderr:
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
     "--inject-file", str(gate_policy_file),
-    "--inject-gate", "sandbox",
+    "--inject-gate", "bulk",
     "python3", "-c", "pass",
 ])
-if rc != 2 or "--inject-gate=sandbox may be specified at most once" not in stderr:
+if rc != 2 or "--inject-gate=bulk may be specified at most once" not in stderr:
     fail(f"inject-file gate duplicate did not fail: rc={rc} stderr={stderr!r}")
 
-# --inject-gate=sandbox applies bulk sandbox_inject pre-filter (§10).
+# --inject-gate=bulk applies inject_bulk include pre-filter (§10).
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
-    "--inject-gate", "sandbox",
+    "--inject-gate", "bulk",
     "--dry-run", "--json",
     "python3", "-c", "pass",
 ])
 if rc != 0 or stderr != "":
-    fail(f"inject-gate sandbox dry-run failed: rc={rc} stderr={stderr!r}")
+    fail(f"inject-gate bulk dry-run failed: rc={rc} stderr={stderr!r}")
 gate_plan = json.loads(stdout)
-if gate_plan.get("inject_gate") != "sandbox":
-    fail(f"inject-gate sandbox JSON unexpected: {gate_plan!r}")
+if gate_plan.get("inject_gate") != "bulk":
+    fail(f"inject-gate bulk JSON unexpected: {gate_plan!r}")
 
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
-    "--inject-gate", "sandbox",
+    "--inject-gate", "bulk",
     "python3", "-c",
     "import json, os; print(json.dumps({k: os.environ[k] for k in sorted(k for k in os.environ if k in ('BULK_TOKEN', 'EXPLICIT_TOKEN', 'APP_TOKEN'))}, sort_keys=True))",
 ])
 if rc != 0 or stderr != "":
-    fail(f"inject-gate sandbox exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(json.loads(stdout), {"BULK_TOKEN": "bulk-secret"}, "inject-gate sandbox payload")
+    fail(f"inject-gate bulk exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(json.loads(stdout), {"BULK_TOKEN": "bulk-secret"}, "inject-gate bulk payload")
 
 # json-summary with native --inject.
 rc, stdout, stderr = run([
@@ -693,7 +701,7 @@ for bad_args, expected in [
         "--inject", r"secret:rename=s/^APP_\(.*\)/RENAMED_\1/",
         "--inject", r"secret:rename=s/^OTHER_\(.*\)/ALT_\1/",
     ], "secret rename may be specified at most once"),
-    (["--inject-gate", "sandbox", "--inject-gate", "sandbox"], "--inject-gate=sandbox may be specified at most once"),
+    (["--inject-gate", "bulk", "--inject-gate", "bulk"], "--inject-gate=bulk may be specified at most once"),
 ]:
     rc, stdout, stderr = run([
         bin_path, "--dir", str(domain), "exec",

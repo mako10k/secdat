@@ -77,7 +77,7 @@ for args in [
     [bin_path, "--dir", str(domain), "set", "FUSE_SKIP", "--value", "skip-secret"],
     [bin_path, "--dir", str(domain), "set", "OTHER_TOKEN", "--value", "other-secret"],
     [bin_path, "--dir", str(domain), "set", "ALT_TOKEN", "--value", "alt-secret"],
-    [bin_path, "--dir", str(domain), "set", "BULK_TOKEN", "--sandbox-inject", "bulk", "--value", "bulk-secret"],
+    [bin_path, "--dir", str(domain), "set", "BULK_TOKEN", "--inject-bulk", "include", "--value", "bulk-secret"],
 ]:
     rc, stdout, stderr = run(args)
     if rc != 0 or stdout != "" or stderr != "":
@@ -168,7 +168,7 @@ if report != {
     "files": ["FUSE_TOKEN"],
     "include_patterns": ["FUSE_*"],
     "exclude_patterns": ["FUSE_SKIP"],
-    "sandbox_injectable": False,
+    "inject_bulk_gate": False,
     "required_keys": ["FUSE_TOKEN"],
     "missing_required_keys": [],
 }:
@@ -389,7 +389,7 @@ if live_mount_available:
         str(domain),
         "--pattern",
         "BULK_*",
-        "--sandbox-injectable",
+        "--inject-bulk-gate",
         str(mountpoint),
         "--",
         "python3",
@@ -398,25 +398,25 @@ if live_mount_available:
         str(mountpoint / "BULK_TOKEN"),
     ])
     if rc != 0 or stdout != "":
-        fail(f"secdat-fuse sandbox-injectable write failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+        fail(f"secdat-fuse inject-bulk-gate write failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
     rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "BULK_TOKEN", "-o"])
     if rc != 0 or stdout != "bulk-updated" or stderr != "":
-        fail(f"secdat-fuse sandbox-injectable write did not persist: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+        fail(f"secdat-fuse inject-bulk-gate write did not persist: rc={rc} stdout={stdout!r} stderr={stderr!r}")
     rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "BULK_TOKEN"])
-    if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nsandbox_inject=bulk\n" or stderr != "":
-        fail(f"secdat-fuse sandbox-injectable write did not preserve attributes: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\ninject_bulk=include\n" or stderr != "":
+        fail(f"secdat-fuse inject-bulk-gate write did not preserve attributes: rc={rc} stdout={stdout!r} stderr={stderr!r}")
     rc, stdout, stderr = run([
         fuse_bin,
         "--dir",
         str(domain),
         "--pattern",
         "BULK_*",
-        "--sandbox-injectable",
+        "--inject-bulk-gate",
         "--dry-run",
         str(mountpoint),
     ])
     if rc != 0 or "BULK_TOKEN\n" not in stdout or stderr != "":
-        fail(f"secdat-fuse sandbox-injectable write removed key from selection: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+        fail(f"secdat-fuse inject-bulk-gate write removed key from selection: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
     rc, stdout, stderr = run([
         fuse_bin,
