@@ -224,7 +224,7 @@ Direct source-object links such as
 .B ln @UUID DST_KEYREF
 are allowed only when the current context can authorize the UUID through an existing visible or unlocked domain entry; object UUID syntax is not a destination operand.
 .TP
-.B exec [\-\-inject LAYER:KIND=SELECTOR]... [\-\-inject-file FILE]... [\-\-dry-run] [\-\-json] [\-\-json-summary] [\-\-] CMD [ARGS...]
+.B exec [\-\-inject LAYER:KIND=SELECTOR]... [\-\-inject-file FILE]... [\-\-inject-gate GATE]... [\-\-dry-run] [\-\-json] [\-\-json-summary] [\-\-] CMD [ARGS...]
 Build a child process environment through supply, route, and final injection layers, then execute the command.
 .B --inject
 configures ambient, secret, route, or final rules. Repeated options accumulate selectors of the same kind. Multiple selectors in one value are separated by
@@ -233,6 +233,10 @@ configures ambient, secret, route, or final rules. Repeated options accumulate s
 loads a YAML policy file. Later
 .B --inject
 options override file entries.
+.B --inject-gate=sandbox
+applies the bulk
+.B sandbox_inject
+store-attribute pre-filter before secret supply.
 .B secret:rename
 applies one sed-style key-to-environment-name mapping. Keys that do not match keep their original key name as the environment name. Generated environment names must be valid identifiers; empty, duplicate, or otherwise invalid names are rejected during planning.
 .B --dry-run

@@ -82,6 +82,8 @@ for args in [
     [bin_path, "--dir", str(domain), "set", "ADMIN_TOKEN", "--value", "admin-secret"],
     [bin_path, "--dir", str(domain), "set", "MY_TOKEN", "--value", "secret-token"],
     [bin_path, "--dir", str(domain), "set", "OTHER_TOKEN", "--value", "other-secret"],
+    [bin_path, "--dir", str(domain), "set", "BULK_TOKEN", "--value", "bulk-secret", "--sandbox-inject", "bulk"],
+    [bin_path, "--dir", str(domain), "set", "EXPLICIT_TOKEN", "--value", "explicit-secret", "--sandbox-inject", "explicit"],
 ]:
     rc, stdout, stderr = run(args)
     if rc != 0 or stdout != "" or stderr != "":
@@ -433,6 +435,27 @@ if rc == 0 or "exec inject required entry missing: MISSING_ENV" not in stderr:
 final_req = json.loads(stdout)
 if final_req["final"]["missing_required"] != ["MISSING_ENV"]:
     fail(f"final require missing plan unexpected: {final_req!r}")
+
+# --inject-gate=sandbox applies bulk sandbox_inject pre-filter (§10).
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-gate", "sandbox",
+    "python3", "-c",
+    "import json, os; print(json.dumps({k: os.environ[k] for k in sorted(k for k in os.environ if k in ('BULK_TOKEN', 'EXPLICIT_TOKEN', 'APP_TOKEN'))}, sort_keys=True))",
+])
+if rc != 0 or stderr != "":
+    fail(f"inject-gate sandbox exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(json.loads(stdout), {"BULK_TOKEN": "bulk-secret"}, "inject-gate sandbox payload")
+
+# §15.6 legacy sandbox-injectable + inject-gate conflict.
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--sandbox-injectable",
+    "--inject-gate", "sandbox",
+    "python3", "-c", "pass",
+])
+if rc != 2 or "exec: --sandbox-injectable conflicts with --inject-gate=sandbox" not in stderr:
+    fail(f"sandbox gate conflict did not fail: rc={rc} stderr={stderr!r}")
 
 # json-summary with native --inject.
 rc, stdout, stderr = run([

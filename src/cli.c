@@ -1151,7 +1151,7 @@ int secdat_cli_complete(int argc, char **argv)
         "--ignore-missing", "-f", "--help", "-h", NULL,
     };
     static const char *const exec_options[] = {
-        "--inject", "--inject-file", "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
+        "--inject", "--inject-file", "--inject-gate", "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
     };
     static const char *const export_options[] = {
         "--pattern", "-p", "--sandbox-injectable", "--help", "-h", NULL,
@@ -1464,7 +1464,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "SRC_KEYREF|@UUID DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--inject-gate GATE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]");
         break;
     case SECDAT_COMMAND_EXPORT:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "export", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [--sandbox-injectable]");
@@ -1791,7 +1791,8 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  exec: build a child environment through supply, route, and final injection layers\n"));
         secdat_cli_print_detail_line(_("  --inject LAYER:KIND=SELECTOR configures ambient, secret, route, or final rules; repeated --inject accumulates selectors of the same kind\n"));
         secdat_cli_print_detail_line(_("  --inject-file FILE loads a YAML policy; later --inject options override file entries\n"));
-        secdat_cli_print_detail_line(_("  legacy --pattern, --pattern-exclude, --require-key, and --env-map-sed still lower to --inject during migration; see docs/exec-injection-design.md\n"));
+        secdat_cli_print_detail_line(_("  --inject-gate=sandbox applies the store sandbox_inject bulk pre-filter before secret supply\n"));
+        secdat_cli_print_detail_line(_("  legacy --pattern, --pattern-exclude, --require-key, --env-map-sed, and --sandbox-injectable still lower or alias during migration; see docs/exec-injection-design.md\n"));
         return;
     }
     if (target != NULL && strcmp(target, "export") == 0) {

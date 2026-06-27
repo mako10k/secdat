@@ -669,7 +669,7 @@ for args, marker in [
     ([bin_path, "help", "ls"], "[-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--sandbox-injectable]"),
     ([bin_path, "help", "get"], "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF"),
     ([bin_path, "help", "wait-unlock"], "wait-unlock [-t SECONDS|--timeout SECONDS] [-q|--quiet]"),
-    ([bin_path, "help", "exec"], "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
+    ([bin_path, "help", "exec"], "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--inject-gate GATE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
     ([bin_path, "help", "rm"], "rm [-f|--ignore-missing] KEYREF"),
     ([bin_path, "help", "ln"], "ln SRC_KEYREF|@UUID DST_KEYREF"),
     ([bin_path, "help", "set"], "set KEYREF [-u|--unsafe|--public-value|--secret-value]"),

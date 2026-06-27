@@ -64,6 +64,7 @@ struct secdat_exec_inject_policy {
     size_t route_rule_count;
     struct secdat_exec_pentad final;
     int sandbox_injectable;
+    int explicit_inject_gate_sandbox;
     int legacy_pattern;
     int legacy_pattern_exclude;
     int legacy_require_key;
@@ -896,7 +897,7 @@ static void secdat_exec_print_deprecation_warnings(const struct secdat_exec_inje
         fprintf(stderr, _("warning: exec: --env-map-sed is deprecated; use --inject secret:rename=EXPR\n"));
     }
     if (policy->legacy_sandbox_injectable) {
-        fprintf(stderr, _("warning: exec: --sandbox-injectable is deprecated; use store attribute gates\n"));
+        fprintf(stderr, _("warning: exec: --sandbox-injectable is deprecated; use --inject-gate=sandbox\n"));
     }
 }
 
@@ -923,6 +924,7 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
     static const struct option long_options[] = {
         {"inject", required_argument, NULL, 1000},
         {"inject-file", required_argument, NULL, 1007},
+        {"inject-gate", required_argument, NULL, 1008},
         {"pattern", required_argument, NULL, 'p'},
         {"pattern-exclude", required_argument, NULL, 'x'},
         {"env-map-sed", required_argument, NULL, 1001},
@@ -996,7 +998,36 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
                 return status;
             }
             break;
+        case 1008:
+            if (strcmp(optarg, "sandbox") != 0) {
+                fprintf(stderr, _("invalid --inject-gate value: %s\n"), optarg);
+                secdat_exec_options_free(options);
+                return 2;
+            }
+            if (options->policy.legacy_sandbox_injectable) {
+                fprintf(stderr, _("exec: --sandbox-injectable conflicts with --inject-gate=sandbox\n"));
+                secdat_exec_options_free(options);
+                return 2;
+            }
+            if (options->policy.explicit_inject_gate_sandbox) {
+                fprintf(stderr, _("--inject-gate=sandbox may be specified at most once\n"));
+                secdat_exec_options_free(options);
+                return 2;
+            }
+            options->policy.explicit_inject_gate_sandbox = 1;
+            options->policy.sandbox_injectable = 1;
+            break;
         case 1002:
+            if (options->policy.explicit_inject_gate_sandbox) {
+                fprintf(stderr, _("exec: --sandbox-injectable conflicts with --inject-gate=sandbox\n"));
+                secdat_exec_options_free(options);
+                return 2;
+            }
+            if (options->policy.legacy_sandbox_injectable) {
+                fprintf(stderr, _("--inject-gate=sandbox may be specified at most once\n"));
+                secdat_exec_options_free(options);
+                return 2;
+            }
             options->policy.sandbox_injectable = 1;
             options->policy.legacy_sandbox_injectable = 1;
             break;

@@ -13,7 +13,7 @@ ChildEnv = Demand( Route( Supply_ambient , Supply_secret ) )
 
 - **Supply** decides what each source may contribute.
 - **Route** resolves same-name variables when both sources contribute them.
-- **Demand** validates and shapes the merged result before `execve`.
+- **Demand** validates and shapes the merged result before `execvpe`.
 
 All layers share one small contract vocabulary (**Pentad**). The CLI exposes
 this through repeated `--inject` options. Secret values are never printed in
@@ -199,8 +199,10 @@ struct secdat_exec_plan {
 
 1. Resolve domain chain and `VisibleKeys` for `--dir` / `--store`.
 2. Snapshot `AmbientAvail` from the current process environment.
-3. Parse `--inject` options and optional policy file into
-   `supply`, `route`, `demand` structures.
+3. Parse `--inject`, optional policy file, and optional `--inject-gate` into
+   `supply`, `route`, `demand`, and pre-supply gate structures.
+4. When `--inject-gate=sandbox` is set, pre-filter `VisibleKeys` to keys whose
+   effective `sandbox_inject` allows bulk selection (see §10).
 
 ### Phase 1 — Supply
 
@@ -278,7 +280,9 @@ Rule precedence:
 ### Phase 4 — Execute
 
 1. `fork()`.
-2. In child: apply `ChildEnv` via `execve` with a constructed environ array.
+2. In child: apply `ChildEnv` via `execvpe` with a constructed environ array.
+   `execvpe` is intentional: the command operand may be an unqualified program
+   name when `PATH` is present in `ChildEnv`.
 3. Parent environ is never modified.
 4. Secret plaintext buffers are cleared after copy.
 
@@ -310,11 +314,17 @@ Repeated `--inject` accumulates selectors of the same kind.
 
 `route:prefer` may appear once. Per-name route rules may repeat; first match wins.
 
+`--inject-gate` is separate from pentad rules. The only supported value in
+Phase 1 is `sandbox`, which applies the store-attribute pre-filter from §10
+before secret supply.
+
+`--inject-gate=sandbox` may appear once.
+
 ### 7.2 Command shape
 
 ```text
-secdat [--dir DIR] [--store STORE] exec [--inject ...]... [--dry-run] [--json]
-       [--json-summary] [--] CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [--inject ...]... [--inject-file FILE]...
+       [--inject-gate GATE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 ```
 
 ### 7.3 Examples
@@ -472,8 +482,8 @@ stderr after a real run, using the same plan shape.
 
 Store attributes (`sandbox_inject`, `secret_inject`, `key_visibility`, etc.)
 remain **outside** this pentad. They act as a pre-supply filter on
-`VisibleKeys` when enabled by a separate gate (future: `--inject-gate=sandbox`
-or domain defaults).
+`VisibleKeys` when enabled by `--inject-gate=sandbox` (or domain defaults in
+future work).
 
 This document does not redefine attribute semantics.
 
@@ -495,7 +505,7 @@ This document does not redefine attribute semantics.
 | PR-2 | Supply phase: ambient snapshot + secret rename + pentad |
 | PR-3 | Route phase: collision detection + `prefer` / per-rule picks |
 | PR-4 | Demand phase: final pentad + ChildEnv builder |
-| PR-5 | `exec` integration: fork/execve, dry-run, JSON, json-summary |
+| PR-5 | `exec` integration: fork/execvpe, dry-run, JSON, json-summary |
 | PR-6 | Legacy flag lowering (§15), deprecation warnings, conflict checks |
 | PR-7 | Regression suite for scenarios in §7.3, §15, and error table §9 |
 | PR-8 | User docs: `secdat-spec.md`, `secdat.1`, `README.md`, `po/ja.po` |
@@ -558,11 +568,11 @@ These are execution / observability controls, not injection policy:
 
 | Legacy flag | Replacement | Notes |
 | --- | --- | --- |
-| `--sandbox-injectable` | Attribute **pre-gate** (§10) + optional `secret:only` | Filters by `sandbox_inject=bulk` / `secret_inject`; not expressible as pentad alone. Remains deprecated until `--inject-gate` (or equivalent) lands. |
+| `--sandbox-injectable` | `--inject-gate=sandbox` | Applies the §10 bulk `sandbox_inject` pre-filter; not expressible as pentad alone. |
 
-During migration, `--sandbox-injectable` may continue to apply the existing
-attribute filter as a pre-supply step on `VisibleKeys`. Document it only under
-Migration; do not list it in the canonical `--inject` reference.
+During migration, `--sandbox-injectable` lowers to the same pre-supply filter as
+`--inject-gate=sandbox`. Document the legacy flag only under Migration; do not
+list it in the canonical exec reference.
 
 ### 15.5 Parser Behavior
 
@@ -586,7 +596,9 @@ and modern execution paths.
 | Legacy and `--inject` touch **different** concerns | Allowed. Example: `-p APP_*` + `--inject route:PATH=ambient` |
 | Legacy and `--inject` specify the **same** pentad kind on `secret` | Error. Example: `-p APP_*` + `--inject secret:only=OTHER_*` |
 | `--env-map-sed` + `--inject secret:rename=...` | Error (both set rename) |
+| `--sandbox-injectable` + `--inject-gate=sandbox` | Error (both set pre-gate) |
 | Multiple `--env-map-sed` | Error (unchanged) |
+| Multiple `--inject-gate=sandbox` | Error (unchanged) |
 
 ### 15.7 Deprecation Warning
 
