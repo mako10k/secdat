@@ -738,7 +738,12 @@ static int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *poli
     }
     if (strcmp(layer, "secret") == 0) {
         if (strcmp(kind, "rename") == 0) {
-            if (policy->explicit_secret_rename || policy->legacy_env_map_sed) {
+            if (policy->legacy_env_map_sed) {
+                fprintf(stderr, _("exec: --env-map-sed conflicts with --inject secret:rename\n"));
+                free(rest);
+                return 2;
+            }
+            if (policy->explicit_secret_rename) {
                 fprintf(stderr, _("secret rename may be specified at most once\n"));
                 free(rest);
                 return 2;
@@ -752,10 +757,25 @@ static int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *poli
             return 0;
         }
         if (strcmp(kind, "only") == 0) {
+            if (policy->legacy_pattern) {
+                fprintf(stderr, _("exec: --pattern conflicts with --inject secret:only\n"));
+                free(rest);
+                return 2;
+            }
             policy->explicit_secret_only = 1;
         } else if (strcmp(kind, "omit") == 0) {
+            if (policy->legacy_pattern_exclude) {
+                fprintf(stderr, _("exec: --pattern-exclude conflicts with --inject secret:omit\n"));
+                free(rest);
+                return 2;
+            }
             policy->explicit_secret_omit = 1;
         } else if (strcmp(kind, "require") == 0) {
+            if (policy->legacy_require_key) {
+                fprintf(stderr, _("exec: --require-key conflicts with --inject secret:require\n"));
+                free(rest);
+                return 2;
+            }
             policy->explicit_secret_require = 1;
         }
         if (secdat_exec_append_inject_selectors(&policy->secret, kind, value) != 0) {
