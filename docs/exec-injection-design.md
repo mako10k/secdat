@@ -430,6 +430,8 @@ under `supply` map to pentad kinds. `demand.final` mirrors `final:` CLI rules.
   "ok": true,
   "domain": "/home/user/project",
   "store": "app",
+  "dry_run": true,
+  "inject_gate": null,
   "supply": {
     "ambient": {
       "mode": "default",

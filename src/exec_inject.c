@@ -4,6 +4,7 @@
 
 #include "domain.h"
 #include "i18n.h"
+#include "json_util.h"
 #include "store.h"
 #include "store_exec_port.h"
 
@@ -1777,18 +1778,194 @@ static long long secdat_exec_monotonic_millis(void)
     return (long long)now.tv_sec * 1000 + (long long)(now.tv_nsec / 1000000);
 }
 
-static void secdat_exec_write_json_string_list(FILE *stream, char **items, size_t count)
+static json_t *secdat_exec_json_supply_pentad(
+    const char *mode,
+    char **contributed,
+    size_t contributed_count,
+    char **rejected_present,
+    size_t rejected_present_count,
+    char **missing_required,
+    size_t missing_required_count
+)
 {
-    size_t index;
+    json_t *pentad = json_object();
 
-    fputc('[', stream);
-    for (index = 0; index < count; index += 1) {
-        if (index > 0) {
-            fputs(", ", stream);
-        }
-        secdat_write_json_string(stream, items[index]);
+    if (pentad == NULL) {
+        return NULL;
     }
-    fputc(']', stream);
+    if (json_object_set_new(pentad, "mode", json_string(mode)) != 0
+            || json_object_set_new(pentad, "contributed", secdat_json_string_array(contributed, contributed_count)) != 0
+            || json_object_set_new(pentad, "rejected_present", secdat_json_string_array(rejected_present, rejected_present_count)) != 0
+            || json_object_set_new(pentad, "missing_required", secdat_json_string_array(missing_required, missing_required_count)) != 0) {
+        json_decref(pentad);
+        return NULL;
+    }
+    return pentad;
+}
+
+static json_t *secdat_exec_build_json_report(
+    const struct secdat_domain_chain *chain,
+    const struct secdat_cli *cli,
+    const struct secdat_exec_options *options,
+    const struct secdat_exec_plan *plan,
+    char **command_argv,
+    int ok,
+    int dry_run,
+    int exit_status,
+    int term_signal,
+    long long duration_ms
+)
+{
+    char domain_label[PATH_MAX];
+    json_t *root = json_object();
+    json_t *supply = json_object();
+    json_t *ambient = NULL;
+    json_t *secret = NULL;
+    json_t *route = json_object();
+    json_t *collisions = json_array();
+    json_t *final = json_object();
+    json_t *present = NULL;
+    json_t *injected_keys = json_array();
+    json_t *argv = json_array();
+    char **present_names = NULL;
+    size_t present_count = 0;
+    size_t index;
+    size_t injected_key_count = 0;
+
+    if (root == NULL || supply == NULL || route == NULL || collisions == NULL || final == NULL || injected_keys == NULL || argv == NULL) {
+        goto fail;
+    }
+
+    if (secdat_domain_display_label(chain->count == 0 ? "" : chain->ids[0], domain_label, sizeof(domain_label)) != 0) {
+        domain_label[0] = '\0';
+    }
+
+    ambient = secdat_exec_json_supply_pentad(
+        plan->ambient_mode_only ? "only" : "default",
+        plan->ambient_contributed,
+        plan->ambient_contributed_count,
+        plan->rejected_ambient_present,
+        plan->rejected_ambient_present_count,
+        plan->missing_ambient_required,
+        plan->missing_ambient_required_count
+    );
+    secret = secdat_exec_json_supply_pentad(
+        plan->secret_mode_only ? "only" : "default",
+        plan->secret_contributed,
+        plan->secret_contributed_count,
+        plan->rejected_secret_present,
+        plan->rejected_secret_present_count,
+        plan->missing_secret_required,
+        plan->missing_secret_required_count
+    );
+    if (ambient == NULL || secret == NULL) {
+        json_decref(ambient);
+        json_decref(secret);
+        goto fail;
+    }
+
+    for (index = 0; index < plan->collision_count; index += 1) {
+        json_t *collision = json_object();
+
+        if (collision == NULL
+                || json_object_set_new(collision, "name", json_string(plan->collisions[index].name)) != 0
+                || json_object_set_new(collision, "picked", json_string(secdat_exec_route_pick_name(plan->collisions[index].picked))) != 0
+                || json_array_append_new(collisions, collision) != 0) {
+            json_decref(collision);
+            goto fail;
+        }
+    }
+
+    for (index = 0; index < plan->final_count; index += 1) {
+        if (secdat_exec_string_list_append(&present_names, &present_count, plan->final_entries[index].env_name) != 0) {
+            goto fail;
+        }
+    }
+    present = secdat_json_string_array(present_names, present_count);
+    if (present == NULL) {
+        goto fail;
+    }
+
+    for (index = 0; index < plan->final_count; index += 1) {
+        if (plan->final_entries[index].secret_key == NULL) {
+            continue;
+        }
+        json_t *entry = json_object();
+
+        injected_key_count += 1;
+        if (entry == NULL
+                || json_object_set_new(entry, "key", json_string(plan->final_entries[index].secret_key)) != 0
+                || json_object_set_new(entry, "env_name", json_string(plan->final_entries[index].env_name)) != 0
+                || json_array_append_new(injected_keys, entry) != 0) {
+            json_decref(entry);
+            goto fail;
+        }
+    }
+
+    for (index = 0; command_argv != NULL && command_argv[index] != NULL; index += 1) {
+        if (json_array_append_new(argv, json_string(command_argv[index])) != 0) {
+            goto fail;
+        }
+    }
+
+    if (json_object_set_new(supply, "ambient", ambient) != 0) {
+        goto fail;
+    }
+    ambient = NULL;
+    if (json_object_set_new(supply, "secret", secret) != 0) {
+        goto fail;
+    }
+    secret = NULL;
+    if (json_object_set_new(route, "prefer", json_string(secdat_exec_route_pick_name(options->policy.route_prefer))) != 0
+            || json_object_set_new(route, "collisions", collisions) != 0) {
+        goto fail;
+    }
+    collisions = NULL;
+    if (json_object_set_new(final, "mode", json_string(plan->final_mode_only ? "only" : "default")) != 0
+            || json_object_set_new(final, "present", present) != 0) {
+        goto fail;
+    }
+    present = NULL;
+    if (json_object_set_new(final, "missing_required", secdat_json_string_array(plan->missing_final_required, plan->missing_final_required_count)) != 0
+            || json_object_set_new(final, "rejected_present", secdat_json_string_array(plan->rejected_final_present, plan->rejected_final_present_count)) != 0
+            || json_object_set_new(root, "ok", json_boolean(ok)) != 0
+            || json_object_set_new(root, "domain", json_string(domain_label)) != 0
+            || json_object_set_new(root, "store", json_string(secdat_exec_port_effective_store_name(cli->store))) != 0
+            || json_object_set_new(root, "dry_run", json_boolean(dry_run)) != 0
+            || json_object_set_new(root, "inject_gate", options->policy.sandbox_injectable ? json_string("sandbox") : json_null()) != 0
+            || json_object_set_new(root, "supply", supply) != 0
+            || json_object_set_new(root, "route", route) != 0
+            || json_object_set_new(root, "final", final) != 0
+            || json_object_set_new(root, "injected_key_count", json_integer((json_int_t)injected_key_count)) != 0
+            || json_object_set_new(root, "injected_keys", injected_keys) != 0
+            || json_object_set_new(root, "argv", argv) != 0
+            || json_object_set_new(root, "exit_status", exit_status >= 0 ? json_integer(exit_status) : json_null()) != 0
+            || json_object_set_new(root, "term_signal", term_signal >= 0 ? json_integer(term_signal) : json_null()) != 0
+            || json_object_set_new(root, "duration_ms", duration_ms >= 0 ? json_integer(duration_ms) : json_null()) != 0) {
+        goto fail;
+    }
+    supply = NULL;
+    route = NULL;
+    final = NULL;
+    injected_keys = NULL;
+    argv = NULL;
+
+    secdat_exec_string_list_free(present_names, present_count);
+    return root;
+
+fail:
+    secdat_exec_string_list_free(present_names, present_count);
+    json_decref(ambient);
+    json_decref(secret);
+    json_decref(present);
+    json_decref(collisions);
+    json_decref(injected_keys);
+    json_decref(argv);
+    json_decref(final);
+    json_decref(route);
+    json_decref(supply);
+    json_decref(root);
+    return NULL;
 }
 
 static void secdat_exec_write_json_report(
@@ -1805,126 +1982,25 @@ static void secdat_exec_write_json_report(
     long long duration_ms
 )
 {
-    char domain_label[PATH_MAX];
-    size_t index;
-    size_t injected_key_count = 0;
+    json_t *root = secdat_exec_build_json_report(
+        chain,
+        cli,
+        options,
+        plan,
+        command_argv,
+        ok,
+        dry_run,
+        exit_status,
+        term_signal,
+        duration_ms
+    );
 
-    if (secdat_domain_display_label(chain->count == 0 ? "" : chain->ids[0], domain_label, sizeof(domain_label)) != 0) {
-        domain_label[0] = '\0';
+    if (root == NULL) {
+        fputs("{}\n", stream);
+        return;
     }
-
-    for (index = 0; index < plan->final_count; index += 1) {
-        if (plan->final_entries[index].secret_key != NULL) {
-            injected_key_count += 1;
-        }
-    }
-
-    fputs("{\n", stream);
-    fprintf(stream, "  \"ok\": %s,\n", ok ? "true" : "false");
-    fputs("  \"domain\": ", stream);
-    secdat_write_json_string(stream, domain_label);
-    fputs(",\n  \"store\": ", stream);
-    secdat_write_json_string(stream, secdat_exec_port_effective_store_name(cli->store));
-    fputs(",\n  \"dry_run\": ", stream);
-    fputs(dry_run ? "true" : "false", stream);
-    fputs(",\n  \"supply\": {\n", stream);
-    fputs("    \"ambient\": { \"mode\": ", stream);
-    secdat_write_json_string(stream, plan->ambient_mode_only ? "only" : "default");
-    fputs(", \"contributed\": ", stream);
-    secdat_exec_write_json_string_list(stream, plan->ambient_contributed, plan->ambient_contributed_count);
-    fputs(", \"rejected_present\": ", stream);
-    secdat_exec_write_json_string_list(stream, plan->rejected_ambient_present, plan->rejected_ambient_present_count);
-    fputs(", \"missing_required\": ", stream);
-    secdat_exec_write_json_string_list(stream, plan->missing_ambient_required, plan->missing_ambient_required_count);
-    fputs(" },\n", stream);
-    fputs("    \"secret\": { \"mode\": ", stream);
-    secdat_write_json_string(stream, plan->secret_mode_only ? "only" : "default");
-    fputs(", \"contributed\": ", stream);
-    secdat_exec_write_json_string_list(stream, plan->secret_contributed, plan->secret_contributed_count);
-    fputs(", \"rejected_present\": ", stream);
-    secdat_exec_write_json_string_list(stream, plan->rejected_secret_present, plan->rejected_secret_present_count);
-    fputs(", \"missing_required\": ", stream);
-    secdat_exec_write_json_string_list(stream, plan->missing_secret_required, plan->missing_secret_required_count);
-    fputs(" }\n", stream);
-    fputs("  },\n", stream);
-    fputs("  \"route\": { \"prefer\": ", stream);
-    secdat_write_json_string(stream, secdat_exec_route_pick_name(options->policy.route_prefer));
-    fputs(", \"collisions\": [", stream);
-    for (index = 0; index < plan->collision_count; index += 1) {
-        if (index > 0) {
-            fputs(", ", stream);
-        }
-        fputs("{ \"name\": ", stream);
-        secdat_write_json_string(stream, plan->collisions[index].name);
-        fputs(", \"picked\": ", stream);
-        secdat_write_json_string(stream, secdat_exec_route_pick_name(plan->collisions[index].picked));
-        fputc('}', stream);
-    }
-    fputs("] },\n", stream);
-    fputs("  \"final\": { \"mode\": ", stream);
-    secdat_write_json_string(stream, plan->final_mode_only ? "only" : "default");
-    fputs(", \"present\": ", stream);
-    {
-        char **present = NULL;
-        size_t present_count = 0;
-
-        for (index = 0; index < plan->final_count; index += 1) {
-            secdat_exec_string_list_append(&present, &present_count, plan->final_entries[index].env_name);
-        }
-        secdat_exec_write_json_string_list(stream, present, present_count);
-        secdat_exec_string_list_free(present, present_count);
-    }
-    fputs(", \"missing_required\": ", stream);
-    secdat_exec_write_json_string_list(stream, plan->missing_final_required, plan->missing_final_required_count);
-    fputs(", \"rejected_present\": ", stream);
-    secdat_exec_write_json_string_list(stream, plan->rejected_final_present, plan->rejected_final_present_count);
-    fputs(" },\n", stream);
-    fprintf(stream, "  \"injected_key_count\": %zu,\n", injected_key_count);
-    fputs("  \"injected_keys\": [", stream);
-    {
-        size_t emitted = 0;
-
-        for (index = 0; index < plan->final_count; index += 1) {
-            if (plan->final_entries[index].secret_key == NULL) {
-                continue;
-            }
-            if (emitted > 0) {
-                fputs(", ", stream);
-            }
-            fputs("{ \"key\": ", stream);
-            secdat_write_json_string(stream, plan->final_entries[index].secret_key);
-            fputs(", \"env_name\": ", stream);
-            secdat_write_json_string(stream, plan->final_entries[index].env_name);
-            fputc('}', stream);
-            emitted += 1;
-        }
-    }
-    fputs("],\n  \"argv\": [", stream);
-    for (index = 0; command_argv != NULL && command_argv[index] != NULL; index += 1) {
-        if (index > 0) {
-            fputs(", ", stream);
-        }
-        secdat_write_json_string(stream, command_argv[index]);
-    }
-    fputs("],\n  \"exit_status\": ", stream);
-    if (exit_status >= 0) {
-        fprintf(stream, "%d", exit_status);
-    } else {
-        fputs("null", stream);
-    }
-    fputs(",\n  \"term_signal\": ", stream);
-    if (term_signal >= 0) {
-        fprintf(stream, "%d", term_signal);
-    } else {
-        fputs("null", stream);
-    }
-    fputs(",\n  \"duration_ms\": ", stream);
-    if (duration_ms >= 0) {
-        fprintf(stream, "%lld", duration_ms);
-    } else {
-        fputs("null", stream);
-    }
-    fputs("\n}\n", stream);
+    secdat_json_dump(stream, root);
+    json_decref(root);
 }
 
 static void secdat_exec_print_text_preflight(

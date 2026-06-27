@@ -4,13 +4,14 @@ AM_CPPFLAGS = \
 	-DLOCALEDIR=\"$(localedir)\" \
 	-DPACKAGE_NAME=\"$(PACKAGE)\" \
 	-DSECDAT_BUILD_ID=\"$(SECDAT_BUILD_ID)\" \
-	$(OPENSSL_CFLAGS)
+	$(OPENSSL_CFLAGS) \
+	$(JANSSON_CFLAGS)
 
 include_HEADERS = secdat-sdk.h
 
 lib_LTLIBRARIES = libsecdat.la
 libsecdat_la_LDFLAGS = -version-info 0:0:0
-libsecdat_la_LIBADD = $(OPENSSL_LIBS)
+libsecdat_la_LIBADD = $(OPENSSL_LIBS) $(JANSSON_LIBS)
 libsecdat_la_SOURCES = \
 	cli.c \
 	cli.h \
@@ -20,6 +21,8 @@ libsecdat_la_SOURCES = \
 	exec_inject.h \
 	exec_inject_policy_file.c \
 	i18n.h \
+	json_util.c \
+	json_util.h \
 	secdat-sdk.h \
 	store.c \
 	store.h \
@@ -47,6 +50,7 @@ secdat_local_headers = \
 	domain.h \
 	exec_inject.h \
 	i18n.h \
+	json_util.h \
 	secdat-sdk.h \
 	store.h \
 	store_exec_port.h

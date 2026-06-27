@@ -104,6 +104,8 @@ if plan["supply"]["ambient"]["mode"] != "default" or plan["supply"]["secret"]["m
     fail(f"baseline supply modes unexpected: {plan['supply']!r}")
 if plan["route"]["prefer"] != "secret":
     fail(f"baseline route prefer unexpected: {plan['route']!r}")
+if plan.get("inject_gate") is not None:
+    fail(f"baseline inject_gate unexpected: {plan!r}")
 if "APP_TOKEN" not in plan["supply"]["secret"]["contributed"]:
     fail(f"baseline secret contributed missing APP_TOKEN: {plan['supply']['secret']!r}")
 if "PATH" not in plan["supply"]["ambient"]["contributed"]:
@@ -492,6 +494,18 @@ if rc != 2 or "--inject-gate=sandbox may be specified at most once" not in stder
     fail(f"inject-file gate duplicate did not fail: rc={rc} stderr={stderr!r}")
 
 # --inject-gate=sandbox applies bulk sandbox_inject pre-filter (§10).
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-gate", "sandbox",
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc != 0 or stderr != "":
+    fail(f"inject-gate sandbox dry-run failed: rc={rc} stderr={stderr!r}")
+gate_plan = json.loads(stdout)
+if gate_plan.get("inject_gate") != "sandbox":
+    fail(f"inject-gate sandbox JSON unexpected: {gate_plan!r}")
+
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
     "--inject-gate", "sandbox",

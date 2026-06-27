@@ -6,5 +6,6 @@ includedir=@includedir@
 Name: libsecdat
 Description: C SDK for secdat secret access and session control
 Version: @PACKAGE_VERSION@
-Libs: -L${libdir} -lsecdat @OPENSSL_LIBS@
-Cflags: -I${includedir}
+Requires.private: jansson >= 2.7
+Libs: -L${libdir} -lsecdat @OPENSSL_LIBS@ @JANSSON_LIBS@
+Cflags: -I${includedir} @JANSSON_CFLAGS@

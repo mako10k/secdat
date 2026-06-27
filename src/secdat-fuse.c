@@ -5,6 +5,7 @@
 #include "domain.h"
 #include "i18n.h"
 #include "secdat-sdk.h"
+#include "store.h"
 
 #include <errno.h>
 #include <fnmatch.h>
@@ -715,124 +716,7 @@ static const struct fuse_operations secdat_fuse_operations = {
     .create = secdat_fuse_create,
 };
 
-static int secdat_fuse_is_utf8_continuation(unsigned char value)
-{
-    return (value & 0xc0) == 0x80;
-}
-
-static size_t secdat_fuse_valid_utf8_sequence_length(const unsigned char *cursor)
-{
-    unsigned char first = cursor[0];
-
-    if (first < 0x80) {
-        return 1;
-    }
-    if (first >= 0xc2 && first <= 0xdf) {
-        return secdat_fuse_is_utf8_continuation(cursor[1]) ? 2 : 0;
-    }
-    if (cursor[1] == '\0') {
-        return 0;
-    }
-    if (first == 0xe0) {
-        return cursor[1] >= 0xa0 && cursor[1] <= 0xbf
-                && secdat_fuse_is_utf8_continuation(cursor[2])
-            ? 3
-            : 0;
-    }
-    if (first >= 0xe1 && first <= 0xec) {
-        return secdat_fuse_is_utf8_continuation(cursor[1])
-                && secdat_fuse_is_utf8_continuation(cursor[2])
-            ? 3
-            : 0;
-    }
-    if (first == 0xed) {
-        return cursor[1] >= 0x80 && cursor[1] <= 0x9f
-                && secdat_fuse_is_utf8_continuation(cursor[2])
-            ? 3
-            : 0;
-    }
-    if (first >= 0xee && first <= 0xef) {
-        return secdat_fuse_is_utf8_continuation(cursor[1])
-                && secdat_fuse_is_utf8_continuation(cursor[2])
-            ? 3
-            : 0;
-    }
-    if (cursor[2] == '\0' || cursor[3] == '\0') {
-        return 0;
-    }
-    if (first == 0xf0) {
-        return cursor[1] >= 0x90 && cursor[1] <= 0xbf
-                && secdat_fuse_is_utf8_continuation(cursor[2])
-                && secdat_fuse_is_utf8_continuation(cursor[3])
-            ? 4
-            : 0;
-    }
-    if (first >= 0xf1 && first <= 0xf3) {
-        return secdat_fuse_is_utf8_continuation(cursor[1])
-                && secdat_fuse_is_utf8_continuation(cursor[2])
-                && secdat_fuse_is_utf8_continuation(cursor[3])
-            ? 4
-            : 0;
-    }
-    if (first == 0xf4) {
-        return cursor[1] >= 0x80 && cursor[1] <= 0x8f
-                && secdat_fuse_is_utf8_continuation(cursor[2])
-                && secdat_fuse_is_utf8_continuation(cursor[3])
-            ? 4
-            : 0;
-    }
-
-    return 0;
-}
-
-static void secdat_fuse_write_json_string(FILE *stream, const char *value)
-{
-    const unsigned char *cursor = (const unsigned char *)(value != NULL ? value : "");
-
-    fputc('"', stream);
-    while (*cursor != '\0') {
-        switch (*cursor) {
-        case '"':
-            fputs("\\\"", stream);
-            break;
-        case '\\':
-            fputs("\\\\", stream);
-            break;
-        case '\b':
-            fputs("\\b", stream);
-            break;
-        case '\f':
-            fputs("\\f", stream);
-            break;
-        case '\n':
-            fputs("\\n", stream);
-            break;
-        case '\r':
-            fputs("\\r", stream);
-            break;
-        case '\t':
-            fputs("\\t", stream);
-            break;
-        default:
-            if (*cursor < 0x20) {
-                fprintf(stream, "\\u%04x", (unsigned int)*cursor);
-            } else {
-                size_t sequence_length = secdat_fuse_valid_utf8_sequence_length(cursor);
-                if (sequence_length == 0) {
-                    fprintf(stream, "\\u%04x", (unsigned int)*cursor);
-                } else {
-                    fwrite(cursor, 1, sequence_length, stream);
-                    cursor += sequence_length - 1;
-                }
-            }
-            break;
-        }
-        cursor += 1;
-    }
-    fputc('"', stream);
-}
-
-static void secdat_fuse_write_json_string_list(FILE *stream, const struct secdat_fuse_string_list *list)
+static void secdat_write_json_string_list(FILE *stream, const struct secdat_fuse_string_list *list)
 {
     size_t index;
 
@@ -841,7 +725,7 @@ static void secdat_fuse_write_json_string_list(FILE *stream, const struct secdat
         if (index > 0) {
             fputs(", ", stream);
         }
-        secdat_fuse_write_json_string(stream, list->items[index]);
+        secdat_write_json_string(stream, list->items[index]);
     }
     fputc(']', stream);
 }
@@ -863,7 +747,7 @@ static void secdat_fuse_write_json_missing_required_keys(
         if (emitted) {
             fputs(", ", stream);
         }
-        secdat_fuse_write_json_string(stream, state->required_keys.items[index]);
+        secdat_write_json_string(stream, state->required_keys.items[index]);
         emitted = 1;
     }
     fputc(']', stream);
@@ -884,7 +768,7 @@ static void secdat_fuse_write_json_files(
             if (emitted > 0) {
                 fputs(", ", stream);
             }
-            secdat_fuse_write_json_string(stream, keys->items[index].key);
+            secdat_write_json_string(stream, keys->items[index].key);
             emitted += 1;
         }
     }
@@ -902,19 +786,19 @@ static void secdat_fuse_write_json_dry_run(
     fputs("{\n  \"ok\": ", stdout);
     fputs(missing_required_count == 0 ? "true" : "false", stdout);
     fputs(",\n  \"mountpoint\": ", stdout);
-    secdat_fuse_write_json_string(stdout, state->mountpoint);
+    secdat_write_json_string(stdout, state->mountpoint);
     fputs(",\n  \"file_count\": ", stdout);
     printf("%zu", include_files ? keys->count : 0);
     fputs(",\n  \"files\": ", stdout);
     secdat_fuse_write_json_files(stdout, keys, include_files);
     fputs(",\n  \"include_patterns\": ", stdout);
-    secdat_fuse_write_json_string_list(stdout, &state->include_patterns);
+    secdat_write_json_string_list(stdout, &state->include_patterns);
     fputs(",\n  \"exclude_patterns\": ", stdout);
-    secdat_fuse_write_json_string_list(stdout, &state->exclude_patterns);
+    secdat_write_json_string_list(stdout, &state->exclude_patterns);
     fputs(",\n  \"sandbox_injectable\": ", stdout);
     fputs(state->filters.sandbox_injectable ? "true" : "false", stdout);
     fputs(",\n  \"required_keys\": ", stdout);
-    secdat_fuse_write_json_string_list(stdout, &state->required_keys);
+    secdat_write_json_string_list(stdout, &state->required_keys);
     fputs(",\n  \"missing_required_keys\": ", stdout);
     secdat_fuse_write_json_missing_required_keys(stdout, state, keys);
     fputs("\n}\n", stdout);

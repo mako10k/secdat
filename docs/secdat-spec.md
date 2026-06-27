@@ -300,7 +300,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `exec --dry-run --json` reports the same preflight data as stable JSON on standard output
 - `exec --json-summary CMD [ARGS...]` executes the child and writes a stable JSON summary to standard error after it exits, preserving child standard output for the child process
 - `exec --json-summary` and `exec --dry-run` are mutually exclusive because `--json-summary` is reserved for real executions
-- JSON summaries include domain, store, supply/route/final plan metadata, injected key count, injected key/environment-name pairs, sanitized child argv, exit status or terminating signal, and duration
+- JSON summaries include domain, store, `inject_gate`, supply/route/final plan metadata, injected key count, injected key/environment-name pairs, sanitized child argv, exit status or terminating signal, and duration
 - preflight output and JSON summaries must not contain secret values
 - the parent process environment is not modified
 - resolved values are decrypted and passed to the child through a constructed environ array launched with `execvpe`

@@ -86,6 +86,7 @@ pkg-config
 gettext
 autopoint
 libssl-dev
+libjansson-dev
 ca-certificates
 git
 EOF
@@ -103,6 +104,7 @@ pkgconf-pkg-config
 gettext
 gettext-devel
 openssl-devel
+jansson-devel
 ca-certificates
 git
 EOF
