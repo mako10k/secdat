@@ -86,7 +86,7 @@ def exec_stderr_json(stderr):
 
 for args, marker in [
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--sandbox-injectable]"),
-    ([bin_path, "help", "exec"], "exec [--inject LAYER:KIND=SELECTOR]... [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--sandbox-injectable] [--require-key KEY] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
+    ([bin_path, "help", "exec"], "exec [--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
     ([bin_path, "export", "--help"], "emit shell-ready export lines"),
     ([bin_path, "help", "get"], "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [-o|--stdout|-e|--shellescaped]"),
     ([bin_path, "help", "usecases"], "inject secrets into one subprocess only:"),

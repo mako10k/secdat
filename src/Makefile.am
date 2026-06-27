@@ -18,6 +18,7 @@ libsecdat_la_SOURCES = \
 	domain.h \
 	exec_inject.c \
 	exec_inject.h \
+	exec_inject_policy_file.c \
 	i18n.h \
 	secdat-sdk.h \
 	store.c \

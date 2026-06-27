@@ -224,14 +224,17 @@ Direct source-object links such as
 .B ln @UUID DST_KEYREF
 are allowed only when the current context can authorize the UUID through an existing visible or unlocked domain entry; object UUID syntax is not a destination operand.
 .TP
-.B exec [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-\-env-map-sed EXPR] [\-\-sandbox-injectable] [\-\-require-key KEY] [\-\-dry-run] [\-\-json] [\-\-json-summary] [\-\-] CMD [ARGS...]
-Inject resolved keys into a child process environment and execute the command. Repeated include patterns widen the match set, repeated exclude patterns subtract from it, and
-.B --sandbox-injectable
-keeps only keys whose effective sandbox injection policy allows bulk sandbox selection.
-.B --env-map-sed
-applies one sed-style key-to-environment-name mapping. In the current minimal subset, only keys matched by that substitution are injected. Generated environment names must be valid identifiers; empty or otherwise invalid names are rejected before values are loaded.
-.B --require-key
-may be repeated and refuses execution unless each named key is selected for injection after filtering and mapping.
+.B exec [\-\-inject LAYER:KIND=SELECTOR]... [\-\-inject-file FILE]... [\-\-dry-run] [\-\-json] [\-\-json-summary] [\-\-] CMD [ARGS...]
+Build a child process environment through supply, route, and final injection layers, then execute the command.
+.B --inject
+configures ambient, secret, route, or final rules. Repeated options accumulate selectors of the same kind. Multiple selectors in one value are separated by
+.BR : .
+.B --inject-file
+loads a YAML policy file. Later
+.B --inject
+options override file entries.
+.B secret:rename
+applies one sed-style key-to-environment-name mapping. Keys that do not match keep their original key name as the environment name. Generated environment names must be valid identifiers; empty, duplicate, or otherwise invalid names are rejected during planning.
 .B --dry-run
 prints the command argv, selected key names, generated environment names, and injection count without running the child or reading secret values. Add
 .B --json
@@ -239,9 +242,15 @@ to write that preflight report as JSON to standard output.
 .B --json-summary
 runs the child and writes a JSON audit summary to standard error after child exit, preserving child standard output. It cannot be combined with
 .B --dry-run .
-JSON output includes machine-readable
-.B mapping_errors
-for invalid mappings and duplicate generated environment names, plus
+Legacy
+.BR --pattern ,
+.BR --pattern-exclude ,
+.BR --require-key ,
+and
+.B --env-map-sed
+lower to equivalent
+.B --inject
+rules during migration. JSON output includes supply, route, and final plan metadata, plus
 .B required_keys
 and
 .B missing_required_keys ,

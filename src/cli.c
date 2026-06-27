@@ -1151,8 +1151,7 @@ int secdat_cli_complete(int argc, char **argv)
         "--ignore-missing", "-f", "--help", "-h", NULL,
     };
     static const char *const exec_options[] = {
-        "--inject", "--pattern", "-p", "--pattern-exclude", "-x", "--env-map-sed", "--sandbox-injectable",
-        "--require-key", "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
+        "--inject", "--inject-file", "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
     };
     static const char *const export_options[] = {
         "--pattern", "-p", "--sandbox-injectable", "--help", "-h", NULL,
@@ -1465,7 +1464,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "SRC_KEYREF|@UUID DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[--inject LAYER:KIND=SELECTOR]... [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--sandbox-injectable] [--require-key KEY] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]");
         break;
     case SECDAT_COMMAND_EXPORT:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "export", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [--sandbox-injectable]");
@@ -1789,7 +1788,10 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "exec") == 0) {
-        secdat_cli_print_detail_line(_("  exec: inject resolved keys into a child process environment\n"));
+        secdat_cli_print_detail_line(_("  exec: build a child environment through supply, route, and final injection layers\n"));
+        secdat_cli_print_detail_line(_("  --inject LAYER:KIND=SELECTOR configures ambient, secret, route, or final rules; repeated --inject accumulates selectors of the same kind\n"));
+        secdat_cli_print_detail_line(_("  --inject-file FILE loads a YAML policy; later --inject options override file entries\n"));
+        secdat_cli_print_detail_line(_("  legacy --pattern, --pattern-exclude, --require-key, and --env-map-sed still lower to --inject during migration; see docs/exec-injection-design.md\n"));
         return;
     }
     if (target != NULL && strcmp(target, "export") == 0) {
@@ -1982,9 +1984,9 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
     }
     if (strcmp(target, "exec") == 0) {
         char buffer[512];
-        snprintf(buffer, sizeof(buffer), _("  run one command with matching secrets injected: %s exec --pattern 'APP_*' env\n"), program_name);
+        snprintf(buffer, sizeof(buffer), _("  run one command with matching secrets injected: %s exec --inject secret:only=APP_* env\n"), program_name);
         secdat_cli_print_detail_line(buffer);
-        snprintf(buffer, sizeof(buffer), _("  exclude one inherited key while running a child process: %s exec --pattern 'APP_*' --pattern-exclude 'APP_DEBUG_*' CMD\n"), program_name);
+        snprintf(buffer, sizeof(buffer), _("  exclude one inherited key while running a child process: %s exec --inject secret:only=APP_* --inject secret:omit=APP_DEBUG_* CMD\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         return;
     }
@@ -2111,7 +2113,7 @@ static void secdat_cli_print_use_cases_overview(const char *program_name)
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  load shell variables without exposing raw values in exported text: source <(%s --dir ~/example/project export)\n"), program_name);
         secdat_cli_print_detail_line(buffer);
-        snprintf(buffer, sizeof(buffer), _("  inject secrets into one subprocess only: %s --dir ~/example/project exec --env-map-sed 's/^MY_APP_\\(.*\\)$/APP_\\1/' CMD\n"), program_name);
+        snprintf(buffer, sizeof(buffer), _("  inject secrets into one subprocess only: %s --dir ~/example/project exec --inject secret:rename='s/^MY_APP_\\(.*\\)$/APP_\\1/' CMD\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  block automation until a human unlocks the domain elsewhere: %s --dir ~/example/project wait-unlock --timeout 900\n"), program_name);
         secdat_cli_print_detail_line(buffer);

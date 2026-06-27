@@ -22,6 +22,8 @@
 
 extern char **environ;
 
+int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *policy, const char *path);
+
 struct secdat_exec_selector_list {
     char **items;
     size_t count;
@@ -71,6 +73,7 @@ struct secdat_exec_inject_policy {
     int explicit_secret_omit;
     int explicit_secret_require;
     int explicit_secret_rename;
+    int explicit_route_prefer;
 };
 
 struct secdat_exec_options {
@@ -110,6 +113,8 @@ struct secdat_exec_plan {
     size_t secret_contributed_env_names_count;
     char **missing_secret_required;
     size_t missing_secret_required_count;
+    char **missing_ambient_required;
+    size_t missing_ambient_required_count;
     char **rejected_secret_present;
     size_t rejected_secret_present_count;
     char **rejected_ambient_present;
@@ -221,6 +226,7 @@ static void secdat_exec_plan_free(struct secdat_exec_plan *plan)
     secdat_exec_string_list_free(plan->secret_contributed, plan->secret_contributed_count);
     secdat_exec_string_list_free(plan->secret_contributed_env_names, plan->secret_contributed_env_names_count);
     secdat_exec_string_list_free(plan->missing_secret_required, plan->missing_secret_required_count);
+    secdat_exec_string_list_free(plan->missing_ambient_required, plan->missing_ambient_required_count);
     secdat_exec_string_list_free(plan->rejected_secret_present, plan->rejected_secret_present_count);
     secdat_exec_string_list_free(plan->rejected_ambient_present, plan->rejected_ambient_present_count);
     secdat_exec_string_list_free(plan->missing_final_required, plan->missing_final_required_count);
@@ -292,6 +298,37 @@ static int secdat_exec_selector_list_matches(const struct secdat_exec_selector_l
 
     for (index = 0; index < list->count; index += 1) {
         if (secdat_exec_selector_matches(list->items[index], value)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_exec_selector_matches_primary_or_alternate(
+    const char *selector,
+    const char *primary,
+    const char *alternate
+)
+{
+    if (secdat_exec_selector_matches(selector, primary)) {
+        return 1;
+    }
+    if (alternate != NULL && secdat_exec_selector_matches(selector, alternate)) {
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_exec_selector_list_matches_primary_or_alternate(
+    const struct secdat_exec_selector_list *list,
+    const char *primary,
+    const char *alternate
+)
+{
+    size_t index;
+
+    for (index = 0; index < list->count; index += 1) {
+        if (secdat_exec_selector_matches_primary_or_alternate(list->items[index], primary, alternate)) {
             return 1;
         }
     }
@@ -694,7 +731,7 @@ static int secdat_exec_append_inject_selectors(
     return 0;
 }
 
-static int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, const char *token)
+int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, const char *token)
 {
     const char *separator = strchr(token, ':');
     char layer[32];
@@ -795,6 +832,12 @@ static int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *poli
     }
     if (strcmp(layer, "route") == 0) {
         if (strcmp(kind, "prefer") == 0) {
+            if (policy->explicit_route_prefer) {
+                fprintf(stderr, _("route:prefer may be specified at most once\n"));
+                free(rest);
+                return 2;
+            }
+            policy->explicit_route_prefer = 1;
             policy->route_prefer = secdat_exec_parse_route_pick(value);
             free(rest);
             return 0;
@@ -879,6 +922,7 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
 {
     static const struct option long_options[] = {
         {"inject", required_argument, NULL, 1000},
+        {"inject-file", required_argument, NULL, 1007},
         {"pattern", required_argument, NULL, 'p'},
         {"pattern-exclude", required_argument, NULL, 'x'},
         {"env-map-sed", required_argument, NULL, 1001},
@@ -903,6 +947,13 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
         switch (option) {
         case 1000:
             status = secdat_exec_apply_inject_token(&options->policy, optarg);
+            if (status != 0) {
+                secdat_exec_options_free(options);
+                return status;
+            }
+            break;
+        case 1007:
+            status = secdat_exec_apply_inject_policy_file(&options->policy, optarg);
             if (status != 0) {
                 secdat_exec_options_free(options);
                 return status;
@@ -1098,6 +1149,7 @@ static int secdat_exec_pentad_select_names(
     const struct secdat_exec_pentad *pentad,
     const char **available,
     size_t available_count,
+    const char **alternate_names,
     int reject_label_is_present,
     char ***selected_out,
     size_t *selected_count_out,
@@ -1145,13 +1197,24 @@ static int secdat_exec_pentad_select_names(
 
     for (available_index = 0; available_index < available_count; available_index += 1) {
         const char *name = available[available_index];
+        const char *alternate = alternate_names != NULL ? alternate_names[available_index] : NULL;
         int include = *mode_only_out == 0;
 
-        if (*mode_only_out && secdat_exec_selector_list_matches(&pentad->only, name)) {
-            include = 1;
+        if (*mode_only_out) {
+            if (alternate_names != NULL) {
+                include = secdat_exec_selector_list_matches_primary_or_alternate(&pentad->only, name, alternate);
+            } else if (secdat_exec_selector_list_matches(&pentad->only, name)) {
+                include = 1;
+            }
         }
-        if (include && secdat_exec_selector_list_matches(&pentad->omit, name)) {
-            include = 0;
+        if (include) {
+            if (alternate_names != NULL) {
+                if (secdat_exec_selector_list_matches_primary_or_alternate(&pentad->omit, name, alternate)) {
+                    include = 0;
+                }
+            } else if (secdat_exec_selector_list_matches(&pentad->omit, name)) {
+                include = 0;
+            }
         }
         if (!include) {
             continue;
@@ -1274,13 +1337,14 @@ static int secdat_exec_build_plan(
             &policy->ambient,
             (const char **)ambient_available,
             ambient_available_count,
+            NULL,
             1,
             &ambient_selected,
             &ambient_selected_count,
             &plan_out->rejected_ambient_present,
             &plan_out->rejected_ambient_present_count,
-            NULL,
-            NULL,
+            &plan_out->missing_ambient_required,
+            &plan_out->missing_ambient_required_count,
             &plan_out->ambient_mode_only) != 0) {
         status = 1;
         goto cleanup;
@@ -1360,6 +1424,7 @@ static int secdat_exec_build_plan(
             &policy->secret,
             (const char **)secret_available,
             secret_available_count,
+            (const char **)secret_env_names,
             1,
             &secret_selected,
             &secret_selected_count,
@@ -1669,6 +1734,8 @@ static void secdat_exec_write_json_report(
     secdat_exec_write_json_string_list(stream, plan->ambient_contributed, plan->ambient_contributed_count);
     fputs(", \"rejected_present\": ", stream);
     secdat_exec_write_json_string_list(stream, plan->rejected_ambient_present, plan->rejected_ambient_present_count);
+    fputs(", \"missing_required\": ", stream);
+    secdat_exec_write_json_string_list(stream, plan->missing_ambient_required, plan->missing_ambient_required_count);
     fputs(" },\n", stream);
     fputs("    \"secret\": { \"mode\": ", stream);
     secdat_write_json_string(stream, plan->secret_mode_only ? "only" : "default");

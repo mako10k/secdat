@@ -264,6 +264,77 @@ assert_eq(
     "secret rename identity fallback payload",
 )
 
+# secret:only matches mapped env_name after rename (design §6 Phase 1).
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "secret:only=RENAMED_*",
+    "--inject", r"secret:rename=s/^OTHER_\(.*\)/RENAMED_\1/",
+    "python3", "-c",
+    "import os,sys; sys.stdout.write(os.environ.get('RENAMED_TOKEN','missing'))",
+])
+if rc != 0 or not exec_stderr_ok(stderr) or stdout != "other-secret":
+    fail(f"secret only env_name match failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+# secret:omit matches mapped env_name after rename.
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "secret:only=APP_*:OTHER_*",
+    "--inject", "secret:omit=RENAMED_*",
+    "--inject", r"secret:rename=s/^OTHER_\(.*\)/RENAMED_\1/",
+    "python3", "-c",
+    "import json, os; print(json.dumps({k: os.environ.get(k) for k in ('APP_TOKEN', 'RENAMED_TOKEN')}, sort_keys=True))",
+])
+if rc != 0 or not exec_stderr_ok(stderr):
+    fail(f"secret omit env_name match failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(
+    json.loads(stdout),
+    {"APP_TOKEN": "app-secret", "RENAMED_TOKEN": None},
+    "secret omit env_name payload",
+)
+
+# ambient:require missing surfaces in JSON supply.ambient.missing_required.
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "ambient:require=MISSING_AMBIENT_VAR",
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc == 0 or "exec inject required entry missing: MISSING_AMBIENT_VAR" not in stderr:
+    fail(f"ambient require missing did not fail: rc={rc} stderr={stderr!r}")
+ambient_req = json.loads(stdout)
+if ambient_req["supply"]["ambient"]["missing_required"] != ["MISSING_AMBIENT_VAR"]:
+    fail(f"ambient require missing JSON unexpected: {ambient_req!r}")
+
+# route:prefer may be specified at most once.
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "route:prefer=secret",
+    "--inject", "route:prefer=ambient",
+    "python3", "-c", "pass",
+])
+if rc != 2 or "route:prefer may be specified at most once" not in stderr:
+    fail(f"duplicate route prefer did not fail: rc={rc} stderr={stderr!r}")
+
+# --inject-file loads policy; later --inject overrides file entries.
+policy_file = work_root / "exec.env.yaml"
+policy_file.write_text(
+    "supply:\n"
+    "  secret:\n"
+    "    only: [\"APP_*\"]\n"
+    "route:\n"
+    "  prefer: secret\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(policy_file),
+    "--inject", "secret:only=OTHER_*",
+    "python3", "-c",
+    "import os,sys; sys.stdout.write(os.environ.get('OTHER_TOKEN','missing'))",
+])
+if rc != 0 or not exec_stderr_ok(stderr) or stdout != "other-secret":
+    fail(f"inject-file override failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 # secret:rename duplicate env_name is a plan error (design §6 Phase 1).
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",

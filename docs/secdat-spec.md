@@ -77,7 +77,7 @@ secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] ln SRC_KEYREF|@UUID DST_KEYREF
 
-secdat [--dir DIR] [--store STORE] exec [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 
 secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--size-metadata] [--foreground] [--debug] MOUNTPOINT [-- CMD [ARGS...]]
 
@@ -283,25 +283,26 @@ To make the requested behavior implementable, the following are treated as norma
 
 #### FR-7 Runtime Injection
 
-- `secdat exec CMD [ARGS...]` injects the effective visible keys into a child process environment and executes the command
-- repeated `--pattern GLOBPATTERN` options widen the include set for both `ls` and `exec`
-- repeated `--pattern-exclude GLOBPATTERN` options remove matches from the include set for both `ls` and `exec`
-- `--env-map-sed EXPR` for `exec` applies one sed-style key-to-environment-name mapping after pattern filtering; when present, only keys matched by the substitution are injected
-- repeated `--require-key KEY` options for `exec` refuse execution unless each named key is present in the final injection plan after pattern, sandbox, and mapping filters
+- `secdat exec CMD [ARGS...]` builds a child process environment through supply, route, and final injection layers, then executes the command
+- repeated `--inject LAYER:KIND=SELECTOR` options configure ambient, secret, route, and final rules; multiple selectors in one value are separated by `:`
+- `--inject-file FILE` loads a YAML policy file; later `--inject` options override file entries
+- `secret:rename=EXPR` applies one sed-style key-to-environment-name mapping; keys that do not match keep `env_name = key`
+- `secret:only` and `secret:omit` match store keys or mapped environment names; `secret:require` and `secret:reject` match store keys
+- two secret keys mapping to the same environment name fail during planning
 - mapped environment variable names must remain valid identifiers; empty or otherwise invalid results are rejected
+- repeated `--pattern GLOBPATTERN` options widen the include set for `ls`; for `exec` they lower to `secret:only` during migration
+- repeated `--pattern-exclude GLOBPATTERN` options remove matches from the include set for `ls`; for `exec` they lower to `secret:omit` during migration
+- legacy `--require-key KEY` and `--env-map-sed EXPR` lower to `secret:require` and `secret:rename` during migration
 - `secdat ls --safe` lists only effective keys whose resolved entry is stored encrypted at rest
 - `secdat ls --unsafe` lists only effective keys whose resolved entry is stored plaintext at rest
-- `secdat exec --pattern GLOBPATTERN CMD [ARGS...]` injects only matched keys
-- the initial `--env-map-sed` subset accepts a single `s///` expression with an optional leading `/ADDRESS/` filter and supports `&` plus `\1` through `\9` in the replacement text
-- the delimiter after `s` may be any non-alphanumeric, non-backslash character, so `s|...|...|` and `s#...#...#` are accepted
-- `secdat exec --dry-run CMD [ARGS...]` reports the selected key names, generated environment variable names, injection count, and command argv without executing the child or reading secret values
+- `secdat exec --dry-run CMD [ARGS...]` validates the injection plan and reports key names, environment names, injection count, and command argv without executing the child or reading secret values
 - `exec --dry-run --json` reports the same preflight data as stable JSON on standard output
 - `exec --json-summary CMD [ARGS...]` executes the child and writes a stable JSON summary to standard error after it exits, preserving child standard output for the child process
 - `exec --json-summary` and `exec --dry-run` are mutually exclusive because `--json-summary` is reserved for real executions
-- JSON summaries include domain, store, include/exclude patterns, required and missing required keys, sandbox and mapping flags, injected key count, injected key/environment-name pairs, sanitized child argv, exit status or terminating signal, duration, and machine-readable `mapping_errors`
+- JSON summaries include domain, store, supply/route/final plan metadata, injected key count, injected key/environment-name pairs, sanitized child argv, exit status or terminating signal, and duration
 - preflight output and JSON summaries must not contain secret values
 - the parent process environment is not modified
-- resolved values are decrypted and passed through an `execve`-style API
+- resolved values are decrypted and passed to the child through a constructed environ array
 
 #### FR-7b FUSE Mount Helper
 
@@ -812,36 +813,28 @@ secdat [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY
 ### 4.8 `exec`
 
 ```text
-secdat [--dir DIR] [--store STORE] exec [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--env-map-sed EXPR] [--sandbox-injectable] [--require-key KEY]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 ```
 
-- without `--pattern`, all effective visible keys are injected unless further restricted by `--sandbox-injectable`
-- repeated `--pattern` options are ORed together
-- repeated `--pattern-exclude` options subtract matches after include filtering
-- `--sandbox-injectable` injects only keys whose effective `sandbox_inject` allows bulk sandbox selection
-- repeated `--require-key KEY` options require exact key names to remain selected for injection after all selection and mapping filters; missing required keys fail before values are loaded or the child is launched
-- `--env-map-sed EXPR` accepts one sed-style substitution for exec-time environment names; when present, only matched keys are injected
-- mapped environment variable names must remain valid identifiers; empty or otherwise invalid results are rejected before values are loaded
-- the initial subset accepts `s/REGEX/REPLACEMENT/` with an optional leading `/ADDRESS/`; replacement supports `&` and `\1` through `\9`, and the delimiter after `s` may be any non-alphanumeric, non-backslash character
+- without `secret:only`, all effective visible store keys are candidates for secret supply unless further restricted by store attribute gates
+- caller ambient variables are inherited by default unless ambient supply rules restrict them
+- `route:prefer=secret|ambient|error` resolves ambient/secret name collisions; per-name `route:NAME=...` rules may repeat and first match wins
+- `secret:rename=EXPR` accepts one sed-style substitution with optional leading `/ADDRESS/`; non-matching keys keep `env_name = key`
+- `secret:only` and `secret:omit` selectors may match store keys or mapped environment names
+- duplicate mapped environment names from rename fail during planning
+- `--inject-file FILE` loads YAML policies shaped like `docs/exec-injection-design.md` §7.4; later `--inject` options override file entries
 - `--dry-run` prints a preflight report containing the command argv, selected key names, generated environment names, and injection count without executing the child or reading secret values
 - `--json` is valid with `--dry-run` and writes the preflight report as JSON to standard output
 - `--json-summary` runs the child and writes a JSON summary to standard error after child exit so child standard output remains parseable
 - `--json-summary` cannot be combined with `--dry-run`; use `--dry-run --json` for JSON preflight
-- JSON preflight and summary output include `required_keys` and `missing_required_keys`, and represent invalid mappings and duplicate generated environment names in `mapping_errors`
+- JSON preflight and summary output include supply, route, and final plan metadata plus `missing_required` fields where applicable
 - preflight and summary output must never include secret values
 - the parent process environment is unchanged
 
-Environment variable mapping:
+Migration note:
 
-- uppercase the key
-- replace each non-alphanumeric character with `_`
-- prefix the result with `SECDAT_`
-- fail on collisions after normalization
-
-Examples:
-
-- `api/token` -> `SECDAT_API_TOKEN`
-- `db.password` -> `SECDAT_DB_PASSWORD`
+- legacy `--pattern`, `--pattern-exclude`, `--require-key`, and `--env-map-sed` lower to equivalent `--inject` rules and emit deprecation warnings
+- see `docs/exec-injection-design.md` for the canonical grammar, examples, and lowering table
 
 ### 4.8a `secdat-fuse`
 
