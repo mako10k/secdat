@@ -165,12 +165,16 @@ if mode != "plain":
     raise SystemExit(f"FAIL: ls option completion mode mismatch: {mode!r}")
 for expected in ["--pattern-exclude", "--canonical-store", "--safe", "--unsafe", "--metadata", "--bulk-gate", "--public-value", "--secret-value", "--json"]:
     assert_contains(values, expected, "ls options")
+for unexpected in ["--bulk-select", "--inject", "--inject-file", "--inject-gate", "--inject-bulk-gate", "--sandbox-injectable"]:
+    assert_not_contains(values, unexpected, "ls options must not suggest attr/exec/legacy flags")
 
 mode, values = run_completion("list", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: list option completion mode mismatch: {mode!r}")
 for expected in ["--masked", "--safe", "--unsafe", "--bulk-gate", "--public-value", "--secret-value"]:
     assert_contains(values, expected, "list options")
+for unexpected in ["--bulk-select", "--inject", "--inject-file", "--inject-gate", "--inject-bulk-gate", "--sandbox-injectable"]:
+    assert_not_contains(values, unexpected, "list options must not suggest attr/exec/legacy flags")
 
 mode, values = run_completion("unlock", "--")
 if mode != "plain":
@@ -194,8 +198,22 @@ if mode != "file" or values:
 mode, values = run_completion("attr", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: attr option completion mode mismatch: {mode!r}")
-for expected in ["--key-visibility", "--value-access", "--bulk-select", "--inject"]:
+for expected in ["--key-visibility", "--value-access", "--bulk-select"]:
     assert_contains(values, expected, "attr options")
+for unexpected in ["--inject", "--bulk-gate", "--inject-gate", "--inject-bulk-gate", "--sandbox-injectable", "--sandbox-inject", "--inject-bulk"]:
+    assert_not_contains(values, unexpected, "attr options must not suggest exec/legacy flags")
+
+mode, values = run_completion("attr", "--bulk-select", "")
+if mode != "none" or values:
+    raise SystemExit(f"FAIL: attr --bulk-select completion should not suggest token values: mode={mode!r} values={values!r}")
+
+mode, values = run_completion("attr", "--key-visibility", "")
+if mode != "none" or values:
+    raise SystemExit(f"FAIL: attr --key-visibility completion should not suggest token values: mode={mode!r} values={values!r}")
+
+mode, values = run_completion("attr", "API_TOKEN", "--inject", "")
+if mode != "none" or values:
+    raise SystemExit(f"FAIL: attr mistaken --inject value completion should stay silent: mode={mode!r} values={values!r}")
 
 mode, values = run_completion("relation", "set", "--")
 if mode != "plain":
@@ -254,20 +272,42 @@ if mode != "none" or values:
 mode, values = run_completion("set", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: set option completion mode mismatch: {mode!r}")
-for expected in ["--public-value", "--secret-value", "--key-visibility", "--value-access", "--bulk-select", "--inject"]:
+for expected in ["--public-value", "--secret-value", "--key-visibility", "--value-access", "--bulk-select"]:
     assert_contains(values, expected, "set options")
+for unexpected in ["--inject", "--bulk-gate", "--inject-gate", "--inject-bulk-gate", "--sandbox-injectable", "--sandbox-inject", "--inject-bulk"]:
+    assert_not_contains(values, unexpected, "set options must not suggest exec/legacy flags")
+
+mode, values = run_completion("set", "--bulk-select", "")
+if mode != "none" or values:
+    raise SystemExit(f"FAIL: set --bulk-select completion should not suggest token values: mode={mode!r} values={values!r}")
 
 mode, values = run_completion("exec", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: exec option completion mode mismatch: {mode!r}")
 for expected in ["--inject", "--inject-file", "--bulk-gate", "--dry-run", "--json", "--json-summary"]:
     assert_contains(values, expected, "exec options")
+for unexpected in ["--bulk-select", "--inject-gate", "--inject-bulk-gate", "--sandbox-injectable", "--sandbox-inject", "--inject-bulk"]:
+    assert_not_contains(values, unexpected, "exec options must not suggest attr/legacy flags")
+
+mode, values = run_completion("exec", "--inject", "")
+if mode != "none" or values:
+    raise SystemExit(f"FAIL: exec --inject completion should not suggest rule values: mode={mode!r} values={values!r}")
+
+mode, values = run_completion("exec", "--inject-file", "")
+if mode != "file" or values:
+    raise SystemExit(f"FAIL: exec --inject-file completion should enter file mode: mode={mode!r} values={values!r}")
+
+mode, values = run_completion("exec", "--bulk-gate", "")
+if mode != "none" or values:
+    raise SystemExit(f"FAIL: exec --bulk-gate completion should not suggest values: mode={mode!r} values={values!r}")
 
 mode, values = run_completion("export", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: export option completion mode mismatch: {mode!r}")
 for expected in ["--pattern", "--bulk-gate"]:
     assert_contains(values, expected, "export options")
+for unexpected in ["--bulk-select", "--inject", "--inject-file", "--inject-gate", "--inject-bulk-gate", "--sandbox-injectable"]:
+    assert_not_contains(values, unexpected, "export options must not suggest attr/exec/legacy flags")
 
 mode, values = run_completion("cp", "")
 if mode != "plain":

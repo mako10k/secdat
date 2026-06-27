@@ -963,9 +963,10 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
             return "none";
         }
     } else if (strcmp(command, "exec") == 0) {
-        if (strcmp(previous, "--inject") == 0
-            || strcmp(previous, "--inject-file") == 0
-            || strcmp(previous, "--bulk-gate") == 0) {
+        if (strcmp(previous, "--inject-file") == 0) {
+            return "file";
+        }
+        if (strcmp(previous, "--inject") == 0 || strcmp(previous, "--bulk-gate") == 0) {
             return "none";
         }
     } else if (strcmp(command, "export") == 0) {
@@ -1127,7 +1128,7 @@ int secdat_cli_complete(int argc, char **argv)
         "--public-value", "--secret-value", "--bulk-gate", "--help", "-h", NULL,
     };
     static const char *const attr_options[] = {
-        "--key-visibility", "--value-access", "--bulk-select", "--inject", "--help", "-h", NULL,
+        "--key-visibility", "--value-access", "--bulk-select", "--help", "-h", NULL,
     };
     static const char *const relation_set_options[] = {
         "--kind", "--member", "--security", "--exposure", "--impact", "--note", "--help", "-h", NULL,
@@ -1143,7 +1144,7 @@ int secdat_cli_complete(int argc, char **argv)
     };
     static const char *const set_options[] = {
         "--unsafe", "-u", "--public-value", "--secret-value", "--stdin", "-i", "--env", "-e", "--value", "-v",
-        "--key-visibility", "--value-access", "--bulk-select", "--inject", "--help", "-h", NULL,
+        "--key-visibility", "--value-access", "--bulk-select", "--help", "-h", NULL,
     };
     static const char *const rm_options[] = {
         "--ignore-missing", "-f", "--help", "-h", NULL,
