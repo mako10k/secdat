@@ -406,15 +406,35 @@ if rc != 0 or stderr != "":
     fail(f"inject secret omit failed: rc={rc} stderr={stderr!r}")
 assert_eq(json.loads(stdout), {"APP_TOKEN": "app-secret"}, "inject secret omit payload")
 
-# §9 pentad contract conflict.
-rc, stdout, stderr = run([
-    bin_path, "--dir", str(domain), "exec",
-    "--inject", "secret:require=APP_TOKEN",
-    "--inject", "secret:omit=APP_TOKEN",
-    "python3", "-c", "pass",
-])
-if rc != 2 or "exec inject secret pentad conflict: require and omit overlap: APP_TOKEN" not in stderr:
-    fail(f"pentad conflict did not fail: rc={rc} stderr={stderr!r}")
+# §9 pentad contract conflicts (require/omit, require/reject, omit/reject per layer).
+pentad_conflict_cases = [
+    ("secret", ["--inject", "secret:require=APP_TOKEN", "--inject", "secret:omit=APP_TOKEN"],
+     "exec inject secret pentad conflict: require and omit overlap: APP_TOKEN"),
+    ("secret", ["--inject", "secret:require=APP_TOKEN", "--inject", "secret:reject=APP_*"],
+     "exec inject secret pentad conflict: require and reject overlap: APP_TOKEN"),
+    ("secret", ["--inject", "secret:omit=APP_DEBUG", "--inject", "secret:reject=APP_*"],
+     "exec inject secret pentad conflict: omit and reject overlap: APP_DEBUG"),
+    ("ambient", ["--inject", "ambient:require=PATH", "--inject", "ambient:omit=PATH"],
+     "exec inject ambient pentad conflict: require and omit overlap: PATH"),
+    ("ambient", ["--inject", "ambient:require=PATH", "--inject", "ambient:reject=PATH"],
+     "exec inject ambient pentad conflict: require and reject overlap: PATH"),
+    ("ambient", ["--inject", "ambient:omit=PATH", "--inject", "ambient:reject=PATH"],
+     "exec inject ambient pentad conflict: omit and reject overlap: PATH"),
+    ("final", ["--inject", "final:require=APP_TOKEN", "--inject", "final:omit=APP_TOKEN"],
+     "exec inject final pentad conflict: require and omit overlap: APP_TOKEN"),
+    ("final", ["--inject", "final:require=APP_TOKEN", "--inject", "final:reject=APP_*"],
+     "exec inject final pentad conflict: require and reject overlap: APP_TOKEN"),
+    ("final", ["--inject", "final:omit=APP_TOKEN", "--inject", "final:reject=APP_*"],
+     "exec inject final pentad conflict: omit and reject overlap: APP_TOKEN"),
+]
+for layer, inject_args, expected in pentad_conflict_cases:
+    rc, stdout, stderr = run([
+        bin_path, "--dir", str(domain), "exec",
+        *inject_args,
+        "python3", "-c", "pass",
+    ])
+    if rc != 2 or expected not in stderr:
+        fail(f"{layer} pentad conflict did not fail: rc={rc} stderr={stderr!r}")
 
 # §9 final:require missing.
 rc, stdout, stderr = run([
@@ -505,6 +525,183 @@ if summary["ok"] is not True or summary["exit_status"] != 4:
     fail(f"json-summary payload unexpected: {summary!r}")
 if summary["injected_keys"] != [{"key": "APP_TOKEN", "env_name": "APP_TOKEN"}]:
     fail(f"json-summary injected keys unexpected: {summary!r}")
+
+# §7.3 baseline exec (implicit default policy: ambient + secret, secret wins on collision).
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "python3", "-c",
+    "import os,sys; sys.stdout.write(os.environ.get('APP_TOKEN','missing'))",
+])
+if rc != 0 or not exec_stderr_ok(stderr) or stdout != "app-secret":
+    fail(f"baseline exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+# §7.3 route glob rule on collision (route:APP_*=ambient).
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "secret:only=APP_*",
+    "--inject", "route:APP_*=ambient",
+    "python3", "-c",
+    "import os,sys; sys.stdout.write(os.environ.get('APP_TOKEN','missing'))",
+], extra_env={"APP_TOKEN": "ambient-override"})
+if rc != 0 or not exec_stderr_ok(stderr) or stdout != "ambient-override":
+    fail(f"route glob ambient pick failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+# §7.3 ambient supply modes in JSON (only vs default+omit).
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "ambient:only=PATH:HOME",
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc != 0 or stderr != "":
+    fail(f"ambient only dry-run failed: rc={rc} stderr={stderr!r}")
+ambient_only = json.loads(stdout)
+if ambient_only["supply"]["ambient"]["mode"] != "only":
+    fail(f"ambient only mode unexpected: {ambient_only['supply']['ambient']!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "ambient:omit=SECDAT_*",
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc != 0 or stderr != "":
+    fail(f"ambient omit dry-run failed: rc={rc} stderr={stderr!r}")
+ambient_omit = json.loads(stdout)
+if ambient_omit["supply"]["ambient"]["mode"] != "default":
+    fail(f"ambient omit mode unexpected: {ambient_omit['supply']['ambient']!r}")
+if "SECDAT_MASTER_KEY" in ambient_omit["supply"]["ambient"]["contributed"]:
+    fail(f"ambient omit leaked SECDAT_MASTER_KEY: {ambient_omit['supply']['ambient']!r}")
+
+# §7.3 secret:require success path.
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "secret:only=APP_*",
+    "--inject", "secret:require=APP_TOKEN",
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc != 0 or stderr != "":
+    fail(f"secret require success dry-run failed: rc={rc} stderr={stderr!r}")
+secret_req_ok = json.loads(stdout)
+if secret_req_ok["supply"]["secret"]["missing_required"] != []:
+    fail(f"secret require success missing_required unexpected: {secret_req_ok!r}")
+if "APP_TOKEN" not in secret_req_ok["supply"]["secret"]["contributed"]:
+    fail(f"secret require success contributed unexpected: {secret_req_ok!r}")
+
+# §7.3 final:omit exec.
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "secret:only=APP_*",
+    "--inject", "final:omit=APP_DEBUG",
+    "python3", "-c",
+    "import json, os; print(json.dumps({k: os.environ.get(k) for k in ('APP_TOKEN', 'APP_DEBUG')}, sort_keys=True))",
+])
+if rc != 0 or not exec_stderr_ok(stderr):
+    fail(f"final omit exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(
+    json.loads(stdout),
+    {"APP_DEBUG": None, "APP_TOKEN": "app-secret"},
+    "final omit payload",
+)
+
+# §9 ambient:reject when a forbidden ambient variable is present.
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "ambient:reject=MY_TOKEN",
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc == 0 or "exec inject ambient variable must not be present: MY_TOKEN" not in stderr:
+    fail(f"ambient reject dry-run did not fail: rc={rc} stderr={stderr!r}")
+ambient_reject = json.loads(stdout)
+if ambient_reject["supply"]["ambient"]["rejected_present"] != ["MY_TOKEN"]:
+    fail(f"ambient reject JSON unexpected: {ambient_reject!r}")
+
+# §9 secret:require missing.
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "secret:require=MISSING_SECRET_KEY",
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc == 0 or "exec inject required secret key not available for injection: MISSING_SECRET_KEY" not in stderr:
+    fail(f"secret require missing did not fail: rc={rc} stderr={stderr!r}")
+secret_missing = json.loads(stdout)
+if secret_missing["supply"]["secret"]["missing_required"] != ["MISSING_SECRET_KEY"]:
+    fail(f"secret require missing JSON unexpected: {secret_missing!r}")
+
+# §9 secret:reject exec path (design §7.3 forbid dangerous store keys).
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "secret:reject=ROOT_TOKEN:ADMIN_*",
+    "python3", "-c", "pass",
+])
+if rc == 0 or "exec inject secret key must not be present: ROOT_TOKEN" not in stderr:
+    fail(f"secret reject exec did not fail: rc={rc} stderr={stderr!r}")
+
+# §9 final:reject exec path.
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "secret:only=APP_*",
+    "--inject", "final:reject=SECDAT_*",
+    "python3", "-c", "pass",
+])
+if rc == 0 or "exec inject forbidden variable in final child env: SECDAT_MASTER_KEY" not in stderr:
+    fail(f"final reject exec did not fail: rc={rc} stderr={stderr!r}")
+
+# §9 invalid rename env name.
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "secret:only=OTHER_*",
+    "--inject", r"secret:rename=s/^OTHER_\(.*\)/BAD-NAME/",
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc == 0 or "invalid environment variable name from secret rename: BAD-NAME" not in stderr:
+    fail(f"invalid rename env name did not fail: rc={rc} stderr={stderr!r}")
+
+# §9 invalid store key as environment variable name (legacy artifact).
+invalid_key_domain = work_root / "invalid-key-domain"
+invalid_key_domain.mkdir(parents=True)
+for args in [
+    [bin_path, "--dir", str(invalid_key_domain), "domain", "create"],
+    [bin_path, "--dir", str(invalid_key_domain), "store", "create", "app"],
+    [bin_path, "--dir", str(invalid_key_domain), "set", "LEGACY_SOURCE", "--value", "legacy-secret"],
+]:
+    rc, stdout, stderr = run(args)
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"invalid-key setup failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+source_files = list(Path(env["XDG_DATA_HOME"]).rglob("LEGACY_SOURCE.sec"))
+if len(source_files) != 1:
+    fail(f"expected one LEGACY_SOURCE.sec, found {source_files!r}")
+legacy_invalid_entry = source_files[0].parent / "ZZZ-BAD.sec"
+legacy_invalid_entry.write_bytes(source_files[0].read_bytes())
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(invalid_key_domain), "exec",
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc == 0 or "key is not a valid environment variable name: ZZZ-BAD" not in stderr:
+    fail(f"invalid store key env name did not fail: rc={rc} stderr={stderr!r}")
+
+# §15.10 parser and at-most-once limits (post–Phase 3).
+for bad_args, expected in [
+    (["--inject", "not-a-valid-token"], "invalid --inject token: not-a-valid-token"),
+    (["--inject", "bogus:only=FOO"], "invalid --inject layer: bogus"),
+    ([
+        "--inject", r"secret:rename=s/^APP_\(.*\)/RENAMED_\1/",
+        "--inject", r"secret:rename=s/^OTHER_\(.*\)/ALT_\1/",
+    ], "secret rename may be specified at most once"),
+    (["--inject-gate", "sandbox", "--inject-gate", "sandbox"], "--inject-gate=sandbox may be specified at most once"),
+]:
+    rc, stdout, stderr = run([
+        bin_path, "--dir", str(domain), "exec",
+        *bad_args,
+        "python3", "-c", "pass",
+    ])
+    if rc != 2 or expected not in stderr:
+        fail(f"parser limit failed for {bad_args}: rc={rc} stderr={stderr!r}")
 
 print("PASS inject regression")
 PY
