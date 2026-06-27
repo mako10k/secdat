@@ -1939,46 +1939,34 @@ msgstr "route:prefer は 1 回だけ指定できます\n"
 msgid "invalid --inject layer: %s\n"
 msgstr "不正な --inject layer です: %s\n"
 
-#: src/exec_inject.c:937
-#, c-format
-msgid "warning: exec: --pattern is deprecated; use --inject secret:only=GLOB\n"
-msgstr ""
-"warning: exec: --pattern は非推奨です。--inject secret:only=GLOB を使ってく"
-"ださい\n"
+#: src/exec_inject.c:941
+msgid "warning: exec: "
+msgstr "warning: exec: "
 
-#: src/exec_inject.c:940
-#, c-format
-msgid ""
-"warning: exec: --pattern-exclude is deprecated; use --inject secret:"
-"omit=GLOB\n"
-msgstr ""
-"warning: exec: --pattern-exclude は非推奨です。--inject secret:omit=GLOB を"
-"使ってください\n"
+#: src/exec_inject.c:944
+msgid "--pattern is deprecated; use --inject secret:only=GLOB"
+msgstr "--pattern は非推奨です。--inject secret:only=GLOB を使ってください"
 
-#: src/exec_inject.c:943
-#, c-format
+#: src/exec_inject.c:947
 msgid ""
-"warning: exec: --require-key is deprecated; use --inject secret:require=KEY\n"
+"--pattern-exclude is deprecated; use --inject secret:omit=GLOB"
 msgstr ""
-"warning: exec: --require-key は非推奨です。--inject secret:require=KEY を使"
-"ってください\n"
+"--pattern-exclude は非推奨です。--inject secret:omit=GLOB を使ってください"
 
-#: src/exec_inject.c:946
-#, c-format
-msgid ""
-"warning: exec: --env-map-sed is deprecated; use --inject secret:rename=EXPR\n"
+#: src/exec_inject.c:950
+msgid "--require-key is deprecated; use --inject secret:require=KEY"
 msgstr ""
-"warning: exec: --env-map-sed は非推奨です。--inject secret:rename=EXPR を使"
-"ってください\n"
+"--require-key は非推奨です。--inject secret:require=KEY を使ってください"
 
-#: src/exec_inject.c:949
-#, c-format
-msgid ""
-"warning: exec: --sandbox-injectable is deprecated; use --inject-"
-"gate=sandbox\n"
+#: src/exec_inject.c:953
+msgid "--env-map-sed is deprecated; use --inject secret:rename=EXPR"
 msgstr ""
-"warning: exec: --sandbox-injectable は非推奨です。--inject-gate=sandbox を"
-"使ってください\n"
+"--env-map-sed は非推奨です。--inject secret:rename=EXPR を使ってください"
+
+#: src/exec_inject.c:956
+msgid "--sandbox-injectable is deprecated; use --inject-gate=sandbox"
+msgstr ""
+"--sandbox-injectable は非推奨です。--inject-gate=sandbox を使ってください"
 
 #: src/exec_inject.c:1052
 #, c-format

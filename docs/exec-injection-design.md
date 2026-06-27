@@ -602,13 +602,12 @@ and modern execution paths.
 
 ### 15.7 Deprecation Warning
 
-Emit once per `exec` invocation when any legacy selection flag is used:
+Emit once per `exec` invocation when any legacy selection flag is used.
+Multiple legacy flags produce one combined warning listing all replacements:
 
 ```text
-warning: exec: --pattern is deprecated; use --inject secret:only=GLOB
+warning: exec: --pattern is deprecated; use --inject secret:only=GLOB; --pattern-exclude is deprecated; use --inject secret:omit=GLOB
 ```
-
-Multiple legacy flags may produce one combined warning listing all replacements.
 
 ### 15.8 Migration Timeline
 

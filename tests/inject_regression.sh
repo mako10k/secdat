@@ -372,9 +372,26 @@ rc, stdout, stderr = run([
 ])
 if rc != 0 or "warning: exec: --pattern is deprecated" not in stderr:
     fail(f"legacy+inject combo failed: rc={rc} stderr={stderr!r}")
+warn_lines = [line for line in stderr.splitlines() if line.startswith("warning: exec:")]
+if len(warn_lines) != 1:
+    fail(f"legacy+inject combo emitted multiple deprecation lines: {warn_lines!r}")
 combo = json.loads(stdout)
 if combo["APP_TOKEN"] != "app-secret" or combo["MY_TOKEN"] != "ambient-token":
     fail(f"legacy+inject combo payload unexpected: {combo!r}")
+
+# §15.7 combined deprecation warning (one line for multiple legacy flags).
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--pattern", "APP_*",
+    "--pattern-exclude", "APP_DEBUG",
+    "python3", "-c", "pass",
+])
+warn_lines = [line for line in stderr.splitlines() if line.startswith("warning: exec:")]
+if rc != 0 or len(warn_lines) != 1:
+    fail(f"combined deprecation failed: rc={rc} warn_lines={warn_lines!r} stderr={stderr!r}")
+combined = warn_lines[0]
+if "--pattern is deprecated" not in combined or "--pattern-exclude is deprecated" not in combined:
+    fail(f"combined deprecation missing clauses: {combined!r}")
 
 # §15.6 legacy + inject conflict on same pentad kind.
 rc, stdout, stderr = run([

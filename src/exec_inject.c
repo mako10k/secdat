@@ -933,21 +933,36 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
 
 static void secdat_exec_print_deprecation_warnings(const struct secdat_exec_inject_policy *policy)
 {
+    const char *clauses[5];
+    size_t clause_count = 0;
+    size_t index;
+
     if (policy->legacy_pattern) {
-        fprintf(stderr, _("warning: exec: --pattern is deprecated; use --inject secret:only=GLOB\n"));
+        clauses[clause_count++] = _("--pattern is deprecated; use --inject secret:only=GLOB");
     }
     if (policy->legacy_pattern_exclude) {
-        fprintf(stderr, _("warning: exec: --pattern-exclude is deprecated; use --inject secret:omit=GLOB\n"));
+        clauses[clause_count++] = _("--pattern-exclude is deprecated; use --inject secret:omit=GLOB");
     }
     if (policy->legacy_require_key) {
-        fprintf(stderr, _("warning: exec: --require-key is deprecated; use --inject secret:require=KEY\n"));
+        clauses[clause_count++] = _("--require-key is deprecated; use --inject secret:require=KEY");
     }
     if (policy->legacy_env_map_sed) {
-        fprintf(stderr, _("warning: exec: --env-map-sed is deprecated; use --inject secret:rename=EXPR\n"));
+        clauses[clause_count++] = _("--env-map-sed is deprecated; use --inject secret:rename=EXPR");
     }
     if (policy->legacy_sandbox_injectable) {
-        fprintf(stderr, _("warning: exec: --sandbox-injectable is deprecated; use --inject-gate=sandbox\n"));
+        clauses[clause_count++] = _("--sandbox-injectable is deprecated; use --inject-gate=sandbox");
     }
+    if (clause_count == 0) {
+        return;
+    }
+
+    fputs(_("warning: exec: "), stderr);
+    fputs(clauses[0], stderr);
+    for (index = 1; index < clause_count; index += 1) {
+        fputs("; ", stderr);
+        fputs(clauses[index], stderr);
+    }
+    fputc('\n', stderr);
 }
 
 static void secdat_prepare_exec_option_argv(const struct secdat_cli *cli, int *argc_out, char **argv_out)
