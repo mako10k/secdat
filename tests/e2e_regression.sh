@@ -54,6 +54,13 @@ def run(args, extra_env=None):
     return completed.returncode, completed.stdout, completed.stderr
 
 
+def exec_stderr_ok(stderr):
+    for line in stderr.splitlines():
+        if line and not line.startswith("warning: exec:"):
+            return False
+    return True
+
+
 def run_pty(args, prompts, extra_env=None):
     run_env = env.copy()
     if extra_env:
@@ -223,7 +230,7 @@ rc, stdout, stderr = run([
     "-c",
     "import os,sys; sys.stdout.write(os.environ.get('SHARED_KEY', 'missing'))",
 ])
-if rc != 0 or stderr != "":
+if rc != 0 or not exec_stderr_ok(stderr):
     fail(f"exec overridden child key failed: rc={rc} stderr={stderr!r}")
 assert_eq(stdout, "child-secret", "exec overridden child key")
 

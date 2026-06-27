@@ -60,6 +60,13 @@ def assert_contains(output, expected, label):
         fail(f"{label}: missing [{expected}] in [{output}]")
 
 
+def exec_stderr_ok(stderr):
+    for line in stderr.splitlines():
+        if line and not line.startswith("warning: exec:"):
+            return False
+    return True
+
+
 def write_entry(path, eid, sid, key):
     path.write_text(
         f"SECDATDENT1\nentry_id={eid}\nsecret_id={sid}\nkey_visibility=always\nkey={key}\nentry_inject=explicit\n",
@@ -241,7 +248,7 @@ rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec", "--sandbox-injectable",
     "python3", "-c", "import os; print('APP_TOKEN' in os.environ)",
 ])
-if rc != 0 or stdout != "False\n" or stderr != "":
+if rc != 0 or stdout != "False\n" or not exec_stderr_ok(stderr):
     fail(f"object-level inject deny should exclude sandbox exec: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "export", "--sandbox-injectable"])
 if rc != 0 or stdout != "" or stderr != "":
@@ -348,7 +355,7 @@ rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec", "--sandbox-injectable", "--pattern", "APP_*",
     "python3", "-c", "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k in ('APP_BULK', 'APP_EXPLICIT', 'APP_SECRET'))}, sort_keys=True))",
 ])
-if rc != 0 or stderr != "":
+if rc != 0 or not exec_stderr_ok(stderr):
     fail(f"pure v2 sandbox-injectable exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if json.loads(stdout) != {"APP_BULK": "bulk-value"}:
     fail(f"pure v2 sandbox-injectable exec payload mismatch: {stdout!r}")

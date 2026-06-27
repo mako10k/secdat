@@ -66,9 +66,27 @@ def normalize_spaces(text):
     return re.sub(r"[ \t]+", " ", text)
 
 
+def exec_stderr_ok(stderr):
+    for line in stderr.splitlines():
+        if line and not line.startswith("warning: exec:"):
+            return False
+    return True
+
+
+def exec_stderr_json(stderr):
+    payload = "\n".join(
+        line for line in stderr.splitlines()
+        if line and not line.startswith("warning: exec:")
+    )
+    start = payload.find("{")
+    if start < 0:
+        fail(f"exec stderr missing JSON summary: {stderr!r}")
+    return json.loads(payload[start:])
+
+
 for args, marker in [
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--sandbox-injectable]"),
-    ([bin_path, "help", "exec"], "exec [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--sandbox-injectable] [--require-key KEY] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
+    ([bin_path, "help", "exec"], "exec [--inject LAYER:KIND=SELECTOR]... [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [--env-map-sed EXPR] [--sandbox-injectable] [--require-key KEY] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
     ([bin_path, "export", "--help"], "emit shell-ready export lines"),
     ([bin_path, "help", "get"], "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [-o|--stdout|-e|--shellescaped]"),
     ([bin_path, "help", "usecases"], "inject secrets into one subprocess only:"),
@@ -203,7 +221,7 @@ rc, stdout, stderr = run([
     "-c",
     "import os,sys; sys.stdout.write(os.environ['HOSTILE_TOKEN'])",
 ])
-if rc != 0 or stderr != "" or stdout != hostile_payload:
+if rc != 0 or not exec_stderr_ok(stderr) or stdout != hostile_payload:
     fail(f"hostile exec payload mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([
@@ -217,7 +235,7 @@ rc, stdout, stderr = run([
     "-c",
     "import os,sys; sys.stdout.write(repr(os.environ['CONTROL_TOKEN']))",
 ])
-if rc != 0 or stderr != "" or stdout != repr(control_payload):
+if rc != 0 or not exec_stderr_ok(stderr) or stdout != repr(control_payload):
     fail(f"control exec payload mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([
@@ -235,7 +253,7 @@ rc, stdout, stderr = run([
     "-c",
     "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k in ('HOSTILE_TOKEN', 'CONTROL_TOKEN'))}, sort_keys=True))",
 ])
-if rc != 0 or stderr != "":
+if rc != 0 or not exec_stderr_ok(stderr):
     fail(f"multi-pattern exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if json.loads(stdout) != {"CONTROL_TOKEN": control_payload}:
     fail(f"multi-pattern exec payload mismatch: {stdout!r}")
@@ -253,7 +271,7 @@ rc, stdout, stderr = run([
     "-c",
     "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k in ('HOSTILE_TOKEN', 'CONTROL_TOKEN'))}, sort_keys=True))",
 ])
-if rc != 0 or stderr != "":
+if rc != 0 or not exec_stderr_ok(stderr):
     fail(f"compatible exec parsing failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if json.loads(stdout) != {"CONTROL_TOKEN": control_payload}:
     fail(f"compatible exec payload mismatch: {stdout!r}")
@@ -271,7 +289,7 @@ rc, stdout, stderr = run([
     "-c",
     "import os,sys; sys.stdout.write(repr(os.environ['CONTROL_TOKEN']))",
 ])
-if rc != 0 or stderr != "" or stdout != repr(control_payload):
+if rc != 0 or not exec_stderr_ok(stderr) or stdout != repr(control_payload):
     fail(f"required-key exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 required_marker = work_root / "REQUIRED_KEY_RAN"
@@ -288,7 +306,7 @@ rc, stdout, stderr = run([
     "-c",
     f"from pathlib import Path; Path({str(required_marker)!r}).write_text('ran')",
 ])
-if rc == 0 or stdout != "" or "required key is not selected for exec injection: ROOT_TOKEN" not in stderr:
+if rc == 0 or stdout != "" or "exec inject required entry missing: ROOT_TOKEN" not in stderr:
     fail(f"missing required key exec unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if required_marker.exists():
     fail("missing required key exec unexpectedly ran child command")
@@ -303,7 +321,7 @@ rc, stdout, stderr = run([
     "-c",
     "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k in ('BULK_TOKEN', 'EXPLICIT_TOKEN', 'CHILD_TOKEN', 'ROOT_TOKEN'))}, sort_keys=True))",
 ])
-if rc != 0 or stderr != "":
+if rc != 0 or not exec_stderr_ok(stderr):
     fail(f"sandbox-injectable exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if json.loads(stdout) != {"BULK_TOKEN": "bulk-secret"}:
     fail(f"sandbox-injectable exec payload mismatch: {stdout!r}")
@@ -319,7 +337,7 @@ rc, stdout, stderr = run([
     "-c",
     "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k.startswith('SPV_REDMINE_') or k in ('MY_REDMINE_API_KEY', 'CONTROL_TOKEN'))}, sort_keys=True))",
 ])
-if rc != 0 or stderr != "":
+if rc != 0 or not exec_stderr_ok(stderr):
     fail(f"exec env-map-sed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if json.loads(stdout) != {
     "SPV_REDMINE_API_KEY": "mapped-api-secret",
@@ -342,7 +360,7 @@ rc, stdout, stderr = run([
     "-c",
     f"from pathlib import Path; Path({str(dry_run_marker)!r}).write_text('ran')",
 ])
-if rc != 0 or stderr != "":
+if rc != 0 or not exec_stderr_ok(stderr):
     fail(f"exec dry-run failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "injected_key_count: 2\n", "dry-run count")
 assert_contains(stdout, "MY_REDMINE_API_KEY\tSPV_REDMINE_API_KEY", "dry-run API key mapping")
@@ -367,10 +385,10 @@ rc, stdout, stderr = run([
     "-c",
     "print('unreachable')",
 ])
-if rc != 0 or stderr != "":
+if rc != 0 or not exec_stderr_ok(stderr):
     fail(f"exec json dry-run failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 preflight = json.loads(stdout)
-if preflight["dry_run"] is not True or preflight["injected_key_count"] != 2:
+if preflight["ok"] is not True or preflight["dry_run"] is not True or preflight["injected_key_count"] != 2:
     fail(f"unexpected json dry-run summary: {preflight!r}")
 if preflight["argv"] != ["python3", "-c", "print('unreachable')"]:
     fail(f"unexpected json dry-run argv: {preflight!r}")
@@ -394,10 +412,12 @@ rc, stdout, stderr = run([
     "-c",
     "print('unreachable')",
 ])
-if rc == 0 or stderr != "":
+if rc == 0 or "exec inject required entry missing: CONTROL_TOKEN" not in stderr:
     fail(f"missing required key json dry-run did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 preflight = json.loads(stdout)
-if preflight["required_keys"] != ["CONTROL_TOKEN"] or preflight["missing_required_keys"] != ["CONTROL_TOKEN"]:
+if preflight["ok"] is not False:
+    fail(f"unexpected missing required key json dry-run ok flag: {preflight!r}")
+if preflight["supply"]["secret"]["missing_required"] != ["CONTROL_TOKEN"]:
     fail(f"unexpected missing required key json dry-run summary: {preflight!r}")
 if preflight["injected_key_count"] != 2 or preflight["exit_status"] is not None:
     fail(f"unexpected missing required key json dry-run status: {preflight!r}")
@@ -430,8 +450,8 @@ rc, stdout, stderr = run([
 ])
 if rc != 7 or stdout != "child stdout":
     fail(f"exec json-summary child result mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-summary = json.loads(stderr)
-if summary["dry_run"] is not False or summary["exit_status"] != 7 or summary["term_signal"] is not None:
+summary = exec_stderr_json(stderr)
+if summary["ok"] is not True or summary["dry_run"] is not False or summary["exit_status"] != 7 or summary["term_signal"] is not None:
     fail(f"unexpected json-summary status: {summary!r}")
 if summary["injected_key_count"] != 1 or summary["injected_keys"] != [{"key": "CONTROL_TOKEN", "env_name": "CONTROL_TOKEN"}]:
     fail(f"unexpected json-summary injected keys: {summary!r}")
@@ -456,8 +476,8 @@ rc, stdout, stderr = run([
 ])
 if rc == 0 or stdout != "":
     fail(f"missing required key json-summary did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-summary = json.loads(stderr)
-if summary["required_keys"] != ["ROOT_TOKEN"] or summary["missing_required_keys"] != ["ROOT_TOKEN"]:
+summary = exec_stderr_json(stderr)
+if summary["ok"] is not False or summary["supply"]["secret"]["missing_required"] != ["ROOT_TOKEN"]:
     fail(f"unexpected missing required key json-summary: {summary!r}")
 if required_marker.exists():
     fail("missing required key json-summary unexpectedly ran child command")
@@ -475,11 +495,11 @@ rc, stdout, stderr = run([
     "-c",
     "print('unreachable')",
 ])
-if rc == 0 or stderr != "":
+if rc == 0 or "invalid environment variable name from secret rename: BAD-NAME" not in stderr:
     fail(f"invalid env-map json dry-run did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-mapping_error = json.loads(stdout)["mapping_errors"][0]
-if mapping_error["kind"] != "invalid-env-map-name" or mapping_error["env_name"] != "BAD-NAME":
-    fail(f"unexpected invalid env-map json error: {mapping_error!r}")
+preflight = json.loads(stdout)
+if preflight["ok"] is not False:
+    fail(f"unexpected invalid env-map json ok flag: {preflight!r}")
 
 rc, stdout, stderr = run([
     bin_path,
@@ -493,11 +513,11 @@ rc, stdout, stderr = run([
     "-c",
     "print('unreachable')",
 ])
-if rc == 0 or stdout != "":
+if rc == 0 or stdout != "" or "duplicate environment variable name from secret rename: DUP_REDMINE" not in stderr:
     fail(f"duplicate env-map json-summary did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-mapping_error = json.loads(stderr)["mapping_errors"][0]
-if mapping_error["kind"] != "duplicate-env-map-name" or mapping_error["env_name"] != "DUP_REDMINE":
-    fail(f"unexpected duplicate env-map json error: {mapping_error!r}")
+summary = exec_stderr_json(stderr)
+if summary["ok"] is not False:
+    fail(f"unexpected duplicate env-map json ok flag: {summary!r}")
 
 for expression, expected in [
     (
@@ -526,7 +546,7 @@ for expression, expected in [
         "-c",
         "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k.endswith('REDMINE_API_KEY') or k.endswith('REDMINE_PROJECT'))}, sort_keys=True))",
     ])
-    if rc != 0 or stderr != "":
+    if rc != 0 or not exec_stderr_ok(stderr):
         fail(f"exec env-map-sed alternate delimiter failed for {expression!r}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
     if json.loads(stdout) != expected:
         fail(f"exec env-map-sed alternate delimiter payload mismatch for {expression!r}: {stdout!r}")
@@ -542,7 +562,7 @@ rc, stdout, stderr = run([
     "-c",
     "print('unreachable')",
 ])
-if rc == 0 or "invalid environment variable name from --env-map-sed:" not in stderr:
+if rc == 0 or "invalid environment variable name from secret rename:" not in stderr:
     fail(f"empty env-map-sed result unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([
@@ -556,7 +576,7 @@ rc, stdout, stderr = run([
     "-c",
     "print('unreachable')",
 ])
-if rc == 0 or "invalid environment variable name from --env-map-sed: BAD-NAME" not in stderr:
+if rc == 0 or "invalid environment variable name from secret rename: BAD-NAME" not in stderr:
     fail(f"invalid env-map-sed result unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(root_dir), "--store", "app", "export"])
