@@ -517,7 +517,9 @@ This document does not redefine attribute semantics.
 
 ## 13. Open Questions
 
-1. **`--inject-file` format** — YAML only, or also JSON?
+1. ~~**`--inject-file` format** — YAML only, or also JSON?~~ **Decided:** YAML only.
+   See [ADR 0001](adr/0001-inject-file-yaml-only.md). Programmatic authoring uses
+   `--inject`; JSON remains observation-only (`--dry-run --json`, `--json-summary`).
 2. **Attribute pre-gate** — default-on for `secret_inject=never`, or opt-in?
 3. **`final:only` warning** — warn when `PATH` / `HOME` absent from allowlist?
 
