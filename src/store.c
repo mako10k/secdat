@@ -104,7 +104,7 @@ struct secdat_ls_options {
     int safe;
     int unsafe_store;
     int metadata;
-    int inject_bulk_gate;
+    int bulk_gate;
 };
 
 struct secdat_store_ls_options {
@@ -114,7 +114,7 @@ struct secdat_store_ls_options {
 
 struct secdat_export_options {
     const char *pattern;
-    int inject_bulk_gate;
+    int bulk_gate;
 };
 
 struct secdat_list_options {
@@ -123,7 +123,7 @@ struct secdat_list_options {
     int orphaned;
     int safe;
     int unsafe_store;
-    int inject_bulk_gate;
+    int bulk_gate;
 };
 
 enum secdat_key_visibility {
@@ -136,21 +136,21 @@ enum secdat_value_access {
     SECDAT_VALUE_ACCESS_ALWAYS,
 };
 
-enum secdat_inject_bulk {
-    SECDAT_INJECT_BULK_EXCLUDE = 0,
-    SECDAT_INJECT_BULK_NAMED,
-    SECDAT_INJECT_BULK_INCLUDE,
+enum secdat_bulk_select {
+    SECDAT_BULK_SELECT_EXCLUDE = 0,
+    SECDAT_BULK_SELECT_NAMED,
+    SECDAT_BULK_SELECT_INCLUDE,
 };
 
-enum secdat_inject_bulk_value {
-    SECDAT_INJECT_BULK_VALUE_EXCLUDE = 0,
-    SECDAT_INJECT_BULK_VALUE_INCLUDE,
+enum secdat_bulk_select_value {
+    SECDAT_BULK_SELECT_VALUE_EXCLUDE = 0,
+    SECDAT_BULK_SELECT_VALUE_INCLUDE,
 };
 
 struct secdat_secret_attrs {
     enum secdat_key_visibility key_visibility;
     enum secdat_value_access value_access;
-    enum secdat_inject_bulk inject_bulk;
+    enum secdat_bulk_select bulk_select;
 };
 
 struct secdat_attr_options {
@@ -158,7 +158,7 @@ struct secdat_attr_options {
     struct secdat_secret_attrs attrs;
     int set_key_visibility;
     int set_value_access;
-    int set_inject_bulk;
+    int set_bulk_select;
 };
 
 struct secdat_metadata_pair {
@@ -260,7 +260,7 @@ struct secdat_store_migrate_report {
     size_t tombstones;
     size_t public_values;
     size_t encrypted_values;
-    size_t injectable_entries;
+    size_t bulk_select_entries;
     size_t issues;
 };
 
@@ -294,7 +294,7 @@ struct secdat_v2_domain_entry_info {
     char encrypted_key[SECDAT_V2_TEXT_FILE_MAX];
     char wrapped_object_key[SECDAT_V2_TEXT_FILE_MAX];
     enum secdat_key_visibility key_visibility;
-    enum secdat_inject_bulk inject_bulk_entry;
+    enum secdat_bulk_select bulk_select_entry;
     int has_key;
     int has_encrypted_key;
     int has_object_domain;
@@ -305,7 +305,7 @@ struct secdat_v2_domain_entry_info {
 struct secdat_v2_secret_object_info {
     char secret_id[64];
     enum secdat_value_access value_access;
-    enum secdat_inject_bulk_value inject_bulk_value;
+    enum secdat_bulk_select_value bulk_select_value;
     int refcount_present;
     int has_value_payload;
     size_t refcount;
@@ -365,7 +365,7 @@ struct secdat_effective_entry {
     char object_store[PATH_MAX];
     char wrapped_object_key[SECDAT_V2_TEXT_FILE_MAX];
     enum secdat_key_visibility key_visibility;
-    enum secdat_inject_bulk inject_bulk_entry;
+    enum secdat_bulk_select bulk_select_entry;
     int has_wrapped_object_key;
     unsigned char *plaintext;
     size_t plaintext_length;
@@ -579,13 +579,13 @@ static int secdat_secret_attrs_supported(const struct secdat_secret_attrs *attrs
 static int secdat_secret_attrs_are_default(const struct secdat_secret_attrs *attrs, int unsafe_store);
 static const char *secdat_key_visibility_name(enum secdat_key_visibility value);
 static const char *secdat_value_access_name(enum secdat_value_access value);
-static const char *secdat_inject_bulk_name(enum secdat_inject_bulk value);
-static int secdat_inject_bulk_allows_bulk_selection(const struct secdat_secret_attrs *attrs);
+static const char *secdat_bulk_select_name(enum secdat_bulk_select value);
+static int secdat_bulk_select_allows_bulk_selection(const struct secdat_secret_attrs *attrs);
 static int secdat_parse_key_visibility(const char *value, enum secdat_key_visibility *parsed);
 static int secdat_parse_value_access(const char *value, enum secdat_value_access *parsed);
-static int secdat_parse_inject_bulk_token(const char *value, enum secdat_inject_bulk *parsed, int accept_legacy_tokens);
-static int secdat_parse_inject_bulk(const char *value, enum secdat_inject_bulk *parsed);
-static int secdat_parse_inject_bulk_metadata(const char *value, enum secdat_inject_bulk *parsed);
+static int secdat_parse_bulk_select_token(const char *value, enum secdat_bulk_select *parsed, int accept_legacy_tokens);
+static int secdat_parse_bulk_select(const char *value, enum secdat_bulk_select *parsed);
+static int secdat_parse_bulk_select_metadata(const char *value, enum secdat_bulk_select *parsed);
 static int secdat_load_resolved_secret_attrs(
     const struct secdat_domain_chain *chain,
     const char *store_name,
@@ -2571,7 +2571,8 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
         {"unsafe", no_argument, NULL, 'u'},
         {"secret-value", no_argument, NULL, 'e'},
         {"public-value", no_argument, NULL, 'u'},
-        {"inject-bulk-gate", no_argument, NULL, 1000},
+        {"bulk-gate", no_argument, NULL, 1000},
+        {"inject-bulk-gate", no_argument, NULL, 9003},
         {"sandbox-injectable", no_argument, NULL, 9000},
         {"metadata", no_argument, NULL, 1001},
         {NULL, 0, NULL, 0},
@@ -2620,10 +2621,12 @@ static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_l
             options->unsafe_store = 1;
             break;
         case 1000:
-            options->inject_bulk_gate = 1;
+            options->bulk_gate = 1;
             break;
         case 9000:
-            return secdat_store_reject_removed_flag("--sandbox-injectable", "--inject-bulk-gate");
+            return secdat_store_reject_removed_flag("--sandbox-injectable", "--bulk-gate");
+        case 9003:
+            return secdat_store_reject_removed_flag("--inject-bulk-gate", "--bulk-gate");
         case 1001:
             options->metadata = 1;
             break;
@@ -2654,7 +2657,8 @@ static int secdat_parse_export_options(const struct secdat_cli *cli, struct secd
 {
     static const struct option long_options[] = {
         {"pattern", required_argument, NULL, 'p'},
-        {"inject-bulk-gate", no_argument, NULL, 1000},
+        {"bulk-gate", no_argument, NULL, 1000},
+        {"inject-bulk-gate", no_argument, NULL, 9003},
         {"sandbox-injectable", no_argument, NULL, 9000},
         {NULL, 0, NULL, 0},
     };
@@ -2675,10 +2679,12 @@ static int secdat_parse_export_options(const struct secdat_cli *cli, struct secd
             options->pattern = optarg;
             break;
         case 1000:
-            options->inject_bulk_gate = 1;
+            options->bulk_gate = 1;
             break;
         case 9000:
-            return secdat_store_reject_removed_flag("--sandbox-injectable", "--inject-bulk-gate");
+            return secdat_store_reject_removed_flag("--sandbox-injectable", "--bulk-gate");
+        case 9003:
+            return secdat_store_reject_removed_flag("--inject-bulk-gate", "--bulk-gate");
         case '?':
         case ':':
         default:
@@ -2709,7 +2715,8 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
         {"unsafe", no_argument, NULL, 'u'},
         {"secret-value", no_argument, NULL, 'e'},
         {"public-value", no_argument, NULL, 'u'},
-        {"inject-bulk-gate", no_argument, NULL, 1000},
+        {"bulk-gate", no_argument, NULL, 1000},
+        {"inject-bulk-gate", no_argument, NULL, 9003},
         {"sandbox-injectable", no_argument, NULL, 9000},
         {NULL, 0, NULL, 0},
     };
@@ -2739,10 +2746,12 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
             options->unsafe_store = 1;
             break;
         case 1000:
-            options->inject_bulk_gate = 1;
+            options->bulk_gate = 1;
             break;
         case 9000:
-            return secdat_store_reject_removed_flag("--sandbox-injectable", "--inject-bulk-gate");
+            return secdat_store_reject_removed_flag("--sandbox-injectable", "--bulk-gate");
+        case 9003:
+            return secdat_store_reject_removed_flag("--inject-bulk-gate", "--bulk-gate");
         case '?':
         case ':':
         default:
@@ -2759,7 +2768,7 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
     }
 
     if (!options->masked && !options->overridden && !options->orphaned
-        && !options->safe && !options->unsafe_store && !options->inject_bulk_gate) {
+        && !options->safe && !options->unsafe_store && !options->bulk_gate) {
         fprintf(stderr, _("missing state filter for list\n"));
         secdat_cli_print_try_help(cli, "list");
         return 2;
@@ -2773,7 +2782,8 @@ static int secdat_parse_attr_options(const struct secdat_cli *cli, struct secdat
     static const struct option long_options[] = {
         {"key-visibility", required_argument, NULL, 1000},
         {"value-access", required_argument, NULL, 1001},
-        {"inject-bulk", required_argument, NULL, 1002},
+        {"bulk-select", required_argument, NULL, 1002},
+        {"inject-bulk", required_argument, NULL, 9003},
         {"sandbox-inject", required_argument, NULL, 9001},
         {"inject", required_argument, NULL, 9002},
         {NULL, 0, NULL, 0},
@@ -2802,15 +2812,17 @@ static int secdat_parse_attr_options(const struct secdat_cli *cli, struct secdat
             options->set_value_access = 1;
             break;
         case 1002:
-            if (secdat_parse_inject_bulk(optarg, &options->attrs.inject_bulk) != 0) {
+            if (secdat_parse_bulk_select(optarg, &options->attrs.bulk_select) != 0) {
                 return 2;
             }
-            options->set_inject_bulk = 1;
+            options->set_bulk_select = 1;
             break;
         case 9001:
-            return secdat_store_reject_removed_flag("--sandbox-inject", "--inject-bulk");
+            return secdat_store_reject_removed_flag("--sandbox-inject", "--bulk-select");
+        case 9003:
+            return secdat_store_reject_removed_flag("--inject-bulk", "--bulk-select");
         case 9002:
-            return secdat_store_reject_removed_flag("--inject", "--inject-bulk");
+            return secdat_store_reject_removed_flag("--inject", "--bulk-select");
         case '?':
         case ':':
         default:
@@ -3267,8 +3279,8 @@ static int secdat_print_ls_json_key(
     fputs("      \"value_access\": ", stdout);
     secdat_write_json_string(stdout, secdat_value_access_name(attrs->value_access));
     fputs(",\n", stdout);
-    fputs("      \"inject_bulk\": ", stdout);
-    secdat_write_json_string(stdout, secdat_inject_bulk_name(attrs->inject_bulk));
+    fputs("      \"bulk_select\": ", stdout);
+    secdat_write_json_string(stdout, secdat_bulk_select_name(attrs->bulk_select));
     fputs("\n    }", stdout);
     return 0;
 }
@@ -3691,14 +3703,14 @@ static const char *secdat_value_access_name(enum secdat_value_access value)
     }
 }
 
-static const char *secdat_inject_bulk_name(enum secdat_inject_bulk value)
+static const char *secdat_bulk_select_name(enum secdat_bulk_select value)
 {
     switch (value) {
-    case SECDAT_INJECT_BULK_EXCLUDE:
+    case SECDAT_BULK_SELECT_EXCLUDE:
         return "exclude";
-    case SECDAT_INJECT_BULK_NAMED:
+    case SECDAT_BULK_SELECT_NAMED:
         return "named";
-    case SECDAT_INJECT_BULK_INCLUDE:
+    case SECDAT_BULK_SELECT_INCLUDE:
         return "include";
     default:
         return "unknown";
@@ -3733,38 +3745,38 @@ static int secdat_parse_value_access(const char *value, enum secdat_value_access
     return 1;
 }
 
-static int secdat_parse_inject_bulk_token(const char *value, enum secdat_inject_bulk *parsed, int accept_legacy_tokens)
+static int secdat_parse_bulk_select_token(const char *value, enum secdat_bulk_select *parsed, int accept_legacy_tokens)
 {
     if (strcmp(value, "exclude") == 0) {
-        *parsed = SECDAT_INJECT_BULK_EXCLUDE;
+        *parsed = SECDAT_BULK_SELECT_EXCLUDE;
         return 0;
     }
     if (strcmp(value, "named") == 0) {
-        *parsed = SECDAT_INJECT_BULK_NAMED;
+        *parsed = SECDAT_BULK_SELECT_NAMED;
         return 0;
     }
     if (strcmp(value, "include") == 0) {
-        *parsed = SECDAT_INJECT_BULK_INCLUDE;
+        *parsed = SECDAT_BULK_SELECT_INCLUDE;
         return 0;
     }
     if (accept_legacy_tokens) {
         if (strcmp(value, "never") == 0) {
-            *parsed = SECDAT_INJECT_BULK_EXCLUDE;
+            *parsed = SECDAT_BULK_SELECT_EXCLUDE;
             return 0;
         }
         if (strcmp(value, "explicit") == 0) {
-            *parsed = SECDAT_INJECT_BULK_NAMED;
+            *parsed = SECDAT_BULK_SELECT_NAMED;
             return 0;
         }
         if (strcmp(value, "bulk") == 0 || strcmp(value, "allow") == 0) {
-            *parsed = SECDAT_INJECT_BULK_INCLUDE;
+            *parsed = SECDAT_BULK_SELECT_INCLUDE;
             return 0;
         }
     }
     return 1;
 }
 
-static const char *secdat_inject_bulk_legacy_hint(const char *value)
+static const char *secdat_bulk_select_legacy_hint(const char *value)
 {
     if (strcmp(value, "never") == 0) {
         return "exclude";
@@ -3778,44 +3790,44 @@ static const char *secdat_inject_bulk_legacy_hint(const char *value)
     return NULL;
 }
 
-static int secdat_parse_inject_bulk(const char *value, enum secdat_inject_bulk *parsed)
+static int secdat_parse_bulk_select(const char *value, enum secdat_bulk_select *parsed)
 {
     const char *hint;
 
-    if (secdat_parse_inject_bulk_token(value, parsed, 0) == 0) {
+    if (secdat_parse_bulk_select_token(value, parsed, 0) == 0) {
         return 0;
     }
-    hint = secdat_inject_bulk_legacy_hint(value);
+    hint = secdat_bulk_select_legacy_hint(value);
     if (hint != NULL) {
-        fprintf(stderr, _("invalid inject bulk policy: %s; use %s\n"), value, hint);
+        fprintf(stderr, _("invalid bulk select policy: %s; use %s\n"), value, hint);
         return 1;
     }
-    fprintf(stderr, _("invalid inject bulk policy: %s\n"), value);
+    fprintf(stderr, _("invalid bulk select policy: %s\n"), value);
     return 1;
 }
 
-static int secdat_parse_inject_bulk_metadata(const char *value, enum secdat_inject_bulk *parsed)
+static int secdat_parse_bulk_select_metadata(const char *value, enum secdat_bulk_select *parsed)
 {
-    if (secdat_parse_inject_bulk_token(value, parsed, 1) == 0) {
+    if (secdat_parse_bulk_select_token(value, parsed, 1) == 0) {
         return 0;
     }
-    fprintf(stderr, _("invalid inject bulk policy: %s\n"), value);
+    fprintf(stderr, _("invalid bulk select policy: %s\n"), value);
     return 1;
 }
 
-static int secdat_parse_inject_bulk_entry_disk_token(const char *value, enum secdat_inject_bulk *parsed)
+static int secdat_parse_bulk_select_entry_disk_token(const char *value, enum secdat_bulk_select *parsed)
 {
-    return secdat_parse_inject_bulk_token(value, parsed, 1);
+    return secdat_parse_bulk_select_token(value, parsed, 1);
 }
 
-static int secdat_parse_inject_bulk_value_disk_token(const char *value, enum secdat_inject_bulk_value *parsed)
+static int secdat_parse_bulk_select_value_disk_token(const char *value, enum secdat_bulk_select_value *parsed)
 {
     if (strcmp(value, "exclude") == 0 || strcmp(value, "never") == 0) {
-        *parsed = SECDAT_INJECT_BULK_VALUE_EXCLUDE;
+        *parsed = SECDAT_BULK_SELECT_VALUE_EXCLUDE;
         return 0;
     }
     if (strcmp(value, "include") == 0 || strcmp(value, "allow") == 0) {
-        *parsed = SECDAT_INJECT_BULK_VALUE_INCLUDE;
+        *parsed = SECDAT_BULK_SELECT_VALUE_INCLUDE;
         return 0;
     }
     return 1;
@@ -3825,7 +3837,7 @@ static void secdat_secret_attrs_default(int unsafe_store, struct secdat_secret_a
 {
     attrs->key_visibility = SECDAT_KEY_VISIBILITY_ALWAYS;
     attrs->value_access = unsafe_store ? SECDAT_VALUE_ACCESS_ALWAYS : SECDAT_VALUE_ACCESS_UNLOCKED;
-    attrs->inject_bulk = SECDAT_INJECT_BULK_EXCLUDE;
+    attrs->bulk_select = SECDAT_BULK_SELECT_EXCLUDE;
 }
 
 static int secdat_secret_attrs_supported(const struct secdat_secret_attrs *attrs)
@@ -3850,7 +3862,7 @@ static int secdat_secret_attrs_are_default(const struct secdat_secret_attrs *att
     secdat_secret_attrs_default(unsafe_store, &defaults);
     return attrs->key_visibility == defaults.key_visibility
         && attrs->value_access == defaults.value_access
-        && attrs->inject_bulk == defaults.inject_bulk;
+        && attrs->bulk_select == defaults.bulk_select;
 }
 
 static int secdat_parse_secret_attr_line(char *line, struct secdat_secret_attrs *attrs)
@@ -3874,8 +3886,9 @@ static int secdat_parse_secret_attr_line(char *line, struct secdat_secret_attrs 
     if (strcmp(line, "value_access") == 0) {
         return secdat_parse_value_access(separator, &attrs->value_access);
     }
-    if (strcmp(line, "inject_bulk") == 0 || strcmp(line, "sandbox_inject") == 0) {
-        return secdat_parse_inject_bulk_metadata(separator, &attrs->inject_bulk);
+    if (strcmp(line, "bulk_select") == 0 || strcmp(line, "inject_bulk") == 0
+        || strcmp(line, "sandbox_inject") == 0) {
+        return secdat_parse_bulk_select_metadata(separator, &attrs->bulk_select);
     }
 
     fprintf(stderr, _("unsupported secret metadata field: %s\n"), line);
@@ -3988,11 +4001,11 @@ static int secdat_write_secret_attrs(
     written = snprintf(
         payload,
         sizeof(payload),
-        "%s\nkey_visibility=%s\nvalue_access=%s\ninject_bulk=%s\n",
+        "%s\nkey_visibility=%s\nvalue_access=%s\nbulk_select=%s\n",
         secdat_attrs_magic,
         secdat_key_visibility_name(attrs->key_visibility),
         secdat_value_access_name(attrs->value_access),
-        secdat_inject_bulk_name(attrs->inject_bulk)
+        secdat_bulk_select_name(attrs->bulk_select)
     );
     if (written < 0 || (size_t)written >= sizeof(payload)) {
         fprintf(stderr, _("secret metadata is too large\n"));
@@ -9716,7 +9729,7 @@ static int secdat_resolve_effective_entry(
                 entry->from_v2 = 1;
                 entry->resolved_index = index;
                 entry->key_visibility = v2_info.key_visibility;
-                entry->inject_bulk_entry = v2_info.inject_bulk_entry;
+                entry->bulk_select_entry = v2_info.bulk_select_entry;
                 object_domain_id = secdat_v2_entry_object_domain(chain->ids[index], &v2_info);
                 object_store_name = secdat_v2_entry_object_store(store_name, &v2_info);
                 if (secdat_copy_string(entry->entry_id, sizeof(entry->entry_id), v2_info.entry_id) != 0
@@ -9893,7 +9906,7 @@ static int secdat_collect_list_keys(
     }
 
     for (index = 0; index < local_entries.count; index += 1) {
-        if (options->safe || options->unsafe_store || options->inject_bulk_gate) {
+        if (options->safe || options->unsafe_store || options->bulk_gate) {
             if (secdat_active_overlay_lookup(chain, chain->ids[0], store_name, local_entries.items[index], &overlay) != 0) {
                 goto cleanup;
             }
@@ -9929,7 +9942,7 @@ static int secdat_collect_list_keys(
                     goto cleanup;
                 }
             }
-            if (options->inject_bulk_gate && secdat_inject_bulk_allows_bulk_selection(&attrs)) {
+            if (options->bulk_gate && secdat_bulk_select_allows_bulk_selection(&attrs)) {
                 if (secdat_key_list_append(keys, local_entries.items[index]) != 0) {
                     goto cleanup;
                 }
@@ -10323,7 +10336,7 @@ static int secdat_command_ls(const struct secdat_cli *cli)
                 continue;
             }
         }
-        if (options.inject_bulk_gate && !secdat_inject_bulk_allows_bulk_selection(&attrs)) {
+        if (options.bulk_gate && !secdat_bulk_select_allows_bulk_selection(&attrs)) {
             secdat_effective_entry_reset(&entry);
             continue;
         }
@@ -10354,10 +10367,10 @@ static int secdat_command_ls(const struct secdat_cli *cli)
             fputs(visible_keys.items[index], stdout);
             if (options.metadata) {
                 printf(
-                    "\tkey_visibility=%s\tvalue_access=%s\tinject_bulk=%s",
+                    "\tkey_visibility=%s\tvalue_access=%s\tbulk_select=%s",
                     secdat_key_visibility_name(attrs.key_visibility),
                     secdat_value_access_name(attrs.value_access),
-                    secdat_inject_bulk_name(attrs.inject_bulk)
+                    secdat_bulk_select_name(attrs.bulk_select)
                 );
             }
             fputc('\n', stdout);
@@ -10407,10 +10420,10 @@ static int secdat_command_ls(const struct secdat_cli *cli)
         fputs(output, stdout);
         if (options.metadata) {
             printf(
-                "\tkey_visibility=%s\tvalue_access=%s\tinject_bulk=%s",
+                "\tkey_visibility=%s\tvalue_access=%s\tbulk_select=%s",
                 secdat_key_visibility_name(attrs.key_visibility),
                 secdat_value_access_name(attrs.value_access),
-                secdat_inject_bulk_name(attrs.inject_bulk)
+                secdat_bulk_select_name(attrs.bulk_select)
             );
         }
         fputc('\n', stdout);
@@ -10472,7 +10485,7 @@ static int secdat_sdk_fill_key_metadata(
         || secdat_copy_string(metadata->storage_mode, sizeof(metadata->storage_mode), entry_is_unsafe ? "unsafe" : "safe") != 0
         || secdat_copy_string(metadata->key_visibility, sizeof(metadata->key_visibility), secdat_key_visibility_name(attrs->key_visibility)) != 0
         || secdat_copy_string(metadata->value_access, sizeof(metadata->value_access), secdat_value_access_name(attrs->value_access)) != 0
-        || secdat_copy_string(metadata->inject_bulk, sizeof(metadata->inject_bulk), secdat_inject_bulk_name(attrs->inject_bulk)) != 0) {
+        || secdat_copy_string(metadata->bulk_select, sizeof(metadata->bulk_select), secdat_bulk_select_name(attrs->bulk_select)) != 0) {
         return 1;
     }
 
@@ -10615,7 +10628,7 @@ int secdat_sdk_list_keys_with_patterns(
             secdat_effective_entry_reset(&entry);
             continue;
         }
-        if (filters != NULL && filters->inject_bulk_gate && !secdat_inject_bulk_allows_bulk_selection(&attrs)) {
+        if (filters != NULL && filters->bulk_gate && !secdat_bulk_select_allows_bulk_selection(&attrs)) {
             secdat_effective_entry_reset(&entry);
             continue;
         }
@@ -10826,10 +10839,11 @@ static int secdat_fsck_validate_v1_metadata_file(const char *metadata_path, int 
             }
             continue;
         }
-        if (strcmp(line, "inject_bulk") == 0 || strcmp(line, "sandbox_inject") == 0) {
-            enum secdat_inject_bulk ignored;
+        if (strcmp(line, "bulk_select") == 0 || strcmp(line, "inject_bulk") == 0
+            || strcmp(line, "sandbox_inject") == 0) {
+            enum secdat_bulk_select ignored;
 
-            if (secdat_parse_inject_bulk_metadata(separator, &ignored) != 0) {
+            if (secdat_parse_bulk_select_metadata(separator, &ignored) != 0) {
                 valid = 0;
                 break;
             }
@@ -11155,7 +11169,7 @@ static int secdat_read_v2_domain_entry_info(const char *path, const char *file_e
     int seen_entry_id = 0;
     int seen_secret_id = 0;
     int seen_key_visibility = 0;
-    int seen_inject_bulk_entry = 0;
+    int seen_bulk_select_entry = 0;
     int valid = 0;
 
     memset(info, 0, sizeof(*info));
@@ -11256,14 +11270,15 @@ static int secdat_read_v2_domain_entry_info(const char *path, const char *file_e
             info->has_encrypted_key = 1;
             continue;
         }
-        if (strcmp(line, "inject_bulk_entry") == 0 || strcmp(line, "entry_inject") == 0) {
-            if (seen_inject_bulk_entry) {
+        if (strcmp(line, "bulk_select_entry") == 0 || strcmp(line, "inject_bulk_entry") == 0
+            || strcmp(line, "entry_inject") == 0) {
+            if (seen_bulk_select_entry) {
                 goto cleanup;
             }
-            if (secdat_parse_inject_bulk_entry_disk_token(separator, &info->inject_bulk_entry) != 0) {
+            if (secdat_parse_bulk_select_entry_disk_token(separator, &info->bulk_select_entry) != 0) {
                 goto cleanup;
             }
-            seen_inject_bulk_entry = 1;
+            seen_bulk_select_entry = 1;
             continue;
         }
         if (strcmp(line, "wrapped_object_key") == 0) {
@@ -11278,7 +11293,7 @@ static int secdat_read_v2_domain_entry_info(const char *path, const char *file_e
         goto cleanup;
     }
 
-    valid = seen_entry_id && seen_secret_id && seen_key_visibility && seen_inject_bulk_entry
+    valid = seen_entry_id && seen_secret_id && seen_key_visibility && seen_bulk_select_entry
         && ((info->key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS && info->has_key && !info->has_encrypted_key)
             || (info->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED && !info->has_key && info->has_encrypted_key));
 
@@ -11297,7 +11312,7 @@ static int secdat_parse_v2_secret_object_info_text(char *text, const char *file_
     char *saveptr = NULL;
     int seen_secret_id = 0;
     int seen_value_access = 0;
-    int seen_inject_bulk_value = 0;
+    int seen_bulk_select_value = 0;
     int valid = 0;
 
     memset(info, 0, sizeof(*info));
@@ -11340,14 +11355,15 @@ static int secdat_parse_v2_secret_object_info_text(char *text, const char *file_
             seen_value_access = 1;
             continue;
         }
-        if (strcmp(line, "inject_bulk_value") == 0 || strcmp(line, "secret_inject") == 0) {
-            if (seen_inject_bulk_value) {
+        if (strcmp(line, "bulk_select_value") == 0 || strcmp(line, "inject_bulk_value") == 0
+            || strcmp(line, "secret_inject") == 0) {
+            if (seen_bulk_select_value) {
                 goto cleanup;
             }
-            if (secdat_parse_inject_bulk_value_disk_token(separator, &info->inject_bulk_value) != 0) {
+            if (secdat_parse_bulk_select_value_disk_token(separator, &info->bulk_select_value) != 0) {
                 goto cleanup;
             }
-            seen_inject_bulk_value = 1;
+            seen_bulk_select_value = 1;
             continue;
         }
         if (strcmp(line, "refcount") == 0) {
@@ -11367,7 +11383,7 @@ static int secdat_parse_v2_secret_object_info_text(char *text, const char *file_
         goto cleanup;
     }
 
-    valid = seen_secret_id && seen_value_access && seen_inject_bulk_value;
+    valid = seen_secret_id && seen_value_access && seen_bulk_select_value;
 
 cleanup:
     return valid ? 0 : 1;
@@ -13100,30 +13116,30 @@ static int secdat_load_v2_secret_attrs(
 
     attrs->key_visibility = entry->key_visibility;
     attrs->value_access = object.value_access;
-    attrs->inject_bulk = object.inject_bulk_value == SECDAT_INJECT_BULK_VALUE_EXCLUDE
-        ? SECDAT_INJECT_BULK_EXCLUDE
-        : entry->inject_bulk_entry;
+    attrs->bulk_select = object.bulk_select_value == SECDAT_BULK_SELECT_VALUE_EXCLUDE
+        ? SECDAT_BULK_SELECT_EXCLUDE
+        : entry->bulk_select_entry;
     if (unsafe_store != NULL) {
         *unsafe_store = object.value_access == SECDAT_VALUE_ACCESS_ALWAYS;
     }
     return 0;
 }
 
-static enum secdat_inject_bulk_value secdat_inject_bulk_value_from_attrs(const struct secdat_secret_attrs *attrs)
+static enum secdat_bulk_select_value secdat_bulk_select_value_from_attrs(const struct secdat_secret_attrs *attrs)
 {
-    return attrs->inject_bulk == SECDAT_INJECT_BULK_EXCLUDE
-        ? SECDAT_INJECT_BULK_VALUE_EXCLUDE
-        : SECDAT_INJECT_BULK_VALUE_INCLUDE;
+    return attrs->bulk_select == SECDAT_BULK_SELECT_EXCLUDE
+        ? SECDAT_BULK_SELECT_VALUE_EXCLUDE
+        : SECDAT_BULK_SELECT_VALUE_INCLUDE;
 }
 
-static const char *secdat_inject_bulk_value_name(enum secdat_inject_bulk_value value)
+static const char *secdat_bulk_select_value_name(enum secdat_bulk_select_value value)
 {
-    return value == SECDAT_INJECT_BULK_VALUE_EXCLUDE ? "exclude" : "include";
+    return value == SECDAT_BULK_SELECT_VALUE_EXCLUDE ? "exclude" : "include";
 }
 
-static int secdat_inject_bulk_allows_bulk_selection(const struct secdat_secret_attrs *attrs)
+static int secdat_bulk_select_allows_bulk_selection(const struct secdat_secret_attrs *attrs)
 {
-    return attrs->inject_bulk == SECDAT_INJECT_BULK_INCLUDE;
+    return attrs->bulk_select == SECDAT_BULK_SELECT_INCLUDE;
 }
 
 static int secdat_v2_generate_object_key(unsigned char object_key[SECDAT_V2_OBJECT_KEY_LEN])
@@ -13300,7 +13316,7 @@ static int secdat_write_v2_domain_entry_file(
         + strlen(secdat_key_visibility_name(attrs->key_visibility))
         + strlen(key_field_name)
         + strlen(key_field_value)
-        + strlen(secdat_inject_bulk_name(attrs->inject_bulk))
+        + strlen(secdat_bulk_select_name(attrs->bulk_select))
         + strlen("object_domain") + strlen("object_store") + 4
         + (wrapped_object_key == NULL ? 0 : strlen(wrapped_object_key) + strlen("wrapped_object_key") + 2)
         + 128;
@@ -13314,7 +13330,7 @@ static int secdat_write_v2_domain_entry_file(
         written = snprintf(
             payload,
             payload_size,
-            "%s\nentry_id=%s\nsecret_id=%s\nobject_domain=%s\nobject_store=%s\nkey_visibility=%s\n%s=%s\ninject_bulk_entry=%s\nwrapped_object_key=%s\n",
+            "%s\nentry_id=%s\nsecret_id=%s\nobject_domain=%s\nobject_store=%s\nkey_visibility=%s\n%s=%s\nbulk_select_entry=%s\nwrapped_object_key=%s\n",
             secdat_v2_domain_entry_magic,
             entry_id,
             secret_id,
@@ -13323,14 +13339,14 @@ static int secdat_write_v2_domain_entry_file(
             secdat_key_visibility_name(attrs->key_visibility),
             key_field_name,
             key_field_value,
-            secdat_inject_bulk_name(attrs->inject_bulk),
+            secdat_bulk_select_name(attrs->bulk_select),
             wrapped_object_key
         );
     } else {
         written = snprintf(
             payload,
             payload_size,
-            "%s\nentry_id=%s\nsecret_id=%s\nobject_domain=%s\nobject_store=%s\nkey_visibility=%s\n%s=%s\ninject_bulk_entry=%s\n",
+            "%s\nentry_id=%s\nsecret_id=%s\nobject_domain=%s\nobject_store=%s\nkey_visibility=%s\n%s=%s\nbulk_select_entry=%s\n",
             secdat_v2_domain_entry_magic,
             entry_id,
             secret_id,
@@ -13339,7 +13355,7 @@ static int secdat_write_v2_domain_entry_file(
             secdat_key_visibility_name(attrs->key_visibility),
             key_field_name,
             key_field_value,
-            secdat_inject_bulk_name(attrs->inject_bulk)
+            secdat_bulk_select_name(attrs->bulk_select)
         );
     }
     if (written < 0 || (size_t)written >= payload_size) {
@@ -13368,7 +13384,7 @@ static int secdat_write_v2_secret_object_file_with_inject(
     const char *secret_objects_dir,
     const char *secret_id,
     const struct secdat_secret_attrs *attrs,
-    enum secdat_inject_bulk_value inject_bulk_value,
+    enum secdat_bulk_select_value bulk_select_value,
     int refcount_present,
     size_t refcount,
     const unsigned char *payload,
@@ -13392,12 +13408,12 @@ static int secdat_write_v2_secret_object_file_with_inject(
             header,
             sizeof(header),
             payload != NULL
-                ? "%s\nsecret_id=%s\nvalue_access=%s\ninject_bulk_value=%s\nrefcount=%zu\npayload_length=%zu\n\n"
-                : "%s\nsecret_id=%s\nvalue_access=%s\ninject_bulk_value=%s\nrefcount=%zu\n",
+                ? "%s\nsecret_id=%s\nvalue_access=%s\nbulk_select_value=%s\nrefcount=%zu\npayload_length=%zu\n\n"
+                : "%s\nsecret_id=%s\nvalue_access=%s\nbulk_select_value=%s\nrefcount=%zu\n",
             secdat_v2_secret_object_magic,
             secret_id,
             secdat_value_access_name(attrs->value_access),
-            secdat_inject_bulk_value_name(inject_bulk_value),
+            secdat_bulk_select_value_name(bulk_select_value),
             refcount,
             payload_length
         );
@@ -13406,12 +13422,12 @@ static int secdat_write_v2_secret_object_file_with_inject(
             header,
             sizeof(header),
             payload != NULL
-                ? "%s\nsecret_id=%s\nvalue_access=%s\ninject_bulk_value=%s\npayload_length=%zu\n\n"
-                : "%s\nsecret_id=%s\nvalue_access=%s\ninject_bulk_value=%s\n",
+                ? "%s\nsecret_id=%s\nvalue_access=%s\nbulk_select_value=%s\npayload_length=%zu\n\n"
+                : "%s\nsecret_id=%s\nvalue_access=%s\nbulk_select_value=%s\n",
             secdat_v2_secret_object_magic,
             secret_id,
             secdat_value_access_name(attrs->value_access),
-            secdat_inject_bulk_value_name(inject_bulk_value),
+            secdat_bulk_select_value_name(bulk_select_value),
             payload_length
         );
     }
@@ -13459,7 +13475,7 @@ static int secdat_write_v2_secret_object_file(
         secret_objects_dir,
         secret_id,
         attrs,
-        secdat_inject_bulk_value_from_attrs(attrs),
+        secdat_bulk_select_value_from_attrs(attrs),
         refcount_present,
         refcount,
         payload,
@@ -13517,8 +13533,8 @@ static int secdat_update_v2_secret_attrs(
         fprintf(stderr, _("invalid v2 secret object: %s\n"), entry->secret_id);
         return 1;
     }
-    if (object.inject_bulk_value == SECDAT_INJECT_BULK_VALUE_EXCLUDE && attrs->inject_bulk != SECDAT_INJECT_BULK_EXCLUDE) {
-        fprintf(stderr, _("secret object excludes inject bulk: %s\n"), key);
+    if (object.bulk_select_value == SECDAT_BULK_SELECT_VALUE_EXCLUDE && attrs->bulk_select != SECDAT_BULK_SELECT_EXCLUDE) {
+        fprintf(stderr, _("secret object excludes bulk select: %s\n"), key);
         goto cleanup;
     }
     if (attrs->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
@@ -13545,7 +13561,7 @@ static int secdat_update_v2_secret_attrs(
             secret_objects_dir,
             entry->secret_id,
             attrs,
-            object.inject_bulk_value,
+            object.bulk_select_value,
             object.refcount_present,
             object.refcount,
             has_payload ? payload : NULL,
@@ -13608,7 +13624,7 @@ static int secdat_store_v2_plaintext_with_attrs(
     size_t encrypted_length = 0;
     const char *object_domain_id = domain_id;
     const char *object_store_name = store_name;
-    enum secdat_inject_bulk_value target_inject_bulk_value;
+    enum secdat_bulk_select_value target_bulk_select_value;
     int refcount_present = 1;
     size_t refcount = 1;
     int lookup_status;
@@ -13622,7 +13638,7 @@ static int secdat_store_v2_plaintext_with_attrs(
     if (!secdat_v2_secret_attrs_supported(&write_attrs)) {
         return 1;
     }
-    target_inject_bulk_value = secdat_inject_bulk_value_from_attrs(&write_attrs);
+    target_bulk_select_value = secdat_bulk_select_value_from_attrs(&write_attrs);
     if ((write_attrs.value_access == SECDAT_VALUE_ACCESS_ALWAYS) != (unsafe_store != 0)) {
         fprintf(stderr, _("secret value_access does not match storage mode\n"));
         return 1;
@@ -13651,8 +13667,8 @@ static int secdat_store_v2_plaintext_with_attrs(
         }
         refcount_present = object.refcount_present;
         refcount = object.refcount;
-        if (object.inject_bulk_value == SECDAT_INJECT_BULK_VALUE_EXCLUDE && target_inject_bulk_value != SECDAT_INJECT_BULK_VALUE_EXCLUDE) {
-            fprintf(stderr, _("secret object excludes inject bulk: %s\n"), key);
+        if (object.bulk_select_value == SECDAT_BULK_SELECT_VALUE_EXCLUDE && target_bulk_select_value != SECDAT_BULK_SELECT_VALUE_EXCLUDE) {
+            fprintf(stderr, _("secret object excludes bulk select: %s\n"), key);
             return 1;
         }
         if (write_attrs.value_access == SECDAT_VALUE_ACCESS_UNLOCKED) {
@@ -13703,7 +13719,7 @@ static int secdat_store_v2_plaintext_with_attrs(
             secret_objects_dir,
             secret_id,
             &write_attrs,
-            target_inject_bulk_value,
+            target_bulk_select_value,
             refcount_present,
             refcount,
             encrypted,
@@ -14420,7 +14436,7 @@ static void secdat_print_secret_attrs(const struct secdat_secret_attrs *attrs)
 {
     printf("key_visibility=%s\n", secdat_key_visibility_name(attrs->key_visibility));
     printf("value_access=%s\n", secdat_value_access_name(attrs->value_access));
-    printf("inject_bulk=%s\n", secdat_inject_bulk_name(attrs->inject_bulk));
+    printf("bulk_select=%s\n", secdat_bulk_select_name(attrs->bulk_select));
 }
 
 static int secdat_command_attr(const struct secdat_cli *cli)
@@ -14442,7 +14458,7 @@ static int secdat_command_attr(const struct secdat_cli *cli)
     if (status != 0) {
         return status;
     }
-    has_changes = options.set_key_visibility || options.set_value_access || options.set_inject_bulk;
+    has_changes = options.set_key_visibility || options.set_value_access || options.set_bulk_select;
 
     if (secdat_parse_key_reference(options.keyref, secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
         return 1;
@@ -14486,8 +14502,8 @@ static int secdat_command_attr(const struct secdat_cli *cli)
         if (options.set_key_visibility) {
             attrs.key_visibility = options.attrs.key_visibility;
         }
-        if (options.set_inject_bulk) {
-            attrs.inject_bulk = options.attrs.inject_bulk;
+        if (options.set_bulk_select) {
+            attrs.bulk_select = options.attrs.bulk_select;
         }
         if (options.set_value_access) {
             attrs.value_access = options.attrs.value_access;
@@ -14552,8 +14568,8 @@ static int secdat_command_attr(const struct secdat_cli *cli)
     if (options.set_key_visibility) {
         attrs.key_visibility = options.attrs.key_visibility;
     }
-    if (options.set_inject_bulk) {
-        attrs.inject_bulk = options.attrs.inject_bulk;
+    if (options.set_bulk_select) {
+        attrs.bulk_select = options.attrs.bulk_select;
     }
     if (options.set_value_access) {
         attrs.value_access = options.attrs.value_access;
@@ -15705,7 +15721,7 @@ static int secdat_command_secret_status(const struct secdat_cli *cli)
     printf("object_domain=%s\n", chain.ids[0]);
     printf("object_store=%s\n", store_name);
     printf("value_access=%s\n", secdat_value_access_name(object.value_access));
-    printf("inject_bulk_value=%s\n", secdat_inject_bulk_value_name(object.inject_bulk_value));
+    printf("bulk_select_value=%s\n", secdat_bulk_select_value_name(object.bulk_select_value));
     if (object.refcount_present) {
         printf("refcount_cached=%zu\n", object.refcount);
     } else {
@@ -16047,7 +16063,8 @@ static int secdat_command_set(const struct secdat_cli *cli)
         {"secret-value", no_argument, NULL, 1001},
         {"key-visibility", required_argument, NULL, 1002},
         {"value-access", required_argument, NULL, 1003},
-        {"inject-bulk", required_argument, NULL, 1004},
+        {"bulk-select", required_argument, NULL, 1004},
+        {"inject-bulk", required_argument, NULL, 9003},
         {"sandbox-inject", required_argument, NULL, 9004},
         {"inject", required_argument, NULL, 9005},
         {"stdin", no_argument, NULL, 'i'},
@@ -16123,14 +16140,16 @@ static int secdat_command_set(const struct secdat_cli *cli)
             }
             break;
         case 1004:
-            if (secdat_parse_inject_bulk(optarg, &attrs.inject_bulk) != 0) {
+            if (secdat_parse_bulk_select(optarg, &attrs.bulk_select) != 0) {
                 return 2;
             }
             break;
         case 9004:
-            return secdat_store_reject_removed_flag("--sandbox-inject", "--inject-bulk");
+            return secdat_store_reject_removed_flag("--sandbox-inject", "--bulk-select");
+        case 9003:
+            return secdat_store_reject_removed_flag("--inject-bulk", "--bulk-select");
         case 9005:
-            return secdat_store_reject_removed_flag("--inject", "--inject-bulk");
+            return secdat_store_reject_removed_flag("--inject", "--bulk-select");
         case 'i':
             if (!read_stdin || literal_value != NULL) {
                 fprintf(stderr, _("invalid arguments for set\n"));
@@ -16448,14 +16467,14 @@ static int secdat_update_v2_secret_refcount(
     }
     attrs.key_visibility = SECDAT_KEY_VISIBILITY_ALWAYS;
     attrs.value_access = object.value_access;
-    attrs.inject_bulk = object.inject_bulk_value == SECDAT_INJECT_BULK_VALUE_EXCLUDE
-        ? SECDAT_INJECT_BULK_EXCLUDE
-        : SECDAT_INJECT_BULK_INCLUDE;
+    attrs.bulk_select = object.bulk_select_value == SECDAT_BULK_SELECT_VALUE_EXCLUDE
+        ? SECDAT_BULK_SELECT_EXCLUDE
+        : SECDAT_BULK_SELECT_INCLUDE;
     status = secdat_write_v2_secret_object_file_with_inject(
         secret_objects_dir,
         secret_id,
         &attrs,
-        object.inject_bulk_value,
+        object.bulk_select_value,
         1,
         refcount,
         has_payload ? payload : NULL,
@@ -16948,9 +16967,9 @@ static int secdat_link_v2_key(
 
     attrs.key_visibility = source_entry->key_visibility;
     attrs.value_access = object.value_access;
-    attrs.inject_bulk = source_entry->inject_bulk_entry;
-    if (object.inject_bulk_value == SECDAT_INJECT_BULK_VALUE_EXCLUDE) {
-        attrs.inject_bulk = SECDAT_INJECT_BULK_EXCLUDE;
+    attrs.bulk_select = source_entry->bulk_select_entry;
+    if (object.bulk_select_value == SECDAT_BULK_SELECT_VALUE_EXCLUDE) {
+        attrs.bulk_select = SECDAT_BULK_SELECT_EXCLUDE;
     }
     if (object.value_access == SECDAT_VALUE_ACCESS_UNLOCKED) {
         if (secdat_unwrap_v2_effective_object_key(source_chain, source_entry, object_key) != 0) {
@@ -17711,8 +17730,8 @@ static int secdat_store_migrate_prepare_v2(
         } else {
             report->encrypted_values += 1;
         }
-        if (secdat_inject_bulk_allows_bulk_selection(&attrs)) {
-            report->injectable_entries += 1;
+        if (secdat_bulk_select_allows_bulk_selection(&attrs)) {
+            report->bulk_select_entries += 1;
         }
     }
 
@@ -17760,7 +17779,7 @@ static int secdat_store_migrate_dry_run_v2(
     printf("tombstones=%zu\n", report->tombstones);
     printf("public_values=%zu\n", report->public_values);
     printf("encrypted_values=%zu\n", report->encrypted_values);
-    printf("injectable_entries=%zu\n", report->injectable_entries);
+    printf("bulk_select_entries=%zu\n", report->bulk_select_entries);
     puts("issues=0");
     status = 0;
 
@@ -17917,7 +17936,7 @@ static int secdat_store_migrate_write_v2(
     printf("tombstones=%zu\n", report->tombstones);
     printf("public_values=%zu\n", report->public_values);
     printf("encrypted_values=%zu\n", report->encrypted_values);
-    printf("injectable_entries=%zu\n", report->injectable_entries);
+    printf("bulk_select_entries=%zu\n", report->bulk_select_entries);
     puts("issues=0");
     puts("verified=yes");
     status = 0;
@@ -18574,7 +18593,7 @@ static int secdat_plaintext_to_env_value(
     return 0;
 }
 
-static int secdat_key_allows_inject_bulk_selection(
+static int secdat_key_allows_bulk_select_selection(
     const struct secdat_domain_chain *chain,
     const char *store_name,
     const char *key,
@@ -18587,7 +18606,7 @@ static int secdat_key_allows_inject_bulk_selection(
     if (secdat_load_resolved_secret_attrs(chain, store_name, key, &attrs, NULL) != 0) {
         return 1;
     }
-    *allowed = secdat_inject_bulk_allows_bulk_selection(&attrs);
+    *allowed = secdat_bulk_select_allows_bulk_selection(&attrs);
     return 0;
 }
 
@@ -18660,10 +18679,10 @@ static int secdat_command_export(const struct secdat_cli *cli)
     }
 
     for (key_index = 0; key_index < visible_keys.count; key_index += 1) {
-        if (options.inject_bulk_gate) {
+        if (options.bulk_gate) {
             int allowed = 0;
 
-            if (secdat_key_allows_inject_bulk_selection(&chain, cli->store, visible_keys.items[key_index], &allowed) != 0) {
+            if (secdat_key_allows_bulk_select_selection(&chain, cli->store, visible_keys.items[key_index], &allowed) != 0) {
                 secdat_key_list_free(&include_patterns);
                 secdat_domain_chain_free(&chain);
                 secdat_key_list_free(&visible_keys);
@@ -19014,14 +19033,14 @@ void secdat_exec_port_free_keys(char **keys, size_t count)
     free(keys);
 }
 
-int secdat_exec_port_key_allows_bulk_sandbox(
+int secdat_exec_port_key_allows_bulk_select(
     const struct secdat_domain_chain *chain,
     const char *store_name,
     const char *key,
     int *allowed
 )
 {
-    return secdat_key_allows_inject_bulk_selection(chain, store_name, key, allowed);
+    return secdat_key_allows_bulk_select_selection(chain, store_name, key, allowed);
 }
 
 int secdat_exec_port_load_plaintext(

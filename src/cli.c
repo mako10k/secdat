@@ -937,14 +937,14 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
             || strcmp(previous, "--value") == 0 || strcmp(previous, "-v") == 0
             || strcmp(previous, "--key-visibility") == 0
             || strcmp(previous, "--value-access") == 0
-            || strcmp(previous, "--inject-bulk") == 0
+            || strcmp(previous, "--bulk-select") == 0
             || strcmp(previous, "--inject") == 0) {
             return "none";
         }
     } else if (strcmp(command, "attr") == 0) {
         if (strcmp(previous, "--key-visibility") == 0
             || strcmp(previous, "--value-access") == 0
-            || strcmp(previous, "--inject-bulk") == 0
+            || strcmp(previous, "--bulk-select") == 0
             || strcmp(previous, "--inject") == 0) {
             return "none";
         }
@@ -965,7 +965,7 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
     } else if (strcmp(command, "exec") == 0) {
         if (strcmp(previous, "--inject") == 0
             || strcmp(previous, "--inject-file") == 0
-            || strcmp(previous, "--inject-gate") == 0) {
+            || strcmp(previous, "--bulk-gate") == 0) {
             return "none";
         }
     } else if (strcmp(command, "export") == 0) {
@@ -1119,15 +1119,15 @@ int secdat_cli_complete(int argc, char **argv)
     };
     static const char *const ls_options[] = {
         "--pattern", "-p", "--pattern-exclude", "-x", "--safe", "-e", "--unsafe", "-u",
-        "--public-value", "--secret-value", "--inject-bulk-gate", "--metadata",
+        "--public-value", "--secret-value", "--bulk-gate", "--metadata",
         "--canonical", "-c", "--canonical-domain", "-D", "--canonical-store", "-S", "--json", "--help", "-h", NULL,
     };
     static const char *const list_options[] = {
         "--masked", "-m", "--overridden", "-o", "--orphaned", "-O", "--safe", "-e", "--unsafe", "-u",
-        "--public-value", "--secret-value", "--inject-bulk-gate", "--help", "-h", NULL,
+        "--public-value", "--secret-value", "--bulk-gate", "--help", "-h", NULL,
     };
     static const char *const attr_options[] = {
-        "--key-visibility", "--value-access", "--inject-bulk", "--inject", "--help", "-h", NULL,
+        "--key-visibility", "--value-access", "--bulk-select", "--inject", "--help", "-h", NULL,
     };
     static const char *const relation_set_options[] = {
         "--kind", "--member", "--security", "--exposure", "--impact", "--note", "--help", "-h", NULL,
@@ -1143,16 +1143,16 @@ int secdat_cli_complete(int argc, char **argv)
     };
     static const char *const set_options[] = {
         "--unsafe", "-u", "--public-value", "--secret-value", "--stdin", "-i", "--env", "-e", "--value", "-v",
-        "--key-visibility", "--value-access", "--inject-bulk", "--inject", "--help", "-h", NULL,
+        "--key-visibility", "--value-access", "--bulk-select", "--inject", "--help", "-h", NULL,
     };
     static const char *const rm_options[] = {
         "--ignore-missing", "-f", "--help", "-h", NULL,
     };
     static const char *const exec_options[] = {
-        "--inject", "--inject-file", "--inject-gate", "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
+        "--inject", "--inject-file", "--bulk-gate", "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
     };
     static const char *const export_options[] = {
-        "--pattern", "-p", "--inject-bulk-gate", "--help", "-h", NULL,
+        "--pattern", "-p", "--bulk-gate", "--help", "-h", NULL,
     };
     static const char *const unlock_options[] = {
         "--duration", "-t", "--until", "--inherit", "-i", "--volatile", "-v", "--readonly", "-r",
@@ -1384,13 +1384,13 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
 {
     switch (command) {
     case SECDAT_COMMAND_LS:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--inject-bulk-gate] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store] [--json]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--bulk-gate] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store] [--json]");
         break;
     case SECDAT_COMMAND_LIST:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "list", "[-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--inject-bulk-gate]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "list", "[-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--bulk-gate]");
         break;
     case SECDAT_COMMAND_ATTR:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "attr", "KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--inject-bulk exclude|named|include]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "attr", "KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include]");
         break;
     case SECDAT_COMMAND_META_GET:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "meta get", "KEYREF");
@@ -1447,7 +1447,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "get", "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [-o|--stdout|-e|--shellescaped]");
         break;
     case SECDAT_COMMAND_SET:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "KEYREF [-u|--unsafe|--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--inject-bulk exclude|named|include] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "KEYREF [-u|--unsafe|--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
         break;
     case SECDAT_COMMAND_RM:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "rm", "[-f|--ignore-missing] KEYREF");
@@ -1462,10 +1462,10 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "SRC_KEYREF|@UUID DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--inject-gate GATE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--bulk-gate] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]");
         break;
     case SECDAT_COMMAND_EXPORT:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "export", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [--inject-bulk-gate]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "export", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [--bulk-gate]");
         break;
     case SECDAT_COMMAND_SAVE:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "save", "FILE");
@@ -1618,8 +1618,8 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("\nCommands:\n"));
     secdat_cli_print_detail_line(_("  help: show global help or detailed help for one command\n"));
     secdat_cli_print_detail_line(_("  ls: list effective keys visible from the current domain view, optionally filtered by safe or unsafe storage\n"));
-    secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe, or inject-bulk-gate local state\n"));
-    secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and inject-bulk attributes\n"));
+    secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe, or bulk-gate local state\n"));
+    secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and bulk-select attributes\n"));
     secdat_cli_print_detail_line(_("  meta: manage non-secret searchable metadata without reading secret values\n"));
     secdat_cli_print_detail_line(_("  relation: record semantic links between keys and the security meaning of those links\n"));
     secdat_cli_print_detail_line(_("  meta mark-leaked: mark one key as leaked metadata and suggest high-risk refresh targets\n"));
@@ -1671,13 +1671,13 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "list") == 0) {
-        secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe, or inject-bulk-gate local state\n"));
+        secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe, or bulk-gate local state\n"));
         return;
     }
     if (target != NULL && strcmp(target, "attr") == 0) {
-        secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and inject-bulk attributes\n"));
-        secdat_cli_print_detail_line(_("  key_visibility controls whether the key name is visible while locked; value_access=always stores a public/plaintext-at-rest value; inject_bulk controls bulk-gated export/exec eligibility when --inject-bulk-gate is used for this entry\n"));
-        secdat_cli_print_detail_line(_("  v2 effective --inject-bulk-gate selection also requires the secret object's inject_bulk_value policy to allow bulk selection\n"));
+        secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and bulk-select attributes\n"));
+        secdat_cli_print_detail_line(_("  key_visibility controls whether the key name is visible while locked; value_access=always stores a public/plaintext-at-rest value; bulk_select controls bulk-gated export/exec eligibility when --bulk-gate is used for this entry\n"));
+        secdat_cli_print_detail_line(_("  v2 effective --bulk-gate selection also requires the secret object's bulk_select_value policy to allow bulk selection\n"));
         return;
     }
     if (target != NULL && strcmp(target, "meta") == 0) {
@@ -1789,7 +1789,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  exec: build a child environment through supply, route, and final injection layers\n"));
         secdat_cli_print_detail_line(_("  --inject LAYER:KIND=SELECTOR configures ambient, secret, route, or final rules; repeated --inject accumulates selectors of the same kind\n"));
         secdat_cli_print_detail_line(_("  --inject-file FILE loads a YAML policy; later --inject options override file entries\n"));
-        secdat_cli_print_detail_line(_("  --inject-gate=bulk applies the store inject_bulk bulk pre-filter before secret supply\n"));
+        secdat_cli_print_detail_line(_("  --bulk-gate applies the store bulk_select bulk pre-filter before secret supply\n"));
         return;
     }
     if (target != NULL && strcmp(target, "export") == 0) {

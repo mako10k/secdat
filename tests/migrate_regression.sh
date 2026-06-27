@@ -82,7 +82,7 @@ if rc != 0 or stdout != "" or stderr != "":
 
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "--store", "app", "set", "APP_TOKEN",
-    "--value", "secret-token", "--inject-bulk", "named",
+    "--value", "secret-token", "--bulk-select", "named",
 ])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set APP_TOKEN failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -108,7 +108,7 @@ for expected in [
     "tombstones=0\n",
     "public_values=1\n",
     "encrypted_values=1\n",
-    "injectable_entries=0\n",
+    "bulk_select_entries=0\n",
     "issues=0\n",
 ]:
     assert_contains(stdout, expected, "store migrate dry-run output")
@@ -195,7 +195,7 @@ for expected in [
     "tombstones=0\n",
     "public_values=1\n",
     "encrypted_values=1\n",
-    "injectable_entries=0\n",
+    "bulk_select_entries=0\n",
     "issues=0\n",
     "verified=yes\n",
 ]:
@@ -265,8 +265,8 @@ for expected in [
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "ls", "--metadata"])
 if rc != 0 or stderr != "":
     fail(f"migrated v2 ls metadata failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "APP_TOKEN\tkey_visibility=always\tvalue_access=unlocked\tinject_bulk=named\n", "migrated APP_TOKEN metadata")
-assert_contains(stdout, "APP_PUBLIC\tkey_visibility=always\tvalue_access=always\tinject_bulk=exclude\n", "migrated APP_PUBLIC metadata")
+assert_contains(stdout, "APP_TOKEN\tkey_visibility=always\tvalue_access=unlocked\tbulk_select=named\n", "migrated APP_TOKEN metadata")
+assert_contains(stdout, "APP_PUBLIC\tkey_visibility=always\tvalue_access=always\tbulk_select=exclude\n", "migrated APP_PUBLIC metadata")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "id", "APP_TOKEN"])
 if rc != 0 or stderr != "":
@@ -307,16 +307,16 @@ if not app_public_files[0].exists():
 app_public_value_sidecar.unlink()
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_PUBLIC"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\ninject_bulk=exclude\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nbulk_select=exclude\n" or stderr != "":
     fail(f"migrated v2 attr failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--inject-bulk", "include"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--bulk-select", "include"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"migrated v2 attr inject update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\ninject_bulk=include\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nbulk_select=include\n" or stderr != "":
     fail(f"migrated v2 attr after inject update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "ls", "--inject-bulk-gate"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "ls", "--bulk-gate"])
 if rc != 0 or stdout != "APP_TOKEN\n" or stderr != "":
     fail(f"migrated v2 inject bulkable list failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "fsck", "--format", "v2"])
@@ -327,7 +327,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "att
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"migrated v2 value_access public update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\ninject_bulk=include\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=always\nbulk_select=include\n" or stderr != "":
     fail(f"migrated v2 attr after value_access public update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get", "APP_TOKEN"], {"SECDAT_MASTER_KEY": ""})
 if rc != 0 or stdout != "secret-token" or stderr != "":
@@ -349,7 +349,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "att
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"migrated v2 key_visibility hidden update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=unlocked\nvalue_access=unlocked\ninject_bulk=include\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=unlocked\nvalue_access=unlocked\nbulk_select=include\n" or stderr != "":
     fail(f"migrated v2 attr after key_visibility hidden update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 app_token_entry_texts = [
     path.read_text(encoding="utf-8")
@@ -374,7 +374,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "att
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"migrated v2 key_visibility visible restore failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN"])
-if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\ninject_bulk=include\n" or stderr != "":
+if rc != 0 or stdout != "key_visibility=always\nvalue_access=unlocked\nbulk_select=include\n" or stderr != "":
     fail(f"migrated v2 attr after key_visibility visible restore failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 app_token_entry_texts = [
     path.read_text(encoding="utf-8")
@@ -456,9 +456,9 @@ if rc != 0 or stdout != "ok\n" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "list", "--safe"])
 if rc != 0 or stdout != "APP_TOKEN\n" or stderr != "":
     fail(f"v2 list --safe after finalize-migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "list", "--inject-bulk-gate"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "list", "--bulk-gate"])
 if rc != 0 or stdout != "APP_TOKEN\n" or stderr != "":
-    fail(f"v2 list --inject-bulk-gate after finalize-migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"v2 list --bulk-gate after finalize-migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "list", "--unsafe"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"v2 list --unsafe after finalize-migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

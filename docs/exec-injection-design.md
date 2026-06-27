@@ -201,7 +201,7 @@ struct secdat_exec_plan {
 2. Snapshot `AmbientAvail` from the current process environment.
 3. Parse `--inject`, optional policy file, and optional `--inject-gate` into
    `supply`, `route`, `demand`, and pre-supply gate structures.
-4. When `--inject-gate=sandbox` is set, pre-filter `VisibleKeys` to keys whose
+4. When `--bulk-gate (legacy `--inject-gate` rejected)` is set, pre-filter `VisibleKeys` to keys whose
    effective `sandbox_inject` allows bulk selection (see §10).
 
 ### Phase 1 — Supply
@@ -318,13 +318,13 @@ Repeated `--inject` accumulates selectors of the same kind.
 Phase 1 is `sandbox`, which applies the store-attribute pre-filter from §10
 before secret supply.
 
-`--inject-gate=sandbox` may appear once.
+`--bulk-gate (legacy `--inject-gate` rejected)` may appear once.
 
 ### 7.2 Command shape
 
 ```text
 secdat [--dir DIR] [--store STORE] exec [--inject ...]... [--inject-file FILE]...
-       [--inject-gate GATE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
+       [--bulk-gate]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 ```
 
 ### 7.3 Examples
@@ -395,7 +395,7 @@ CLI `--inject` after the file overrides file entries.
 #### `exec.env.yaml` schema
 
 ```yaml
-gate: bulk
+bulk_gate: true
 
 supply:
   ambient:
@@ -431,7 +431,7 @@ under `supply` map to pentad kinds. `demand.final` mirrors `final:` CLI rules.
   "domain": "/home/user/project",
   "store": "app",
   "dry_run": true,
-  "inject_gate": null,
+  "bulk_gate": null,
   "supply": {
     "ambient": {
       "mode": "default",
@@ -485,10 +485,10 @@ stderr after a real run, using the same plan shape.
 
 ## 10. Relationship to Store Attributes
 
-Store attributes (`inject_bulk` and related bulk-policy fields; see
-[ADR 0003](adr/0003-rename-inject-bulk-attributes.md)) remain **outside** this
+Store attributes (`bulk_select` and related bulk-policy fields; see
+[ADR 0003](adr/0003-rename-bulk-select-attributes.md)) remain **outside** this
 pentad. They act as a pre-supply filter on `VisibleKeys` when enabled by
-`--inject-gate=bulk` (or domain defaults in future work).
+`--bulk-gate` (or domain defaults in future work).
 
 This document does not redefine searchable `meta` semantics. Bulk attribute
 names describe gate-scoped eligibility only, not absolute egress prohibition.
@@ -522,7 +522,7 @@ names describe gate-scoped eligibility only, not absolute egress prohibition.
    See [ADR 0001](adr/0001-inject-file-yaml-only.md). Programmatic authoring uses
    `--inject`; JSON remains observation-only (`--dry-run --json`, `--json-summary`).
 2. ~~**Attribute pre-gate** — default-on for `secret_inject=never`, or opt-in?~~
-   **Decided:** opt-in via `--inject-gate=sandbox` (or future domain defaults).
+   **Decided:** opt-in via `--bulk-gate (legacy `--inject-gate` rejected)` (or future domain defaults).
    See [ADR 0002](adr/0002-inject-attribute-pregate-opt-in.md). Gateless exec uses
    direct visible-key selection like `export --pattern`; pentad `secret:reject`
    covers inject-specific prohibitions. Does not alter `attr`, `meta`, or relation
@@ -581,10 +581,10 @@ These are execution / observability controls, not injection policy:
 
 | Legacy flag | Replacement | Notes |
 | --- | --- | --- |
-| `--sandbox-injectable` | `--inject-gate=sandbox` | Applies the §10 bulk `sandbox_inject` pre-filter; not expressible as pentad alone. |
+| `--sandbox-injectable` | `--bulk-gate (legacy `--inject-gate` rejected)` | Applies the §10 bulk `sandbox_inject` pre-filter; not expressible as pentad alone. |
 
 During migration, `--sandbox-injectable` lowers to the same pre-supply filter as
-`--inject-gate=sandbox`. Document the legacy flag only under Migration; do not
+`--bulk-gate (legacy `--inject-gate` rejected)`. Document the legacy flag only under Migration; do not
 list it in the canonical exec reference.
 
 ### 15.5 Parser Behavior
@@ -606,9 +606,9 @@ and modern execution paths.
 | Legacy and `--inject` touch **different** concerns | Allowed. Example: `-p APP_*` + `--inject route:PATH=ambient` |
 | Legacy and `--inject` specify the **same** pentad kind on `secret` | Error. Example: `-p APP_*` + `--inject secret:only=OTHER_*` |
 | `--env-map-sed` + `--inject secret:rename=...` | Error (both set rename) |
-| `--sandbox-injectable` + `--inject-gate=sandbox` | Error (both set pre-gate) |
+| `--sandbox-injectable` + `--bulk-gate (legacy `--inject-gate` rejected)` | Error (both set pre-gate) |
 | Multiple `--env-map-sed` | Error (unchanged) |
-| Multiple `--inject-gate=sandbox` | Error (unchanged) |
+| Multiple `--bulk-gate (legacy `--inject-gate` rejected)` | Error (unchanged) |
 
 ### 15.7 Deprecation Warning
 

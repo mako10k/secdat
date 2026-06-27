@@ -85,8 +85,8 @@ def exec_stderr_json(stderr):
 
 
 for args, marker in [
-    ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--inject-bulk-gate]"),
-    ([bin_path, "help", "exec"], "exec [--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--inject-gate GATE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
+    ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--bulk-gate]"),
+    ([bin_path, "help", "exec"], "exec [--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--bulk-gate] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
     ([bin_path, "export", "--help"], "emit shell-ready export lines"),
     ([bin_path, "help", "get"], "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [-o|--stdout|-e|--shellescaped]"),
     ([bin_path, "help", "usecases"], "inject secrets into one subprocess only:"),
@@ -119,8 +119,8 @@ for args in [
     [bin_path, "--dir", str(child_dir), "set", "HOSTILE_TOKEN", "--value", hostile_payload],
     [bin_path, "--dir", str(child_dir), "set", "LONG_TOKEN", "--value", long_payload],
     [bin_path, "--dir", str(child_dir), "set", "CONTROL_TOKEN", "--value", control_payload],
-    [bin_path, "--dir", str(child_dir), "set", "BULK_TOKEN", "--value", "bulk-secret", "--inject-bulk", "include"],
-    [bin_path, "--dir", str(child_dir), "set", "EXPLICIT_TOKEN", "--value", "explicit-secret", "--inject-bulk", "named"],
+    [bin_path, "--dir", str(child_dir), "set", "BULK_TOKEN", "--value", "bulk-secret", "--bulk-select", "include"],
+    [bin_path, "--dir", str(child_dir), "set", "EXPLICIT_TOKEN", "--value", "explicit-secret", "--bulk-select", "named"],
 ]:
     rc, stdout, stderr = run(args)
     if rc != 0 or stdout != "" or stderr != "":
@@ -148,13 +148,13 @@ if hostile_payload in stdout or long_payload in stdout or control_payload in std
     fail("export leaked hostile, long, or control payloads")
 export_stdout = stdout
 
-rc, stdout, stderr = run([bin_path, "--dir", str(child_dir), "export", "--inject-bulk-gate"])
+rc, stdout, stderr = run([bin_path, "--dir", str(child_dir), "export", "--bulk-gate"])
 if rc != 0 or stderr != "":
-    fail(f"inject-bulk-gate export failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"bulk-gate export failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "get 'BULK_TOKEN' --shellescaped)\"", "bulk export key line")
 for unexpected in ["EXPLICIT_TOKEN", "CHILD_TOKEN", "ROOT_TOKEN", "HOSTILE_TOKEN", "CONTROL_TOKEN"]:
     if unexpected in stdout:
-        fail(f"inject-bulk-gate export unexpectedly included {unexpected}: {stdout!r}")
+        fail(f"bulk-gate export unexpectedly included {unexpected}: {stdout!r}")
 
 cmd = (
     export_stdout
@@ -306,15 +306,15 @@ rc, stdout, stderr = run([
     "--dir",
     str(child_dir),
     "exec",
-    "--inject-gate", "bulk",
+    "--bulk-gate",
     "python3",
     "-c",
     "import json, os; print(json.dumps({key: os.environ[key] for key in sorted(k for k in os.environ if k in ('BULK_TOKEN', 'EXPLICIT_TOKEN', 'CHILD_TOKEN', 'ROOT_TOKEN'))}, sort_keys=True))",
 ])
 if rc != 0 or not exec_stderr_ok(stderr):
-    fail(f"inject-bulk-gate exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"bulk-gate exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if json.loads(stdout) != {"BULK_TOKEN": "bulk-secret"}:
-    fail(f"inject-bulk-gate exec payload mismatch: {stdout!r}")
+    fail(f"bulk-gate exec payload mismatch: {stdout!r}")
 
 rc, stdout, stderr = run([
     bin_path,

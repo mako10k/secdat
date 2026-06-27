@@ -94,7 +94,7 @@ tombstones_dir.mkdir(parents=True, exist_ok=True)
 (entries_dir / "BROKEN.sec").write_bytes(b"not-a-secdat-entry")
 (tombstones_dir / "STALE.tomb").write_bytes(b"")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "BADMETA", "--value", "bad", "--inject-bulk", "named"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "BADMETA", "--value", "bad", "--bulk-select", "named"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set BADMETA failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 (entries_dir / "BADMETA.meta").write_text(

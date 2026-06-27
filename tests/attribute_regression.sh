@@ -67,18 +67,26 @@ if rc != 0 or stdout != "" or stderr != "":
     fail(f"child domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "API_TOKEN", "--sandbox-inject", "named"])
-if rc != 2 or "--sandbox-inject is no longer supported; use --inject-bulk" not in stderr:
+if rc != 2 or "--sandbox-inject is no longer supported; use --bulk-select" not in stderr:
     fail(f"legacy --sandbox-inject attr should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "API_TOKEN", "--inject-bulk", "named"])
+if rc != 2 or "--inject-bulk is no longer supported; use --bulk-select" not in stderr:
+    fail(f"legacy --inject-bulk attr should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--inject-bulk-gate"])
+if rc != 2 or "--inject-bulk-gate is no longer supported; use --bulk-gate" not in stderr:
+    fail(f"legacy --inject-bulk-gate ls should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "set", "LEGACY_FLAG", "--value", "x", "--sandbox-inject", "named",
 ])
-if rc != 2 or "--sandbox-inject is no longer supported; use --inject-bulk" not in stderr:
+if rc != 2 or "--sandbox-inject is no longer supported; use --bulk-select" not in stderr:
     fail(f"legacy --sandbox-inject set should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "set", "API_TOKEN",
-    "--value", "token", "--inject-bulk", "named",
+    "--value", "token", "--bulk-select", "named",
 ])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set explicit inject failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -88,38 +96,38 @@ if rc != 0 or stderr != "":
     fail(f"attr API_TOKEN failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "key_visibility=always\n", "attr key visibility")
 assert_contains(stdout, "value_access=unlocked\n", "attr value access")
-assert_contains(stdout, "inject_bulk=named\n", "attr inject")
+assert_contains(stdout, "bulk_select=named\n", "attr inject")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--metadata"])
 if rc != 0 or stderr != "":
     fail(f"ls --metadata failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "API_TOKEN\tkey_visibility=always\tvalue_access=unlocked\tinject_bulk=named\n", "ls metadata")
+assert_contains(stdout, "API_TOKEN\tkey_visibility=always\tvalue_access=unlocked\tbulk_select=named\n", "ls metadata")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--inject-bulk-gate"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--bulk-gate"])
 if rc != 0 or stderr != "":
-    fail(f"ls --inject-bulk-gate failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, "", "explicit inject excluded from bulk inject-bulk-gate list")
+    fail(f"ls --bulk-gate failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, "", "explicit inject excluded from bulk bulk-gate list")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "NO_INJECT", "--value", "nope"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set non-inject failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--inject-bulk-gate"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--bulk-gate"])
 if rc != 0 or stderr != "":
-    fail(f"ls inject-bulk-gate after non-inject failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"ls bulk-gate after non-inject failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_eq(stdout, "", "non-bulk keys excluded")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--inject-bulk", "include"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--bulk-select", "include"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"attr bulk failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "list", "--inject-bulk-gate"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "list", "--bulk-gate"])
 if rc != 0 or stderr != "":
-    fail(f"list inject-bulk-gate failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    fail(f"list bulk-gate failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "NO_INJECT\n", "list includes bulk key")
 if "API_TOKEN\n" in stdout:
-    fail(f"list inject-bulk-gate unexpectedly included explicit key: {stdout!r}")
+    fail(f"list bulk-gate unexpectedly included explicit key: {stdout!r}")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--inject-bulk", "allow"])
-if rc == 0 or "invalid inject bulk policy: allow; use include" not in stderr:
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT", "--bulk-select", "allow"])
+if rc == 0 or "invalid bulk select policy: allow; use include" not in stderr:
     fail(f"legacy allow CLI input should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 legacy_meta_files = list(Path(env["XDG_DATA_HOME"]).rglob("NO_INJECT.meta"))
@@ -132,8 +140,8 @@ legacy_meta_files[0].write_text(
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "NO_INJECT"])
 if rc != 0 or stderr != "":
     fail(f"legacy allow metadata readback failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "inject_bulk=include\n", "legacy allow metadata normalizes to bulk")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--inject-bulk-gate"])
+assert_contains(stdout, "bulk_select=include\n", "legacy allow metadata normalizes to bulk")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--bulk-gate"])
 if rc != 0 or stdout != "NO_INJECT\n" or stderr != "":
     fail(f"legacy allow metadata should remain bulk-injectable: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
@@ -168,9 +176,9 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "API_TOKEN_COPY"])
 if rc != 0 or stderr != "":
     fail(f"attr copied key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_contains(stdout, "inject_bulk=named\n", "copy preserves inject attr")
+assert_contains(stdout, "bulk_select=named\n", "copy preserves inject attr")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(child), "attr", "API_TOKEN", "--inject-bulk", "exclude"])
+rc, stdout, stderr = run([bin_path, "--dir", str(child), "attr", "API_TOKEN", "--bulk-select", "exclude"])
 if rc == 0 or "cannot update inherited key attributes" not in stderr:
     fail(f"inherited attr update should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 

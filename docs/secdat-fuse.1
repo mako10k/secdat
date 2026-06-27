@@ -6,7 +6,7 @@ secdat-fuse \- mount selected secdat keys as files
 [\-d DIR|\-\-dir DIR] [\-\-domain DIR] [\-s STORE|\-\-store STORE]
 [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN]...
 [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN]...
-[\-\-inject-bulk-gate] [\-\-require-key KEY]... [\-\-dry-run] [\-\-json] [\-\-size-metadata] [\-f|\-\-foreground] [\-\-debug]
+[\-\-bulk-gate] [\-\-require-key KEY]... [\-\-dry-run] [\-\-json] [\-\-size-metadata] [\-f|\-\-foreground] [\-\-debug]
 .I MOUNTPOINT
 [\-\-
 .I CMD
@@ -55,13 +55,13 @@ Expose matching keys. May be repeated; repeated include patterns are ORed togeth
 .B \-x, \-\-pattern-exclude GLOBPATTERN
 Exclude matching keys. May be repeated; exclude patterns are applied after include filtering.
 .TP
-.B \-\-inject-bulk-gate
-Expose only keys whose effective inject_bulk policy allows bulk-gated selection.
+.B \-\-bulk-gate
+Expose only keys whose effective bulk_select policy allows bulk-gated selection.
 .PP
 Legacy
 .BR \-\-sandbox-injectable
 is rejected with a hint to use
-.BR \-\-inject-bulk-gate .
+.BR \-\-bulk-gate .
 .TP
 .B \-\-require-key KEY
 Fail before dry-run output or mounting unless

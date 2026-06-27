@@ -15,7 +15,7 @@ int secdat_exec_port_collect_visible_keys(
 );
 void secdat_exec_port_free_keys(char **keys, size_t count);
 
-int secdat_exec_port_key_allows_bulk_sandbox(
+int secdat_exec_port_key_allows_bulk_select(
     const struct secdat_domain_chain *chain,
     const char *store_name,
     const char *key,

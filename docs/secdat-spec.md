@@ -34,10 +34,10 @@ Returned list item arrays are allocated by `libsecdat` and owned by the caller; 
 The intended command set is:
 
 ```text
-secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--inject-bulk-gate] [--canonical|--canonical-domain|--canonical-store]
+secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--bulk-gate] [--canonical|--canonical-domain|--canonical-store]
 
-secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--inject-bulk-gate]
-secdat [--dir DIR] [--store STORE] attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--inject-bulk exclude|named|include]
+secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--bulk-gate]
+secdat [--dir DIR] [--store STORE] attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include]
 secdat [--dir DIR] [--store STORE] meta get KEYREF
 secdat [--dir DIR] [--store STORE] meta set KEYREF FIELD VALUE
 secdat [--dir DIR] [--store STORE] meta unset KEYREF FIELD
@@ -67,7 +67,7 @@ secdat [--dir DIR] [--store STORE] get [-w|--on-demand-unlock] [-t SECONDS|--unl
 secdat [--dir DIR] [--store STORE] set KEYREF
 secdat [--dir DIR] [--store STORE] set KEYREF VALUE
 secdat [--dir DIR] [--store STORE] set KEYREF [-u|--unsafe] VALUE
-secdat [--dir DIR] [--store STORE] set KEYREF [--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--inject-bulk exclude|named|include] VALUE
+secdat [--dir DIR] [--store STORE] set KEYREF [--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include] VALUE
 secdat [--dir DIR] [--store STORE] set KEYREF [--stdin|-i]
 secdat [--dir DIR] [--store STORE] set KEYREF [--env|-e] ENVNAME
 secdat [--dir DIR] [--store STORE] set KEYREF [--value|-v] VALUE
@@ -77,9 +77,9 @@ secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] ln SRC_KEYREF|@UUID DST_KEYREF
 
-secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--inject-gate GATE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--bulk-gate]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 
-secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--inject-bulk-gate] [--require-key KEY]... [--dry-run] [--json] [--size-metadata] [--foreground] [--debug] MOUNTPOINT [-- CMD [ARGS...]]
+secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--bulk-gate] [--require-key KEY]... [--dry-run] [--json] [--size-metadata] [--foreground] [--debug] MOUNTPOINT [-- CMD [ARGS...]]
 
 secdat [--dir DIR] unlock [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH] [--gui]
 secdat [--dir DIR] inherit
@@ -104,7 +104,7 @@ secdat [--dir DIR|--domain DIR] domain status [--quiet|--json]
 
 secdat [--dir DIR] [--store STORE] save FILE
 secdat [--dir DIR] [--store STORE] load FILE
-secdat [--dir DIR] [--store STORE] export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--inject-bulk-gate]
+secdat [--dir DIR] [--store STORE] export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--bulk-gate]
 ```
 
 ### 2.2 Explicitly Stated Requirements
@@ -128,9 +128,9 @@ To make the requested behavior implementable, the following are treated as norma
 - `set KEYREF` is equivalent to `set KEYREF --stdin`
 - `set KEYREF --unsafe ...` explicitly opts into plaintext-at-rest storage that remains readable while locked
 - `set KEYREF --public-value ...` is the clearer alias for plaintext-at-rest values that remain readable while locked
-- per-secret attributes include `key_visibility`, `value_access`, and `inject_bulk`
-- `inject_bulk` controls whether a key may be included in bulk-gated inject/export/list selection
-- legacy CLI flags and tokens (`--sandbox-inject`, `--sandbox-injectable`, `--inject-gate=sandbox`, and related exec migration flags) are rejected with replacement hints; they are not accepted as aliases
+- per-secret attributes include `key_visibility`, `value_access`, and `bulk_select`
+- `bulk_select` controls whether a key may be included in bulk-gated inject/export/list selection
+- legacy CLI flags and tokens (`--sandbox-inject`, `--sandbox-injectable`, `--bulk-gate (legacy `--inject-gate` rejected)`, and related exec migration flags) are rejected with replacement hints; they are not accepted as aliases
 - on-disk metadata and v2 sidecars continue to read legacy field names (`sandbox_inject`, `entry_inject`, `secret_inject`) and token values (`never`, `explicit`, `bulk`, `allow`) during a transition period; rewrites emit the new names and tokens
 - searchable key metadata is non-secret `FIELD=VALUE` data managed by `meta`, not by `attr`
 - semantic relations are non-secret records that connect two or more role-named KEYREFs and describe the security meaning of the combination
@@ -288,7 +288,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat exec CMD [ARGS...]` builds a child process environment through supply, route, and final injection layers, then executes the command
 - repeated `--inject LAYER:KIND=SELECTOR` options configure ambient, secret, route, and final rules; multiple selectors in one value are separated by `:`
 - `--inject-file FILE` loads a YAML policy file; later `--inject` options override file entries
-- `--inject-gate=bulk` applies the bulk `inject_bulk` store-attribute pre-filter before secret supply
+- `--bulk-gate` applies the bulk `bulk_select` store-attribute pre-filter before secret supply
 - `secret:rename=EXPR` applies one sed-style key-to-environment-name mapping; keys that do not match keep `env_name = key`
 - `secret:only` and `secret:omit` match store keys or mapped environment names; `secret:require` and `secret:reject` match store keys
 - two secret keys mapping to the same environment name fail during planning
@@ -301,7 +301,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `exec --dry-run --json` reports the same preflight data as stable JSON on standard output
 - `exec --json-summary CMD [ARGS...]` executes the child and writes a stable JSON summary to standard error after it exits, preserving child standard output for the child process
 - `exec --json-summary` and `exec --dry-run` are mutually exclusive because `--json-summary` is reserved for real executions
-- JSON summaries include domain, store, `inject_gate`, supply/route/final plan metadata, injected key count, injected key/environment-name pairs, sanitized child argv, exit status or terminating signal, and duration
+- JSON summaries include domain, store, `bulk_gate`, supply/route/final plan metadata, injected key count, injected key/environment-name pairs, sanitized child argv, exit status or terminating signal, and duration
 - preflight output and JSON summaries must not contain secret values
 - the parent process environment is not modified
 - resolved values are decrypted and passed to the child through a constructed environ array launched with `execvpe`
@@ -312,7 +312,7 @@ To make the requested behavior implementable, the following are treated as norma
 - the FUSE command is a separate binary, `secdat-fuse`, not a subcommand of `secdat`
 - the helper exposes selected visible keys as one file per key
 - `secdat-fuse` uses the public SDK list/get/value-update operations and must not read store internals directly
-- repeated `--pattern` options are ORed, repeated `--pattern-exclude` options subtract matches afterward, and `--inject-bulk-gate` further limits the mounted file set
+- repeated `--pattern` options are ORed, repeated `--pattern-exclude` options subtract matches afterward, and `--bulk-gate` further limits the mounted file set
 - repeated `--require-key KEY` options refuse dry-runs and mounts unless every named key remains selected after filters
 - `--dry-run MOUNTPOINT` prints the selected file names without mounting or reading secret values; `--dry-run --json MOUNTPOINT` reports the same preflight shape as JSON
 - `MOUNTPOINT -- CMD [ARGS...]` mounts in a child foreground FUSE process, runs `CMD`, then unmounts `MOUNTPOINT` with `fusermount3 -u`
@@ -336,27 +336,27 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat attr KEYREF` prints the effective attributes for the resolved key without printing the secret value
 - `secdat attr KEYREF --key-visibility MODE` updates the key-name visibility attribute for a current-domain local entry
 - `secdat attr KEYREF --value-access MODE` updates whether the value is encrypted-at-rest and unlock-gated or plaintext-at-rest and always readable
-- `secdat attr KEYREF --inject-bulk MODE` updates whether the key can be included in bulk-gated inject/export/list selection
+- `secdat attr KEYREF --bulk-select MODE` updates whether the key can be included in bulk-gated inject/export/list selection
 - `key_visibility` accepts `always` and `unlocked`
 - `value_access` accepts `unlocked` and `always`
-- `inject_bulk` accepts `exclude`, `named`, and `include`
+- `bulk_select` accepts `exclude`, `named`, and `include`
 - v1 storage supports only `key_visibility=always`; `key_visibility=unlocked` is supported only by v2 stores
 - `value_access=unlocked` stores the value encrypted-at-rest and requires the master key or an active session for reads
 - `value_access=always` stores the value plaintext-at-rest and permits reads while locked; it is equivalent to the current unsafe/public-value storage mode
-- `inject_bulk=exclude` excludes the key from bulk-gated inject/export/list selection
-- `inject_bulk=named` is excluded by the current `--inject-bulk-gate` bulk policy gate; plain pattern filters remain direct visible-key selectors unless `--inject-bulk-gate` is also present
-- `inject_bulk=include` allows bulk-gated inject/export/list from named key selection and from selector, pattern, or profile based selection
+- `bulk_select=exclude` excludes the key from bulk-gated inject/export/list selection
+- `bulk_select=named` is excluded by the current `--bulk-gate` bulk policy gate; plain pattern filters remain direct visible-key selectors unless `--bulk-gate` is also present
+- `bulk_select=include` allows bulk-gated inject/export/list from named key selection and from selector, pattern, or profile based selection
 - attribute updates are allowed only for current-domain local entries; inherited entries must be materialized locally before their attributes can be changed
-- v2 stores can update `key_visibility`, domain-entry `inject_bulk_entry`, secret-object `inject_bulk_value`, and object-owned `value_access` through the domain-entry/object graph
+- v2 stores can update `key_visibility`, domain-entry `bulk_select_entry`, secret-object `bulk_select_value`, and object-owned `value_access` through the domain-entry/object graph
 - v2 `key_visibility=unlocked` encrypts the key name in the domain entry; locked list/lookup operations skip hidden keys, and v2 writes that would create a domain entry fail while hidden entries make absence impossible to prove
 - generic user-defined attributes are intentionally not part of `attr`; policy/storage attributes must stay explicit so authorization, migration, and bulk-gated export semantics remain auditable
 - `cp` and `mv` preserve source key attributes
 - `ls --metadata` prints key attributes alongside visible keys
-- `ls --inject-bulk-gate` lists visible keys whose effective `inject_bulk` allows bulk-gated selector, pattern, or profile based selection
-- `list --inject-bulk-gate` lists current-domain local entries whose effective `inject_bulk` allows bulk-gated selector, pattern, or profile based selection
-- `exec --inject-gate=bulk` injects only keys whose effective `inject_bulk` allows bulk-gated selector, pattern, or profile based selection
-- `export --inject-bulk-gate` emits only keys whose effective `inject_bulk` allows bulk-gated selector, pattern, or profile based selection
-- legacy CLI flags (`--sandbox-inject`, `--sandbox-injectable`, `--inject-gate=sandbox`) are rejected with replacement hints naming the new options
+- `ls --bulk-gate` lists visible keys whose effective `bulk_select` allows bulk-gated selector, pattern, or profile based selection
+- `list --bulk-gate` lists current-domain local entries whose effective `bulk_select` allows bulk-gated selector, pattern, or profile based selection
+- `exec --bulk-gate` injects only keys whose effective `bulk_select` allows bulk-gated selector, pattern, or profile based selection
+- `export --bulk-gate` emits only keys whose effective `bulk_select` allows bulk-gated selector, pattern, or profile based selection
+- legacy CLI flags (`--sandbox-inject`, `--sandbox-injectable`, `--bulk-gate (legacy `--inject-gate` rejected)`) are rejected with replacement hints naming the new options
 
 #### FR-3ad Searchable Metadata and Semantic Relations
 
@@ -435,7 +435,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat export` emits bash-oriented `export ...` lines for the currently visible keys in the current `--dir` and `--store` view
 - emitted lines must reference `secdat get ... --shellescaped` command substitutions rather than embedding raw secret values directly
 - `secdat export --pattern GLOBPATTERN` limits output to matched keys
-- `secdat export --inject-bulk-gate` further limits output to keys whose effective `inject_bulk` allows bulk-gated selection
+- `secdat export --bulk-gate` further limits output to keys whose effective `bulk_select` allows bulk-gated selection
 - emitted lines use `eval "export ...=$(...)"` so the `--shellescaped` payload is interpreted as shell syntax at assignment time
 - output uses shell quoting for the command path and arguments, and currently requires keys to already be valid shell identifiers
 - keys that are not valid shell identifiers cause the command to fail rather than guessing a normalization rule
@@ -532,7 +532,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat [--dir DIR] store ls PATTERN` and `secdat [--dir DIR] store ls --pattern PATTERN` are equivalent
 - `secdat [--dir DIR] store migrate STORE --to-format v2 --dry-run` validates one v1 store and reports the v2 migration plan without writing v2 files
 - `secdat [--dir DIR] store migrate STORE --to-format v2` writes side-by-side v2 domain-entry/object graph files, verifies them with v2 fsck, marks the store as v2, and leaves v1 value files in place
-- migration output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, `injectable_entries` (bulk-gated eligible entries), and `issues`
+- migration output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, `bulk_select_entries` (bulk-gated eligible entries), and `issues`
 - migration refuses invalid v1 entries, invalid sidecars, orphaned sidecars, orphaned tombstones, and pre-existing v2 migration artifacts
 - `secdat [--dir DIR] store finalize-migration STORE --from-format v1 --dry-run` inspects legacy v1 fallback entry/metadata files in a migrated v2 store without deleting them
 - `secdat [--dir DIR] store finalize-migration STORE --from-format v1` removes removable legacy v1 fallback files only when no blockers remain
@@ -816,7 +816,7 @@ secdat [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY
 ### 4.8 `exec`
 
 ```text
-secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--inject-gate GATE]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
+secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--bulk-gate]... [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 ```
 
 - without `secret:only`, all effective visible store keys are candidates for secret supply unless further restricted by store attribute gates
@@ -826,7 +826,7 @@ secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inj
 - `secret:only` and `secret:omit` selectors may match store keys or mapped environment names
 - duplicate mapped environment names from rename fail during planning
 - `--inject-file FILE` loads YAML policies shaped like `docs/exec-injection-design.md` §7.4; later `--inject` options override file entries
-- `--inject-gate=bulk` keeps only keys whose effective `inject_bulk` allows bulk-gated selection; YAML policy files use `gate: bulk` for the same pre-filter
+- `--bulk-gate` keeps only keys whose effective `bulk_select` allows bulk-gated selection; YAML policy files use `bulk_gate: true` for the same pre-filter
 - `--dry-run` prints a preflight report containing the command argv, selected key names, generated environment names, and injection count without executing the child or reading secret values
 - `--json` is valid with `--dry-run` and writes the preflight report as JSON to standard output
 - `--json-summary` runs the child and writes a JSON summary to standard error after child exit so child standard output remains parseable
@@ -837,13 +837,13 @@ secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inj
 
 Migration note:
 
-- removed legacy `exec` selection flags (`--pattern`, `--pattern-exclude`, `--require-key`, `--env-map-sed`, `--sandbox-injectable`) and legacy bulk-gate tokens (`--inject-gate=sandbox`) fail with a replacement hint naming the canonical `--inject` or `--inject-gate=bulk` option
+- removed legacy `exec` selection flags (`--pattern`, `--pattern-exclude`, `--require-key`, `--env-map-sed`, `--sandbox-injectable`) and legacy bulk-gate tokens (`--bulk-gate (legacy `--inject-gate` rejected)`) fail with a replacement hint naming the canonical `--inject` or `--bulk-gate` option
 - see `docs/exec-injection-design.md` for the canonical grammar, examples, and historical lowering table
 
 ### 4.8a `secdat-fuse`
 
 ```text
-secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--inject-bulk-gate] [--require-key KEY]... [--dry-run] [--json] [--size-metadata] [--foreground] [--debug] MOUNTPOINT [-- CMD [ARGS...]]
+secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... [--pattern-exclude GLOBPATTERN]... [--bulk-gate] [--require-key KEY]... [--dry-run] [--json] [--size-metadata] [--foreground] [--debug] MOUNTPOINT [-- CMD [ARGS...]]
 ```
 
 - this command is built only when configured with `--enable-fuse`
@@ -851,7 +851,7 @@ secdat-fuse [--dir DIR|--domain DIR] [--store STORE] [--pattern GLOBPATTERN]... 
 - repeated `--pattern` options are ORed together, and repeated `--pattern-exclude` options subtract matches afterward
 - `--require-key KEY` may be repeated and fails before mounting when any required key is absent from the final selected file set
 - `--dry-run` prints the mountpoint, selected file count, and file names without mounting or reading values
-- `--dry-run --json` writes `ok`, `mountpoint`, `file_count`, `files`, include/exclude patterns, `inject_bulk_gate`, required keys, and missing required keys as JSON
+- `--dry-run --json` writes `ok`, `mountpoint`, `file_count`, `files`, include/exclude patterns, `bulk_gate`, required keys, and missing required keys as JSON
 - with `-- CMD [ARGS...]` after `MOUNTPOINT`, the helper mounts, waits for FUSE readiness, runs `CMD`, unmounts with `fusermount3 -u`, and then waits for the mount process to exit
 - `--dry-run` cannot be combined with command mode
 - file names are key names; file reads return the corresponding secret value bytes, and overwriting, appending to, or truncating an existing selected file updates that key through the SDK while preserving its non-secret attributes
@@ -1275,17 +1275,17 @@ The final binary format is intentionally undecided, but each file must have a ma
 | key name | domain entry | key names are directory-entry metadata, not value metadata |
 | `value_access` | secret object | linked entries share the same value and therefore the same value access policy |
 | value bytes | secret object | `ln` must share the value while `cp` duplicates it |
-| `inject_bulk` | split policy | a domain entry controls whether that link/name may be selected for bulk-gated paths; a secret object controls whether that value may participate in bulk-gated selection |
+| `bulk_select` | split policy | a domain entry controls whether that link/name may be selected for bulk-gated paths; a secret object controls whether that value may participate in bulk-gated selection |
 | refcount | secret object cache plus fsck result | the authoritative count is derived from domain entries; any stored count is only a consistency cache |
 
-For bulk-gated injection/export/list, v2 replaces the single v1 `inject_bulk` field with two checks:
+For bulk-gated injection/export/list, v2 replaces the single v1 `bulk_select` field with two checks:
 
-- `inject_bulk_entry = exclude | named | include` on the domain entry
-- `inject_bulk_value = exclude | include` on the secret object
+- `bulk_select_entry = exclude | named | include` on the domain entry
+- `bulk_select_value = exclude | include` on the secret object
 
 A bulk-gated selection is permitted only when both checks allow it. This prevents a permissive link from participating in bulk-gated export when the secret object itself forbids it, and prevents a permissive secret object from bypassing a restrictive domain entry.
-`inject_bulk_value` intentionally remains a boolean object-level bulk authorization (`exclude|include`) and does not mirror entry-side selector granularity.
-The current CLI wires the `--inject-bulk-gate` bulk policy gate through effective `inject_bulk`; `inject_bulk_entry=named` remains reserved for a future named-key bulk flow and is excluded by that gate. Plain pattern filters remain direct visible-key selectors unless `--inject-bulk-gate` is also present.
+`bulk_select_value` intentionally remains a boolean object-level bulk authorization (`exclude|include`) and does not mirror entry-side selector granularity.
+The current CLI wires the `--bulk-gate` bulk policy gate through effective `bulk_select`; `bulk_select_entry=named` remains reserved for a future named-key bulk flow and is excluded by that gate. Plain pattern filters remain direct visible-key selectors unless `--bulk-gate` is also present.
 On-disk readers accept legacy field names (`entry_inject`, `secret_inject`, `sandbox_inject`) and token values during a transition period.
 
 #### Domain Key and Object Key Handling
@@ -1338,7 +1338,7 @@ Migration requirements:
 - migration creates v2 domain entries and secret objects from v1 entries without deleting v1 data first
 - rollback keeps the v1 store usable until the user explicitly finalizes the migration
 - every migrated v1 key becomes one secret object and one domain entry
-- v1 `sandbox_inject` / `inject_bulk` maps to `inject_bulk_entry`, with legacy metadata values (`never`, `explicit`, `bulk`, metadata alias `allow`) normalized to `exclude`, `named`, and `include` when encountered, while `inject_bulk_value` defaults to `include` only for previously bulk-eligible entries and `exclude` otherwise
+- v1 `sandbox_inject` / `bulk_select` maps to `bulk_select_entry`, with legacy metadata values (`never`, `explicit`, `bulk`, metadata alias `allow`) normalized to `exclude`, `named`, and `include` when encountered, while `bulk_select_value` defaults to `include` only for previously bulk-eligible entries and `exclude` otherwise
 - v1 `value_access=always` becomes a secret object with a public value area
 - v1 encrypted entries become secret objects with encrypted value areas
 - v1 `key_visibility=always` maps to public domain-entry key names
@@ -1361,7 +1361,7 @@ The current migration writer creates the v2 domain-entry/object graph side-by-si
 3. Add migration dry-run that maps current v1 entries into the proposed v2 graph and reports the exact object/entry count.
 4. Add migration writer that creates v2 files alongside v1 files, verifies the graph with fsck, and leaves v1 untouched.
 5. Add v2 read path for `ls`, `get`, `exists`, `attr`, and `id`, while preserving v1 read compatibility.
-6. Add the first v2 write path slice for `attr --inject-bulk`, preserving object `refcount` metadata.
+6. Add the first v2 write path slice for `attr --bulk-select`, preserving object `refcount` metadata.
 7. Add transitional v2 object-owned value storage and support `set`, `get`, and `attr --value-access` for visible keys.
 8. Add v2 write path for visible-key `rm`, `cp`, and `mv`.
 9. Add hidden-key lookup/storage and enable `key_visibility=unlocked`.
@@ -1370,7 +1370,7 @@ The current migration writer creates the v2 domain-entry/object graph side-by-si
 12. Move or address secret objects so a destination domain entry can reference a source object without copying value material.
 13. Enable cross-domain `ln` by unwrapping the object key through an authorized source entry and rewrapping it into the destination domain entry. This is implemented for normal KEYREF links and direct `ln @UUID DST_KEYREF` links authorized by the current context.
 14. Replace the transitional `.value` sidecar with the final authenticated object payload format that is encrypted by the object data key. This is implemented for new or rewritten values by storing the value payload inside the `.sec` object file; legacy sidecars remain readable for compatibility.
-15. Update bulk-gated listing, execution, and export selection to require both v2 `inject_bulk_entry` and `inject_bulk_value`. This is implemented by the effective `inject_bulk` filter used by `ls/list/exec/export --inject-bulk-gate` and `exec --inject-gate=bulk`.
+15. Update bulk-gated listing, execution, and export selection to require both v2 `bulk_select_entry` and `bulk_select_value`. This is implemented by the effective `bulk_select` filter used by `ls/list/exec/export --bulk-gate` and `exec --bulk-gate`.
 16. Add repair-only fsck operations for rebuildable metadata such as cached refcounts. This is implemented for v2 cached object refcounts.
 17. Add `secret status UUID` for read-only v2 secret-object metadata inspection without reading secret values.
 18. Add v2 graph garbage collection for orphaned and dangling artifacts. This is implemented as explicit `gc --format v2`, with `--dry-run`.
@@ -1395,7 +1395,7 @@ The v1 implementation covers the initial command surface and the first secret-at
 3. add migration dry-run and graph verification
 4. add v2 side-by-side migration writer with rollback
 5. add v2 read compatibility for `ls`, `get`, `exists`, `attr`, and `id`
-6. add v2 write compatibility for visible-key `set`, `get`, `attr --inject-bulk`, and `attr --value-access`
+6. add v2 write compatibility for visible-key `set`, `get`, `attr --bulk-select`, and `attr --value-access`
 7. add v2 write compatibility for visible-key `rm`, `cp`, and `mv`
 8. add hidden-key lookup/storage and enable `key_visibility=unlocked`
 9. add same-domain/same-store `ln` through an authorized source entry only to test shared-object graph behavior

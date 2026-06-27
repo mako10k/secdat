@@ -55,7 +55,7 @@ class _ListFilters(ctypes.Structure):
         ("exclude_pattern", ctypes.c_char_p),
         ("safe", ctypes.c_int),
         ("unsafe_store", ctypes.c_int),
-        ("inject_bulk_gate", ctypes.c_int),
+        ("bulk_gate", ctypes.c_int),
     ]
 
 
@@ -81,7 +81,7 @@ class _KeyMetadata(ctypes.Structure):
         ("storage_mode", ctypes.c_char * 16),
         ("key_visibility", ctypes.c_char * 16),
         ("value_access", ctypes.c_char * 16),
-        ("inject_bulk", ctypes.c_char * 16),
+        ("bulk_select", ctypes.c_char * 16),
     ]
 
 
@@ -152,7 +152,7 @@ class KeyMetadata:
     storage_mode: str
     key_visibility: str
     value_access: str
-    inject_bulk: str
+    bulk_select: str
 
 
 @dataclass
@@ -396,7 +396,7 @@ class Secdat:
         exclude_pattern: str | None = None,
         safe: bool = False,
         unsafe_store: bool = False,
-        inject_bulk_gate: bool = False,
+        bulk_gate: bool = False,
     ) -> list[KeyMetadata]:
         options = self._options(dir=dir, domain=domain, store=store)
         filters = _ListFilters(
@@ -404,7 +404,7 @@ class Secdat:
             _encode_optional(exclude_pattern),
             int(safe),
             int(unsafe_store),
-            int(inject_bulk_gate),
+            int(bulk_gate),
         )
         result_list = _KeyMetadataList()
         result = self._lib.secdat_sdk_list_keys(ctypes.byref(options), ctypes.byref(filters), ctypes.byref(result_list))
@@ -426,7 +426,7 @@ class Secdat:
                     storage_mode=_decode_char_array(item.storage_mode),
                     key_visibility=_decode_char_array(item.key_visibility),
                     value_access=_decode_char_array(item.value_access),
-                    inject_bulk=_decode_char_array(item.inject_bulk),
+                    bulk_select=_decode_char_array(item.bulk_select),
                 )
                 for item in result_list.items[: result_list.count]
             ]

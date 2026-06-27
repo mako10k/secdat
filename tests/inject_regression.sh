@@ -82,8 +82,8 @@ for args in [
     [bin_path, "--dir", str(domain), "set", "ADMIN_TOKEN", "--value", "admin-secret"],
     [bin_path, "--dir", str(domain), "set", "MY_TOKEN", "--value", "secret-token"],
     [bin_path, "--dir", str(domain), "set", "OTHER_TOKEN", "--value", "other-secret"],
-    [bin_path, "--dir", str(domain), "set", "BULK_TOKEN", "--value", "bulk-secret", "--inject-bulk", "include"],
-    [bin_path, "--dir", str(domain), "set", "EXPLICIT_TOKEN", "--value", "explicit-secret", "--inject-bulk", "named"],
+    [bin_path, "--dir", str(domain), "set", "BULK_TOKEN", "--value", "bulk-secret", "--bulk-select", "include"],
+    [bin_path, "--dir", str(domain), "set", "EXPLICIT_TOKEN", "--value", "explicit-secret", "--bulk-select", "named"],
 ]:
     rc, stdout, stderr = run(args)
     if rc != 0 or stdout != "" or stderr != "":
@@ -104,8 +104,8 @@ if plan["supply"]["ambient"]["mode"] != "default" or plan["supply"]["secret"]["m
     fail(f"baseline supply modes unexpected: {plan['supply']!r}")
 if plan["route"]["prefer"] != "secret":
     fail(f"baseline route prefer unexpected: {plan['route']!r}")
-if plan.get("inject_gate") is not None:
-    fail(f"baseline inject_gate unexpected: {plan!r}")
+if plan.get("bulk_gate"):
+    fail(f"baseline bulk_gate unexpected: {plan!r}")
 if "APP_TOKEN" not in plan["supply"]["secret"]["contributed"]:
     fail(f"baseline secret contributed missing APP_TOKEN: {plan['supply']['secret']!r}")
 if "PATH" not in plan["supply"]["ambient"]["contributed"]:
@@ -370,7 +370,7 @@ for legacy_args, expected in [
     (["--pattern-exclude", "APP_DEBUG"], "exec: --pattern-exclude (-x) is no longer supported; use --inject secret:omit=GLOB"),
     (["--require-key", "APP_TOKEN"], "exec: --require-key is no longer supported; use --inject secret:require=KEY"),
     (["--env-map-sed", "s/^.*$/RENAMED/"], "exec: --env-map-sed is no longer supported; use --inject secret:rename=EXPR"),
-    (["--sandbox-injectable"], "exec: --sandbox-injectable is no longer supported; use --inject-gate=bulk"),
+    (["--sandbox-injectable"], "exec: --sandbox-injectable is no longer supported; use --bulk-gate"),
 ]:
     rc, stdout, stderr = run([
         bin_path, "--dir", str(domain), "exec",
@@ -385,8 +385,16 @@ rc, stdout, stderr = run([
     "--inject-gate", "sandbox",
     "python3", "-c", "pass",
 ])
-if rc != 2 or "invalid --inject-gate value: sandbox; use --inject-gate=bulk" not in stderr:
+if rc != 2 or "invalid --inject-gate value: sandbox; use --bulk-gate" not in stderr:
     fail(f"legacy --inject-gate=sandbox should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-gate", "bulk",
+    "python3", "-c", "pass",
+])
+if rc != 2 or "exec: --inject-gate is no longer supported; use --bulk-gate" not in stderr:
+    fail(f"legacy --inject-gate=bulk should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 # Native --inject secret:only.
 rc, stdout, stderr = run([
@@ -458,10 +466,10 @@ final_req = json.loads(stdout)
 if final_req["final"]["missing_required"] != ["MISSING_ENV"]:
     fail(f"final require missing plan unexpected: {final_req!r}")
 
-# --inject-file gate: bulk applies the same pre-filter as --inject-gate (§7.4).
+# --inject-file bulk_gate: true applies the same pre-filter as --bulk-gate (§7.4).
 gate_policy_file = work_root / "exec.gate.yaml"
 gate_policy_file.write_text(
-    "gate: bulk\n"
+    "bulk_gate: true\n"
     "supply:\n"
     "  secret:\n"
     "    only: [\"BULK_TOKEN\", \"EXPLICIT_TOKEN\", \"APP_TOKEN\"]\n",
@@ -484,40 +492,40 @@ rc, stdout, stderr = run([
     "--inject-file", str(bad_gate_file),
     "python3", "-c", "pass",
 ])
-if rc != 2 or "invalid --inject-gate value: invalid" not in stderr:
-    fail(f"inject-file invalid gate did not fail: rc={rc} stderr={stderr!r}")
+if rc != 2 or "gate: is no longer supported; use bulk_gate: true" not in stderr:
+    fail(f"inject-file legacy gate did not fail: rc={rc} stderr={stderr!r}")
 
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
     "--inject-file", str(gate_policy_file),
-    "--inject-gate", "bulk",
+    "--bulk-gate",
     "python3", "-c", "pass",
 ])
-if rc != 2 or "--inject-gate=bulk may be specified at most once" not in stderr:
+if rc != 2 or "--bulk-gate may be specified at most once" not in stderr:
     fail(f"inject-file gate duplicate did not fail: rc={rc} stderr={stderr!r}")
 
-# --inject-gate=bulk applies inject_bulk include pre-filter (§10).
+# --bulk-gate applies bulk_select include pre-filter (§10).
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
-    "--inject-gate", "bulk",
+    "--bulk-gate",
     "--dry-run", "--json",
     "python3", "-c", "pass",
 ])
 if rc != 0 or stderr != "":
-    fail(f"inject-gate bulk dry-run failed: rc={rc} stderr={stderr!r}")
+    fail(f"bulk-gate dry-run failed: rc={rc} stderr={stderr!r}")
 gate_plan = json.loads(stdout)
-if gate_plan.get("inject_gate") != "bulk":
-    fail(f"inject-gate bulk JSON unexpected: {gate_plan!r}")
+if gate_plan.get("bulk_gate") is not True:
+    fail(f"bulk-gate JSON unexpected: {gate_plan!r}")
 
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
-    "--inject-gate", "bulk",
+    "--bulk-gate",
     "python3", "-c",
     "import json, os; print(json.dumps({k: os.environ[k] for k in sorted(k for k in os.environ if k in ('BULK_TOKEN', 'EXPLICIT_TOKEN', 'APP_TOKEN'))}, sort_keys=True))",
 ])
 if rc != 0 or stderr != "":
-    fail(f"inject-gate bulk exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(json.loads(stdout), {"BULK_TOKEN": "bulk-secret"}, "inject-gate bulk payload")
+    fail(f"bulk-gate exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(json.loads(stdout), {"BULK_TOKEN": "bulk-secret"}, "bulk-gate payload")
 
 # json-summary with native --inject.
 rc, stdout, stderr = run([
@@ -701,7 +709,7 @@ for bad_args, expected in [
         "--inject", r"secret:rename=s/^APP_\(.*\)/RENAMED_\1/",
         "--inject", r"secret:rename=s/^OTHER_\(.*\)/ALT_\1/",
     ], "secret rename may be specified at most once"),
-    (["--inject-gate", "bulk", "--inject-gate", "bulk"], "--inject-gate=bulk may be specified at most once"),
+    (["--bulk-gate", "--bulk-gate"], "--bulk-gate may be specified at most once"),
 ]:
     rc, stdout, stderr = run([
         bin_path, "--dir", str(domain), "exec",

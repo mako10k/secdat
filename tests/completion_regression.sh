@@ -163,13 +163,13 @@ for expected in ["status"]:
 mode, values = run_completion("ls", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: ls option completion mode mismatch: {mode!r}")
-for expected in ["--pattern-exclude", "--canonical-store", "--safe", "--unsafe", "--metadata", "--inject-bulk-gate", "--public-value", "--secret-value", "--json"]:
+for expected in ["--pattern-exclude", "--canonical-store", "--safe", "--unsafe", "--metadata", "--bulk-gate", "--public-value", "--secret-value", "--json"]:
     assert_contains(values, expected, "ls options")
 
 mode, values = run_completion("list", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: list option completion mode mismatch: {mode!r}")
-for expected in ["--masked", "--safe", "--unsafe", "--inject-bulk-gate", "--public-value", "--secret-value"]:
+for expected in ["--masked", "--safe", "--unsafe", "--bulk-gate", "--public-value", "--secret-value"]:
     assert_contains(values, expected, "list options")
 
 mode, values = run_completion("unlock", "--")
@@ -194,7 +194,7 @@ if mode != "file" or values:
 mode, values = run_completion("attr", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: attr option completion mode mismatch: {mode!r}")
-for expected in ["--key-visibility", "--value-access", "--inject-bulk", "--inject"]:
+for expected in ["--key-visibility", "--value-access", "--bulk-select", "--inject"]:
     assert_contains(values, expected, "attr options")
 
 mode, values = run_completion("relation", "set", "--")
@@ -254,19 +254,19 @@ if mode != "none" or values:
 mode, values = run_completion("set", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: set option completion mode mismatch: {mode!r}")
-for expected in ["--public-value", "--secret-value", "--key-visibility", "--value-access", "--inject-bulk", "--inject"]:
+for expected in ["--public-value", "--secret-value", "--key-visibility", "--value-access", "--bulk-select", "--inject"]:
     assert_contains(values, expected, "set options")
 
 mode, values = run_completion("exec", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: exec option completion mode mismatch: {mode!r}")
-for expected in ["--inject", "--inject-file", "--inject-gate", "--dry-run", "--json", "--json-summary"]:
+for expected in ["--inject", "--inject-file", "--bulk-gate", "--dry-run", "--json", "--json-summary"]:
     assert_contains(values, expected, "exec options")
 
 mode, values = run_completion("export", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: export option completion mode mismatch: {mode!r}")
-for expected in ["--pattern", "--inject-bulk-gate"]:
+for expected in ["--pattern", "--bulk-gate"]:
     assert_contains(values, expected, "export options")
 
 mode, values = run_completion("cp", "")
