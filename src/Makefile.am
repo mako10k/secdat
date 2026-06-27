@@ -16,10 +16,13 @@ libsecdat_la_SOURCES = \
 	cli.h \
 	domain.c \
 	domain.h \
+	exec_inject.c \
+	exec_inject.h \
 	i18n.h \
 	secdat-sdk.h \
 	store.c \
-	store.h
+	store.h \
+	store_exec_port.h
 
 bin_PROGRAMS = secdat
 secdat_LDADD = libsecdat.la
@@ -41,8 +44,10 @@ endif
 secdat_local_headers = \
 	cli.h \
 	domain.h \
+	exec_inject.h \
 	i18n.h \
 	secdat-sdk.h \
-	store.h
+	store.h \
+	store_exec_port.h
 
-main.o cli.lo domain.lo store.lo: $(secdat_local_headers)
+main.o cli.lo domain.lo exec_inject.lo store.lo: $(secdat_local_headers)
