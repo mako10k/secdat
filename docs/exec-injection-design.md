@@ -395,7 +395,7 @@ CLI `--inject` after the file overrides file entries.
 #### `exec.env.yaml` schema
 
 ```yaml
-gate: sandbox
+gate: bulk
 
 supply:
   ambient:
@@ -417,7 +417,7 @@ demand:
     reject: ["AWS_SECRET_ACCESS_KEY"]
 ```
 
-Top-level `gate` maps to `--inject-gate` (currently only `sandbox`). YAML keys
+Top-level `gate` maps to `--inject-gate` (currently only `bulk`). YAML keys
 under `supply` map to pentad kinds. `demand.final` mirrors `final:` CLI rules.
 `gate` and `--inject-gate` share the same at-most-once and conflict rules.
 
@@ -485,12 +485,13 @@ stderr after a real run, using the same plan shape.
 
 ## 10. Relationship to Store Attributes
 
-Store attributes (`sandbox_inject`, `secret_inject`, `key_visibility`, etc.)
-remain **outside** this pentad. They act as a pre-supply filter on
-`VisibleKeys` when enabled by `--inject-gate=sandbox` (or domain defaults in
-future work).
+Store attributes (`inject_bulk` and related bulk-policy fields; see
+[ADR 0003](adr/0003-rename-inject-bulk-attributes.md)) remain **outside** this
+pentad. They act as a pre-supply filter on `VisibleKeys` when enabled by
+`--inject-gate=bulk` (or domain defaults in future work).
 
-This document does not redefine attribute semantics.
+This document does not redefine searchable `meta` semantics. Bulk attribute
+names describe gate-scoped eligibility only, not absolute egress prohibition.
 
 ## 11. Security Notes
 

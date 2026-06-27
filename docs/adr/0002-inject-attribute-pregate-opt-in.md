@@ -78,6 +78,12 @@ how existing attribute meaning maps onto exec:
 - Close design §13 #2 and reference this ADR.
 - Update stale user docs that still mention `exec --sandbox-injectable` (PR-8).
 
+## Related decisions
+
+- [ADR 0003](0003-rename-inject-bulk-attributes.md) renames attributes and CLI
+  flags so bulk-scoped behavior is not implied by `never` / `sandbox_inject`
+  vocabulary. Behavior in this ADR is unchanged.
+
 ## References
 
 - [ADR 0001](0001-inject-file-yaml-only.md)
