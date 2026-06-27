@@ -704,7 +704,7 @@ printf %s "$TOKEN" | secdat set api/token
 printf %s "$TOKEN" | secdat --dir /work/app set api/token
 secdat get api/token > token.txt
 secdat ls --pattern 'api/*'
-secdat exec --pattern 'aws/*' env
+secdat exec --inject secret:only='aws/*' env
 secdat --dir /work/app domain ls --pattern '/work/*'
 ```
 

@@ -395,9 +395,12 @@ msgstr ""
 "  ln: 同じ v2 secret object へ別の key を link します。cross-domain v2 link "
 "および認可済み @UUID source も含みます\n"
 
-#: src/cli.c:1641
-msgid "  exec: inject resolved keys into a child process environment\n"
-msgstr "  exec: 解決された key を子プロセス環境へ注入します\n"
+#: src/cli.c:1641 src/cli.c:1791
+msgid ""
+"  exec: build a child environment through supply, route, and final injection "
+"layers\n"
+msgstr ""
+"  exec: supply、route、final の injection layer を通じて子環境を構築します\n"
 
 #: src/cli.c:1642 src/cli.c:1799
 msgid ""
@@ -690,13 +693,6 @@ msgid ""
 msgstr ""
 "  link されたどちらの key から value を書き込んでも共有 object に反映されま"
 "す。domain-entry 属性は link ごとに保持されます\n"
-
-#: src/cli.c:1791
-msgid ""
-"  exec: build a child environment through supply, route, and final injection "
-"layers\n"
-msgstr ""
-"  exec: supply、route、final の injection layer を通じて子環境を構築します\n"
 
 #: src/cli.c:1792
 msgid ""
