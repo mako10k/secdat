@@ -72,6 +72,7 @@ check-local:
 	bash $(srcdir)/tests/e2e_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/save_load_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/export_regression.sh "$(abs_top_builddir)/src/secdat"
+	bash $(srcdir)/tests/inject_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/fuse_regression.sh "$(abs_top_builddir)/src/secdat" "$(abs_top_builddir)/src/secdat-fuse"
 
 pkgconfigdir = $(libdir)/pkgconfig
