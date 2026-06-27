@@ -520,7 +520,12 @@ This document does not redefine attribute semantics.
 1. ~~**`--inject-file` format** — YAML only, or also JSON?~~ **Decided:** YAML only.
    See [ADR 0001](adr/0001-inject-file-yaml-only.md). Programmatic authoring uses
    `--inject`; JSON remains observation-only (`--dry-run --json`, `--json-summary`).
-2. **Attribute pre-gate** — default-on for `secret_inject=never`, or opt-in?
+2. ~~**Attribute pre-gate** — default-on for `secret_inject=never`, or opt-in?~~
+   **Decided:** opt-in via `--inject-gate=sandbox` (or future domain defaults).
+   See [ADR 0002](adr/0002-inject-attribute-pregate-opt-in.md). Gateless exec uses
+   direct visible-key selection like `export --pattern`; pentad `secret:reject`
+   covers inject-specific prohibitions. Does not alter `attr`, `meta`, or relation
+   semantics.
 3. **`final:only` warning** — warn when `PATH` / `HOME` absent from allowlist?
 
 ## 14. Key Decisions
