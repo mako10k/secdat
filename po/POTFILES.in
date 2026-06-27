@@ -1,5 +1,7 @@
 src/cli.c
 src/domain.c
+src/exec_inject.c
+src/exec_inject_policy_file.c
 src/main.c
 src/secdat-fuse.c
 src/store.c
