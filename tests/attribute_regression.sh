@@ -74,6 +74,10 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "API_TOKEN", "
 if rc != 2 or "--inject-bulk is no longer supported; use --bulk-select" not in stderr:
     fail(f"legacy --inject-bulk attr should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "attr", "API_TOKEN", "--inject", "secret:only=APP_*"])
+if rc != 2 or "--inject is not valid for attr; use --bulk-select to set bulk_select policy (exec supply rules use --inject on exec)" not in stderr:
+    fail(f"mistaken --inject on attr should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ls", "--inject-bulk-gate"])
 if rc != 2 or "--inject-bulk-gate is no longer supported; use --bulk-gate" not in stderr:
     fail(f"legacy --inject-bulk-gate ls should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")

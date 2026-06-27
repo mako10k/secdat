@@ -800,8 +800,8 @@ for args, fragments in [
         [bin_path, "help", "attr"],
         [
             "value_access=always stores a public/plaintext-at-rest value",
-            "bulk_select controls bulk-gated export/exec eligibility",
-            "--bulk-gate is used",
+            "bulk_select controls eligibility for bulk-gated selection",
+            "--bulk-gate is used for this entry",
             "secret object's bulk_select_value policy",
         ],
     ),

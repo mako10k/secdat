@@ -1618,8 +1618,8 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("\nCommands:\n"));
     secdat_cli_print_detail_line(_("  help: show global help or detailed help for one command\n"));
     secdat_cli_print_detail_line(_("  ls: list effective keys visible from the current domain view, optionally filtered by safe or unsafe storage\n"));
-    secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe, or bulk-gate local state\n"));
-    secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and bulk-select attributes\n"));
+    secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe local state, or filter entries with --bulk-gate\n"));
+    secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and bulk_select attribute\n"));
     secdat_cli_print_detail_line(_("  meta: manage non-secret searchable metadata without reading secret values\n"));
     secdat_cli_print_detail_line(_("  relation: record semantic links between keys and the security meaning of those links\n"));
     secdat_cli_print_detail_line(_("  meta mark-leaked: mark one key as leaked metadata and suggest high-risk refresh targets\n"));
@@ -1671,12 +1671,12 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "list") == 0) {
-        secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe, or bulk-gate local state\n"));
+        secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe local state, or filter entries with --bulk-gate\n"));
         return;
     }
     if (target != NULL && strcmp(target, "attr") == 0) {
-        secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and bulk-select attributes\n"));
-        secdat_cli_print_detail_line(_("  key_visibility controls whether the key name is visible while locked; value_access=always stores a public/plaintext-at-rest value; bulk_select controls bulk-gated export/exec eligibility when --bulk-gate is used for this entry\n"));
+        secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and bulk_select attribute\n"));
+        secdat_cli_print_detail_line(_("  key_visibility controls whether the key name is visible while locked; value_access=always stores a public/plaintext-at-rest value; bulk_select controls eligibility for bulk-gated selection on export, list, and exec when --bulk-gate is used for this entry\n"));
         secdat_cli_print_detail_line(_("  v2 effective --bulk-gate selection also requires the secret object's bulk_select_value policy to allow bulk selection\n"));
         return;
     }
@@ -1789,7 +1789,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  exec: build a child environment through supply, route, and final injection layers\n"));
         secdat_cli_print_detail_line(_("  --inject LAYER:KIND=SELECTOR configures ambient, secret, route, or final rules; repeated --inject accumulates selectors of the same kind\n"));
         secdat_cli_print_detail_line(_("  --inject-file FILE loads a YAML policy; later --inject options override file entries\n"));
-        secdat_cli_print_detail_line(_("  --bulk-gate applies the store bulk_select bulk pre-filter before secret supply\n"));
+        secdat_cli_print_detail_line(_("  --bulk-gate applies the store bulk_select pre-filter before secret supply\n"));
         return;
     }
     if (target != NULL && strcmp(target, "export") == 0) {

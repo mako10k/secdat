@@ -83,15 +83,15 @@ is encrypted-at-rest and unlock-gated, while
 .B value_access=always
 is plaintext-at-rest and readable while locked.
 .B bulk_select
-marks whether bulk-gated inject/export/list selection may include the key. In v2 this combines domain-entry
+marks whether bulk-gated selection may include the key. In v2 this combines domain-entry
 .B bulk_select_entry
 and secret-object
 .B bulk_select_value .
 The
 .B named
-mode is excluded by the
+is reserved for a future explicit-key bulk path and is excluded by the
 .B --bulk-gate
-bulk policy gate; plain pattern filters remain direct visible-key selectors unless that gate is also present. Legacy
+filter; plain pattern filters remain direct visible-key selectors unless that gate is also present. Legacy
 .BR \-\-sandbox-inject
 is rejected with a hint to use
 .BR \-\-bulk-select .
@@ -216,7 +216,7 @@ or
 .B --public-value
 to write a plaintext entry that remains readable while locked. Use
 .B --bulk-select
-to mark whether the key can be included in bulk-gated inject/export/list selection.
+to set the bulk_select policy for bulk-gated selection.
 .TP
 .B rm [\-f|\-\-ignore-missing] KEYREF
 Remove one key locally or create a tombstone for an inherited key. With
@@ -235,7 +235,7 @@ Direct source-object links such as
 .B ln @UUID DST_KEYREF
 are allowed only when the current context can authorize the UUID through an existing visible or unlocked domain entry; object UUID syntax is not a destination operand.
 .TP
-.B exec [\-\-inject LAYER:KIND=SELECTOR]... [\-\-inject-file FILE]... [\-\-inject-gate GATE]... [\-\-dry-run] [\-\-json] [\-\-json-summary] [\-\-] CMD [ARGS...]
+.B exec [\-\-inject LAYER:KIND=SELECTOR]... [\-\-inject-file FILE]... [\-\-bulk-gate] [\-\-dry-run] [\-\-json] [\-\-json-summary] [\-\-] CMD [ARGS...]
 Build a child process environment through supply, route, and final injection layers, then execute the command.
 .B --inject
 configures ambient, secret, route, or final rules. Repeated options accumulate selectors of the same kind. Multiple selectors in one value are separated by
@@ -245,9 +245,9 @@ loads a YAML policy file. Later
 .B --inject
 options override file entries.
 .B --bulk-gate
-applies the bulk
+applies the
 .B bulk_select
-store-attribute pre-filter before secret supply. Legacy
+pre-filter before secret supply. Legacy
 .BR \-\-inject-gate=sandbox
 and
 .BR \-\-sandbox-injectable

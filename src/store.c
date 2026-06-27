@@ -2558,6 +2558,14 @@ static int secdat_store_reject_removed_flag(const char *flag, const char *replac
     return 2;
 }
 
+static int secdat_store_reject_mistaken_inject_flag(const char *command)
+{
+    fprintf(stderr,
+        _("--inject is not valid for %s; use --bulk-select to set bulk_select policy (exec supply rules use --inject on exec)\n"),
+        command);
+    return 2;
+}
+
 static int secdat_parse_ls_options(const struct secdat_cli *cli, struct secdat_ls_options *options)
 {
     static const struct option long_options[] = {
@@ -2822,7 +2830,7 @@ static int secdat_parse_attr_options(const struct secdat_cli *cli, struct secdat
         case 9003:
             return secdat_store_reject_removed_flag("--inject-bulk", "--bulk-select");
         case 9002:
-            return secdat_store_reject_removed_flag("--inject", "--bulk-select");
+            return secdat_store_reject_mistaken_inject_flag("attr");
         case '?':
         case ':':
         default:
@@ -16149,7 +16157,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
         case 9003:
             return secdat_store_reject_removed_flag("--inject-bulk", "--bulk-select");
         case 9005:
-            return secdat_store_reject_removed_flag("--inject", "--bulk-select");
+            return secdat_store_reject_mistaken_inject_flag("set");
         case 'i':
             if (!read_stdin || literal_value != NULL) {
                 fprintf(stderr, _("invalid arguments for set\n"));

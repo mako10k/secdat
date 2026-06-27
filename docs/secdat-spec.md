@@ -129,8 +129,8 @@ To make the requested behavior implementable, the following are treated as norma
 - `set KEYREF --unsafe ...` explicitly opts into plaintext-at-rest storage that remains readable while locked
 - `set KEYREF --public-value ...` is the clearer alias for plaintext-at-rest values that remain readable while locked
 - per-secret attributes include `key_visibility`, `value_access`, and `bulk_select`
-- `bulk_select` controls whether a key may be included in bulk-gated inject/export/list selection
-- legacy CLI flags and tokens (`--sandbox-inject`, `--sandbox-injectable`, `--bulk-gate (legacy `--inject-gate` rejected)`, and related exec migration flags) are rejected with replacement hints; they are not accepted as aliases
+- `bulk_select` controls whether a key may be included in bulk-gated selection
+- legacy CLI flags and tokens (`--sandbox-inject`, `--sandbox-injectable`, `--inject-gate`, `--inject-bulk`, `--inject-bulk-gate`, YAML `gate:`, and related exec migration flags) are rejected with replacement hints; they are not accepted as aliases
 - on-disk metadata and v2 sidecars continue to read legacy field names (`sandbox_inject`, `entry_inject`, `secret_inject`) and token values (`never`, `explicit`, `bulk`, `allow`) during a transition period; rewrites emit the new names and tokens
 - searchable key metadata is non-secret `FIELD=VALUE` data managed by `meta`, not by `attr`
 - semantic relations are non-secret records that connect two or more role-named KEYREFs and describe the security meaning of the combination
@@ -336,16 +336,16 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat attr KEYREF` prints the effective attributes for the resolved key without printing the secret value
 - `secdat attr KEYREF --key-visibility MODE` updates the key-name visibility attribute for a current-domain local entry
 - `secdat attr KEYREF --value-access MODE` updates whether the value is encrypted-at-rest and unlock-gated or plaintext-at-rest and always readable
-- `secdat attr KEYREF --bulk-select MODE` updates whether the key can be included in bulk-gated inject/export/list selection
+- `secdat attr KEYREF --bulk-select MODE` updates whether the key can be included in bulk-gated selection
 - `key_visibility` accepts `always` and `unlocked`
 - `value_access` accepts `unlocked` and `always`
 - `bulk_select` accepts `exclude`, `named`, and `include`
 - v1 storage supports only `key_visibility=always`; `key_visibility=unlocked` is supported only by v2 stores
 - `value_access=unlocked` stores the value encrypted-at-rest and requires the master key or an active session for reads
 - `value_access=always` stores the value plaintext-at-rest and permits reads while locked; it is equivalent to the current unsafe/public-value storage mode
-- `bulk_select=exclude` excludes the key from bulk-gated inject/export/list selection
-- `bulk_select=named` is excluded by the current `--bulk-gate` bulk policy gate; plain pattern filters remain direct visible-key selectors unless `--bulk-gate` is also present
-- `bulk_select=include` allows bulk-gated inject/export/list from named key selection and from selector, pattern, or profile based selection
+- `bulk_select=exclude` excludes the key from bulk-gated selection
+- `bulk_select=named` is reserved for a future explicit-key bulk path and is excluded by the current `--bulk-gate` filter; plain pattern filters remain direct visible-key selectors unless `--bulk-gate` is also present
+- `bulk_select=include` allows bulk-gated selection from named key selection and from selector, pattern, or profile based selection
 - attribute updates are allowed only for current-domain local entries; inherited entries must be materialized locally before their attributes can be changed
 - v2 stores can update `key_visibility`, domain-entry `bulk_select_entry`, secret-object `bulk_select_value`, and object-owned `value_access` through the domain-entry/object graph
 - v2 `key_visibility=unlocked` encrypts the key name in the domain entry; locked list/lookup operations skip hidden keys, and v2 writes that would create a domain entry fail while hidden entries make absence impossible to prove
@@ -354,9 +354,9 @@ To make the requested behavior implementable, the following are treated as norma
 - `ls --metadata` prints key attributes alongside visible keys
 - `ls --bulk-gate` lists visible keys whose effective `bulk_select` allows bulk-gated selector, pattern, or profile based selection
 - `list --bulk-gate` lists current-domain local entries whose effective `bulk_select` allows bulk-gated selector, pattern, or profile based selection
-- `exec --bulk-gate` injects only keys whose effective `bulk_select` allows bulk-gated selector, pattern, or profile based selection
+- `exec --bulk-gate` applies the `bulk_select` pre-filter before secret supply; pentad rules then choose which store secrets enter the child environment
 - `export --bulk-gate` emits only keys whose effective `bulk_select` allows bulk-gated selector, pattern, or profile based selection
-- legacy CLI flags (`--sandbox-inject`, `--sandbox-injectable`, `--bulk-gate (legacy `--inject-gate` rejected)`) are rejected with replacement hints naming the new options
+- legacy CLI flags (`--sandbox-inject`, `--sandbox-injectable`, `--inject-gate`, `--inject-bulk`, and `--inject-bulk-gate`) are rejected with replacement hints naming `--bulk-select` or `--bulk-gate`
 
 #### FR-3ad Searchable Metadata and Semantic Relations
 
@@ -837,7 +837,7 @@ secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inj
 
 Migration note:
 
-- removed legacy `exec` selection flags (`--pattern`, `--pattern-exclude`, `--require-key`, `--env-map-sed`, `--sandbox-injectable`) and legacy bulk-gate tokens (`--bulk-gate (legacy `--inject-gate` rejected)`) fail with a replacement hint naming the canonical `--inject` or `--bulk-gate` option
+- removed legacy `exec` selection flags (`--pattern`, `--pattern-exclude`, `--require-key`, `--env-map-sed`, `--sandbox-injectable`) and legacy bulk-gate tokens (`--inject-gate`, YAML `gate:`) fail with a replacement hint naming the canonical `--inject` or `--bulk-gate` option
 - see `docs/exec-injection-design.md` for the canonical grammar, examples, and historical lowering table
 
 ### 4.8a `secdat-fuse`
