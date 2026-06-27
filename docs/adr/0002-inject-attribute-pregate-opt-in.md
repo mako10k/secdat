@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted (2026-06-27)
+Superseded by [ADR 0004](0004-bulk-select-vocabulary.md) (2026-06-27). Bulk-gate
+opt-in behavior is unchanged; vocabulary and flag names are defined there.
 
 ## Context
 
@@ -80,13 +81,14 @@ how existing attribute meaning maps onto exec:
 
 ## Related decisions
 
-- [ADR 0003](0003-rename-inject-bulk-attributes.md) renames attributes and CLI
-  flags so bulk-scoped behavior is not implied by `never` / `sandbox_inject`
-  vocabulary. Behavior in this ADR is unchanged.
+- [ADR 0003](0003-rename-inject-bulk-attributes.md) (superseded) renamed toward
+  bulk-scoped tokens; [ADR 0004](0004-bulk-select-vocabulary.md) completes the
+  vocabulary split.
 
 ## References
 
 - [ADR 0001](0001-inject-file-yaml-only.md)
+- [ADR 0004](0004-bulk-select-vocabulary.md)
 - `docs/exec-injection-design.md` §10, §13
 - `docs/secdat-spec.md` FR-3ab, v2 `entry_inject` / `secret_inject`
 - `src/exec_inject.c` (`--inject-gate=sandbox`)

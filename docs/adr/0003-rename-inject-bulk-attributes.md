@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (2026-06-27)
+Superseded by [ADR 0004](0004-bulk-select-vocabulary.md) (2026-06-27). Token
+semantics (`exclude` / `named` / `include`) and disk read compat rules carry
+forward; `inject_*` names are replaced by `bulk_select` / `--bulk-gate`.
 
 ## Context
 
@@ -107,6 +109,7 @@ restored under new names on `exec`; `exec` uses `--inject-gate=bulk` only.
 ## References
 
 - [ADR 0001](0001-inject-file-yaml-only.md)
-- [ADR 0002](0002-inject-attribute-pregate-opt-in.md)
+- [ADR 0002](0002-inject-attribute-pregate-opt-in.md) (superseded)
+- [ADR 0004](0004-bulk-select-vocabulary.md)
 - `docs/secdat-spec.md` FR-3ab, v2 store layout
 - `src/store.c`, `src/cli.c`, `src/exec_inject.c`
