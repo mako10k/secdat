@@ -23,6 +23,8 @@
 
 extern char **environ;
 
+struct secdat_exec_inject_policy;
+
 int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *policy, const char *path);
 
 struct secdat_exec_selector_list {
