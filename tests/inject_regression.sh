@@ -163,10 +163,10 @@ assert_eq(
 if "SECDAT_MASTER_KEY" in stdout:
     fail(f"ci policy exec leaked SECDAT_MASTER_KEY: {stdout!r}")
 
-# §7.3 secret:reject with comma-separated selectors.
+# §7.3 secret:reject with colon-separated selectors.
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
-    "--inject", "secret:reject=ROOT_TOKEN,ADMIN_*",
+    "--inject", "secret:reject=ROOT_TOKEN:ADMIN_*",
     "--dry-run", "--json",
     "python3", "-c", "pass",
 ])
@@ -178,12 +178,12 @@ if reject_plan["ok"] is not False:
 if sorted(reject_plan["supply"]["secret"]["rejected_present"]) != ["ADMIN_TOKEN", "ROOT_TOKEN"]:
     fail(f"secret reject rejected_present unexpected: {reject_plan!r}")
 
-# §7.3 strict final allowlist (selectors are comma-separated per §7.1).
+# §7.3 strict final allowlist (selectors are colon-separated per §7.1).
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
-    "--inject", "ambient:only=PATH,HOME",
+    "--inject", "ambient:only=PATH:HOME",
     "--inject", "secret:only=APP_TOKEN",
-    "--inject", "final:only=PATH,HOME,APP_TOKEN",
+    "--inject", "final:only=PATH:HOME:APP_TOKEN",
     "python3", "-c",
     "import json, os; print(json.dumps(sorted(k for k in os.environ if k in ('PATH','HOME','APP_TOKEN','APP_DEBUG','MY_TOKEN'))))",
 ])

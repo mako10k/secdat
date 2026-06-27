@@ -657,7 +657,7 @@ static int secdat_exec_append_inject_selectors(
     }
 
     cursor = buffer;
-    while ((token = strsep(&cursor, ",")) != NULL) {
+    while ((token = strsep(&cursor, ":")) != NULL) {
         struct secdat_exec_selector_list *target = NULL;
 
         if (token[0] == '\0') {

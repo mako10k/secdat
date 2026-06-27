@@ -289,8 +289,13 @@ Dry-run stops after Phase 3 plan validation without decrypting secret values.
 ### 7.1 Grammar
 
 ```
---inject LAYER:KIND=SELECTOR[,SELECTOR...]
+--inject LAYER:KIND=SELECTOR[:SELECTOR...]
 ```
+
+Multiple selectors in one `--inject` value are separated by `:` (for example
+`ambient:only=PATH:HOME:USER`). This is distinct from the `LAYER:KIND=` token
+syntax. `secret:rename` takes a single sed expression and never splits the
+value on `:`.
 
 | LAYER | KIND | SELECTOR meaning |
 | --- | --- | --- |
