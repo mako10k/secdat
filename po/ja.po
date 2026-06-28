@@ -1873,6 +1873,11 @@ msgstr "不正な secret rename 正規表現です: %s\n"
 msgid "key is not a valid environment variable name: %s\n"
 msgstr "key は有効な環境変数名ではありません: %s\n"
 
+#: src/exec_inject.c:456
+#, c-format
+msgid "invalid route pick: %s\n"
+msgstr "不正な route 選択です: %s\n"
+
 #: src/exec_inject.c:650 src/exec_inject.c:660
 #, c-format
 msgid "failed to match secret rename against key: %s\n"
