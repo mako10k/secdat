@@ -10,7 +10,7 @@
 struct secdat_exec_inject_policy;
 
 extern int secdat_exec_apply_bulk_gate_yaml(struct secdat_exec_inject_policy *policy, const char *value);
-extern int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, const char *token);
+extern int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, const char *token, int from_cli);
 
 struct secdat_exec_yaml_string_list {
     char **items;
@@ -208,7 +208,7 @@ static int secdat_exec_yaml_apply_pentad_tokens(
         return status;
     }
     snprintf(token, sizeof(token), "%s:%s=%s", layer, kind, joined);
-    status = secdat_exec_apply_inject_token(policy, token);
+    status = secdat_exec_apply_inject_token(policy, token, 0);
     free(joined);
     return status;
 }
@@ -223,7 +223,7 @@ static int secdat_exec_yaml_apply_scalar_token(
     char token[4096];
 
     snprintf(token, sizeof(token), "%s:%s=%s", layer, kind, value);
-    return secdat_exec_apply_inject_token(policy, token);
+    return secdat_exec_apply_inject_token(policy, token, 0);
 }
 
 static int secdat_exec_yaml_apply_route_tokens(
@@ -235,7 +235,7 @@ static int secdat_exec_yaml_apply_route_tokens(
     char token[4096];
 
     snprintf(token, sizeof(token), "route:%s=%s", key, value);
-    return secdat_exec_apply_inject_token(policy, token);
+    return secdat_exec_apply_inject_token(policy, token, 0);
 }
 
 static int secdat_exec_yaml_count_indent(const char *line)

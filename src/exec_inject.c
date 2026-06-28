@@ -48,6 +48,7 @@ enum secdat_exec_route_pick {
 struct secdat_exec_route_rule {
     char *match;
     enum secdat_exec_route_pick pick;
+    int from_cli;
 };
 
 struct secdat_exec_secret_rename {
@@ -71,7 +72,16 @@ struct secdat_exec_inject_policy {
     int explicit_secret_only;
     int explicit_secret_omit;
     int explicit_secret_require;
+    int explicit_secret_reject;
     int explicit_secret_rename;
+    int explicit_ambient_only;
+    int explicit_ambient_omit;
+    int explicit_ambient_require;
+    int explicit_ambient_reject;
+    int explicit_final_only;
+    int explicit_final_omit;
+    int explicit_final_require;
+    int explicit_final_reject;
     int explicit_route_prefer;
 };
 
@@ -429,18 +439,22 @@ static int secdat_exec_is_valid_env_name(const char *value)
     return 1;
 }
 
-static enum secdat_exec_route_pick secdat_exec_parse_route_pick(const char *value)
+static int secdat_exec_parse_route_pick(const char *value, enum secdat_exec_route_pick *pick_out)
 {
     if (strcmp(value, "secret") == 0) {
-        return SECDAT_EXEC_ROUTE_SECRET;
+        *pick_out = SECDAT_EXEC_ROUTE_SECRET;
+        return 0;
     }
     if (strcmp(value, "ambient") == 0) {
-        return SECDAT_EXEC_ROUTE_AMBIENT;
+        *pick_out = SECDAT_EXEC_ROUTE_AMBIENT;
+        return 0;
     }
     if (strcmp(value, "error") == 0) {
-        return SECDAT_EXEC_ROUTE_ERROR;
+        *pick_out = SECDAT_EXEC_ROUTE_ERROR;
+        return 0;
     }
-    return SECDAT_EXEC_ROUTE_SECRET;
+    fprintf(stderr, _("invalid route pick: %s\n"), value);
+    return 2;
 }
 
 static const char *secdat_exec_route_pick_name(enum secdat_exec_route_pick pick)
@@ -779,6 +793,107 @@ static int secdat_exec_append_inject_selectors(
     return 0;
 }
 
+static struct secdat_exec_selector_list *secdat_exec_pentad_selector_list(
+    struct secdat_exec_pentad *pentad,
+    const char *kind
+)
+{
+    if (strcmp(kind, "only") == 0) {
+        return &pentad->only;
+    }
+    if (strcmp(kind, "omit") == 0) {
+        return &pentad->omit;
+    }
+    if (strcmp(kind, "require") == 0) {
+        return &pentad->require;
+    }
+    if (strcmp(kind, "reject") == 0) {
+        return &pentad->reject;
+    }
+    return NULL;
+}
+
+static int *secdat_exec_pentad_explicit_flag(struct secdat_exec_inject_policy *policy, const char *layer, const char *kind)
+{
+    if (strcmp(layer, "ambient") == 0) {
+        if (strcmp(kind, "only") == 0) {
+            return &policy->explicit_ambient_only;
+        }
+        if (strcmp(kind, "omit") == 0) {
+            return &policy->explicit_ambient_omit;
+        }
+        if (strcmp(kind, "require") == 0) {
+            return &policy->explicit_ambient_require;
+        }
+        if (strcmp(kind, "reject") == 0) {
+            return &policy->explicit_ambient_reject;
+        }
+    }
+    if (strcmp(layer, "secret") == 0) {
+        if (strcmp(kind, "only") == 0) {
+            return &policy->explicit_secret_only;
+        }
+        if (strcmp(kind, "omit") == 0) {
+            return &policy->explicit_secret_omit;
+        }
+        if (strcmp(kind, "require") == 0) {
+            return &policy->explicit_secret_require;
+        }
+        if (strcmp(kind, "reject") == 0) {
+            return &policy->explicit_secret_reject;
+        }
+    }
+    if (strcmp(layer, "final") == 0) {
+        if (strcmp(kind, "only") == 0) {
+            return &policy->explicit_final_only;
+        }
+        if (strcmp(kind, "omit") == 0) {
+            return &policy->explicit_final_omit;
+        }
+        if (strcmp(kind, "require") == 0) {
+            return &policy->explicit_final_require;
+        }
+        if (strcmp(kind, "reject") == 0) {
+            return &policy->explicit_final_reject;
+        }
+    }
+    return NULL;
+}
+
+static void secdat_exec_prepare_cli_pentad_override(
+    struct secdat_exec_inject_policy *policy,
+    const char *layer,
+    struct secdat_exec_pentad *pentad,
+    const char *kind
+)
+{
+    int *explicit_flag = secdat_exec_pentad_explicit_flag(policy, layer, kind);
+    struct secdat_exec_selector_list *list = secdat_exec_pentad_selector_list(pentad, kind);
+
+    if (explicit_flag != NULL && list != NULL && !*explicit_flag) {
+        secdat_exec_selector_list_free(list);
+        *explicit_flag = 1;
+    }
+}
+
+static void secdat_exec_remove_file_route_rules(struct secdat_exec_inject_policy *policy, const char *match)
+{
+    size_t read_index;
+    size_t write_index = 0;
+
+    for (read_index = 0; read_index < policy->route_rule_count; read_index += 1) {
+        if (!policy->route_rules[read_index].from_cli && strcmp(policy->route_rules[read_index].match, match) == 0) {
+            free(policy->route_rules[read_index].match);
+            continue;
+        }
+        if (write_index != read_index) {
+            policy->route_rules[write_index] = policy->route_rules[read_index];
+        }
+        write_index += 1;
+    }
+    policy->route_rule_count = write_index;
+}
+
 static int secdat_exec_reject_removed_legacy_flag(const char *flag, const char *replacement)
 {
     fprintf(stderr, _("exec: %s is no longer supported; use %s\n"), flag, replacement);
@@ -819,7 +934,7 @@ static int secdat_exec_reject_legacy_inject_gate(const char *value)
     return 2;
 }
 
-int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, const char *token)
+int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, const char *token, int from_cli)
 {
     const char *separator = strchr(token, ':');
     char layer[32];
@@ -862,6 +977,9 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
     }
 
     if (strcmp(layer, "ambient") == 0) {
+        if (from_cli) {
+            secdat_exec_prepare_cli_pentad_override(policy, layer, &policy->ambient, kind);
+        }
         if (secdat_exec_append_inject_selectors(&policy->ambient, kind, value) != 0) {
             free(rest);
             return 1;
@@ -871,12 +989,22 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
     }
     if (strcmp(layer, "secret") == 0) {
         if (strcmp(kind, "rename") == 0) {
-            if (policy->explicit_secret_rename) {
+            if (from_cli && policy->explicit_secret_rename) {
                 fprintf(stderr, _("secret rename may be specified at most once\n"));
                 free(rest);
                 return 2;
             }
-            policy->explicit_secret_rename = 1;
+            if (from_cli) {
+                if (!policy->explicit_secret_rename && policy->secret_rename.configured) {
+                    secdat_exec_secret_rename_free(&policy->secret_rename);
+                }
+                policy->explicit_secret_rename = 1;
+            }
+            if (!from_cli && policy->secret_rename.configured) {
+                fprintf(stderr, _("secret rename may be specified at most once\n"));
+                free(rest);
+                return 2;
+            }
             if (secdat_exec_parse_rename_expression(value, &policy->secret_rename) != 0) {
                 free(rest);
                 return 1;
@@ -884,12 +1012,8 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
             free(rest);
             return 0;
         }
-        if (strcmp(kind, "only") == 0) {
-            policy->explicit_secret_only = 1;
-        } else if (strcmp(kind, "omit") == 0) {
-            policy->explicit_secret_omit = 1;
-        } else if (strcmp(kind, "require") == 0) {
-            policy->explicit_secret_require = 1;
+        if (from_cli) {
+            secdat_exec_prepare_cli_pentad_override(policy, layer, &policy->secret, kind);
         }
         if (secdat_exec_append_inject_selectors(&policy->secret, kind, value) != 0) {
             free(rest);
@@ -900,19 +1024,33 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
     }
     if (strcmp(layer, "route") == 0) {
         if (strcmp(kind, "prefer") == 0) {
-            if (policy->explicit_route_prefer) {
+            if (from_cli && policy->explicit_route_prefer) {
                 fprintf(stderr, _("route:prefer may be specified at most once\n"));
                 free(rest);
                 return 2;
             }
-            policy->explicit_route_prefer = 1;
-            policy->route_prefer = secdat_exec_parse_route_pick(value);
+            if (from_cli) {
+                policy->explicit_route_prefer = 1;
+            }
+            if (secdat_exec_parse_route_pick(value, &policy->route_prefer) != 0) {
+                free(rest);
+                return 2;
+            }
             free(rest);
             return 0;
         }
         {
             struct secdat_exec_route_rule *rules;
             struct secdat_exec_route_rule rule;
+            enum secdat_exec_route_pick pick;
+
+            if (secdat_exec_parse_route_pick(value, &pick) != 0) {
+                free(rest);
+                return 2;
+            }
+            if (from_cli) {
+                secdat_exec_remove_file_route_rules(policy, kind);
+            }
 
             rule.match = strdup(kind);
             if (rule.match == NULL) {
@@ -920,7 +1058,8 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
                 fprintf(stderr, _("out of memory\n"));
                 return 1;
             }
-            rule.pick = secdat_exec_parse_route_pick(value);
+            rule.pick = pick;
+            rule.from_cli = from_cli;
             rules = realloc(policy->route_rules, (policy->route_rule_count + 1) * sizeof(*rules));
             if (rules == NULL) {
                 free(rule.match);
@@ -936,6 +1075,9 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
         return 0;
     }
     if (strcmp(layer, "final") == 0) {
+        if (from_cli) {
+            secdat_exec_prepare_cli_pentad_override(policy, layer, &policy->final, kind);
+        }
         if (secdat_exec_append_inject_selectors(&policy->final, kind, value) != 0) {
             free(rest);
             return 1;
@@ -1065,7 +1207,7 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
     while ((option = getopt_long(argc, argv, "+p:x:", long_options, NULL)) != -1) {
         switch (option) {
         case 1000:
-            status = secdat_exec_apply_inject_token(&options->policy, optarg);
+            status = secdat_exec_apply_inject_token(&options->policy, optarg, 1);
             if (status != 0) {
                 secdat_exec_options_free(options);
                 return status;

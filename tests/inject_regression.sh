@@ -705,6 +705,7 @@ if rc == 0 or "key is not a valid environment variable name: ZZZ-BAD" not in std
 for bad_args, expected in [
     (["--inject", "not-a-valid-token"], "invalid --inject token: not-a-valid-token"),
     (["--inject", "bogus:only=FOO"], "invalid --inject layer: bogus"),
+    (["--inject", "route:FOO=ambinet"], "invalid route pick: ambinet"),
     ([
         "--inject", r"secret:rename=s/^APP_\(.*\)/RENAMED_\1/",
         "--inject", r"secret:rename=s/^OTHER_\(.*\)/ALT_\1/",
