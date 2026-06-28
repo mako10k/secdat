@@ -1177,7 +1177,11 @@ static void secdat_exec_reset_getopt_state(void)
     optind = 0;
 }
 
-static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat_exec_options *options)
+static int secdat_exec_parse_options(
+    const struct secdat_cli *cli,
+    struct secdat_exec_options *options,
+    const char **help_target_out
+)
 {
     static const struct option long_options[] = {
         {"inject", required_argument, NULL, 1000},
@@ -1201,6 +1205,9 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
 
     memset(options, 0, sizeof(*options));
     options->policy.route_prefer = SECDAT_EXEC_ROUTE_SECRET;
+    if (help_target_out != NULL) {
+        *help_target_out = "exec";
+    }
 
     secdat_prepare_exec_option_argv(cli, &argc, argv);
     secdat_exec_reset_getopt_state();
@@ -1210,6 +1217,9 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
             status = secdat_exec_apply_inject_token(&options->policy, optarg, 1);
             if (status != 0) {
                 secdat_exec_options_free(options);
+                if (help_target_out != NULL) {
+                    *help_target_out = "inject";
+                }
                 return status;
             }
             break;
@@ -1217,17 +1227,29 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
             status = secdat_exec_apply_inject_policy_file(&options->policy, optarg);
             if (status != 0) {
                 secdat_exec_options_free(options);
+                if (help_target_out != NULL) {
+                    *help_target_out = "inject";
+                }
                 return status;
             }
             break;
         case 'p':
             secdat_exec_options_free(options);
+            if (help_target_out != NULL) {
+                *help_target_out = "inject";
+            }
             return secdat_exec_reject_removed_legacy_flag("--pattern (-p)", "--inject secret:only=GLOB");
         case 'x':
             secdat_exec_options_free(options);
+            if (help_target_out != NULL) {
+                *help_target_out = "inject";
+            }
             return secdat_exec_reject_removed_legacy_flag("--pattern-exclude (-x)", "--inject secret:omit=GLOB");
         case 1001:
             secdat_exec_options_free(options);
+            if (help_target_out != NULL) {
+                *help_target_out = "inject";
+            }
             return secdat_exec_reject_removed_legacy_flag("--env-map-sed", "--inject secret:rename=EXPR");
         case 1009:
             status = secdat_exec_enable_bulk_gate(&options->policy);
@@ -1238,9 +1260,15 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
             break;
         case 9008:
             secdat_exec_options_free(options);
+            if (help_target_out != NULL) {
+                *help_target_out = "inject";
+            }
             return secdat_exec_reject_legacy_inject_gate(optarg);
         case 1002:
             secdat_exec_options_free(options);
+            if (help_target_out != NULL) {
+                *help_target_out = "inject";
+            }
             return secdat_exec_reject_removed_legacy_flag("--sandbox-injectable", "--bulk-gate");
         case 1003:
             options->dry_run = 1;
@@ -1253,6 +1281,9 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
             break;
         case 1006:
             secdat_exec_options_free(options);
+            if (help_target_out != NULL) {
+                *help_target_out = "inject";
+            }
             return secdat_exec_reject_removed_legacy_flag("--require-key", "--inject secret:require=KEY");
         case '?':
         case ':':
@@ -1284,6 +1315,9 @@ static int secdat_exec_parse_options(const struct secdat_cli *cli, struct secdat
         || secdat_exec_pentad_conflicts(&options->policy.secret, SECDAT_EXEC_PENTAD_SECRET) != 0
         || secdat_exec_pentad_conflicts(&options->policy.final, SECDAT_EXEC_PENTAD_FINAL) != 0) {
         secdat_exec_options_free(options);
+        if (help_target_out != NULL) {
+            *help_target_out = "inject";
+        }
         return 2;
     }
 
@@ -2338,11 +2372,12 @@ int secdat_exec_command(const struct secdat_cli *cli)
     char **visible_keys = NULL;
     size_t visible_key_count = 0;
     char **command_argv;
+    const char *parse_help_target = "exec";
     int status;
 
-    status = secdat_exec_parse_options(cli, &options);
+    status = secdat_exec_parse_options(cli, &options, &parse_help_target);
     if (status != 0) {
-        secdat_cli_print_try_help(cli, "exec");
+        secdat_cli_print_try_help(cli, parse_help_target);
         return status;
     }
 

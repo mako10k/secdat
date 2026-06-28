@@ -1,4 +1,4 @@
-.TH SECDAT 1 "2026-06-27" "secdat 0.4.0" "User Commands"
+.TH SECDAT 1 "2026-06-28" "secdat 0.4.1" "User Commands"
 .SH NAME
 secdat \- minimal local secret store with domain and store scoping
 .SH SYNOPSIS
@@ -46,6 +46,18 @@ Show global help, or combine with a command name for command-local help.
 .TP
 .B \-V, \-\-version
 Print the secdat version. When built from a Git worktree, also print a short build identifier and append \fB-dirty\fR when the worktree had uncommitted changes at build time.
+.SH HELP TOPICS
+.TP
+.B secdat help usecases
+Show workflow-oriented examples across multiple commands.
+.TP
+.B secdat help concepts
+Explain domains, stores, inheritance, local unlocks, local locks, and KEYREF resolution.
+.TP
+.B secdat help inject
+Explain
+.B exec --inject
+layers, rule kinds, selectors, YAML policy files, and dry-run preflight checks.
 .SH COMMANDS
 .TP
 .B ls [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-x GLOBPATTERN|\-\-pattern-exclude GLOBPATTERN] [\-e|\-\-safe] [\-u|\-\-unsafe] [\-\-metadata] [\-\-bulk-gate] [\-\-json]
@@ -240,6 +252,9 @@ Build a child process environment through supply, route, and final injection lay
 .B --inject
 configures ambient, secret, route, or final rules. Repeated options accumulate selectors of the same kind. Multiple selectors in one value are separated by
 .BR : .
+Use
+.B secdat help inject
+for the rule vocabulary, selector syntax, YAML shape, and preflight examples.
 .B --inject-file
 loads a YAML policy file. Later
 .B --inject
@@ -556,6 +571,8 @@ secdat --dir ~/project/service domain status --json
 secdat status --json
 secdat --dir ~/project --store app export
 source <(secdat --dir ~/project --store app export)
+secdat help inject
+secdat exec --inject secret:only=APP_* --dry-run --json -- env
 SECDAT_MASTER_KEY_PASSPHRASE=secret secdat unlock
 secdat unlock --askpass /path/to/helper
 make install-askpass-helper

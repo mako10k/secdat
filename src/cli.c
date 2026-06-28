@@ -876,6 +876,7 @@ static void secdat_cli_completion_print_help_targets(const char *current)
     secdat_cli_completion_print_top_level_commands(current);
     secdat_cli_completion_print_candidate(current, "usecases");
     secdat_cli_completion_print_candidate(current, "concepts");
+    secdat_cli_completion_print_candidate(current, "inject");
 }
 
 static int secdat_cli_completion_print_nested_help_targets(int argc, char **argv, const char *current)
@@ -1580,7 +1581,17 @@ static void secdat_cli_print_meta_usage_line(const char *program_name, const cha
     }
     if (target != NULL && strcmp(target, "concepts") == 0) {
         secdat_cli_print_usage_columns(program_name, "", "help", "concepts");
+        return;
     }
+    if (target != NULL && strcmp(target, "inject") == 0) {
+        secdat_cli_print_usage_columns(program_name, "", "help", "inject");
+    }
+}
+
+static int secdat_cli_is_help_topic(const char *target)
+{
+    return target != NULL
+        && (strcmp(target, "usecases") == 0 || strcmp(target, "concepts") == 0 || strcmp(target, "inject") == 0);
 }
 
 static void secdat_cli_print_help_routes(const char *program_name, const char *target)
@@ -1590,9 +1601,12 @@ static void secdat_cli_print_help_routes(const char *program_name, const char *t
     printf(_("  %s help [COMMAND...]\n"), program_name);
     printf(_("  %s help usecases\n"), program_name);
     printf(_("  %s help concepts\n"), program_name);
+    printf(_("  %s help inject\n"), program_name);
     if (target == NULL) {
         printf(_("  %s --help COMMAND...\n"), program_name);
         printf(_("  %s COMMAND --help\n"), program_name);
+    } else if (secdat_cli_is_help_topic(target)) {
+        printf(_("  %s --help %s\n"), program_name, target);
     } else {
         printf(_("  %s --help %s\n"), program_name, target);
         printf(_("  %s %s --help\n"), program_name, target);
@@ -1677,6 +1691,7 @@ static void secdat_cli_print_topic_meanings(void)
     printf(_("\nTopics:\n"));
     secdat_cli_print_detail_line(_("  usecases: show example workflows and task-oriented command combinations\n"));
     secdat_cli_print_detail_line(_("  concepts: explain domains, stores, inheritance, local unlocks, local locks, and KEYREF resolution\n"));
+    secdat_cli_print_detail_line(_("  inject: explain exec --inject layers, rule kinds, selectors, policy files, and preflight checks\n"));
 }
 
 static void secdat_cli_print_target_meaning(const char *target)
@@ -1810,6 +1825,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  --inject LAYER:KIND=SELECTOR configures ambient, secret, route, or final rules; repeated --inject accumulates selectors of the same kind\n"));
         secdat_cli_print_detail_line(_("  --inject-file FILE loads a YAML policy; later --inject options override file entries\n"));
         secdat_cli_print_detail_line(_("  --bulk-gate applies the store bulk_select pre-filter before secret supply\n"));
+        secdat_cli_print_detail_line(_("  see help inject for the rule vocabulary, selector syntax, YAML shape, and preflight examples\n"));
         return;
     }
     if (target != NULL && strcmp(target, "export") == 0) {
@@ -1861,6 +1877,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "concepts") == 0) {
         secdat_cli_print_detail_line(_("  concepts: explain domains, stores, inheritance, sessions, and KEYREF resolution\n"));
+        return;
+    }
+    if (target != NULL && strcmp(target, "inject") == 0) {
+        secdat_cli_print_detail_line(_("  inject: explain exec --inject layers, rule kinds, selectors, policy files, and preflight checks\n"));
         return;
     }
     if (target != NULL && strcmp(target, "store") == 0) {
@@ -2156,6 +2176,26 @@ static void secdat_cli_print_concepts_detail(const char *program_name)
     }
 }
 
+static void secdat_cli_print_inject_detail(const char *program_name)
+{
+    printf(_("\nInject rules:\n"));
+    {
+        char buffer[512];
+        secdat_cli_print_detail_line(_("  form: pass repeated --inject LAYER:KIND=SELECTOR rules to exec; use --inject-file FILE for a YAML policy\n"));
+        secdat_cli_print_detail_line(_("  layers: ambient selects caller environment variables; secret selects store keys; route resolves ambient/secret name collisions; final validates the child environment\n"));
+        secdat_cli_print_detail_line(_("  kinds: only is a whitelist, omit excludes matches, require fails when a match is missing, reject fails when a match is available, rename maps secret keys to env names, prefer sets the default collision pick\n"));
+        secdat_cli_print_detail_line(_("  selectors: exact names and shell-style globs are allowed; separate multiple selectors in one value with ':'\n"));
+        secdat_cli_print_detail_line(_("  route picks: route:prefer=secret, route:prefer=ambient, route:prefer=error, or route:GLOB=secret|ambient|error\n"));
+        secdat_cli_print_detail_line(_("  rename: secret:rename=EXPR uses one sed-style s/// expression; generated environment names must be valid identifiers\n"));
+        secdat_cli_print_detail_line(_("  files: --inject-file loads YAML keys ambient, secret, route, final, and bulk_gate; later CLI --inject options override file entries of the same kind\n"));
+        secdat_cli_print_detail_line(_("  gate: --bulk-gate applies the key bulk_select pre-filter before secret supply; list and export can also use --bulk-gate but do not inject into a child process\n"));
+        snprintf(buffer, sizeof(buffer), _("  preflight: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  example: %s exec --inject ambient:omit=SECDAT_* --inject secret:only=APP_* --inject route:prefer=secret --inject final:reject=SECDAT_* -- CMD\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+    }
+}
+
 static void secdat_cli_print_semantics(void)
 {
     printf(_("\nSemantics:\n"));
@@ -2412,7 +2452,7 @@ static int secdat_cli_print_group_help_target(const char *program_name, const ch
 
 void secdat_cli_print_help_target(const char *program_name, const char *target)
 {
-    if (target != NULL && (strcmp(target, "help") == 0 || strcmp(target, "version") == 0 || strcmp(target, "usecases") == 0 || strcmp(target, "concepts") == 0)) {
+    if (target != NULL && (strcmp(target, "help") == 0 || strcmp(target, "version") == 0 || strcmp(target, "usecases") == 0 || strcmp(target, "concepts") == 0 || strcmp(target, "inject") == 0)) {
         printf(_("Usage:\n"));
         secdat_cli_print_meta_usage_line(program_name, target);
         secdat_cli_print_help_routes(program_name, target);
@@ -2422,6 +2462,9 @@ void secdat_cli_print_help_target(const char *program_name, const char *target)
         }
         if (strcmp(target, "concepts") == 0) {
             secdat_cli_print_concepts_detail(program_name);
+        }
+        if (strcmp(target, "inject") == 0) {
+            secdat_cli_print_inject_detail(program_name);
         }
         secdat_cli_print_support_routes();
         return;

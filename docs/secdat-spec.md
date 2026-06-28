@@ -144,6 +144,7 @@ To make the requested behavior implementable, the following are treated as norma
 - except for `exec`, command-local options should generally be accepted before or after positional operands
 - `secdat help usecases` prints workflow-oriented examples across multiple commands
 - `secdat help concepts` prints detailed explanations of domains, stores, inheritance, explicit locks, sessions, and `KEYREF` resolution
+- `secdat help inject` prints `exec --inject` rule vocabulary, selector syntax, YAML policy shape, and dry-run preflight examples
 - `unlock` caches the current master key in a domain-scoped runtime location
 - `SECDAT_MASTER_KEY_PASSPHRASE` may provide the current wrapped-key passphrase as an explicit override for non-interactive `unlock` and `passwd` flows
 - `unlock --askpass PATH` and `passwd --askpass PATH` choose an executable askpass helper for that command; otherwise `SECDAT_ASKPASS`, or `SSH_ASKPASS` when `SECDAT_ASKPASS` is unset, may provide an askpass helper for non-terminal passphrase prompts; the helper receives the prompt as argv[1] and prints the passphrase on stdout

@@ -71,6 +71,15 @@ def assert_eq(actual, expected, label):
         fail(f"{label}: expected {expected!r}, got {actual!r}")
 
 
+def expected_try_help(target):
+    candidates = [f"Try: {bin_path} help {target}"]
+    relative_bin_path = os.path.relpath(bin_path, Path.cwd())
+    if not relative_bin_path.startswith("."):
+        relative_bin_path = f"./{relative_bin_path}"
+    candidates.append(f"Try: {relative_bin_path} help {target}")
+    return candidates
+
+
 domain.mkdir(parents=True)
 
 for args in [
@@ -702,22 +711,23 @@ if rc == 0 or "key is not a valid environment variable name: ZZZ-BAD" not in std
     fail(f"invalid store key env name did not fail: rc={rc} stderr={stderr!r}")
 
 # §15.10 parser and at-most-once limits (post–Phase 3).
-for bad_args, expected in [
-    (["--inject", "not-a-valid-token"], "invalid --inject token: not-a-valid-token"),
-    (["--inject", "bogus:only=FOO"], "invalid --inject layer: bogus"),
-    (["--inject", "route:FOO=ambinet"], "invalid route pick: ambinet"),
+for bad_args, expected, help_target in [
+    (["--inject", "not-a-valid-token"], "invalid --inject token: not-a-valid-token", "inject"),
+    (["--inject", "bogus:only=FOO"], "invalid --inject layer: bogus", "inject"),
+    (["--inject", "route:FOO=ambinet"], "invalid route pick: ambinet", "inject"),
     ([
         "--inject", r"secret:rename=s/^APP_\(.*\)/RENAMED_\1/",
         "--inject", r"secret:rename=s/^OTHER_\(.*\)/ALT_\1/",
-    ], "secret rename may be specified at most once"),
-    (["--bulk-gate", "--bulk-gate"], "--bulk-gate may be specified at most once"),
+    ], "secret rename may be specified at most once", "inject"),
+    (["--inject", "secret:require=APP_TOKEN", "--inject", "secret:omit=APP_TOKEN"], "exec inject secret pentad conflict: require and omit overlap: APP_TOKEN", "inject"),
+    (["--bulk-gate", "--bulk-gate"], "--bulk-gate may be specified at most once", "exec"),
 ]:
     rc, stdout, stderr = run([
         bin_path, "--dir", str(domain), "exec",
         *bad_args,
         "python3", "-c", "pass",
     ])
-    if rc != 2 or expected not in stderr:
+    if rc != 2 or expected not in stderr or not any(candidate in stderr for candidate in expected_try_help(help_target)):
         fail(f"parser limit failed for {bad_args}: rc={rc} stderr={stderr!r}")
 
 print("PASS inject regression")

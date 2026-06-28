@@ -834,6 +834,26 @@ for args, fragments in [
             "resolve one key to its v2 secret object UUID without reading it:",
         ],
     ),
+    (
+        [bin_path, "help", "exec"],
+        [
+            "see help inject for the rule vocabulary",
+        ],
+    ),
+    (
+        [bin_path, "help", "inject"],
+        [
+            "Inject rules:",
+            "--help inject",
+            "layers: ambient selects caller environment variables",
+            "kinds: only is a whitelist",
+            "selectors: exact names and shell-style globs",
+            "route picks: route:prefer=secret",
+            "rename: secret:rename=EXPR",
+            "files: --inject-file loads YAML keys",
+            "preflight:",
+        ],
+    ),
 ]:
     rc, stdout, stderr = run(args)
     output = stdout + stderr
@@ -842,6 +862,8 @@ for args, fragments in [
     for fragment in fragments:
         if fragment not in normalize_spaces(output):
             fail(f"detailed help marker check failed for {args}: missing {fragment!r} in {output!r}")
+    if args == [bin_path, "help", "inject"] and "inject --help" in normalize_spaces(output):
+        fail(f"inject topic help should not advertise command-style inject --help: {output!r}")
 
 rc, stdout, stderr = run([bin_path, "help", "get"])
 output = stdout + stderr
@@ -870,7 +892,7 @@ if rc != 0 or "Meaning:" not in output or "Concepts:" not in output or "local lo
 rc, stdout, stderr = run([bin_path, "help"])
 output = stdout + stderr
 normalized_output = normalize_spaces(output)
-if rc != 0 or "[options] subcommand ..." not in normalized_output or "Options:" not in output or "Commands:" not in output or "Topics:" not in output or "Support:" not in output or "issues: https://github.com/mako10k/secdat/issues" not in normalized_output or "help: show global help" not in normalized_output or "version: print the secdat version" not in normalized_output:
+if rc != 0 or "[options] subcommand ..." not in normalized_output or "Options:" not in output or "Commands:" not in output or "Topics:" not in output or "inject: explain exec --inject layers" not in normalized_output or "Support:" not in output or "issues: https://github.com/mako10k/secdat/issues" not in normalized_output or "help: show global help" not in normalized_output or "version: print the secdat version" not in normalized_output:
     fail(f"help subcommand check failed: rc={rc} output={output!r}")
 
 for args, expected in [

@@ -221,7 +221,7 @@ int main(int argc, char **argv)
                 }
                 return 0;
             }
-            if (strcmp(cli.help_target, "help") == 0 || strcmp(cli.help_target, "version") == 0 || strcmp(cli.help_target, "usecases") == 0 || strcmp(cli.help_target, "concepts") == 0) {
+            if (strcmp(cli.help_target, "help") == 0 || strcmp(cli.help_target, "version") == 0 || strcmp(cli.help_target, "usecases") == 0 || strcmp(cli.help_target, "concepts") == 0 || strcmp(cli.help_target, "inject") == 0) {
                 secdat_cli_print_help_target(argv[0], cli.help_target);
                 return 0;
             }
