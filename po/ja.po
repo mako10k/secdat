@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: secdat 0.4.0\n"
 "Report-Msgid-Bugs-To: noreply@example.invalid\n"
-"POT-Creation-Date: 2026-06-28 15:48+0900\n"
+"POT-Creation-Date: 2026-06-29 11:04+0900\n"
 "PO-Revision-Date: 2026-04-13 00:00+0000\n"
 "Last-Translator: GitHub Copilot <noreply@example.invalid>\n"
 "Language-Team: ja\n"
@@ -59,12 +59,12 @@ msgstr "オプション値が不足しています\n"
 msgid "unknown option: %s\n"
 msgstr "不明なオプションです: %s\n"
 
-#: src/cli.c:1555
+#: src/cli.c:1557
 #, c-format
 msgid "  %s [options] subcommand ...\n"
 msgstr "  %s [オプション] サブコマンド ...\n"
 
-#: src/cli.c:1560
+#: src/cli.c:1562
 #, c-format
 msgid ""
 "\n"
@@ -73,12 +73,12 @@ msgstr ""
 "\n"
 "オプション:\n"
 
-#: src/cli.c:1561
+#: src/cli.c:1563
 msgid ""
 "  -d, --dir DIR      set the base directory used for domain resolution\n"
 msgstr "  -d, --dir DIR      domain 解決に使う基準ディレクトリを指定します\n"
 
-#: src/cli.c:1562
+#: src/cli.c:1564
 msgid ""
 "      --domain DIR   require one exact registered domain root instead of "
 "discovery\n"
@@ -86,14 +86,14 @@ msgstr ""
 "      --domain DIR   ancestor 探索の代わりに登録済みの正確な domain root を必"
 "須にします\n"
 
-#: src/cli.c:1563
+#: src/cli.c:1565
 msgid ""
 "  -s, --store STORE  select the store namespace inside the resolved domain\n"
 msgstr ""
 "  -s, --store STORE  解決された domain 内で使う store namespace を選択しま"
 "す\n"
 
-#: src/cli.c:1564
+#: src/cli.c:1566
 msgid ""
 "  -h, --help         show global help, or combine with COMMAND or TOPIC for "
 "detailed help\n"
@@ -101,11 +101,11 @@ msgstr ""
 "  -h, --help         全体 help を表示します。COMMAND または TOPIC と組み合わ"
 "せると詳細 help を表示します\n"
 
-#: src/cli.c:1565
+#: src/cli.c:1567
 msgid "  -V, --version      print the secdat version\n"
 msgstr "  -V, --version      secdat のバージョンを表示します\n"
 
-#: src/cli.c:1599
+#: src/cli.c:1601
 #, c-format
 msgid ""
 "\n"
@@ -114,62 +114,62 @@ msgstr ""
 "\n"
 "ヘルプ:\n"
 
-#: src/cli.c:1600
+#: src/cli.c:1602
 #, c-format
 msgid "  %s --help\n"
 msgstr "  %s --help\n"
 
-#: src/cli.c:1601
+#: src/cli.c:1603
 #, c-format
 msgid "  %s help [COMMAND...]\n"
 msgstr "  %s help [コマンド名...]\n"
 
-#: src/cli.c:1602
+#: src/cli.c:1604
 #, c-format
 msgid "  %s help usecases\n"
 msgstr "  %s help usecases\n"
 
-#: src/cli.c:1603
+#: src/cli.c:1605
 #, c-format
 msgid "  %s help concepts\n"
 msgstr "  %s help concepts\n"
 
-#: src/cli.c:1604
+#: src/cli.c:1606
 #, c-format
 msgid "  %s help inject\n"
 msgstr "  %s help inject\n"
 
-#: src/cli.c:1606
+#: src/cli.c:1608
 #, c-format
 msgid "  %s --help COMMAND...\n"
 msgstr "  %s --help コマンド名...\n"
 
-#: src/cli.c:1607
+#: src/cli.c:1609
 #, c-format
 msgid "  %s COMMAND --help\n"
 msgstr "  %s コマンド名 --help\n"
 
-#: src/cli.c:1609 src/cli.c:1611
+#: src/cli.c:1611 src/cli.c:1613
 #, c-format
 msgid "  %s --help %s\n"
 msgstr "  %s --help %s\n"
 
-#: src/cli.c:1612
+#: src/cli.c:1614
 #, c-format
 msgid "  %s %s --help\n"
 msgstr "  %s %s --help\n"
 
-#: src/cli.c:1614
+#: src/cli.c:1616
 #, c-format
 msgid "  %s --version\n"
 msgstr "  %s --version\n"
 
-#: src/cli.c:1615
+#: src/cli.c:1617
 #, c-format
 msgid "  %s version\n"
 msgstr "  %s version\n"
 
-#: src/cli.c:1620
+#: src/cli.c:1622
 #, c-format
 msgid ""
 "\n"
@@ -178,25 +178,25 @@ msgstr ""
 "\n"
 "シェル:\n"
 
-#: src/cli.c:1623
+#: src/cli.c:1625
 #, c-format
 msgid "  bash load current shell vars: source <(%s export)\n"
 msgstr "  bash で現在の shell に読み込む: source <(%s export)\n"
 
-#: src/cli.c:1625
+#: src/cli.c:1627
 #, c-format
 msgid "  bash alternative: eval \"$(%s export)\"\n"
 msgstr "  bash の別案: eval \"$(%s export)\"\n"
 
-#: src/cli.c:1628
+#: src/cli.c:1630
 msgid "  bash completion script: completions/secdat.bash\n"
 msgstr "  bash completion script: completions/secdat.bash\n"
 
-#: src/cli.c:1629
+#: src/cli.c:1631
 msgid "  man page source: docs/secdat.1\n"
 msgstr "  man page source: docs/secdat.1\n"
 
-#: src/cli.c:1634
+#: src/cli.c:1636
 #, c-format
 msgid ""
 "\n"
@@ -205,19 +205,19 @@ msgstr ""
 "\n"
 "サポート:\n"
 
-#: src/cli.c:1635
+#: src/cli.c:1637
 msgid "  issues: https://github.com/mako10k/secdat/issues\n"
 msgstr "  issue 報告先: https://github.com/mako10k/secdat/issues\n"
 
-#: src/cli.c:1636
+#: src/cli.c:1638
 msgid "  repository: https://github.com/mako10k/secdat\n"
 msgstr "  repository: https://github.com/mako10k/secdat\n"
 
-#: src/cli.c:1637
+#: src/cli.c:1639
 msgid "  author: Makoto Katsumata <mako10k@mk10.org>\n"
 msgstr "  author: Makoto Katsumata <mako10k@mk10.org>\n"
 
-#: src/cli.c:1642
+#: src/cli.c:1644
 #, c-format
 msgid ""
 "\n"
@@ -226,7 +226,7 @@ msgstr ""
 "\n"
 "グループ:\n"
 
-#: src/cli.c:1643
+#: src/cli.c:1645
 msgid ""
 "  store: manage store namespaces and v1 to v2 migration inside the resolved "
 "current domain\n"
@@ -234,11 +234,11 @@ msgstr ""
 "  store: 解決された current domain 内の store namespace と v1 から v2 への "
 "migration を管理します\n"
 
-#: src/cli.c:1644
+#: src/cli.c:1646
 msgid "  meta: manage non-secret searchable metadata attached to keys\n"
 msgstr "  meta: key に付けた非秘密の検索用 metadata を管理します\n"
 
-#: src/cli.c:1645
+#: src/cli.c:1647
 msgid ""
 "  relation: connect keys into semantic groups with non-secret security "
 "meaning\n"
@@ -246,18 +246,18 @@ msgstr ""
 "  relation: key を意味的なグループとしてつなぎ、非秘密の security meaning を"
 "管理します\n"
 
-#: src/cli.c:1646 src/cli.c:1912
+#: src/cli.c:1648 src/cli.c:1915
 msgid ""
 "  secret: inspect v2 secret-object metadata by UUID without reading secret "
 "values\n"
 msgstr ""
 "  secret: 値を読まずに UUID で v2 secret-object metadata を確認します\n"
 
-#: src/cli.c:1647 src/cli.c:1921
+#: src/cli.c:1649 src/cli.c:1924
 msgid "  domain: manage domain roots and domain discovery scope\n"
 msgstr "  domain: domain root と domain 探索スコープを管理します\n"
 
-#: src/cli.c:1652
+#: src/cli.c:1654
 #, c-format
 msgid ""
 "\n"
@@ -266,11 +266,11 @@ msgstr ""
 "\n"
 "コマンド:\n"
 
-#: src/cli.c:1653 src/cli.c:1701
+#: src/cli.c:1655 src/cli.c:1703
 msgid "  help: show global help or detailed help for one command\n"
 msgstr "  help: 全体ヘルプ、または 1 つのコマンドの詳細ヘルプを表示します\n"
 
-#: src/cli.c:1654 src/cli.c:1705
+#: src/cli.c:1656 src/cli.c:1707
 msgid ""
 "  ls: list effective keys visible from the current domain view, optionally "
 "filtered by safe or unsafe storage\n"
@@ -278,7 +278,7 @@ msgstr ""
 "  ls: 現在の domain view から見える有効な key を、安全または unsafe な保存方"
 "式で絞り込んで一覧します\n"
 
-#: src/cli.c:1655 src/cli.c:1709
+#: src/cli.c:1657 src/cli.c:1711
 msgid ""
 "  list: inspect current-domain masked, overridden, orphaned, safe, unsafe "
 "local state, or filter entries with --bulk-gate\n"
@@ -286,7 +286,7 @@ msgstr ""
 "  list: 現在の domain の masked・overridden・orphaned・safe・unsafe な local "
 "state を確認するか、--bulk-gate で entry を絞り込みます\n"
 
-#: src/cli.c:1656 src/cli.c:1713
+#: src/cli.c:1658 src/cli.c:1715
 msgid ""
 "  attr: show or update one key's visibility, value-access, and bulk_select "
 "attribute\n"
@@ -294,13 +294,13 @@ msgstr ""
 "  attr: 1 つの key の visibility、value-access、bulk_select 属性を表示または"
 "更新します\n"
 
-#: src/cli.c:1657
+#: src/cli.c:1659
 msgid ""
 "  meta: manage non-secret searchable metadata without reading secret values\n"
 msgstr ""
 "  meta: secret value を読まずに、非秘密の検索用 metadata を管理します\n"
 
-#: src/cli.c:1658
+#: src/cli.c:1660
 msgid ""
 "  relation: record semantic links between keys and the security meaning of "
 "those links\n"
@@ -308,7 +308,7 @@ msgstr ""
 "  relation: key 間の意味的な link と、その link の security meaning を記録し"
 "ます\n"
 
-#: src/cli.c:1659
+#: src/cli.c:1661
 msgid ""
 "  meta mark-leaked: mark one key as leaked metadata and suggest high-risk "
 "refresh targets\n"
@@ -316,7 +316,7 @@ msgstr ""
 "  meta mark-leaked: 1 つの key を漏洩 metadata として mark し、高リスクの "
 "refresh target を提案します\n"
 
-#: src/cli.c:1660
+#: src/cli.c:1662
 msgid ""
 "  relation suggest-refresh: suggest high-risk refresh targets related to one "
 "leaked key\n"
@@ -324,7 +324,7 @@ msgstr ""
 "  relation suggest-refresh: 1 つの leaked key に関連する高リスクの refresh "
 "target を提案します\n"
 
-#: src/cli.c:1661 src/cli.c:1772
+#: src/cli.c:1663 src/cli.c:1774
 msgid ""
 "  fsck: check current-domain store metadata for migration and limited "
 "repair\n"
@@ -332,27 +332,27 @@ msgstr ""
 "  fsck: migration と限定的な repair のために現在の domain の store metadata "
 "を検査します\n"
 
-#: src/cli.c:1662
+#: src/cli.c:1664
 msgid "  gc: remove unreachable or dangling v2 graph files after review\n"
 msgstr ""
 "  gc: review 後に到達不能または dangling な v2 graph file を削除します\n"
 
-#: src/cli.c:1663 src/cli.c:1782
+#: src/cli.c:1665 src/cli.c:1784
 msgid "  mask: create a local tombstone to hide one inherited key\n"
 msgstr "  mask: 継承された 1 つの key を隠す local tombstone を作成します\n"
 
-#: src/cli.c:1664 src/cli.c:1786
+#: src/cli.c:1666 src/cli.c:1788
 msgid "  unmask: remove one local tombstone from the current domain\n"
 msgstr "  unmask: 現在の domain から 1 つの local tombstone を削除します\n"
 
-#: src/cli.c:1665 src/cli.c:1790
+#: src/cli.c:1667 src/cli.c:1792
 msgid ""
 "  exists: check whether one resolved key is visible from the current domain "
 "view\n"
 msgstr ""
 "  exists: 解決された 1 つの key が現在の domain view から見えるか確認します\n"
 
-#: src/cli.c:1666 src/cli.c:1794
+#: src/cli.c:1668 src/cli.c:1796
 msgid ""
 "  id: print the v2 secret object UUID for one resolved key without reading "
 "its value\n"
@@ -360,7 +360,7 @@ msgstr ""
 "  id: 解決された 1 つの key について、値を読まずに v2 secret object UUID を表"
 "示します\n"
 
-#: src/cli.c:1667 src/cli.c:1799
+#: src/cli.c:1669 src/cli.c:1801
 msgid ""
 "  get: decrypt one resolved key and write it to standard output; --on-demand-"
 "unlock waits for another terminal to unlock\n"
@@ -368,7 +368,7 @@ msgstr ""
 "  get: 解決された 1 つの key を復号して標準出力へ書き出します。--on-demand-"
 "unlock を付けると別端末での unlock を待機します\n"
 
-#: src/cli.c:1668 src/cli.c:1803
+#: src/cli.c:1670 src/cli.c:1805
 msgid ""
 "  set: store or update one key in the resolved current domain; --unsafe "
 "stores plaintext visible while locked\n"
@@ -376,7 +376,7 @@ msgstr ""
 "  set: 解決された current domain に 1 つの key を保存または更新します。--"
 "unsafe は lock 中も見える平文を保存します\n"
 
-#: src/cli.c:1669 src/cli.c:1807
+#: src/cli.c:1671 src/cli.c:1809
 msgid ""
 "  rm: remove one key locally or create a tombstone for an inherited key; --"
 "ignore-missing treats absent keys as success\n"
@@ -384,15 +384,15 @@ msgstr ""
 "  rm: 1 つの key をローカルに削除するか、継承 key 用の tombstone を作成しま"
 "す。--ignore-missing は未存在の key を成功扱いにします\n"
 
-#: src/cli.c:1670 src/cli.c:1811
+#: src/cli.c:1672 src/cli.c:1813
 msgid "  mv: rename or relocate one key between resolved locations\n"
 msgstr "  mv: 1 つの key を解決先の場所どうしで改名または移動します\n"
 
-#: src/cli.c:1671 src/cli.c:1815
+#: src/cli.c:1673 src/cli.c:1817
 msgid "  cp: copy one key into another resolved location\n"
 msgstr "  cp: 1 つの key を別の解決先へコピーします\n"
 
-#: src/cli.c:1672 src/cli.c:1819
+#: src/cli.c:1674 src/cli.c:1821
 msgid ""
 "  ln: link another key to the same v2 secret object, including cross-domain "
 "v2 links and authorized @UUID sources\n"
@@ -400,14 +400,14 @@ msgstr ""
 "  ln: 同じ v2 secret object へ別の key を link します。cross-domain v2 link "
 "および認可済み @UUID source も含みます\n"
 
-#: src/cli.c:1673 src/cli.c:1824
+#: src/cli.c:1675 src/cli.c:1826
 msgid ""
 "  exec: build a child environment through supply, route, and final injection "
 "layers\n"
 msgstr ""
 "  exec: supply、route、final の injection layer を通じて子環境を構築します\n"
 
-#: src/cli.c:1674 src/cli.c:1832
+#: src/cli.c:1676 src/cli.c:1835
 msgid ""
 "  export: emit shell-ready export lines that defer secret reads to secdat "
 "get\n"
@@ -415,7 +415,7 @@ msgstr ""
 "  export: secret の読み出しを secdat get に委ねる shell 向け export 行を出力"
 "します\n"
 
-#: src/cli.c:1675 src/cli.c:1836
+#: src/cli.c:1677 src/cli.c:1839
 msgid ""
 "  save: export the current visible secrets into a passphrase-protected "
 "bundle\n"
@@ -423,13 +423,13 @@ msgstr ""
 "  save: 現在の view から見える secret をパスフレーズ保護された bundle として"
 "出力します\n"
 
-#: src/cli.c:1676 src/cli.c:1840
+#: src/cli.c:1678 src/cli.c:1843
 msgid ""
 "  load: import a passphrase-protected bundle into the current domain view\n"
 msgstr ""
 "  load: パスフレーズ保護された bundle を現在の domain view に取り込みます\n"
 
-#: src/cli.c:1677 src/cli.c:1844
+#: src/cli.c:1679 src/cli.c:1847
 msgid ""
 "  unlock: start or refresh a local unlock for the current domain; --duration "
 "accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such "
@@ -442,7 +442,7 @@ msgstr ""
 "ます。--inherit は現在の domain の local override を外して継承状態へ戻しま"
 "す\n"
 
-#: src/cli.c:1678 src/cli.c:1851
+#: src/cli.c:1680 src/cli.c:1854
 msgid ""
 "  inherit: force the current domain back to inherited state by removing a "
 "local lock or clearing a local unlock, without checking whether the result "
@@ -451,11 +451,11 @@ msgstr ""
 "  inherit: 結果がアンロックのままか確認せず、local lock を削除するか、local "
 "unlock を消して、現在の domain を継承状態へ戻します\n"
 
-#: src/cli.c:1679 src/cli.c:1855
+#: src/cli.c:1681 src/cli.c:1858
 msgid "  passwd: change the wrapped-master-key passphrase\n"
 msgstr "  passwd: ラップ済み master key のパスフレーズを変更します\n"
 
-#: src/cli.c:1680 src/cli.c:1859
+#: src/cli.c:1682 src/cli.c:1862
 msgid ""
 "  lock: return the current domain to a locked local state, or do nothing "
 "when it is already locked\n"
@@ -463,7 +463,7 @@ msgstr ""
 "  lock: 現在の domain をローカルなロック状態へ戻し、すでに lock 中なら何もし"
 "ません\n"
 
-#: src/cli.c:1681 src/cli.c:1863
+#: src/cli.c:1683 src/cli.c:1866
 msgid ""
 "  status: report whether secret material is available from the current "
 "domain scope\n"
@@ -471,7 +471,7 @@ msgstr ""
 "  status: 現在の domain scope から secret material が利用可能かどうかを報告し"
 "ます\n"
 
-#: src/cli.c:1682 src/cli.c:1867
+#: src/cli.c:1684 src/cli.c:1870
 msgid ""
 "  wait-unlock: wait until the current domain scope becomes unlocked, or fail "
 "on timeout\n"
@@ -479,7 +479,7 @@ msgstr ""
 "  wait-unlock: 現在の domain scope がアンロックされるまで待機し、タイムアウト"
 "時は失敗します\n"
 
-#: src/cli.c:1683 src/cli.c:1916
+#: src/cli.c:1685 src/cli.c:1919
 msgid ""
 "  secret status: print one v2 secret object's non-secret metadata and "
 "reference counts\n"
@@ -487,7 +487,7 @@ msgstr ""
 "  secret status: 1 つの v2 secret object の非秘密 metadata と参照数を表示しま"
 "す\n"
 
-#: src/cli.c:1684
+#: src/cli.c:1686
 msgid ""
 "  store migrate: validate a v1 store and write the side-by-side v2 domain-"
 "entry/object graph after review\n"
@@ -495,7 +495,7 @@ msgstr ""
 "  store migrate: v1 store を検証し、確認後に side-by-side の v2 domain-entry/"
 "object graph を書き込みます\n"
 
-#: src/cli.c:1685
+#: src/cli.c:1687
 msgid ""
 "  store finalize-migration: inspect or remove legacy v1 fallback files after "
 "a v2 migration\n"
@@ -503,11 +503,11 @@ msgstr ""
 "  store finalize-migration: v2 migration 後の legacy v1 fallback file を確認"
 "または削除します\n"
 
-#: src/cli.c:1686 src/cli.c:1871
+#: src/cli.c:1688 src/cli.c:1874
 msgid "  version: print the secdat version\n"
 msgstr "  version: secdat のバージョンを表示します\n"
 
-#: src/cli.c:1691
+#: src/cli.c:1693
 #, c-format
 msgid ""
 "\n"
@@ -516,14 +516,14 @@ msgstr ""
 "\n"
 "トピック:\n"
 
-#: src/cli.c:1692 src/cli.c:1875
+#: src/cli.c:1694 src/cli.c:1878
 msgid ""
 "  usecases: show example workflows and task-oriented command combinations\n"
 msgstr ""
 "  usecases: 典型的なワークフローと作業指向のコマンド組み合わせ例を表示しま"
 "す\n"
 
-#: src/cli.c:1693
+#: src/cli.c:1695
 msgid ""
 "  concepts: explain domains, stores, inheritance, local unlocks, local "
 "locks, and KEYREF resolution\n"
@@ -531,7 +531,7 @@ msgstr ""
 "  concepts: domain、store、継承、local unlock、local lock、KEYREF 解決の考え"
 "方を説明します\n"
 
-#: src/cli.c:1694 src/cli.c:1883
+#: src/cli.c:1696 src/cli.c:1886
 msgid ""
 "  inject: explain exec --inject layers, rule kinds, selectors, policy files, "
 "and preflight checks\n"
@@ -539,7 +539,7 @@ msgstr ""
 "  inject: exec --inject の層、ルール種別、選択子、ポリシーファイル、事前検証"
 "を説明します\n"
 
-#: src/cli.c:1699
+#: src/cli.c:1701
 #, c-format
 msgid ""
 "\n"
@@ -548,7 +548,7 @@ msgstr ""
 "\n"
 "意味:\n"
 
-#: src/cli.c:1714
+#: src/cli.c:1716
 msgid ""
 "  key_visibility controls whether the key name is visible while locked; "
 "value_access=always stores a public/plaintext-at-rest value; bulk_select "
@@ -560,7 +560,7 @@ msgstr ""
 "bulk_select は --bulk-gate 使用時に export・list・exec の bulk-gated "
 "selection 対象にできるかを制御します\n"
 
-#: src/cli.c:1715
+#: src/cli.c:1717
 msgid ""
 "  v2 effective --bulk-gate selection also requires the secret object's "
 "bulk_select_value policy to allow bulk selection\n"
@@ -568,14 +568,14 @@ msgstr ""
 "  v2 の実効 --bulk-gate selection では、secret object の bulk_select_value "
 "policy が bulk selection を許可している必要があります\n"
 
-#: src/cli.c:1719
+#: src/cli.c:1721
 msgid ""
 "  meta: manage non-secret searchable metadata attached to keys in the "
 "current store\n"
 msgstr ""
 "  meta: current store 内の key に付けた非秘密の検索用 metadata を管理します\n"
 
-#: src/cli.c:1720
+#: src/cli.c:1722
 msgid ""
 "  metadata values are labels or descriptions for lookup; do not store secret "
 "material in metadata\n"
@@ -583,12 +583,12 @@ msgstr ""
 "  metadata value は検索用の label や説明です。metadata には secret material "
 "を保存しないでください\n"
 
-#: src/cli.c:1724
+#: src/cli.c:1726
 msgid "  meta get: print non-secret searchable metadata for one visible key\n"
 msgstr ""
 "  meta get: 1 つの visible key の非秘密な検索用 metadata を表示します\n"
 
-#: src/cli.c:1728
+#: src/cli.c:1730
 msgid ""
 "  meta set: attach or replace one non-secret searchable metadata field on a "
 "local key\n"
@@ -596,11 +596,11 @@ msgstr ""
 "  meta set: local key に非秘密の検索用 metadata field を 1 つ追加または置換し"
 "ます\n"
 
-#: src/cli.c:1732
+#: src/cli.c:1734
 msgid "  meta unset: remove one searchable metadata field from a local key\n"
 msgstr "  meta unset: local key から検索用 metadata field を 1 つ削除します\n"
 
-#: src/cli.c:1736
+#: src/cli.c:1738
 msgid ""
 "  meta search: list visible keys whose non-secret metadata contains all "
 "requested fields or glob-matched values\n"
@@ -608,7 +608,7 @@ msgstr ""
 "  meta search: 指定 field または glob に一致する value をすべて含む非秘密 "
 "metadata を持つ visible key を一覧します\n"
 
-#: src/cli.c:1740
+#: src/cli.c:1742
 msgid ""
 "  meta mark-leaked: mark one key as leaked metadata and print high-risk "
 "relation refresh suggestions\n"
@@ -616,7 +616,7 @@ msgstr ""
 "  meta mark-leaked: 1 つの key を漏洩 metadata として mark し、高リスクの "
 "relation refresh 提案を表示します\n"
 
-#: src/cli.c:1744
+#: src/cli.c:1746
 msgid ""
 "  relation: record semantic links between multiple key references and the "
 "non-secret security meaning of the combination\n"
@@ -624,7 +624,7 @@ msgstr ""
 "  relation: 複数の key reference 間の意味的な link と、その組み合わせの非秘密"
 "な security meaning を記録します\n"
 
-#: src/cli.c:1748
+#: src/cli.c:1750
 msgid ""
 "  relation set: create or replace one semantic relation with two or more "
 "role=KEYREF members\n"
@@ -632,7 +632,7 @@ msgstr ""
 "  relation set: 2 つ以上の role=KEYREF member を持つ semantic relation を作成"
 "または置換します\n"
 
-#: src/cli.c:1752
+#: src/cli.c:1754
 msgid ""
 "  relation ls: list relation identifiers, optionally limited to relations "
 "containing one key\n"
@@ -640,7 +640,7 @@ msgstr ""
 "  relation ls: relation identifier を一覧します。必要なら 1 つの key を含む "
 "relation に絞り込みます\n"
 
-#: src/cli.c:1756
+#: src/cli.c:1758
 msgid ""
 "  relation search: list relation identifiers whose non-secret relation "
 "fields match all filters\n"
@@ -648,7 +648,7 @@ msgstr ""
 "  relation search: すべての filter に一致する非秘密の relation field を持つ "
 "relation identifier を一覧します\n"
 
-#: src/cli.c:1760
+#: src/cli.c:1762
 msgid ""
 "  relation suggest-refresh: suggest high-risk refresh targets related to one "
 "leaked key without reading secret values\n"
@@ -656,18 +656,18 @@ msgstr ""
 "  relation suggest-refresh: secret value を読まずに、1 つの leaked key に関連"
 "する高リスクの refresh target を提案します\n"
 
-#: src/cli.c:1764
+#: src/cli.c:1766
 msgid ""
 "  relation show: print one semantic relation without reading secret values\n"
 msgstr ""
 "  relation show: secret value を読まずに 1 つの semantic relation を表示しま"
 "す\n"
 
-#: src/cli.c:1768
+#: src/cli.c:1770
 msgid "  relation rm: remove one semantic relation record\n"
 msgstr "  relation rm: semantic relation record を 1 つ削除します\n"
 
-#: src/cli.c:1773
+#: src/cli.c:1775
 msgid ""
 "  with no filters, fsck runs orphaned, dangling, and refcount checks; --"
 "repair only rebuilds cached v2 refcounts\n"
@@ -675,14 +675,14 @@ msgstr ""
 "  filter 指定なしの fsck は orphaned、dangling、refcount check を実行しま"
 "す。--repair は cached v2 refcount だけを再構築します\n"
 
-#: src/cli.c:1777
+#: src/cli.c:1779
 msgid ""
 "  gc: remove unreachable or dangling v2 graph files after dry-run review\n"
 msgstr ""
 "  gc: dry-run review 後に到達不能または dangling な v2 graph file を削除しま"
 "す\n"
 
-#: src/cli.c:1778
+#: src/cli.c:1780
 msgid ""
 "  --dry-run previews selected v2 graph files; without --dry-run it "
 "permanently removes the selected graph files\n"
@@ -690,7 +690,7 @@ msgstr ""
 "  --dry-run は選択された v2 graph file を事前確認します。--dry-run なしでは選"
 "択された graph file を永続的に削除します\n"
 
-#: src/cli.c:1795
+#: src/cli.c:1797
 msgid ""
 "  the UUID is an address, not authority; follow-up metadata commands still "
 "use the current domain/store object view\n"
@@ -698,7 +698,7 @@ msgstr ""
 "  UUID は address であって authority ではありません。後続の metadata command "
 "も現在の domain/store object view を使います\n"
 
-#: src/cli.c:1820
+#: src/cli.c:1822
 msgid ""
 "  value writes through either linked key affect the shared object; domain-"
 "entry attributes remain per link\n"
@@ -706,7 +706,7 @@ msgstr ""
 "  link されたどちらの key から value を書き込んでも共有 object に反映されま"
 "す。domain-entry 属性は link ごとに保持されます\n"
 
-#: src/cli.c:1825
+#: src/cli.c:1827
 msgid ""
 "  --inject LAYER:KIND=SELECTOR configures ambient, secret, route, or final "
 "rules; repeated --inject accumulates selectors of the same kind\n"
@@ -714,7 +714,7 @@ msgstr ""
 "  --inject LAYER:KIND=SELECTOR で ambient、secret、route、final のルールを設"
 "定します。同じ種別の選択子は --inject を繰り返すと追加されます\n"
 
-#: src/cli.c:1826
+#: src/cli.c:1828
 msgid ""
 "  --inject-file FILE loads a YAML policy; later --inject options override "
 "file entries\n"
@@ -722,22 +722,22 @@ msgstr ""
 "  --inject-file FILE で YAML ポリシーを読み込みます。後続の --inject はファイ"
 "ル内の設定を上書きします\n"
 
-#: src/cli.c:1827
+#: src/cli.c:1829
 msgid ""
 "  --bulk-gate applies the store bulk_select pre-filter before secret supply\n"
 msgstr ""
 "  --bulk-gate は secret 供給の前に store の bulk_select 事前フィルターを適用"
 "します\n"
 
-#: src/cli.c:1828
+#: src/cli.c:1830
 msgid ""
 "  --command-resolution MODE selects CMD lookup: caller-path (default), child-"
 "path, or direct\n"
 msgstr ""
-"  --command-resolution MODE は CMD lookup を選択します: caller-path (default)、"
-"child-path、または direct\n"
+"  --command-resolution MODE は CMD lookup を選択します: caller-path "
+"(default)、child-path、または direct\n"
 
-#: src/cli.c:1829
+#: src/cli.c:1831
 msgid ""
 "  see help inject for the rule vocabulary, selector syntax, YAML shape, and "
 "preflight examples\n"
@@ -745,7 +745,7 @@ msgstr ""
 "  ルール語彙、選択子構文、YAML 形式、事前検証例は help inject を参照してくだ"
 "さい\n"
 
-#: src/cli.c:1845
+#: src/cli.c:1848
 msgid ""
 "  --gui forces passphrase prompts through the askpass helper even when a "
 "terminal is available\n"
@@ -753,7 +753,7 @@ msgstr ""
 "  --gui は端末が利用可能な場合でも passphrase prompt を askpass helper 経由に"
 "強制します\n"
 
-#: src/cli.c:1846
+#: src/cli.c:1849
 msgid ""
 "  --volatile keeps writes, deletes, tombstones, and read-side resolution "
 "changes in a session overlay; lock --save persists supported overlay changes "
@@ -763,7 +763,7 @@ msgstr ""
 "session overlay に保持します。lock --save は lock 前に対応済みの overlay 変更"
 "を永続化します\n"
 
-#: src/cli.c:1847
+#: src/cli.c:1850
 msgid ""
 "  persisted tombstone removal and v2 local-entry deletions still require a "
 "normal writable session\n"
@@ -771,14 +771,14 @@ msgstr ""
 "  永続 tombstone の削除と v2 local-entry の削除には、通常の writable session "
 "が引き続き必要です\n"
 
-#: src/cli.c:1879
+#: src/cli.c:1882
 msgid ""
 "  concepts: explain domains, stores, inheritance, sessions, and KEYREF "
 "resolution\n"
 msgstr ""
 "  concepts: domain、store、継承、session、KEYREF 解決の考え方を説明します\n"
 
-#: src/cli.c:1887
+#: src/cli.c:1890
 msgid ""
 "  store: manage store namespaces and migrate v1 stores to the v2 domain-"
 "entry/object layout\n"
@@ -786,26 +786,26 @@ msgstr ""
 "  store: store namespace を管理し、v1 store を v2 domain-entry/object layout "
 "へ migrate します\n"
 
-#: src/cli.c:1891
+#: src/cli.c:1894
 msgid ""
 "  store create: create one store namespace in the resolved current domain\n"
 msgstr ""
 "  store create: 解決された current domain 内に store namespace を 1 つ作成し"
 "ます\n"
 
-#: src/cli.c:1895
+#: src/cli.c:1898
 msgid ""
 "  store delete: delete one store namespace from the resolved current domain\n"
 msgstr ""
 "  store delete: 解決された current domain から store namespace を 1 つ削除し"
 "ます\n"
 
-#: src/cli.c:1899
+#: src/cli.c:1902
 msgid "  store ls: list store namespaces in the resolved current domain\n"
 msgstr ""
 "  store ls: 解決された current domain 内の store namespace を一覧表示します\n"
 
-#: src/cli.c:1903
+#: src/cli.c:1906
 msgid ""
 "  store migrate: validate one v1 store; without --dry-run, write the side-by-"
 "side v2 domain-entry/object graph and leave v1 fallback files in place\n"
@@ -814,7 +814,7 @@ msgstr ""
 "side の v2 domain-entry/object graph を書き込み、v1 fallback file は残しま"
 "す\n"
 
-#: src/cli.c:1907
+#: src/cli.c:1910
 msgid ""
 "  store finalize-migration: inspect legacy v1 fallback files; without --dry-"
 "run, remove only removable files and refuse to remove anything while "
@@ -823,7 +823,7 @@ msgstr ""
 "  store finalize-migration: legacy v1 fallback file を確認します。--dry-run "
 "なしでは削除可能な file だけを削除し、blocker が残る間は何も削除しません\n"
 
-#: src/cli.c:1908
+#: src/cli.c:1911
 msgid ""
 "  typical order is migrate dry-run, migrate, fsck --format v2, rewrite or "
 "remove fallback-backed values, finalize dry-run, then finalize\n"
@@ -831,7 +831,7 @@ msgstr ""
 "  典型的な順序は migrate dry-run、migrate、fsck --format v2、fallback-backed "
 "value の再書き込みまたは削除、finalize dry-run、finalize です\n"
 
-#: src/cli.c:1917
+#: src/cli.c:1920
 msgid ""
 "  UUID lookup is scoped to the current domain/store object view; use the "
 "object's owning context for cross-domain links\n"
@@ -839,17 +839,17 @@ msgstr ""
 "  UUID lookup は現在の domain/store object view に閉じます。cross-domain "
 "link では object の所有 context を使ってください\n"
 
-#: src/cli.c:1925
+#: src/cli.c:1928
 msgid "  domain create: register the resolved directory as a domain root\n"
 msgstr ""
 "  domain create: 解決された directory を domain root として登録します\n"
 
-#: src/cli.c:1929
+#: src/cli.c:1932
 msgid "  domain delete: unregister the resolved directory as a domain root\n"
 msgstr ""
 "  domain delete: 解決された directory の domain root 登録を解除します\n"
 
-#: src/cli.c:1933
+#: src/cli.c:1936
 msgid ""
 "  domain move: update a registered domain root path without deleting its "
 "stored secrets\n"
@@ -857,11 +857,11 @@ msgstr ""
 "  domain move: 保存済み secret を削除せずに登録済み domain root path を更新し"
 "ます\n"
 
-#: src/cli.c:1937
+#: src/cli.c:1940
 msgid "  domain ls: list domain roots around the scoped directory\n"
 msgstr "  domain ls: scoped directory 周辺の domain root を一覧表示します\n"
 
-#: src/cli.c:1941
+#: src/cli.c:1944
 msgid ""
 "  domain status: report the resolved domain root and effective lock/unlock "
 "source\n"
@@ -869,7 +869,7 @@ msgstr ""
 "  domain status: 解決された domain root と有効な lock/unlock source を報告し"
 "ます\n"
 
-#: src/cli.c:1952 src/cli.c:2145
+#: src/cli.c:1955 src/cli.c:2148
 #, c-format
 msgid ""
 "\n"
@@ -878,12 +878,12 @@ msgstr ""
 "\n"
 "利用例:\n"
 
-#: src/cli.c:1955
+#: src/cli.c:1958
 #, c-format
 msgid "  read one value to stdout: %s get API_TOKEN --stdout\n"
 msgstr "  1 つの値を標準出力へ読む: %s get API_TOKEN --stdout\n"
 
-#: src/cli.c:1957
+#: src/cli.c:1960
 #, c-format
 msgid ""
 "  wait for another terminal to unlock before reading: %s get --on-demand-"
@@ -892,13 +892,13 @@ msgstr ""
 "  読み取り前に別端末の unlock を待つ: %s get --on-demand-unlock --unlock-"
 "timeout 30 API_TOKEN --stdout\n"
 
-#: src/cli.c:1963
+#: src/cli.c:1966
 #, c-format
 msgid ""
 "  write one value from an argument: %s set API_TOKEN --value new-token\n"
 msgstr "  引数から 1 つの値を書き込む: %s set API_TOKEN --value new-token\n"
 
-#: src/cli.c:1965
+#: src/cli.c:1968
 #, c-format
 msgid ""
 "  read a value from standard input without echoing it in shell history: "
@@ -907,12 +907,12 @@ msgstr ""
 "  shell 履歴へ残さず標準入力から値を読む: printf 'token' | %s set API_TOKEN "
 "--stdin\n"
 
-#: src/cli.c:1971
+#: src/cli.c:1974
 #, c-format
 msgid "  inspect one key's current attributes: %s attr API_TOKEN\n"
 msgstr "  1 つの key の現在の属性を確認する: %s attr API_TOKEN\n"
 
-#: src/cli.c:1973
+#: src/cli.c:1976
 #, c-format
 msgid ""
 "  make one value public while keeping the key name visible: %s attr "
@@ -921,19 +921,19 @@ msgstr ""
 "  key 名を見えるまま 1 つの value を public にする: %s attr API_TOKEN --"
 "value-access always\n"
 
-#: src/cli.c:1979
+#: src/cli.c:1982
 #, c-format
 msgid "  tag one key for search: %s meta set API_TOKEN service billing\n"
 msgstr ""
 "  検索用に 1 つの key へ tag を付ける: %s meta set API_TOKEN service "
 "billing\n"
 
-#: src/cli.c:1981
+#: src/cli.c:1984
 #, c-format
 msgid "  find keys by metadata: %s meta search service=bill*\n"
 msgstr "  metadata で key を探す: %s meta search service=bill*\n"
 
-#: src/cli.c:1983
+#: src/cli.c:1986
 #, c-format
 msgid ""
 "  mark a leaked key and suggest refresh targets: %s meta mark-leaked "
@@ -942,7 +942,7 @@ msgstr ""
 "  leaked key を mark して refresh target を提案する: %s meta mark-leaked "
 "BILLING_PASSWORD\n"
 
-#: src/cli.c:1989
+#: src/cli.c:1992
 #, c-format
 msgid ""
 "  record a credential pair: %s relation set billing-login --kind credential "
@@ -953,7 +953,7 @@ msgstr ""
 "credential --member id=BILLING_ID --member password=BILLING_PASSWORD --"
 "security combination-sensitive\n"
 
-#: src/cli.c:1991
+#: src/cli.c:1994
 #, c-format
 msgid ""
 "  find credential relations: %s relation search kind=credential "
@@ -962,7 +962,7 @@ msgstr ""
 "  credential relation を探す: %s relation search kind=credential "
 "security=combination-*\n"
 
-#: src/cli.c:1993
+#: src/cli.c:1996
 #, c-format
 msgid ""
 "  suggest refresh targets after a leak: %s relation suggest-refresh "
@@ -971,17 +971,17 @@ msgstr ""
 "  leak 後の refresh target を提案する: %s relation suggest-refresh "
 "BILLING_PASSWORD\n"
 
-#: src/cli.c:1995
+#: src/cli.c:1998
 #, c-format
 msgid "  inspect relation metadata: %s relation show billing-login\n"
 msgstr "  relation metadata を確認する: %s relation show billing-login\n"
 
-#: src/cli.c:2001
+#: src/cli.c:2004
 #, c-format
 msgid "  run all current-domain metadata checks: %s fsck\n"
 msgstr "  current-domain metadata check をすべて実行する: %s fsck\n"
 
-#: src/cli.c:2003
+#: src/cli.c:2006
 #, c-format
 msgid ""
 "  rebuild cached v2 refcounts after review: %s fsck --format v2 --refcount --"
@@ -990,7 +990,7 @@ msgstr ""
 "  確認後に cached v2 refcount を再構築する: %s fsck --format v2 --refcount --"
 "repair\n"
 
-#: src/cli.c:2009
+#: src/cli.c:2012
 #, c-format
 msgid ""
 "  preview unreachable v2 graph files before deletion: %s gc --format v2 --"
@@ -998,12 +998,12 @@ msgid ""
 msgstr ""
 "  削除前に到達不能な v2 graph file を確認する: %s gc --format v2 --dry-run\n"
 
-#: src/cli.c:2011
+#: src/cli.c:2014
 #, c-format
 msgid "  delete the reviewed unreachable v2 graph files: %s gc --format v2\n"
 msgstr "  確認済みの到達不能な v2 graph file を削除する: %s gc --format v2\n"
 
-#: src/cli.c:2017
+#: src/cli.c:2020
 #, c-format
 msgid ""
 "  load current shell variables without printing raw secrets: source <(%s "
@@ -1011,7 +1011,7 @@ msgid ""
 msgstr ""
 "  生の secret を表示せず現在の shell 変数へ読み込む: source <(%s export)\n"
 
-#: src/cli.c:2019
+#: src/cli.c:2022
 #, c-format
 msgid ""
 "  export one namespace before running another tool: eval \"$(%s --store app "
@@ -1020,7 +1020,7 @@ msgstr ""
 "  別ツール実行前に 1 つの namespace を export する: eval \"$(%s --store app "
 "export --pattern 'APP_*')\"\n"
 
-#: src/cli.c:2025
+#: src/cli.c:2028
 #, c-format
 msgid ""
 "  run one command with matching secrets injected: %s exec --inject secret:"
@@ -1029,7 +1029,7 @@ msgstr ""
 "  一致した secret を注入して 1 つのコマンドを実行する: %s exec --inject "
 "secret:only=APP_* env\n"
 
-#: src/cli.c:2027
+#: src/cli.c:2030
 #, c-format
 msgid ""
 "  exclude one inherited key while running a child process: %s exec --inject "
@@ -1038,7 +1038,7 @@ msgstr ""
 "  子プロセス実行時に 1 つの継承 key を除外する: %s exec --inject secret:"
 "only=APP_* --inject secret:omit=APP_DEBUG_* CMD\n"
 
-#: src/cli.c:2033
+#: src/cli.c:2036
 #, c-format
 msgid ""
 "  share one v2 secret object under another key: %s ln APP_TOKEN "
@@ -1047,7 +1047,7 @@ msgstr ""
 "  1 つの v2 secret object を別 key 名で共有する: %s ln APP_TOKEN "
 "SERVICE_TOKEN\n"
 
-#: src/cli.c:2035
+#: src/cli.c:2038
 #, c-format
 msgid ""
 "  link across explicit domains/stores: %s ln /src/domain/APP_TOKEN:app /dst/"
@@ -1056,7 +1056,7 @@ msgstr ""
 "  明示した domain/store をまたいで link する: %s ln /src/domain/APP_TOKEN:"
 "app /dst/domain/APP_TOKEN:ops\n"
 
-#: src/cli.c:2041
+#: src/cli.c:2044
 #, c-format
 msgid ""
 "  resolve one key to its v2 secret object UUID without reading it: %s id "
@@ -1065,7 +1065,7 @@ msgstr ""
 "  value を読まずに 1 つの key を v2 secret object UUID へ解決する: %s id "
 "API_TOKEN\n"
 
-#: src/cli.c:2043
+#: src/cli.c:2046
 #, c-format
 msgid ""
 "  inspect that object from its owning domain/store context: %s secret status "
@@ -1074,12 +1074,12 @@ msgstr ""
 "  その object の owning domain/store context から確認する: %s secret status "
 "01234567-89ab-4def-8123-456789abcdef\n"
 
-#: src/cli.c:2049
+#: src/cli.c:2052
 #, c-format
 msgid "  start a session for the current project directory: %s unlock\n"
 msgstr "  現在の project directory 用 session を開始する: %s unlock\n"
 
-#: src/cli.c:2051
+#: src/cli.c:2054
 #, c-format
 msgid ""
 "  refresh an active session for 15 minutes without re-entering the "
@@ -1088,7 +1088,7 @@ msgstr ""
 "  パスフレーズ再入力なしで有効な session を 15 分延長する: %s unlock --"
 "duration 15\n"
 
-#: src/cli.c:2053
+#: src/cli.c:2056
 #, c-format
 msgid ""
 "  unlock one specific domain from elsewhere: %s --dir ~/example/project "
@@ -1096,7 +1096,7 @@ msgid ""
 msgstr ""
 "  別の場所から特定 domain を unlock する: %s --dir ~/example/project unlock\n"
 
-#: src/cli.c:2059
+#: src/cli.c:2062
 #, c-format
 msgid ""
 "  block a script until another terminal unlocks the same domain: %s --dir ~/"
@@ -1105,7 +1105,7 @@ msgstr ""
 "  別端末が同じ domain を unlock するまで script を待機させる: %s --dir ~/"
 "example/project wait-unlock --timeout 900\n"
 
-#: src/cli.c:2061
+#: src/cli.c:2064
 #, c-format
 msgid ""
 "  poll quietly before a later secret read: %s wait-unlock --timeout 30 --"
@@ -1114,48 +1114,48 @@ msgstr ""
 "  後続の secret 読み取り前に静かに待機する: %s wait-unlock --timeout 30 --"
 "quiet\n"
 
-#: src/cli.c:2067
+#: src/cli.c:2070
 #, c-format
 msgid "  check whether the current domain can read secrets now: %s status\n"
 msgstr "  現在の domain が今 secret を読めるか確認する: %s status\n"
 
-#: src/cli.c:2069
+#: src/cli.c:2072
 #, c-format
 msgid "  use exit status only in scripts: %s status --quiet\n"
 msgstr "  script では終了コードだけを使う: %s status --quiet\n"
 
-#: src/cli.c:2071
+#: src/cli.c:2074
 #, c-format
 msgid "  read machine-readable state in scripts: %s status --json\n"
 msgstr "  script で機械可読な状態を読む: %s status --json\n"
 
-#: src/cli.c:2077
+#: src/cli.c:2080
 #, c-format
 msgid ""
 "  inspect local tombstones and overrides before cleanup: %s list --masked\n"
 msgstr ""
 "  cleanup 前に local tombstone と override を確認する: %s list --masked\n"
 
-#: src/cli.c:2079
+#: src/cli.c:2082
 #, c-format
 msgid ""
 "  inspect only plaintext-at-rest entries in the current domain: %s list --"
 "unsafe\n"
 msgstr "  現在の domain の平文保存エントリだけ確認する: %s list --unsafe\n"
 
-#: src/cli.c:2085
+#: src/cli.c:2088
 #, c-format
 msgid "  create one namespace for app-specific keys: %s store create app\n"
 msgstr "  app 専用 key 用 namespace を 1 つ作る: %s store create app\n"
 
-#: src/cli.c:2087
+#: src/cli.c:2090
 #, c-format
 msgid ""
 "  inspect available namespaces before selecting one with --store: %s store "
 "ls\n"
 msgstr "  --store で選ぶ前に利用可能 namespace を確認する: %s store ls\n"
 
-#: src/cli.c:2089 src/cli.c:2101
+#: src/cli.c:2092 src/cli.c:2104
 #, c-format
 msgid ""
 "  inspect a v1 to v2 migration before writing: %s store migrate app --to-"
@@ -1164,7 +1164,7 @@ msgstr ""
 "  書き込み前に v1 から v2 への migration を確認する: %s store migrate app --"
 "to-format v2 --dry-run\n"
 
-#: src/cli.c:2091
+#: src/cli.c:2094
 #, c-format
 msgid ""
 "  write the v2 domain-entry/object graph after review: %s store migrate app "
@@ -1173,7 +1173,7 @@ msgstr ""
 "  確認後に v2 domain-entry/object graph を書き込む: %s store migrate app --"
 "to-format v2\n"
 
-#: src/cli.c:2093
+#: src/cli.c:2096
 #, c-format
 msgid ""
 "  inspect legacy fallback files after blockers are rewritten or removed: %s "
@@ -1182,7 +1182,7 @@ msgstr ""
 "  blocker の再書き込みまたは削除後に legacy fallback file を確認する: %s "
 "store finalize-migration app --from-format v1 --dry-run\n"
 
-#: src/cli.c:2095
+#: src/cli.c:2098
 #, c-format
 msgid ""
 "  remove removable legacy fallback files after review: %s store finalize-"
@@ -1191,7 +1191,7 @@ msgstr ""
 "  確認後に削除可能な legacy fallback file を削除する: %s store finalize-"
 "migration app --from-format v1\n"
 
-#: src/cli.c:2103
+#: src/cli.c:2106
 #, c-format
 msgid ""
 "  write the v2 graph after reviewing the dry-run output: %s store migrate "
@@ -1200,7 +1200,7 @@ msgstr ""
 "  dry-run 出力を確認してから v2 graph を書き込む: %s store migrate app --to-"
 "format v2\n"
 
-#: src/cli.c:2109
+#: src/cli.c:2112
 #, c-format
 msgid ""
 "  identify legacy fallback blockers before deleting anything: %s store "
@@ -1209,7 +1209,7 @@ msgstr ""
 "  何かを削除する前に legacy fallback blocker を特定する: %s store finalize-"
 "migration app --from-format v1 --dry-run\n"
 
-#: src/cli.c:2111
+#: src/cli.c:2114
 #, c-format
 msgid ""
 "  remove removable legacy fallback files only after blockers are gone: %s "
@@ -1218,7 +1218,7 @@ msgstr ""
 "  blocker がなくなってから削除可能な legacy fallback file だけを削除する: %s "
 "store finalize-migration app --from-format v1\n"
 
-#: src/cli.c:2117
+#: src/cli.c:2120
 #, c-format
 msgid ""
 "  inspect one v2 secret object by UUID without reading its value: %s secret "
@@ -1227,14 +1227,14 @@ msgstr ""
 "  value を読まずに UUID で 1 つの v2 secret object を確認する: %s secret "
 "status 01234567-89ab-4def-8123-456789abcdef\n"
 
-#: src/cli.c:2119
+#: src/cli.c:2122
 #, c-format
 msgid ""
 "  resolve a visible or unlocked key to its UUID first: %s id API_TOKEN\n"
 msgstr ""
 "  先に visible または unlocked な key を UUID へ解決する: %s id API_TOKEN\n"
 
-#: src/cli.c:2121
+#: src/cli.c:2124
 #, c-format
 msgid ""
 "  for cross-domain links, run status from the object's owning domain/store "
@@ -1243,12 +1243,12 @@ msgstr ""
 "  cross-domain link では object の owning domain/store context から status を"
 "実行してください\n"
 
-#: src/cli.c:2127
+#: src/cli.c:2130
 #, c-format
 msgid "  register the current directory as a domain root: %s domain create\n"
 msgstr "  現在 directory を domain root として登録する: %s domain create\n"
 
-#: src/cli.c:2129
+#: src/cli.c:2132
 #, c-format
 msgid ""
 "  recover a moved domain root: %s --dir /new/path domain move --from /old/"
@@ -1257,7 +1257,7 @@ msgstr ""
 "  移動した domain root を復旧する: %s --dir /new/path domain move --from /"
 "old/path\n"
 
-#: src/cli.c:2131
+#: src/cli.c:2134
 #, c-format
 msgid ""
 "  inspect inherited and blocked descendants: %s domain ls -l --descendants\n"
@@ -1265,7 +1265,7 @@ msgstr ""
 "  継承中および block 中の descendant を確認する: %s domain ls -l --"
 "descendants\n"
 
-#: src/cli.c:2138
+#: src/cli.c:2141
 #, c-format
 msgid ""
 "  see %s help usecases for workflow-oriented examples across multiple "
@@ -1274,13 +1274,13 @@ msgstr ""
 "  複数 command にまたがるワークフロー例は %s help usecases を参照してくださ"
 "い\n"
 
-#: src/cli.c:2148
+#: src/cli.c:2151
 #, c-format
 msgid "  bootstrap a new project domain: %s --dir ~/example/project unlock\n"
 msgstr ""
 "  新しい project domain を初期化する: %s --dir ~/example/project unlock\n"
 
-#: src/cli.c:2150
+#: src/cli.c:2153
 #, c-format
 msgid ""
 "  read one secret directly: %s --dir ~/example/project get API_TOKEN --"
@@ -1289,7 +1289,7 @@ msgstr ""
 "  1 つの secret を直接読む: %s --dir ~/example/project get API_TOKEN --"
 "stdout\n"
 
-#: src/cli.c:2152
+#: src/cli.c:2155
 #, c-format
 msgid ""
 "  load shell variables without exposing raw values in exported text: source "
@@ -1298,7 +1298,7 @@ msgstr ""
 "  export テキスト中に生の値を出さず shell 変数へ読み込む: source <(%s --dir "
 "~/example/project export)\n"
 
-#: src/cli.c:2154
+#: src/cli.c:2157
 #, c-format
 msgid ""
 "  inject secrets into one subprocess only: %s --dir ~/example/project exec --"
@@ -1307,7 +1307,7 @@ msgstr ""
 "  1 つの子プロセスにだけ secret を注入する: %s --dir ~/example/project exec "
 "--inject secret:rename='s/^MY_APP_\\(.*\\)$/APP_\\1/' CMD\n"
 
-#: src/cli.c:2156
+#: src/cli.c:2159
 #, c-format
 msgid ""
 "  block automation until a human unlocks the domain elsewhere: %s --dir ~/"
@@ -1316,7 +1316,7 @@ msgstr ""
 "  人が別の場所で domain を unlock するまで automation を待機させる: %s --dir "
 "~/example/project wait-unlock --timeout 900\n"
 
-#: src/cli.c:2158
+#: src/cli.c:2161
 #, c-format
 msgid ""
 "  inspect inheritance and local locks under one branch: %s --dir ~/example/"
@@ -1325,7 +1325,7 @@ msgstr ""
 "  1 つの branch 配下の継承と local lock を確認する: %s --dir ~/example/"
 "project domain ls -l --descendants\n"
 
-#: src/cli.c:2165
+#: src/cli.c:2168
 #, c-format
 msgid ""
 "\n"
@@ -1334,7 +1334,7 @@ msgstr ""
 "\n"
 "概念:\n"
 
-#: src/cli.c:2168
+#: src/cli.c:2171
 #, c-format
 msgid ""
 "  domain: a directory-scoped boundary for inheritance, sessions, and "
@@ -1343,7 +1343,7 @@ msgstr ""
 "  domain: 継承、session、tombstone のための directory 単位の境界です。--dir "
 "で解決し、%s domain status で確認できます\n"
 
-#: src/cli.c:2170
+#: src/cli.c:2173
 msgid ""
 "  store: a domain-local namespace selected by --store; use it to separate "
 "app, ops, or personal keys inside one domain\n"
@@ -1351,7 +1351,7 @@ msgstr ""
 "  store: --store で選ぶ domain ローカル namespace です。1 つの domain 内で "
 "app、ops、personal の key を分けるのに使います\n"
 
-#: src/cli.c:2171
+#: src/cli.c:2174
 msgid ""
 "  inheritance: reads fall back to parent domains until a local value, "
 "tombstone, or local lock changes the effective view\n"
@@ -1359,7 +1359,7 @@ msgstr ""
 "  inheritance: 読み取りは local の値、tombstone、local lock が有効 view を変"
 "えるまで親 domain へフォールバックします\n"
 
-#: src/cli.c:2172
+#: src/cli.c:2175
 msgid ""
 "  local lock: a local override that blocks reuse of an inherited unlock "
 "until the current domain unlocks or inherits again\n"
@@ -1367,7 +1367,7 @@ msgstr ""
 "  local lock: 現在 domain が再び unlock または inherit するまで、継承された "
 "unlock の再利用を止める local override です\n"
 
-#: src/cli.c:2173
+#: src/cli.c:2176
 #, c-format
 msgid ""
 "  local unlock: an authenticated master-key cache scoped to one domain "
@@ -1376,7 +1376,7 @@ msgstr ""
 "  local unlock: 1 つの domain branch に閉じた認証済み master-key cache で"
 "す。%s status で利用可否を見て、%s unlock で更新します\n"
 
-#: src/cli.c:2175
+#: src/cli.c:2178
 msgid ""
 "  KEYREF: key lookup syntax is [/ABSOLUTE/DOMAIN/]KEY[:STORE]; when DOMAIN "
 "is present, the trailing slash before KEY is required\n"
@@ -1384,7 +1384,7 @@ msgstr ""
 "  KEYREF: key lookup 構文は [/ABSOLUTE/DOMAIN/]KEY[:STORE] です。DOMAIN があ"
 "る場合、KEY の前の trailing slash が必要です\n"
 
-#: src/cli.c:2181
+#: src/cli.c:2184
 #, c-format
 msgid ""
 "\n"
@@ -1393,7 +1393,7 @@ msgstr ""
 "\n"
 "inject ルール:\n"
 
-#: src/cli.c:2184
+#: src/cli.c:2187
 msgid ""
 "  form: pass repeated --inject LAYER:KIND=SELECTOR rules to exec; use --"
 "inject-file FILE for a YAML policy\n"
@@ -1401,7 +1401,7 @@ msgstr ""
 "  形式: exec に --inject LAYER:KIND=SELECTOR ルールを繰り返し渡します。YAML "
 "ポリシーには --inject-file FILE を使います\n"
 
-#: src/cli.c:2185
+#: src/cli.c:2188
 msgid ""
 "  layers: ambient selects caller environment variables; secret selects store "
 "keys; route resolves ambient/secret name collisions; final validates the "
@@ -1411,7 +1411,7 @@ msgstr ""
 "す。route は ambient/secret の名前衝突を解決し、final は子プロセス環境を検証"
 "します\n"
 
-#: src/cli.c:2186
+#: src/cli.c:2189
 msgid ""
 "  kinds: only is a whitelist, omit excludes matches, require fails when a "
 "match is missing, reject fails when a match is available, rename maps secret "
@@ -1421,7 +1421,7 @@ msgstr ""
 "い場合の失敗、reject は一致対象がある場合の失敗、rename は secret key から環"
 "境変数名への変換、prefer は既定の衝突解決先を設定します\n"
 
-#: src/cli.c:2187
+#: src/cli.c:2190
 msgid ""
 "  selectors: exact names and shell-style globs are allowed; separate "
 "multiple selectors in one value with ':'\n"
@@ -1429,7 +1429,7 @@ msgstr ""
 "  選択子: 完全一致名と shell 形式の glob を使えます。1 つの値に複数の選択子を"
 "書く場合は ':' で区切ります\n"
 
-#: src/cli.c:2188
+#: src/cli.c:2191
 msgid ""
 "  route picks: route:prefer=secret, route:prefer=ambient, route:"
 "prefer=error, or route:GLOB=secret|ambient|error\n"
@@ -1437,7 +1437,7 @@ msgstr ""
 "  route の選択先: route:prefer=secret、route:prefer=ambient、route:"
 "prefer=error、または route:GLOB=secret|ambient|error\n"
 
-#: src/cli.c:2189
+#: src/cli.c:2192
 msgid ""
 "  rename: secret:rename=EXPR uses one sed-style s/// expression; generated "
 "environment names must be valid identifiers\n"
@@ -1445,23 +1445,23 @@ msgstr ""
 "  rename: secret:rename=EXPR は sed 形式の s/// 式を 1 つ使います。生成される"
 "環境変数名は有効な識別子である必要があります\n"
 
-#: src/cli.c:2190
+#: src/cli.c:2193
 msgid ""
-"  files: --inject-file accepts a small YAML subset: bulk_gate, supply, route, "
-"demand, scalar values, inline arrays, and block lists\n"
+"  files: --inject-file accepts a small YAML subset: bulk_gate, supply, "
+"route, demand, scalar values, inline arrays, and block lists\n"
 msgstr ""
 "  ファイル: --inject-file は小さな YAML subset を受け付けます: bulk_gate、"
 "supply、route、demand、scalar 値、inline array、block list\n"
 
-#: src/cli.c:2191
+#: src/cli.c:2194
 msgid ""
-"  file limits: unsupported YAML syntax fails closed; use block lists for large "
-"selector sets instead of long inline arrays\n"
+"  file limits: unsupported YAML syntax fails closed; use block lists for "
+"large selector sets instead of long inline arrays\n"
 msgstr ""
 "  ファイル制約: 未対応の YAML 構文は fail closed します。大きな selector set "
 "には長い inline array ではなく block list を使ってください\n"
 
-#: src/cli.c:2192
+#: src/cli.c:2195
 msgid ""
 "  gate: --bulk-gate applies the key bulk_select pre-filter before secret "
 "supply; list and export can also use --bulk-gate but do not inject into a "
@@ -1471,14 +1471,14 @@ msgstr ""
 "を適用します。list と export でも --bulk-gate を使えますが、子プロセスへの注"
 "入は行いません\n"
 
-#: src/cli.c:2192
+#: src/cli.c:2196
 #, c-format
 msgid ""
 "  preflight: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"
 msgstr ""
 "  事前検証: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"
 
-#: src/cli.c:2194
+#: src/cli.c:2198
 #, c-format
 msgid ""
 "  example: %s exec --inject ambient:omit=SECDAT_* --inject secret:only=APP_* "
@@ -1487,7 +1487,7 @@ msgstr ""
 "  例: %s exec --inject ambient:omit=SECDAT_* --inject secret:only=APP_* --"
 "inject route:prefer=secret --inject final:reject=SECDAT_* -- CMD\n"
 
-#: src/cli.c:2201
+#: src/cli.c:2205
 #, c-format
 msgid ""
 "\n"
@@ -1496,7 +1496,7 @@ msgstr ""
 "\n"
 "セマンティクス:\n"
 
-#: src/cli.c:2202
+#: src/cli.c:2206
 msgid ""
 "  DIR: base directory used for domain resolution; defaults to the current "
 "working directory\n"
@@ -1504,13 +1504,13 @@ msgstr ""
 "  DIR: domain 解決の基準ディレクトリです。省略時は現在の作業ディレクトリを使"
 "います\n"
 
-#: src/cli.c:2203
+#: src/cli.c:2207
 msgid ""
 "  DOMAIN: directory-scoped configuration boundary used for inheritance and "
 "tombstones\n"
 msgstr "  DOMAIN: 継承と tombstone に使う、ディレクトリ単位の設定境界です\n"
 
-#: src/cli.c:2204
+#: src/cli.c:2208
 msgid ""
 "  STORE: domain-local namespace selected by --store; defaults to the default "
 "store\n"
@@ -1518,7 +1518,7 @@ msgstr ""
 "  STORE: --store で選ぶ domain ローカルな名前空間です。省略時は default "
 "store を使います\n"
 
-#: src/cli.c:2205
+#: src/cli.c:2209
 msgid ""
 "  KEY / KEYREF: logical secret name, optionally qualified as [/ABSOLUTE/"
 "DOMAIN/]KEY[:STORE]\n"
@@ -1526,7 +1526,7 @@ msgstr ""
 "  KEY / KEYREF: 論理的な secret 名です。必要なら [/ABSOLUTE/DOMAIN/]KEY[:"
 "STORE] で修飾できます\n"
 
-#: src/cli.c:2206
+#: src/cli.c:2210
 msgid ""
 "  migration hints: v2-only errors suggest store migrate; set "
 "SECDAT_SUPPRESS_MIGRATION_HINTS=1 to hide those hints\n"
@@ -1534,84 +1534,85 @@ msgstr ""
 "  migration hint: v2 専用エラーでは store migrate を提案します。非表示にする"
 "には SECDAT_SUPPRESS_MIGRATION_HINTS=1 を設定します\n"
 
-#: src/cli.c:2234
+#: src/cli.c:2238
 #, c-format
 msgid "unknown store subcommand: %s\n"
 msgstr "不明な store サブコマンドです: %s\n"
 
-#: src/cli.c:2236
+#: src/cli.c:2240
 #, c-format
 msgid "unknown meta subcommand: %s\n"
 msgstr "不明な meta サブコマンドです: %s\n"
 
-#: src/cli.c:2238
+#: src/cli.c:2242
 #, c-format
 msgid "unknown relation subcommand: %s\n"
 msgstr "不明な relation サブコマンドです: %s\n"
 
-#: src/cli.c:2240
+#: src/cli.c:2244
 #, c-format
 msgid "unknown secret subcommand: %s\n"
 msgstr "不明な secret サブコマンドです: %s\n"
 
-#: src/cli.c:2242
+#: src/cli.c:2246
 #, c-format
 msgid "unknown domain subcommand: %s\n"
 msgstr "不明な domain サブコマンドです: %s\n"
 
-#: src/cli.c:2387 src/cli.c:2403 src/cli.c:2434 src/cli.c:2456
+#: src/cli.c:2391 src/cli.c:2407 src/cli.c:2438 src/cli.c:2460
 #, c-format
 msgid "Usage:\n"
 msgstr "使い方:\n"
 
-#: src/cli.c:2412
+#: src/cli.c:2416
 #, c-format
 msgid "\n"
 msgstr "\n"
 
-#: src/cli.c:2413
+#: src/cli.c:2417
 msgid "  KEYREF syntax: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"
 msgstr "  KEYREF 構文: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"
 
-#: src/cli.c:2489
+#: src/cli.c:2493
 #, c-format
 msgid "Try: %s help %s\n"
 msgstr "試してください: %s help %s\n"
 
-#: src/cli.c:2493
+#: src/cli.c:2497
 #, c-format
 msgid "Try: %s help\n"
 msgstr "試してください: %s help\n"
 
 #: src/domain.c:140 src/domain.c:149 src/domain.c:318 src/domain.c:330
-#: src/domain.c:545 src/domain.c:590 src/domain.c:2097 src/exec_inject.c:265
-#: src/exec_inject.c:271 src/exec_inject.c:287 src/exec_inject.c:293
-#: src/exec_inject.c:635 src/exec_inject.c:704 src/exec_inject.c:762
-#: src/exec_inject.c:960 src/exec_inject.c:1058 src/exec_inject.c:1067
-#: src/exec_inject.c:1368 src/exec_inject.c:1375 src/exec_inject.c:1591
-#: src/exec_inject.c:1636 src/exec_inject.c:1680 src/exec_inject.c:1781
-#: src/exec_inject.c:1788 src/exec_inject.c:1805 src/exec_inject.c:1813
-#: src/exec_inject.c:1824 src/exec_inject.c:1876 src/exec_inject.c:2253
-#: src/exec_inject.c:2264 src/exec_inject.c:2276
-#: src/exec_inject_policy_file.c:42 src/exec_inject_policy_file.c:48
-#: src/exec_inject_policy_file.c:90 src/exec_inject_policy_file.c:113
-#: src/exec_inject_policy_file.c:178 src/exec_inject_policy_file.c:273
-#: src/secdat-fuse.c:144 src/store.c:716 src/store.c:732 src/store.c:803
-#: src/store.c:839 src/store.c:884 src/store.c:974 src/store.c:983
-#: src/store.c:1000 src/store.c:1009 src/store.c:1023 src/store.c:1029
-#: src/store.c:3317 src/store.c:3359 src/store.c:3386 src/store.c:3432
-#: src/store.c:3467 src/store.c:3930 src/store.c:4221 src/store.c:5964
-#: src/store.c:6458 src/store.c:6562 src/store.c:6612 src/store.c:6970
-#: src/store.c:7179 src/store.c:7412 src/store.c:7515 src/store.c:7556
-#: src/store.c:7625 src/store.c:8789 src/store.c:8911 src/store.c:8932
-#: src/store.c:9012 src/store.c:9124 src/store.c:9292 src/store.c:9347
-#: src/store.c:10586 src/store.c:10810 src/store.c:10944 src/store.c:11113
-#: src/store.c:11151 src/store.c:11465 src/store.c:11581 src/store.c:11659
-#: src/store.c:11673 src/store.c:11682 src/store.c:11739 src/store.c:11752
-#: src/store.c:11761 src/store.c:11893 src/store.c:12029 src/store.c:12069
-#: src/store.c:12080 src/store.c:12114 src/store.c:12242 src/store.c:13333
-#: src/store.c:13457 src/store.c:15996 src/store.c:16055 src/store.c:17561
-#: src/store.c:18592 src/store.c:18844 src/store.c:19017 src/store.c:19025
+#: src/domain.c:545 src/domain.c:590 src/domain.c:2097 src/exec_inject.c:272
+#: src/exec_inject.c:278 src/exec_inject.c:294 src/exec_inject.c:300
+#: src/exec_inject.c:663 src/exec_inject.c:732 src/exec_inject.c:790
+#: src/exec_inject.c:988 src/exec_inject.c:1086 src/exec_inject.c:1095
+#: src/exec_inject.c:1406 src/exec_inject.c:1413 src/exec_inject.c:1640
+#: src/exec_inject.c:1685 src/exec_inject.c:1729 src/exec_inject.c:1830
+#: src/exec_inject.c:1837 src/exec_inject.c:1854 src/exec_inject.c:1862
+#: src/exec_inject.c:1873 src/exec_inject.c:1925 src/exec_inject.c:2302
+#: src/exec_inject.c:2313 src/exec_inject.c:2325
+#: src/exec_inject_policy_file.c:44 src/exec_inject_policy_file.c:50
+#: src/exec_inject_policy_file.c:92 src/exec_inject_policy_file.c:115
+#: src/exec_inject_policy_file.c:180 src/exec_inject_policy_file.c:218
+#: src/exec_inject_policy_file.c:329 src/secdat-fuse.c:144 src/store.c:716
+#: src/store.c:732 src/store.c:803 src/store.c:839 src/store.c:884
+#: src/store.c:974 src/store.c:983 src/store.c:1000 src/store.c:1009
+#: src/store.c:1023 src/store.c:1029 src/store.c:3317 src/store.c:3359
+#: src/store.c:3386 src/store.c:3432 src/store.c:3467 src/store.c:3930
+#: src/store.c:4221 src/store.c:5964 src/store.c:6458 src/store.c:6562
+#: src/store.c:6612 src/store.c:6970 src/store.c:7179 src/store.c:7412
+#: src/store.c:7515 src/store.c:7556 src/store.c:7625 src/store.c:8789
+#: src/store.c:8911 src/store.c:8932 src/store.c:9012 src/store.c:9124
+#: src/store.c:9292 src/store.c:9347 src/store.c:10586 src/store.c:10810
+#: src/store.c:10944 src/store.c:11113 src/store.c:11151 src/store.c:11465
+#: src/store.c:11581 src/store.c:11659 src/store.c:11673 src/store.c:11682
+#: src/store.c:11739 src/store.c:11752 src/store.c:11761 src/store.c:11893
+#: src/store.c:12029 src/store.c:12069 src/store.c:12080 src/store.c:12114
+#: src/store.c:12242 src/store.c:13333 src/store.c:13457 src/store.c:15996
+#: src/store.c:16055 src/store.c:17561 src/store.c:18592 src/store.c:18844
+#: src/store.c:19017 src/store.c:19025
 #, c-format
 msgid "out of memory\n"
 msgstr "メモリ不足です\n"
@@ -1948,143 +1949,143 @@ msgstr "実効取得元: locked"
 msgid "command not implemented yet: %s\n"
 msgstr "コマンドは未実装です: %s\n"
 
-#: src/exec_inject.c:370
+#: src/exec_inject.c:377
 #, c-format
 msgid "exec inject ambient variable must not be present: %s\n"
 msgstr "exec inject: ambient 変数は存在してはなりません: %s\n"
 
-#: src/exec_inject.c:374
+#: src/exec_inject.c:381
 #, c-format
 msgid "exec inject secret key must not be present: %s\n"
 msgstr "exec inject: secret key は存在してはなりません: %s\n"
 
-#: src/exec_inject.c:383
+#: src/exec_inject.c:390
 #, c-format
 msgid "exec inject required ambient variable not available: %s\n"
 msgstr "exec inject: 必須 ambient 変数を利用できません: %s\n"
 
-#: src/exec_inject.c:387
+#: src/exec_inject.c:394
 #, c-format
 msgid "exec inject required secret key not available for injection: %s\n"
 msgstr "exec inject: 注入に必要な secret key を利用できません: %s\n"
 
-#: src/exec_inject.c:405
+#: src/exec_inject.c:412
 #, c-format
 msgid "exec inject %s pentad conflict: require and omit overlap: %s\n"
 msgstr "exec inject: %s pentad が競合しています (require と omit が重複): %s\n"
 
-#: src/exec_inject.c:409
+#: src/exec_inject.c:416
 #, c-format
 msgid "exec inject %s pentad conflict: require and reject overlap: %s\n"
 msgstr ""
 "exec inject: %s pentad が競合しています (require と reject が重複): %s\n"
 
-#: src/exec_inject.c:417
+#: src/exec_inject.c:424
 #, c-format
 msgid "exec inject %s pentad conflict: omit and reject overlap: %s\n"
 msgstr "exec inject: %s pentad が競合しています (omit と reject が重複): %s\n"
 
-#: src/exec_inject.c:456
+#: src/exec_inject.c:463
 #, c-format
 msgid "invalid route pick: %s\n"
 msgstr "不正な route 選択です: %s\n"
 
-#: src/exec_inject.c:486 src/exec_inject.c:993 src/exec_inject.c:1004
+#: src/exec_inject.c:497
+#, c-format
+msgid "invalid command resolution: %s\n"
+msgstr "不正な command resolution です: %s\n"
+
+#: src/exec_inject.c:514 src/exec_inject.c:1021 src/exec_inject.c:1032
 #, c-format
 msgid "secret rename may be specified at most once\n"
 msgstr "secret rename は 1 回だけ指定できます\n"
 
-#: src/exec_inject.c:509 src/exec_inject.c:532 src/exec_inject.c:538
-#: src/exec_inject.c:564 src/exec_inject.c:598
+#: src/exec_inject.c:537 src/exec_inject.c:560 src/exec_inject.c:566
+#: src/exec_inject.c:592 src/exec_inject.c:626
 #, c-format
 msgid "invalid secret rename expression\n"
 msgstr "不正な secret rename 式です\n"
 
-#: src/exec_inject.c:522 src/exec_inject.c:614
+#: src/exec_inject.c:550 src/exec_inject.c:642
 #, c-format
 msgid "invalid secret rename regex: %s\n"
 msgstr "不正な secret rename 正規表現です: %s\n"
 
-#: src/exec_inject.c:630 src/store.c:2544 src/store.c:18705
+#: src/exec_inject.c:658 src/store.c:2544 src/store.c:18705
 #, c-format
 msgid "key is not a valid environment variable name: %s\n"
 msgstr "key は有効な環境変数名ではありません: %s\n"
 
-#: src/exec_inject.c:666 src/exec_inject.c:676
+#: src/exec_inject.c:694 src/exec_inject.c:704
 #, c-format
 msgid "failed to match secret rename against key: %s\n"
 msgstr "secret rename を key に照合できませんでした: %s\n"
 
-#: src/exec_inject.c:741
+#: src/exec_inject.c:769
 #, c-format
 msgid "invalid environment variable name from secret rename: %s\n"
 msgstr "secret rename から不正な環境変数名が生成されました: %s\n"
 
-#: src/exec_inject.c:782
+#: src/exec_inject.c:810
 #, c-format
 msgid "invalid exec inject kind: %s\n"
 msgstr "不正な exec inject kind です: %s\n"
 
-#: src/exec_inject.c:899
+#: src/exec_inject.c:927
 #, c-format
 msgid "exec: %s is no longer supported; use %s\n"
 msgstr "exec: %s はサポートされなくなりました。%s を使ってください\n"
 
-#: src/exec_inject.c:906
+#: src/exec_inject.c:934
 #, c-format
 msgid "--bulk-gate may be specified at most once\n"
 msgstr "--bulk-gate は 1 回だけ指定できます\n"
 
-#: src/exec_inject.c:920
+#: src/exec_inject.c:948
 #, c-format
 msgid "gate: %s is no longer supported; use bulk_gate: true\n"
 msgstr ""
 "gate: %s はサポートされなくなりました。bulk_gate: true を使ってください\n"
 
-#: src/exec_inject.c:923
+#: src/exec_inject.c:951
 #, c-format
 msgid "invalid bulk_gate value: %s; use bulk_gate: true\n"
 msgstr "不正な bulk_gate 値です: %s。bulk_gate: true を使ってください\n"
 
-#: src/exec_inject.c:930
+#: src/exec_inject.c:958
 #, c-format
 msgid "invalid --inject-gate value: %s; use --bulk-gate\n"
 msgstr "不正な --inject-gate 値です: %s。--bulk-gate を使ってください\n"
 
-#: src/exec_inject.c:933
+#: src/exec_inject.c:961
 #, c-format
 msgid "exec: --inject-gate is no longer supported; use --bulk-gate\n"
 msgstr ""
 "exec: --inject-gate はサポートされなくなりました。--bulk-gate を使ってくださ"
 "い\n"
 
-#: src/exec_inject.c:947 src/exec_inject.c:953 src/exec_inject.c:967
-#: src/exec_inject.c:974
+#: src/exec_inject.c:975 src/exec_inject.c:981 src/exec_inject.c:995
+#: src/exec_inject.c:1002
 #, c-format
 msgid "invalid --inject token: %s\n"
 msgstr "不正な --inject トークンです: %s\n"
 
-#: src/exec_inject.c:1028
+#: src/exec_inject.c:1056
 #, c-format
 msgid "route:prefer may be specified at most once\n"
 msgstr "route:prefer は 1 回だけ指定できます\n"
 
-#: src/exec_inject.c:1089
+#: src/exec_inject.c:1117
 #, c-format
 msgid "invalid --inject layer: %s\n"
 msgstr "不正な --inject layer です: %s\n"
 
-#: src/exec_inject.c:1304
-#, c-format
-msgid "invalid command resolution: %s\n"
-msgstr "不正な command resolution です: %s\n"
-
-#: src/exec_inject.c:1291 src/exec_inject.c:1299
+#: src/exec_inject.c:1329 src/exec_inject.c:1337
 #, c-format
 msgid "invalid arguments for exec\n"
 msgstr "exec の引数が不正です\n"
 
-#: src/exec_inject.c:1304
+#: src/exec_inject.c:1342
 #, c-format
 msgid ""
 "--json requires --dry-run for exec; use --json-summary for real executions\n"
@@ -2092,7 +2093,7 @@ msgstr ""
 "exec で --json を使うには --dry-run が必要です。実行時は --json-summary を"
 "使ってください\n"
 
-#: src/exec_inject.c:1309
+#: src/exec_inject.c:1347
 #, c-format
 msgid ""
 "--json-summary cannot be combined with --dry-run; use --dry-run --json for "
@@ -2101,79 +2102,89 @@ msgstr ""
 "--json-summary と --dry-run は同時に指定できません。preflight JSON には --"
 "dry-run --json を使ってください\n"
 
-#: src/exec_inject.c:1669
+#: src/exec_inject.c:1718
 #, c-format
 msgid "duplicate environment variable name from secret rename: %s\n"
 msgstr "secret rename で環境変数名が重複しました: %s\n"
 
-#: src/exec_inject.c:1770
+#: src/exec_inject.c:1819
 #, c-format
 msgid "ambient/secret collision on environment variable: %s\n"
 msgstr "ambient/secret が環境変数で衝突しました: %s\n"
 
-#: src/exec_inject.c:1841
+#: src/exec_inject.c:1890
 #, c-format
 msgid "exec inject forbidden variable in final child env: %s\n"
 msgstr "exec inject: 最終子環境に禁止された変数が存在します: %s\n"
 
-#: src/exec_inject.c:1901
+#: src/exec_inject.c:1950
 #, c-format
 msgid "exec inject required variable missing from final child env: %s\n"
 msgstr "exec inject: 最終子環境に必須変数がありません: %s\n"
 
-#: src/exec_inject.c:2230
+#: src/exec_inject.c:2279
 #, c-format
 msgid "ambient variable missing during exec: %s\n"
 msgstr "exec 実行中に ambient 変数がありません: %s\n"
 
-#: src/exec_inject.c:2401
-#, c-format
-msgid "command resolution direct requires slash-qualified command: %s\n"
-msgstr "command resolution direct には slash 付き command が必要です: %s\n"
-
-#: src/exec_inject.c:2339 src/exec_inject.c:2344 src/exec_inject.c:2353
+#: src/exec_inject.c:2458 src/exec_inject.c:2474 src/exec_inject.c:2483
 #: src/secdat-fuse.c:1115 src/secdat-fuse.c:1133
 #, c-format
 msgid "failed to execute command: %s\n"
 msgstr "コマンドの実行に失敗しました: %s\n"
 
-#: src/exec_inject_policy_file.c:307
+#: src/exec_inject.c:2464
+#, c-format
+msgid "command resolution direct requires slash-qualified command: %s\n"
+msgstr "command resolution direct には slash 付き command が必要です: %s\n"
+
+#: src/exec_inject_policy_file.c:212
+#, c-format
+msgid "inject policy token is too large\n"
+msgstr "inject policy token が大きすぎます\n"
+
+#: src/exec_inject_policy_file.c:224
+#, c-format
+msgid "failed to build inject policy token\n"
+msgstr "inject policy token の構築に失敗しました\n"
+
+#: src/exec_inject_policy_file.c:365
 #, c-format
 msgid "failed to open inject policy file: %s\n"
 msgstr "inject policy file を開けませんでした: %s\n"
 
-#: src/exec_inject_policy_file.c:331
+#: src/exec_inject_policy_file.c:390
 #, c-format
 msgid "invalid inject policy file indentation: %s\n"
 msgstr "inject policy file のインデントが不正です: %s\n"
 
-#: src/exec_inject_policy_file.c:349
+#: src/exec_inject_policy_file.c:408
 #, c-format
 msgid "invalid inject policy file list entry: %s\n"
 msgstr "inject policy file の list 項目が不正です: %s\n"
 
-#: src/exec_inject_policy_file.c:374 src/exec_inject_policy_file.c:537
+#: src/exec_inject_policy_file.c:433 src/exec_inject_policy_file.c:596
 #, c-format
 msgid "invalid inject policy file line: %s\n"
 msgstr "inject policy file の行が不正です: %s\n"
 
-#: src/exec_inject_policy_file.c:403
+#: src/exec_inject_policy_file.c:462
 #, c-format
 msgid "gate: is no longer supported; use bulk_gate: true\n"
 msgstr "gate: はサポートされなくなりました。bulk_gate: true を使ってください\n"
 
-#: src/exec_inject_policy_file.c:409
+#: src/exec_inject_policy_file.c:468
 #, c-format
 msgid "unknown inject policy file section: %s\n"
 msgstr "不明な inject policy file section です: %s\n"
 
-#: src/exec_inject_policy_file.c:424
+#: src/exec_inject_policy_file.c:483
 #, c-format
 msgid "unknown inject policy supply section: %s\n"
 msgstr "不明な inject policy supply section です: %s\n"
 
-#: src/exec_inject_policy_file.c:462 src/exec_inject_policy_file.c:483
-#: src/exec_inject_policy_file.c:499 src/exec_inject_policy_file.c:520
+#: src/exec_inject_policy_file.c:521 src/exec_inject_policy_file.c:542
+#: src/exec_inject_policy_file.c:558 src/exec_inject_policy_file.c:579
 #, c-format
 msgid "invalid inject policy file selector list: %s\n"
 msgstr "inject policy file の selector list が不正です: %s\n"
