@@ -264,8 +264,9 @@ Rule precedence:
 
 ```
 1. First matching CLI per-rule entry (CLI declaration order)
-2. First matching policy-file per-rule entry (file declaration order)
-3. Global route:prefer
+2. First matching matched-profile per-rule entry (profile declaration order)
+3. First matching base policy-file per-rule entry (file declaration order)
+4. Global route:prefer
 ```
 
 ### Phase 3 — Demand (final)
@@ -402,14 +403,17 @@ For large policies:
 secdat exec --inject-file exec.env.yaml -- ./app
 ```
 
-CLI `--inject` after the file overrides file entries. For route rules, CLI
-rules have higher precedence than policy-file rules, while declaration order is
-preserved within each source.
+Base file entries apply first. If exactly one command profile matches `CMD
+[ARGS...]`, that profile refines the base file entries. CLI `--inject` has the
+highest precedence and overrides file/profile entries regardless of option order.
+For route rules, the precedence order is CLI, matched profile, then base file,
+while declaration order is preserved within each source.
 
 #### `exec.env.yaml` schema
 
 ```yaml
 bulk_gate: true
+profile_required: true
 
 supply:
   ambient:
@@ -429,11 +433,30 @@ demand:
   final:
     require: ["APP_TOKEN"]
     reject: ["AWS_SECRET_ACCESS_KEY"]
+
+profiles:
+  migrate:
+    match:
+      command: "python3"
+      argv_prefix: ["manage.py", "migrate"]
+    supply:
+      secret:
+        only: ["DATABASE_URL"]
+        require: ["DATABASE_URL"]
+        reject: ["ADMIN_TOKEN"]
+    demand:
+      final:
+        require: ["DATABASE_URL"]
+        reject: ["ADMIN_TOKEN"]
 ```
 
 Top-level `bulk_gate: true` enables the same pre-filter as `--bulk-gate`.
 YAML keys under `supply` map to pentad kinds. `demand.final` mirrors `final:`
-CLI rules. Legacy YAML `gate:` is rejected with a hint to use `bulk_gate: true`.
+CLI rules. `profiles.NAME.match.command` matches a slash-qualified `CMD` exactly
+or an unqualified command by basename. `profiles.NAME.match.argv_prefix` matches
+arguments immediately after `CMD`. `profile_required: true` fails closed when no
+profile matches, and multiple matching profiles also fail closed. Legacy YAML
+`gate:` is rejected with a hint to use `bulk_gate: true`.
 
 ## 8. Preflight and JSON
 
@@ -445,7 +468,9 @@ CLI rules. Legacy YAML `gate:` is rejected with a hint to use `bulk_gate: true`.
   "domain": "/home/user/project",
   "store": "app",
   "dry_run": true,
-  "bulk_gate": null,
+  "bulk_gate": false,
+  "profile_required": true,
+  "matched_profile": "migrate",
   "supply": {
     "ambient": {
       "mode": "default",

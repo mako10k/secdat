@@ -10,9 +10,19 @@
 #include <sys/types.h>
 
 struct secdat_exec_inject_policy;
+struct secdat_exec_inject_profile;
 
 extern int secdat_exec_apply_bulk_gate_yaml(struct secdat_exec_inject_policy *policy, const char *value);
 extern int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, const char *token, int from_cli);
+extern int secdat_exec_apply_profile_required_yaml(struct secdat_exec_inject_policy *policy, const char *value);
+extern int secdat_exec_policy_add_profile(
+    struct secdat_exec_inject_policy *policy,
+    const char *name,
+    struct secdat_exec_inject_profile **profile_out
+);
+extern int secdat_exec_profile_set_command(struct secdat_exec_inject_profile *profile, const char *command);
+extern int secdat_exec_profile_append_argv_prefix(struct secdat_exec_inject_profile *profile, const char *argument);
+extern int secdat_exec_profile_add_inject_token(struct secdat_exec_inject_profile *profile, const char *token);
 
 struct secdat_exec_yaml_string_list {
     char **items;
@@ -121,6 +131,39 @@ static int secdat_exec_yaml_unquote_scalar(const char *input, char **output)
     return 0;
 }
 
+static int secdat_exec_yaml_inline_array_item_end(const char *cursor, const char **end_out)
+{
+    const char *end;
+
+    *end_out = NULL;
+    if (*cursor == '"' || *cursor == '\'') {
+        char quote = *cursor;
+
+        end = cursor + 1;
+        while (*end != '\0') {
+            if (*end == '\\' && end[1] != '\0') {
+                end += 2;
+                continue;
+            }
+            if (*end == quote) {
+                end += 1;
+                end = secdat_exec_yaml_skip_spaces(end);
+                if (*end == ',' || *end == ']') {
+                    *end_out = end;
+                    return 0;
+                }
+                return 2;
+            }
+            end += 1;
+        }
+        return 2;
+    }
+
+    end = cursor + strcspn(cursor, ",]");
+    *end_out = end;
+    return 0;
+}
+
 static int secdat_exec_yaml_parse_inline_array(const char *input, struct secdat_exec_yaml_string_list *list)
 {
     const char *cursor = input;
@@ -141,9 +184,29 @@ static int secdat_exec_yaml_parse_inline_array(const char *input, struct secdat_
             cursor += 1;
             continue;
         }
-        status = secdat_exec_yaml_unquote_scalar(cursor, &item);
-        if (status != 0) {
-            return status;
+        {
+            const char *item_end;
+            char *raw_item;
+            size_t raw_length;
+
+            status = secdat_exec_yaml_inline_array_item_end(cursor, &item_end);
+            if (status != 0) {
+                return status;
+            }
+            raw_length = (size_t)(item_end - cursor);
+            raw_item = malloc(raw_length + 1);
+            if (raw_item == NULL) {
+                fprintf(stderr, _("out of memory\n"));
+                return 1;
+            }
+            memcpy(raw_item, cursor, raw_length);
+            raw_item[raw_length] = '\0';
+            status = secdat_exec_yaml_unquote_scalar(raw_item, &item);
+            free(raw_item);
+            if (status != 0) {
+                return status;
+            }
+            cursor = item_end;
         }
         if (secdat_exec_yaml_string_list_append(list, item) != 0) {
             free(item);
@@ -151,7 +214,6 @@ static int secdat_exec_yaml_parse_inline_array(const char *input, struct secdat_
         }
         free(item);
         item = NULL;
-        cursor += strcspn(cursor, ",]");
         if (*cursor == ',') {
             cursor += 1;
         }
@@ -294,6 +356,87 @@ static int secdat_exec_yaml_apply_route_tokens(
     return status;
 }
 
+static int secdat_exec_yaml_store_profile_pentad_tokens(
+    struct secdat_exec_inject_profile *profile,
+    const char *layer,
+    const char *kind,
+    const struct secdat_exec_yaml_string_list *selectors
+)
+{
+    char *joined = NULL;
+    char *token = NULL;
+    int status;
+
+    if (selectors->count == 0) {
+        return 0;
+    }
+    status = secdat_exec_yaml_join_selectors(selectors, &joined);
+    if (status != 0) {
+        return status;
+    }
+    status = secdat_exec_yaml_build_token(&token, layer, kind, joined);
+    if (status != 0) {
+        free(joined);
+        return status;
+    }
+    status = secdat_exec_profile_add_inject_token(profile, token);
+    free(token);
+    free(joined);
+    return status;
+}
+
+static int secdat_exec_yaml_store_profile_scalar_token(
+    struct secdat_exec_inject_profile *profile,
+    const char *layer,
+    const char *kind,
+    const char *value
+)
+{
+    char *token = NULL;
+    int status;
+
+    status = secdat_exec_yaml_build_token(&token, layer, kind, value);
+    if (status != 0) {
+        return status;
+    }
+    status = secdat_exec_profile_add_inject_token(profile, token);
+    free(token);
+    return status;
+}
+
+static int secdat_exec_yaml_store_profile_route_tokens(
+    struct secdat_exec_inject_profile *profile,
+    const char *key,
+    const char *value
+)
+{
+    char *token = NULL;
+    int status;
+
+    status = secdat_exec_yaml_build_token(&token, "route", key, value);
+    if (status != 0) {
+        return status;
+    }
+    status = secdat_exec_profile_add_inject_token(profile, token);
+    free(token);
+    return status;
+}
+
+static int secdat_exec_yaml_apply_profile_argv_prefix(
+    struct secdat_exec_inject_profile *profile,
+    const struct secdat_exec_yaml_string_list *arguments
+)
+{
+    size_t index;
+
+    for (index = 0; index < arguments->count; index += 1) {
+        if (secdat_exec_profile_append_argv_prefix(profile, arguments->items[index]) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int secdat_exec_yaml_count_indent(const char *line)
 {
     size_t index = 0;
@@ -348,6 +491,82 @@ static int secdat_exec_yaml_split_key_value(const char *line, char **key_out, ch
     return 0;
 }
 
+static int secdat_exec_yaml_block_list_item(const char *line, const char **item_out)
+{
+    const char *item;
+    size_t index;
+
+    *item_out = NULL;
+    if (line[0] != '-') {
+        return 0;
+    }
+    if (line[1] != '\0' && !isspace((unsigned char)line[1])) {
+        return 0;
+    }
+    item = secdat_exec_yaml_skip_spaces(line + 1);
+    if (item[0] == '"' || item[0] == '\'') {
+        char quote = item[0];
+        const char *cursor = item + 1;
+
+        while (*cursor != '\0') {
+            if (*cursor == '\\' && cursor[1] != '\0') {
+                cursor += 2;
+                continue;
+            }
+            if (*cursor == quote) {
+                cursor += 1;
+                cursor = secdat_exec_yaml_skip_spaces(cursor);
+                if (*cursor == '\0' || *cursor == '#') {
+                    *item_out = item;
+                    return 1;
+                }
+                return -1;
+            }
+            cursor += 1;
+        }
+        *item_out = item;
+        return 1;
+    }
+    for (index = 0; item[index] != '\0'; index += 1) {
+        if (item[index] == ':' && (item[index + 1] == '\0' || isspace((unsigned char)item[index + 1]))) {
+            return -1;
+        }
+    }
+    *item_out = item;
+    return 1;
+}
+
+enum secdat_exec_yaml_pending_target {
+    SECDAT_EXEC_YAML_PENDING_NONE = 0,
+    SECDAT_EXEC_YAML_PENDING_BASE_PENTAD,
+    SECDAT_EXEC_YAML_PENDING_PROFILE_PENTAD,
+    SECDAT_EXEC_YAML_PENDING_PROFILE_ARGV_PREFIX,
+};
+
+static int secdat_exec_yaml_flush_pending(
+    struct secdat_exec_inject_policy *policy,
+    struct secdat_exec_inject_profile *pending_profile,
+    enum secdat_exec_yaml_pending_target pending_target,
+    int pending_subsection,
+    const char *pending_kind,
+    const struct secdat_exec_yaml_string_list *pending
+)
+{
+    const char *layer;
+
+    if (pending_target == SECDAT_EXEC_YAML_PENDING_NONE) {
+        return 0;
+    }
+    if (pending_target == SECDAT_EXEC_YAML_PENDING_PROFILE_ARGV_PREFIX) {
+        return secdat_exec_yaml_apply_profile_argv_prefix(pending_profile, pending);
+    }
+    layer = pending_subsection == 1 ? "ambient" : pending_subsection == 2 ? "secret" : "final";
+    if (pending_target == SECDAT_EXEC_YAML_PENDING_PROFILE_PENTAD) {
+        return secdat_exec_yaml_store_profile_pentad_tokens(pending_profile, layer, pending_kind, pending);
+    }
+    return secdat_exec_yaml_apply_pentad_tokens(policy, layer, pending_kind, pending);
+}
+
 int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *policy, const char *path)
 {
     FILE *stream;
@@ -356,8 +575,14 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
     ssize_t line_length;
     int section = 0;
     int subsection = 0;
+    int profile_section = 0;
+    int profile_subsection = 0;
+    struct secdat_exec_inject_profile *current_profile = NULL;
     struct secdat_exec_yaml_string_list pending = {0};
     char *pending_kind = NULL;
+    enum secdat_exec_yaml_pending_target pending_target = SECDAT_EXEC_YAML_PENDING_NONE;
+    int pending_subsection = 0;
+    struct secdat_exec_inject_profile *pending_profile = NULL;
     int status = 0;
 
     stream = fopen(path, "r");
@@ -397,10 +622,18 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
         }
         trimmed = (char *)content;
 
-        if (pending_kind != NULL && indent > 0 && strchr(trimmed, ':') == NULL && trimmed[0] == '-') {
-            const char *item = trimmed + 1;
+        if (pending_target != SECDAT_EXEC_YAML_PENDING_NONE && indent > 0) {
+            const char *item = NULL;
+            int list_item = secdat_exec_yaml_block_list_item(trimmed, &item);
 
-            item = secdat_exec_yaml_skip_spaces(item);
+            if (list_item < 0) {
+                fprintf(stderr, _("invalid inject policy file list entry: %s\n"), path);
+                status = 2;
+                goto cleanup;
+            }
+            if (list_item == 0) {
+                goto flush_pending;
+            }
             {
                 char *scalar = NULL;
 
@@ -419,14 +652,24 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
             continue;
         }
 
-        if (pending_kind != NULL) {
-            status = secdat_exec_yaml_apply_pentad_tokens(policy, subsection == 1 ? "ambient" : subsection == 2 ? "secret" : "final", pending_kind, &pending);
+flush_pending:
+        if (pending_target != SECDAT_EXEC_YAML_PENDING_NONE) {
+            status = secdat_exec_yaml_flush_pending(
+                policy,
+                pending_profile,
+                pending_target,
+                pending_subsection,
+                pending_kind,
+                &pending);
             if (status != 0) {
                 goto cleanup;
             }
             secdat_exec_yaml_string_list_free(&pending);
             free(pending_kind);
             pending_kind = NULL;
+            pending_target = SECDAT_EXEC_YAML_PENDING_NONE;
+            pending_subsection = 0;
+            pending_profile = NULL;
         }
 
         if (secdat_exec_yaml_split_key_value(trimmed, &key, &value) != 0) {
@@ -437,6 +680,9 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
 
         if (indent == 0) {
             subsection = 0;
+            profile_section = 0;
+            profile_subsection = 0;
+            current_profile = NULL;
             if (strcmp(key, "supply") == 0) {
                 section = 1;
                 free(key);
@@ -449,6 +695,18 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
                 section = 3;
                 free(key);
                 free(value);
+            } else if (strcmp(key, "profiles") == 0) {
+                section = 4;
+                free(key);
+                free(value);
+            } else if (strcmp(key, "profile_required") == 0) {
+                section = 0;
+                status = secdat_exec_apply_profile_required_yaml(policy, value);
+                free(key);
+                free(value);
+                if (status != 0) {
+                    goto cleanup;
+                }
             } else if (strcmp(key, "bulk_gate") == 0) {
                 section = 0;
                 status = secdat_exec_apply_bulk_gate_yaml(policy, value);
@@ -472,6 +730,228 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
                 goto cleanup;
             }
             continue;
+        }
+
+        if (section == 4 && indent == 2) {
+            status = secdat_exec_policy_add_profile(policy, key, &current_profile);
+            profile_section = 0;
+            profile_subsection = 0;
+            free(key);
+            free(value);
+            if (status != 0) {
+                goto cleanup;
+            }
+            continue;
+        }
+
+        if (section == 4) {
+            if (current_profile == NULL) {
+                fprintf(stderr, _("invalid inject policy file line: %s\n"), trimmed);
+                status = 2;
+                free(key);
+                free(value);
+                goto cleanup;
+            }
+            if (indent == 4) {
+                profile_subsection = 0;
+                if (strcmp(key, "match") == 0) {
+                    profile_section = 1;
+                } else if (strcmp(key, "supply") == 0) {
+                    profile_section = 2;
+                } else if (strcmp(key, "route") == 0) {
+                    profile_section = 3;
+                } else if (strcmp(key, "demand") == 0) {
+                    profile_section = 4;
+                } else {
+                    fprintf(stderr, _("unknown inject profile section: %s\n"), key);
+                    status = 2;
+                    free(key);
+                    free(value);
+                    goto cleanup;
+                }
+                free(key);
+                free(value);
+                continue;
+            }
+            if (profile_section == 1 && indent == 6) {
+                if (strcmp(key, "command") == 0) {
+                    status = secdat_exec_profile_set_command(current_profile, value);
+                    free(key);
+                    free(value);
+                    if (status != 0) {
+                        goto cleanup;
+                    }
+                    continue;
+                }
+                if (strcmp(key, "argv_prefix") == 0) {
+                    if (value[0] == '[') {
+                        struct secdat_exec_yaml_string_list arguments = {0};
+
+                        status = secdat_exec_yaml_parse_inline_array(value, &arguments);
+                        free(key);
+                        free(value);
+                        if (status != 0) {
+                            secdat_exec_yaml_string_list_free(&arguments);
+                            fprintf(stderr, _("invalid inject policy file selector list: %s\n"), path);
+                            status = 2;
+                            goto cleanup;
+                        }
+                        status = secdat_exec_yaml_apply_profile_argv_prefix(current_profile, &arguments);
+                        secdat_exec_yaml_string_list_free(&arguments);
+                        if (status != 0) {
+                            goto cleanup;
+                        }
+                        continue;
+                    }
+                    pending_kind = key;
+                    key = NULL;
+                    pending_target = SECDAT_EXEC_YAML_PENDING_PROFILE_ARGV_PREFIX;
+                    pending_subsection = 0;
+                    pending_profile = current_profile;
+                    if (value[0] == '\0') {
+                        free(value);
+                        continue;
+                    }
+                    status = secdat_exec_yaml_parse_inline_array(value, &pending);
+                    free(value);
+                    if (status != 0) {
+                        fprintf(stderr, _("invalid inject policy file selector list: %s\n"), path);
+                        status = 2;
+                        goto cleanup;
+                    }
+                    continue;
+                }
+                fprintf(stderr, _("unknown inject profile match key: %s\n"), key);
+                status = 2;
+                free(key);
+                free(value);
+                goto cleanup;
+            }
+            if (profile_section == 2 && indent == 6) {
+                if (strcmp(key, "ambient") == 0) {
+                    profile_subsection = 1;
+                } else if (strcmp(key, "secret") == 0) {
+                    profile_subsection = 2;
+                } else {
+                    fprintf(stderr, _("unknown inject policy supply section: %s\n"), key);
+                    status = 2;
+                    free(key);
+                    free(value);
+                    goto cleanup;
+                }
+                free(key);
+                free(value);
+                continue;
+            }
+            if (profile_section == 4 && indent == 6 && strcmp(key, "final") == 0) {
+                profile_subsection = 3;
+                free(key);
+                free(value);
+                continue;
+            }
+            if (profile_section == 2 && (profile_subsection == 1 || profile_subsection == 2) && indent == 8) {
+                const char *layer = profile_subsection == 1 ? "ambient" : "secret";
+
+                if (strcmp(key, "rename") == 0) {
+                    status = secdat_exec_yaml_store_profile_scalar_token(current_profile, layer, "rename", value);
+                    free(key);
+                    free(value);
+                    if (status != 0) {
+                        goto cleanup;
+                    }
+                    continue;
+                }
+                if (value[0] == '[') {
+                    struct secdat_exec_yaml_string_list selectors = {0};
+                    char *kind = key;
+
+                    status = secdat_exec_yaml_parse_inline_array(value, &selectors);
+                    free(value);
+                    if (status != 0) {
+                        free(kind);
+                        fprintf(stderr, _("invalid inject policy file selector list: %s\n"), path);
+                        status = 2;
+                        goto cleanup;
+                    }
+                    status = secdat_exec_yaml_store_profile_pentad_tokens(current_profile, layer, kind, &selectors);
+                    free(kind);
+                    secdat_exec_yaml_string_list_free(&selectors);
+                    if (status != 0) {
+                        goto cleanup;
+                    }
+                    continue;
+                }
+                pending_kind = key;
+                key = NULL;
+                pending_target = SECDAT_EXEC_YAML_PENDING_PROFILE_PENTAD;
+                pending_subsection = profile_subsection;
+                pending_profile = current_profile;
+                if (value[0] == '\0') {
+                    free(value);
+                    continue;
+                }
+                status = secdat_exec_yaml_parse_inline_array(value, &pending);
+                free(value);
+                if (status != 0) {
+                    fprintf(stderr, _("invalid inject policy file selector list: %s\n"), path);
+                    status = 2;
+                    goto cleanup;
+                }
+                continue;
+            }
+            if (profile_section == 4 && profile_subsection == 3 && indent == 8) {
+                if (value[0] == '[') {
+                    struct secdat_exec_yaml_string_list selectors = {0};
+                    char *kind = key;
+
+                    status = secdat_exec_yaml_parse_inline_array(value, &selectors);
+                    free(value);
+                    if (status != 0) {
+                        free(kind);
+                        fprintf(stderr, _("invalid inject policy file selector list: %s\n"), path);
+                        status = 2;
+                        goto cleanup;
+                    }
+                    status = secdat_exec_yaml_store_profile_pentad_tokens(current_profile, "final", kind, &selectors);
+                    free(kind);
+                    secdat_exec_yaml_string_list_free(&selectors);
+                    if (status != 0) {
+                        goto cleanup;
+                    }
+                    continue;
+                }
+                pending_kind = key;
+                key = NULL;
+                pending_target = SECDAT_EXEC_YAML_PENDING_PROFILE_PENTAD;
+                pending_subsection = 3;
+                pending_profile = current_profile;
+                if (value[0] == '\0') {
+                    free(value);
+                    continue;
+                }
+                status = secdat_exec_yaml_parse_inline_array(value, &pending);
+                free(value);
+                if (status != 0) {
+                    fprintf(stderr, _("invalid inject policy file selector list: %s\n"), path);
+                    status = 2;
+                    goto cleanup;
+                }
+                continue;
+            }
+            if (profile_section == 3 && indent == 6) {
+                status = secdat_exec_yaml_store_profile_route_tokens(current_profile, key, value);
+                free(key);
+                free(value);
+                if (status != 0) {
+                    goto cleanup;
+                }
+                continue;
+            }
+            fprintf(stderr, _("invalid inject policy file line: %s\n"), trimmed);
+            status = 2;
+            free(key);
+            free(value);
+            goto cleanup;
         }
 
         if (section == 1 && indent == 2) {
@@ -532,6 +1012,9 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
             }
             pending_kind = key;
             key = NULL;
+            pending_target = SECDAT_EXEC_YAML_PENDING_BASE_PENTAD;
+            pending_subsection = subsection;
+            pending_profile = NULL;
             if (value[0] == '\0') {
                 free(value);
                 continue;
@@ -569,6 +1052,9 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
             }
             pending_kind = key;
             key = NULL;
+            pending_target = SECDAT_EXEC_YAML_PENDING_BASE_PENTAD;
+            pending_subsection = 3;
+            pending_profile = NULL;
             if (value[0] == '\0') {
                 free(value);
                 continue;
@@ -600,10 +1086,12 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
         goto cleanup;
     }
 
-    if (pending_kind != NULL) {
-        status = secdat_exec_yaml_apply_pentad_tokens(
+    if (pending_target != SECDAT_EXEC_YAML_PENDING_NONE) {
+        status = secdat_exec_yaml_flush_pending(
             policy,
-            subsection == 1 ? "ambient" : subsection == 2 ? "secret" : "final",
+            pending_profile,
+            pending_target,
+            pending_subsection,
             pending_kind,
             &pending);
         if (status != 0) {

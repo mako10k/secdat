@@ -256,10 +256,17 @@ Use
 .B secdat help inject
 for the rule vocabulary, selector syntax, YAML shape, and preflight examples.
 .B --inject-file
-loads a YAML policy file. Later
+loads a YAML policy file. Base file entries apply first, a matched command profile can refine them, and CLI
 .B --inject
-options override file entries. CLI route rules take precedence over policy-file
-route rules, while order is preserved within each source.
+options override both. Route rules use the same source order: CLI, matched profile, then base file.
+Profiles match
+.B CMD
+with
+.B profiles.NAME.match.command
+and optional
+.B profiles.NAME.match.argv_prefix .
+.B profile_required: true
+fails closed when no profile matches, and multiple matches also fail closed.
 .B --bulk-gate
 applies the
 .B bulk_select
@@ -285,8 +292,9 @@ to write that preflight report as JSON to standard output.
 .B --json-summary
 runs the child and writes a JSON audit summary to standard error after child exit, preserving child standard output. It cannot be combined with
 .B --dry-run .
-JSON output includes supply, route, final plan metadata, and
+JSON output includes supply, route, final plan metadata,
 .B bulk_gate ,
+matched profile metadata,
 and never includes secret values.
 .TP
 .B export [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-bulk-gate]

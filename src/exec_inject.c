@@ -55,6 +55,7 @@ struct secdat_exec_route_rule {
     char *match;
     enum secdat_exec_route_pick pick;
     int from_cli;
+    int from_profile;
 };
 
 struct secdat_exec_secret_rename {
@@ -63,6 +64,15 @@ struct secdat_exec_secret_rename {
     char *replacement;
     int configured;
     int has_address;
+};
+
+struct secdat_exec_inject_profile {
+    char *name;
+    char *match_command;
+    char **argv_prefix;
+    size_t argv_prefix_count;
+    char **tokens;
+    size_t token_count;
 };
 
 struct secdat_exec_inject_policy {
@@ -89,10 +99,17 @@ struct secdat_exec_inject_policy {
     int explicit_final_require;
     int explicit_final_reject;
     int explicit_route_prefer;
+    int profile_required;
+    int explicit_profile_required;
+    struct secdat_exec_inject_profile *profiles;
+    size_t profile_count;
+    char *matched_profile;
 };
 
 struct secdat_exec_options {
     struct secdat_exec_inject_policy policy;
+    char **cli_inject_tokens;
+    size_t cli_inject_token_count;
     int dry_run;
     int json;
     int json_summary;
@@ -150,6 +167,8 @@ struct secdat_exec_plan {
     int final_mode_only;
 };
 
+static void secdat_exec_string_list_free(char **items, size_t count);
+
 static void secdat_exec_selector_list_free(struct secdat_exec_selector_list *list)
 {
     size_t index;
@@ -194,6 +213,7 @@ static void secdat_exec_secret_rename_free(struct secdat_exec_secret_rename *ren
 static void secdat_exec_policy_free(struct secdat_exec_inject_policy *policy)
 {
     size_t index;
+    size_t item_index;
 
     if (policy == NULL) {
         return;
@@ -206,6 +226,20 @@ static void secdat_exec_policy_free(struct secdat_exec_inject_policy *policy)
     }
     free(policy->route_rules);
     secdat_exec_pentad_free(&policy->final);
+    for (index = 0; index < policy->profile_count; index += 1) {
+        free(policy->profiles[index].name);
+        free(policy->profiles[index].match_command);
+        for (item_index = 0; item_index < policy->profiles[index].argv_prefix_count; item_index += 1) {
+            free(policy->profiles[index].argv_prefix[item_index]);
+        }
+        free(policy->profiles[index].argv_prefix);
+        for (item_index = 0; item_index < policy->profiles[index].token_count; item_index += 1) {
+            free(policy->profiles[index].tokens[item_index]);
+        }
+        free(policy->profiles[index].tokens);
+    }
+    free(policy->profiles);
+    free(policy->matched_profile);
     memset(policy, 0, sizeof(*policy));
 }
 
@@ -215,6 +249,7 @@ static void secdat_exec_options_free(struct secdat_exec_options *options)
         return;
     }
     secdat_exec_policy_free(&options->policy);
+    secdat_exec_string_list_free(options->cli_inject_tokens, options->cli_inject_token_count);
     memset(options, 0, sizeof(*options));
 }
 
@@ -962,7 +997,12 @@ static int secdat_exec_reject_legacy_inject_gate(const char *value)
     return 2;
 }
 
-int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, const char *token, int from_cli)
+static int secdat_exec_apply_inject_token_from_source(
+    struct secdat_exec_inject_policy *policy,
+    const char *token,
+    int from_cli,
+    int from_profile
+)
 {
     const char *separator = strchr(token, ':');
     char layer[32];
@@ -1088,6 +1128,7 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
             }
             rule.pick = pick;
             rule.from_cli = from_cli;
+            rule.from_profile = from_profile;
             rules = realloc(policy->route_rules, (policy->route_rule_count + 1) * sizeof(*rules));
             if (rules == NULL) {
                 free(rule.match);
@@ -1117,6 +1158,128 @@ int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, con
     fprintf(stderr, _("invalid --inject layer: %s\n"), layer);
     free(rest);
     return 2;
+}
+
+int secdat_exec_apply_inject_token(struct secdat_exec_inject_policy *policy, const char *token, int from_cli)
+{
+    return secdat_exec_apply_inject_token_from_source(policy, token, from_cli, 0);
+}
+
+int secdat_exec_apply_profile_required_yaml(struct secdat_exec_inject_policy *policy, const char *value)
+{
+    if (policy->explicit_profile_required) {
+        fprintf(stderr, _("profile_required may be specified at most once\n"));
+        return 2;
+    }
+    policy->explicit_profile_required = 1;
+    if (strcmp(value, "true") == 0 || strcmp(value, "yes") == 0 || strcmp(value, "1") == 0) {
+        policy->profile_required = 1;
+        return 0;
+    }
+    if (strcmp(value, "false") == 0 || strcmp(value, "no") == 0 || strcmp(value, "0") == 0) {
+        policy->profile_required = 0;
+        return 0;
+    }
+    fprintf(stderr, _("invalid profile_required value: %s; use true or false\n"), value);
+    return 2;
+}
+
+int secdat_exec_policy_add_profile(
+    struct secdat_exec_inject_policy *policy,
+    const char *name,
+    struct secdat_exec_inject_profile **profile_out
+)
+{
+    struct secdat_exec_inject_profile *profiles;
+    size_t index;
+
+    *profile_out = NULL;
+    if (name == NULL || name[0] == '\0') {
+        fprintf(stderr, _("invalid empty inject profile name\n"));
+        return 2;
+    }
+    for (index = 0; index < policy->profile_count; index += 1) {
+        if (strcmp(policy->profiles[index].name, name) == 0) {
+            fprintf(stderr, _("duplicate inject profile: %s\n"), name);
+            return 2;
+        }
+    }
+    profiles = realloc(policy->profiles, (policy->profile_count + 1) * sizeof(*profiles));
+    if (profiles == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    policy->profiles = profiles;
+    memset(&policy->profiles[policy->profile_count], 0, sizeof(policy->profiles[policy->profile_count]));
+    policy->profiles[policy->profile_count].name = strdup(name);
+    if (policy->profiles[policy->profile_count].name == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    *profile_out = &policy->profiles[policy->profile_count];
+    policy->profile_count += 1;
+    return 0;
+}
+
+int secdat_exec_profile_set_command(struct secdat_exec_inject_profile *profile, const char *command)
+{
+    if (command == NULL || command[0] == '\0') {
+        fprintf(stderr, _("inject profile match.command cannot be empty\n"));
+        return 2;
+    }
+    if (profile->match_command != NULL) {
+        fprintf(stderr, _("inject profile match.command may be specified at most once: %s\n"), profile->name);
+        return 2;
+    }
+    profile->match_command = strdup(command);
+    if (profile->match_command == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    return 0;
+}
+
+int secdat_exec_profile_append_argv_prefix(struct secdat_exec_inject_profile *profile, const char *argument)
+{
+    return secdat_exec_string_list_append(&profile->argv_prefix, &profile->argv_prefix_count, argument);
+}
+
+static int secdat_exec_validate_policy_file_token(const char *token)
+{
+    struct secdat_exec_inject_policy scratch;
+    int status;
+
+    memset(&scratch, 0, sizeof(scratch));
+    scratch.route_prefer = SECDAT_EXEC_ROUTE_SECRET;
+    status = secdat_exec_apply_inject_token(&scratch, token, 0);
+    secdat_exec_policy_free(&scratch);
+    return status;
+}
+
+int secdat_exec_profile_add_inject_token(struct secdat_exec_inject_profile *profile, const char *token)
+{
+    int status;
+
+    status = secdat_exec_validate_policy_file_token(token);
+    if (status != 0) {
+        return status;
+    }
+    return secdat_exec_string_list_append(&profile->tokens, &profile->token_count, token);
+}
+
+static int secdat_exec_append_cli_inject_token(struct secdat_exec_options *options, const char *token)
+{
+    return secdat_exec_string_list_append(&options->cli_inject_tokens, &options->cli_inject_token_count, token);
+}
+
+static int secdat_exec_policy_validate_conflicts(const struct secdat_exec_inject_policy *policy)
+{
+    if (secdat_exec_pentad_conflicts(&policy->ambient, SECDAT_EXEC_PENTAD_AMBIENT) != 0
+        || secdat_exec_pentad_conflicts(&policy->secret, SECDAT_EXEC_PENTAD_SECRET) != 0
+        || secdat_exec_pentad_conflicts(&policy->final, SECDAT_EXEC_PENTAD_FINAL) != 0) {
+        return 2;
+    }
+    return 0;
 }
 
 static int secdat_exec_completion_is_global_option(const char *token)
@@ -1232,6 +1395,8 @@ static int secdat_exec_parse_options(
     int argc;
     int option;
     int status;
+    int cli_route_prefer_seen = 0;
+    int cli_secret_rename_seen = 0;
 
     memset(options, 0, sizeof(*options));
     options->policy.route_prefer = SECDAT_EXEC_ROUTE_SECRET;
@@ -1245,12 +1410,39 @@ static int secdat_exec_parse_options(
     while ((option = getopt_long(argc, argv, "+p:x:", long_options, NULL)) != -1) {
         switch (option) {
         case 1000:
-            status = secdat_exec_apply_inject_token(&options->policy, optarg, 1);
+            if (strncmp(optarg, "route:prefer=", strlen("route:prefer=")) == 0) {
+                if (cli_route_prefer_seen) {
+                    fprintf(stderr, _("route:prefer may be specified at most once\n"));
+                    secdat_exec_options_free(options);
+                    if (help_target_out != NULL) {
+                        *help_target_out = "inject";
+                    }
+                    return 2;
+                }
+                cli_route_prefer_seen = 1;
+            }
+            if (strncmp(optarg, "secret:rename=", strlen("secret:rename=")) == 0) {
+                if (cli_secret_rename_seen) {
+                    fprintf(stderr, _("secret rename may be specified at most once\n"));
+                    secdat_exec_options_free(options);
+                    if (help_target_out != NULL) {
+                        *help_target_out = "inject";
+                    }
+                    return 2;
+                }
+                cli_secret_rename_seen = 1;
+            }
+            status = secdat_exec_validate_policy_file_token(optarg);
             if (status != 0) {
                 secdat_exec_options_free(options);
                 if (help_target_out != NULL) {
                     *help_target_out = "inject";
                 }
+                return status;
+            }
+            status = secdat_exec_append_cli_inject_token(options, optarg);
+            if (status != 0) {
+                secdat_exec_options_free(options);
                 return status;
             }
             break;
@@ -1346,16 +1538,6 @@ static int secdat_exec_parse_options(
     if (options->dry_run && options->json_summary) {
         fprintf(stderr, _("--json-summary cannot be combined with --dry-run; use --dry-run --json for preflight JSON\n"));
         secdat_exec_options_free(options);
-        return 2;
-    }
-
-    if (secdat_exec_pentad_conflicts(&options->policy.ambient, SECDAT_EXEC_PENTAD_AMBIENT) != 0
-        || secdat_exec_pentad_conflicts(&options->policy.secret, SECDAT_EXEC_PENTAD_SECRET) != 0
-        || secdat_exec_pentad_conflicts(&options->policy.final, SECDAT_EXEC_PENTAD_FINAL) != 0) {
-        secdat_exec_options_free(options);
-        if (help_target_out != NULL) {
-            *help_target_out = "inject";
-        }
         return 2;
     }
 
@@ -1593,6 +1775,17 @@ static enum secdat_exec_route_pick secdat_exec_resolve_collision(
     }
     for (index = 0; index < policy->route_rule_count; index += 1) {
         if (policy->route_rules[index].from_cli) {
+            continue;
+        }
+        if (!policy->route_rules[index].from_profile) {
+            continue;
+        }
+        if (secdat_exec_selector_matches(policy->route_rules[index].match, name)) {
+            return policy->route_rules[index].pick;
+        }
+    }
+    for (index = 0; index < policy->route_rule_count; index += 1) {
+        if (policy->route_rules[index].from_cli || policy->route_rules[index].from_profile) {
             continue;
         }
         if (secdat_exec_selector_matches(policy->route_rules[index].match, name)) {
@@ -2145,6 +2338,8 @@ static json_t *secdat_exec_build_json_report(
             || json_object_set_new(root, "store", json_string(secdat_exec_port_effective_store_name(cli->store))) != 0
             || json_object_set_new(root, "dry_run", json_boolean(dry_run)) != 0
             || json_object_set_new(root, "bulk_gate", json_boolean(options->policy.bulk_gate)) != 0
+            || json_object_set_new(root, "profile_required", json_boolean(options->policy.profile_required)) != 0
+            || json_object_set_new(root, "matched_profile", options->policy.matched_profile != NULL ? json_string(options->policy.matched_profile) : json_null()) != 0
             || json_object_set_new(root, "supply", supply) != 0
             || json_object_set_new(root, "route", route) != 0
             || json_object_set_new(root, "final", final) != 0
@@ -2218,6 +2413,7 @@ static void secdat_exec_write_json_report(
 static void secdat_exec_print_text_preflight(
     const struct secdat_domain_chain *chain,
     const struct secdat_cli *cli,
+    const struct secdat_exec_options *options,
     const struct secdat_exec_plan *plan,
     char **command_argv
 )
@@ -2238,6 +2434,9 @@ static void secdat_exec_print_text_preflight(
 
     printf("domain: %s\n", domain_label);
     printf("store: %s\n", secdat_exec_port_effective_store_name(cli->store));
+    if (options->policy.matched_profile != NULL) {
+        printf("matched_profile: %s\n", options->policy.matched_profile);
+    }
     fputs("argv:", stdout);
     for (index = 0; command_argv != NULL && command_argv[index] != NULL; index += 1) {
         fputc(' ', stdout);
@@ -2371,6 +2570,203 @@ static const char *secdat_exec_child_environ_get(char **environ_entries, const c
 static int secdat_exec_command_has_slash(const char *command)
 {
     return strchr(command, '/') != NULL;
+}
+
+static const char *secdat_exec_command_basename(const char *command)
+{
+    const char *slash = strrchr(command, '/');
+
+    return slash == NULL ? command : slash + 1;
+}
+
+static int secdat_exec_profile_matches(
+    const struct secdat_exec_inject_profile *profile,
+    char **command_argv
+)
+{
+    size_t index;
+
+    if (profile->match_command == NULL) {
+        fprintf(stderr, _("inject profile missing match.command: %s\n"), profile->name);
+        return -1;
+    }
+    if (secdat_exec_command_has_slash(profile->match_command)) {
+        if (strcmp(profile->match_command, command_argv[0]) != 0) {
+            return 0;
+        }
+    } else if (strcmp(profile->match_command, secdat_exec_command_basename(command_argv[0])) != 0) {
+        return 0;
+    }
+    for (index = 0; index < profile->argv_prefix_count; index += 1) {
+        if (command_argv[index + 1] == NULL || strcmp(profile->argv_prefix[index], command_argv[index + 1]) != 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int secdat_exec_profile_override_index(const char *kind)
+{
+    if (strcmp(kind, "only") == 0) {
+        return 0;
+    }
+    if (strcmp(kind, "omit") == 0) {
+        return 1;
+    }
+    if (strcmp(kind, "require") == 0) {
+        return 2;
+    }
+    if (strcmp(kind, "reject") == 0) {
+        return 3;
+    }
+    return -1;
+}
+
+static int secdat_exec_prepare_profile_token_override(
+    struct secdat_exec_inject_policy *policy,
+    const char *token,
+    int seen_pentad[3][4],
+    int *seen_secret_rename
+)
+{
+    const char *separator = strchr(token, ':');
+    const char *equals;
+    char layer[32];
+    char kind[32];
+    size_t layer_length;
+    size_t kind_length;
+    struct secdat_exec_pentad *pentad = NULL;
+    int layer_index = -1;
+    int kind_index;
+    struct secdat_exec_selector_list *list;
+
+    if (separator == NULL) {
+        return 0;
+    }
+    equals = strchr(separator + 1, '=');
+    if (equals == NULL) {
+        return 0;
+    }
+    layer_length = (size_t)(separator - token);
+    kind_length = (size_t)(equals - (separator + 1));
+    if (layer_length >= sizeof(layer) || kind_length >= sizeof(kind)) {
+        return 0;
+    }
+    memcpy(layer, token, layer_length);
+    layer[layer_length] = '\0';
+    memcpy(kind, separator + 1, kind_length);
+    kind[kind_length] = '\0';
+
+    if (strcmp(layer, "ambient") == 0) {
+        pentad = &policy->ambient;
+        layer_index = 0;
+    } else if (strcmp(layer, "secret") == 0) {
+        if (strcmp(kind, "rename") == 0) {
+            if (!*seen_secret_rename && policy->secret_rename.configured) {
+                secdat_exec_secret_rename_free(&policy->secret_rename);
+            }
+            *seen_secret_rename = 1;
+            return 0;
+        }
+        pentad = &policy->secret;
+        layer_index = 1;
+    } else if (strcmp(layer, "final") == 0) {
+        pentad = &policy->final;
+        layer_index = 2;
+    } else {
+        return 0;
+    }
+
+    kind_index = secdat_exec_profile_override_index(kind);
+    if (kind_index < 0 || seen_pentad[layer_index][kind_index]) {
+        return 0;
+    }
+    list = secdat_exec_pentad_selector_list(pentad, kind);
+    if (list != NULL) {
+        secdat_exec_selector_list_free(list);
+    }
+    seen_pentad[layer_index][kind_index] = 1;
+    return 0;
+}
+
+static int secdat_exec_apply_profile_tokens(
+    struct secdat_exec_inject_policy *policy,
+    const struct secdat_exec_inject_profile *profile
+)
+{
+    size_t index;
+    int seen_pentad[3][4] = {{0}};
+    int seen_secret_rename = 0;
+
+    free(policy->matched_profile);
+    policy->matched_profile = strdup(profile->name);
+    if (policy->matched_profile == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    for (index = 0; index < profile->token_count; index += 1) {
+        int status;
+
+        secdat_exec_prepare_profile_token_override(policy, profile->tokens[index], seen_pentad, &seen_secret_rename);
+        status = secdat_exec_apply_inject_token_from_source(policy, profile->tokens[index], 0, 1);
+        if (status != 0) {
+            return status;
+        }
+    }
+    return 0;
+}
+
+static int secdat_exec_apply_cli_tokens(struct secdat_exec_options *options)
+{
+    size_t index;
+
+    for (index = 0; index < options->cli_inject_token_count; index += 1) {
+        int status = secdat_exec_apply_inject_token(&options->policy, options->cli_inject_tokens[index], 1);
+
+        if (status != 0) {
+            return status;
+        }
+    }
+    return 0;
+}
+
+static int secdat_exec_apply_command_profiles_and_cli(struct secdat_exec_options *options, char **command_argv)
+{
+    const struct secdat_exec_inject_profile *matched = NULL;
+    size_t index;
+    int status;
+
+    for (index = 0; index < options->policy.profile_count; index += 1) {
+        int match = secdat_exec_profile_matches(&options->policy.profiles[index], command_argv);
+
+        if (match < 0) {
+            return 2;
+        }
+        if (!match) {
+            continue;
+        }
+        if (matched != NULL) {
+            fprintf(stderr, _("multiple inject profiles matched command: %s, %s\n"), matched->name, options->policy.profiles[index].name);
+            return 2;
+        }
+        matched = &options->policy.profiles[index];
+    }
+
+    if (matched == NULL && options->policy.profile_required) {
+        fprintf(stderr, _("no inject profile matched command: %s\n"), command_argv[0]);
+        return 2;
+    }
+    if (matched != NULL) {
+        status = secdat_exec_apply_profile_tokens(&options->policy, matched);
+        if (status != 0) {
+            return status;
+        }
+    }
+    status = secdat_exec_apply_cli_tokens(options);
+    if (status != 0) {
+        return status;
+    }
+    return secdat_exec_policy_validate_conflicts(&options->policy);
 }
 
 static void secdat_exec_try_child_path(char **command_argv, char **child_environ)
@@ -2522,6 +2918,14 @@ int secdat_exec_command(const struct secdat_cli *cli)
     }
 
     command_argv = &cli->argv[options.command_index];
+    status = secdat_exec_apply_command_profiles_and_cli(&options, command_argv);
+    if (status != 0) {
+        secdat_exec_port_free_keys(visible_keys, visible_key_count);
+        secdat_exec_options_free(&options);
+        secdat_domain_chain_free(&chain);
+        secdat_cli_print_try_help(cli, "inject");
+        return status;
+    }
     status = secdat_exec_build_plan(&options.policy, &chain, cli->store, visible_keys, visible_key_count, &plan);
     if (status != 0) {
         if (options.dry_run && options.json) {
@@ -2564,7 +2968,7 @@ int secdat_exec_command(const struct secdat_cli *cli)
         if (options.json) {
             secdat_exec_write_json_report(stdout, &chain, cli, &options, &plan, command_argv, 1, 1, -1, -1, -1);
         } else {
-            secdat_exec_print_text_preflight(&chain, cli, &plan, command_argv);
+            secdat_exec_print_text_preflight(&chain, cli, &options, &plan, command_argv);
         }
         secdat_exec_plan_free(&plan);
         secdat_exec_port_free_keys(visible_keys, visible_key_count);

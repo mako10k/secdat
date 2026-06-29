@@ -424,6 +424,186 @@ rc, stdout, stderr = run([
 if rc != 0 or not exec_stderr_ok(stderr) or stdout != "secret-token":
     fail(f"inject-file route override failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+# --inject-file profiles apply command-scoped policy rules after base file rules.
+profile_policy_file = work_root / "exec.profile.yaml"
+profile_policy_file.write_text(
+    "profile_required: true\n"
+    "supply:\n"
+    "  secret:\n"
+    "    only: [\"ROOT_TOKEN\"]\n"
+    "route:\n"
+    "  MY_*: ambient\n"
+    "profiles:\n"
+    "  py_eval:\n"
+    "    match:\n"
+    "      command: \"python3\"\n"
+    "      argv_prefix: [\"-c\"]\n"
+    "    supply:\n"
+    "      secret:\n"
+    "        only: [\"APP_TOKEN\", \"MY_TOKEN\"]\n"
+    "        reject: [\"ZZZ\"]\n"
+    "    route:\n"
+    "      MY_TOKEN: secret\n"
+    "    demand:\n"
+    "      final:\n"
+    "        require: [\"APP_TOKEN\"]\n"
+    "        reject: [\"ROOT_TOKEN\"]\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(profile_policy_file),
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc != 0 or stderr != "":
+    fail(f"inject-file profile dry-run failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+profile_plan = json.loads(stdout)
+if profile_plan.get("profile_required") is not True or profile_plan.get("matched_profile") != "py_eval":
+    fail(f"inject-file profile metadata unexpected: {profile_plan!r}")
+if "APP_TOKEN" not in profile_plan["final"]["present"] or "ROOT_TOKEN" in profile_plan["final"]["present"]:
+    fail(f"inject-file profile did not override base final env: {profile_plan!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(profile_policy_file),
+    "python3", "-c",
+    "import json, os; print(json.dumps({k: os.environ[k] for k in ('APP_TOKEN', 'MY_TOKEN')}, sort_keys=True))",
+])
+if rc != 0 or not exec_stderr_ok(stderr):
+    fail(f"inject-file profile exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(json.loads(stdout), {"APP_TOKEN": "app-secret", "MY_TOKEN": "secret-token"}, "inject-file profile payload")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(profile_policy_file),
+    "--json-summary",
+    "python3", "-c", "print('profile-summary')",
+])
+if rc != 0 or stdout != "profile-summary\n":
+    fail(f"inject-file profile json-summary exec failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+profile_summary = exec_stderr_json(stderr)
+if profile_summary.get("matched_profile") != "py_eval" or profile_summary.get("profile_required") is not True:
+    fail(f"inject-file profile json-summary metadata unexpected: {profile_summary!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(profile_policy_file),
+    "--inject", "secret:only=OTHER_TOKEN",
+    "--inject", "final:require=OTHER_TOKEN",
+    "python3", "-c",
+    "import json, os; print(json.dumps({k: os.environ[k] for k in ('OTHER_TOKEN',)}, sort_keys=True))",
+])
+if rc != 0 or not exec_stderr_ok(stderr):
+    fail(f"inject-file profile CLI override failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(json.loads(stdout), {"OTHER_TOKEN": "other-secret"}, "inject-file profile CLI override payload")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(profile_policy_file),
+    "python3", "-m", "http.server",
+])
+if rc != 2 or "no inject profile matched command: python3" not in stderr:
+    fail(f"inject-file required profile miss did not fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+multi_profile_file = work_root / "exec.profile.multi.yaml"
+multi_profile_file.write_text(
+    "profiles:\n"
+    "  first:\n"
+    "    match:\n"
+    "      command: \"python3\"\n"
+    "      argv_prefix:\n"
+    "        - \"-c\"\n"
+    "    supply:\n"
+    "      secret:\n"
+    "        only: [\"APP_TOKEN\"]\n"
+    "  second:\n"
+    "    match:\n"
+    "      command: \"python3\"\n"
+    "      argv_prefix: [\"-c\"]\n"
+    "    supply:\n"
+    "      secret:\n"
+    "        only: [\"OTHER_TOKEN\"]\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(multi_profile_file),
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc != 2 or "multiple inject profiles matched command: first, second" not in stderr:
+    fail(f"inject-file multiple profile match did not fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+colon_arg_profile_file = work_root / "exec.profile.colon-arg.yaml"
+colon_arg_profile_file.write_text(
+    "profiles:\n"
+    "  url_arg:\n"
+    "    match:\n"
+    "      command: \"python3\"\n"
+    "      argv_prefix:\n"
+    "        - \"--url=http://example.test\"\n"
+    "    supply:\n"
+    "      secret:\n"
+    "        only: [\"APP_TOKEN\"]\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(colon_arg_profile_file),
+    "--dry-run", "--json",
+    "python3", "--url=http://example.test",
+])
+if rc != 0 or stderr != "":
+    fail(f"inject-file profile colon argv_prefix failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+colon_arg_plan = json.loads(stdout)
+if colon_arg_plan.get("matched_profile") != "url_arg" or "APP_TOKEN" not in colon_arg_plan["final"]["present"]:
+    fail(f"inject-file profile colon argv_prefix metadata unexpected: {colon_arg_plan!r}")
+
+inline_delimiter_profile_file = work_root / "exec.profile.inline-delimiter.yaml"
+inline_delimiter_profile_file.write_text(
+    "profile_required: true\n"
+    "profiles:\n"
+    "  inline_delimiter:\n"
+    "    match:\n"
+    "      command: \"python3\"\n"
+    "      argv_prefix: [\"-c\", \"print('a,b]')\"]\n"
+    "    supply:\n"
+    "      secret:\n"
+    "        only: [\"APP_TOKEN\"]\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(inline_delimiter_profile_file),
+    "--dry-run", "--json",
+    "python3", "-c", "print('a,b]')",
+])
+if rc != 0 or stderr != "":
+    fail(f"inject-file profile inline delimiter argv_prefix failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+inline_delimiter_plan = json.loads(stdout)
+if inline_delimiter_plan.get("matched_profile") != "inline_delimiter":
+    fail(f"inject-file profile inline delimiter metadata unexpected: {inline_delimiter_plan!r}")
+
+mapping_list_profile_file = work_root / "exec.profile.mapping-list.yaml"
+mapping_list_profile_file.write_text(
+    "profiles:\n"
+    "  bad:\n"
+    "    match:\n"
+    "      command: \"python3\"\n"
+    "      argv_prefix:\n"
+    "        - key: value\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(mapping_list_profile_file),
+    "--dry-run", "--json",
+    "python3", "key",
+])
+if rc != 2 or "invalid inject policy file list entry" not in stderr:
+    fail(f"inject-file profile mapping list did not fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 # secret:rename duplicate env_name is a plan error (design §6 Phase 1).
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",

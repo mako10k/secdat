@@ -1825,7 +1825,7 @@ static void secdat_cli_print_target_meaning(const char *target)
     if (target != NULL && strcmp(target, "exec") == 0) {
         secdat_cli_print_detail_line(_("  exec: build a child environment through supply, route, and final injection layers\n"));
         secdat_cli_print_detail_line(_("  --inject LAYER:KIND=SELECTOR configures ambient, secret, route, or final rules; repeated --inject accumulates selectors of the same kind\n"));
-        secdat_cli_print_detail_line(_("  --inject-file FILE loads a YAML policy; later --inject options override file entries\n"));
+        secdat_cli_print_detail_line(_("  --inject-file FILE loads a YAML policy; command profiles can refine file rules before CLI --inject overrides them\n"));
         secdat_cli_print_detail_line(_("  --bulk-gate applies the store bulk_select pre-filter before secret supply\n"));
         secdat_cli_print_detail_line(_("  --command-resolution MODE selects CMD lookup: caller-path (default), child-path, or direct\n"));
         secdat_cli_print_detail_line(_("  see help inject for the rule vocabulary, selector syntax, YAML shape, and preflight examples\n"));
@@ -2190,7 +2190,9 @@ static void secdat_cli_print_inject_detail(const char *program_name)
         secdat_cli_print_detail_line(_("  selectors: exact names and shell-style globs are allowed; separate multiple selectors in one value with ':'\n"));
         secdat_cli_print_detail_line(_("  route picks: route:prefer=secret, route:prefer=ambient, route:prefer=error, or route:GLOB=secret|ambient|error\n"));
         secdat_cli_print_detail_line(_("  rename: secret:rename=EXPR uses one sed-style s/// expression; generated environment names must be valid identifiers\n"));
-        secdat_cli_print_detail_line(_("  files: --inject-file accepts a small YAML subset: bulk_gate, supply, route, demand, scalar values, inline arrays, and block lists\n"));
+        secdat_cli_print_detail_line(_("  files: --inject-file accepts a small YAML subset: bulk_gate, profile_required, profiles, supply, route, demand, scalar values, inline arrays, and block lists\n"));
+        secdat_cli_print_detail_line(_("  profiles: profiles.NAME.match.command matches CMD path or basename; match.argv_prefix matches CMD arguments from the start\n"));
+        secdat_cli_print_detail_line(_("  profile safety: profile_required: true fails when no profile matches, and multiple matching profiles fail closed\n"));
         secdat_cli_print_detail_line(_("  file limits: unsupported YAML syntax fails closed; use block lists for large selector sets instead of long inline arrays\n"));
         secdat_cli_print_detail_line(_("  gate: --bulk-gate applies the key bulk_select pre-filter before secret supply; list and export can also use --bulk-gate but do not inject into a child process\n"));
         snprintf(buffer, sizeof(buffer), _("  preflight: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"), program_name);

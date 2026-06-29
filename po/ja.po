@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: secdat 0.4.0\n"
 "Report-Msgid-Bugs-To: noreply@example.invalid\n"
-"POT-Creation-Date: 2026-06-29 11:04+0900\n"
+"POT-Creation-Date: 2026-06-29 12:45+0900\n"
 "PO-Revision-Date: 2026-04-13 00:00+0000\n"
 "Last-Translator: GitHub Copilot <noreply@example.invalid>\n"
 "Language-Team: ja\n"
@@ -716,11 +716,11 @@ msgstr ""
 
 #: src/cli.c:1828
 msgid ""
-"  --inject-file FILE loads a YAML policy; later --inject options override "
-"file entries\n"
+"  --inject-file FILE loads a YAML policy; command profiles can refine file "
+"rules before CLI --inject overrides them\n"
 msgstr ""
-"  --inject-file FILE で YAML ポリシーを読み込みます。後続の --inject はファイ"
-"ル内の設定を上書きします\n"
+"  --inject-file FILE で YAML ポリシーを読み込みます。command profile は CLI "
+"--inject が上書きする前に file rule を調整できます\n"
 
 #: src/cli.c:1829
 msgid ""
@@ -1447,13 +1447,31 @@ msgstr ""
 
 #: src/cli.c:2193
 msgid ""
-"  files: --inject-file accepts a small YAML subset: bulk_gate, supply, "
-"route, demand, scalar values, inline arrays, and block lists\n"
+"  files: --inject-file accepts a small YAML subset: bulk_gate, "
+"profile_required, profiles, supply, route, demand, scalar values, inline "
+"arrays, and block lists\n"
 msgstr ""
 "  ファイル: --inject-file は小さな YAML subset を受け付けます: bulk_gate、"
-"supply、route、demand、scalar 値、inline array、block list\n"
+"profile_required、profiles、supply、route、demand、scalar 値、inline array、"
+"block list\n"
 
 #: src/cli.c:2194
+msgid ""
+"  profiles: profiles.NAME.match.command matches CMD path or basename; match."
+"argv_prefix matches CMD arguments from the start\n"
+msgstr ""
+"  profiles: profiles.NAME.match.command は CMD path または basename に一致し"
+"ます。match.argv_prefix は CMD 引数の先頭に一致します\n"
+
+#: src/cli.c:2195
+msgid ""
+"  profile safety: profile_required: true fails when no profile matches, and "
+"multiple matching profiles fail closed\n"
+msgstr ""
+"  profile 安全性: profile_required: true は profile 未一致で失敗します。複数 "
+"profile 一致も fail closed します\n"
+
+#: src/cli.c:2196
 msgid ""
 "  file limits: unsupported YAML syntax fails closed; use block lists for "
 "large selector sets instead of long inline arrays\n"
@@ -1461,7 +1479,7 @@ msgstr ""
 "  ファイル制約: 未対応の YAML 構文は fail closed します。大きな selector set "
 "には長い inline array ではなく block list を使ってください\n"
 
-#: src/cli.c:2195
+#: src/cli.c:2197
 msgid ""
 "  gate: --bulk-gate applies the key bulk_select pre-filter before secret "
 "supply; list and export can also use --bulk-gate but do not inject into a "
@@ -1471,14 +1489,14 @@ msgstr ""
 "を適用します。list と export でも --bulk-gate を使えますが、子プロセスへの注"
 "入は行いません\n"
 
-#: src/cli.c:2196
+#: src/cli.c:2198
 #, c-format
 msgid ""
 "  preflight: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"
 msgstr ""
 "  事前検証: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"
 
-#: src/cli.c:2198
+#: src/cli.c:2200
 #, c-format
 msgid ""
 "  example: %s exec --inject ambient:omit=SECDAT_* --inject secret:only=APP_* "
@@ -1487,7 +1505,7 @@ msgstr ""
 "  例: %s exec --inject ambient:omit=SECDAT_* --inject secret:only=APP_* --"
 "inject route:prefer=secret --inject final:reject=SECDAT_* -- CMD\n"
 
-#: src/cli.c:2205
+#: src/cli.c:2207
 #, c-format
 msgid ""
 "\n"
@@ -1496,7 +1514,7 @@ msgstr ""
 "\n"
 "セマンティクス:\n"
 
-#: src/cli.c:2206
+#: src/cli.c:2208
 msgid ""
 "  DIR: base directory used for domain resolution; defaults to the current "
 "working directory\n"
@@ -1504,13 +1522,13 @@ msgstr ""
 "  DIR: domain 解決の基準ディレクトリです。省略時は現在の作業ディレクトリを使"
 "います\n"
 
-#: src/cli.c:2207
+#: src/cli.c:2209
 msgid ""
 "  DOMAIN: directory-scoped configuration boundary used for inheritance and "
 "tombstones\n"
 msgstr "  DOMAIN: 継承と tombstone に使う、ディレクトリ単位の設定境界です\n"
 
-#: src/cli.c:2208
+#: src/cli.c:2210
 msgid ""
 "  STORE: domain-local namespace selected by --store; defaults to the default "
 "store\n"
@@ -1518,7 +1536,7 @@ msgstr ""
 "  STORE: --store で選ぶ domain ローカルな名前空間です。省略時は default "
 "store を使います\n"
 
-#: src/cli.c:2209
+#: src/cli.c:2211
 msgid ""
 "  KEY / KEYREF: logical secret name, optionally qualified as [/ABSOLUTE/"
 "DOMAIN/]KEY[:STORE]\n"
@@ -1526,7 +1544,7 @@ msgstr ""
 "  KEY / KEYREF: 論理的な secret 名です。必要なら [/ABSOLUTE/DOMAIN/]KEY[:"
 "STORE] で修飾できます\n"
 
-#: src/cli.c:2210
+#: src/cli.c:2212
 msgid ""
 "  migration hints: v2-only errors suggest store migrate; set "
 "SECDAT_SUPPRESS_MIGRATION_HINTS=1 to hide those hints\n"
@@ -1534,69 +1552,70 @@ msgstr ""
 "  migration hint: v2 専用エラーでは store migrate を提案します。非表示にする"
 "には SECDAT_SUPPRESS_MIGRATION_HINTS=1 を設定します\n"
 
-#: src/cli.c:2238
+#: src/cli.c:2240
 #, c-format
 msgid "unknown store subcommand: %s\n"
 msgstr "不明な store サブコマンドです: %s\n"
 
-#: src/cli.c:2240
+#: src/cli.c:2242
 #, c-format
 msgid "unknown meta subcommand: %s\n"
 msgstr "不明な meta サブコマンドです: %s\n"
 
-#: src/cli.c:2242
+#: src/cli.c:2244
 #, c-format
 msgid "unknown relation subcommand: %s\n"
 msgstr "不明な relation サブコマンドです: %s\n"
 
-#: src/cli.c:2244
+#: src/cli.c:2246
 #, c-format
 msgid "unknown secret subcommand: %s\n"
 msgstr "不明な secret サブコマンドです: %s\n"
 
-#: src/cli.c:2246
+#: src/cli.c:2248
 #, c-format
 msgid "unknown domain subcommand: %s\n"
 msgstr "不明な domain サブコマンドです: %s\n"
 
-#: src/cli.c:2391 src/cli.c:2407 src/cli.c:2438 src/cli.c:2460
+#: src/cli.c:2393 src/cli.c:2409 src/cli.c:2440 src/cli.c:2462
 #, c-format
 msgid "Usage:\n"
 msgstr "使い方:\n"
 
-#: src/cli.c:2416
+#: src/cli.c:2418
 #, c-format
 msgid "\n"
 msgstr "\n"
 
-#: src/cli.c:2417
+#: src/cli.c:2419
 msgid "  KEYREF syntax: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"
 msgstr "  KEYREF 構文: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"
 
-#: src/cli.c:2493
+#: src/cli.c:2495
 #, c-format
 msgid "Try: %s help %s\n"
 msgstr "試してください: %s help %s\n"
 
-#: src/cli.c:2497
+#: src/cli.c:2499
 #, c-format
 msgid "Try: %s help\n"
 msgstr "試してください: %s help\n"
 
 #: src/domain.c:140 src/domain.c:149 src/domain.c:318 src/domain.c:330
-#: src/domain.c:545 src/domain.c:590 src/domain.c:2097 src/exec_inject.c:272
-#: src/exec_inject.c:278 src/exec_inject.c:294 src/exec_inject.c:300
-#: src/exec_inject.c:663 src/exec_inject.c:732 src/exec_inject.c:790
-#: src/exec_inject.c:988 src/exec_inject.c:1086 src/exec_inject.c:1095
-#: src/exec_inject.c:1406 src/exec_inject.c:1413 src/exec_inject.c:1640
-#: src/exec_inject.c:1685 src/exec_inject.c:1729 src/exec_inject.c:1830
-#: src/exec_inject.c:1837 src/exec_inject.c:1854 src/exec_inject.c:1862
-#: src/exec_inject.c:1873 src/exec_inject.c:1925 src/exec_inject.c:2302
-#: src/exec_inject.c:2313 src/exec_inject.c:2325
-#: src/exec_inject_policy_file.c:44 src/exec_inject_policy_file.c:50
-#: src/exec_inject_policy_file.c:92 src/exec_inject_policy_file.c:115
-#: src/exec_inject_policy_file.c:180 src/exec_inject_policy_file.c:218
-#: src/exec_inject_policy_file.c:329 src/secdat-fuse.c:144 src/store.c:716
+#: src/domain.c:545 src/domain.c:590 src/domain.c:2097 src/exec_inject.c:307
+#: src/exec_inject.c:313 src/exec_inject.c:329 src/exec_inject.c:335
+#: src/exec_inject.c:698 src/exec_inject.c:767 src/exec_inject.c:825
+#: src/exec_inject.c:1028 src/exec_inject.c:1126 src/exec_inject.c:1136
+#: src/exec_inject.c:1209 src/exec_inject.c:1216 src/exec_inject.c:1236
+#: src/exec_inject.c:1588 src/exec_inject.c:1595 src/exec_inject.c:1833
+#: src/exec_inject.c:1878 src/exec_inject.c:1922 src/exec_inject.c:2023
+#: src/exec_inject.c:2030 src/exec_inject.c:2047 src/exec_inject.c:2055
+#: src/exec_inject.c:2066 src/exec_inject.c:2118 src/exec_inject.c:2501
+#: src/exec_inject.c:2512 src/exec_inject.c:2524 src/exec_inject.c:2704
+#: src/exec_inject_policy_file.c:54 src/exec_inject_policy_file.c:60
+#: src/exec_inject_policy_file.c:102 src/exec_inject_policy_file.c:125
+#: src/exec_inject_policy_file.c:190 src/exec_inject_policy_file.c:228
+#: src/exec_inject_policy_file.c:420 src/secdat-fuse.c:144 src/store.c:716
 #: src/store.c:732 src/store.c:803 src/store.c:839 src/store.c:884
 #: src/store.c:974 src/store.c:983 src/store.c:1000 src/store.c:1009
 #: src/store.c:1023 src/store.c:1029 src/store.c:3317 src/store.c:3359
@@ -1949,143 +1968,175 @@ msgstr "実効取得元: locked"
 msgid "command not implemented yet: %s\n"
 msgstr "コマンドは未実装です: %s\n"
 
-#: src/exec_inject.c:377
+#: src/exec_inject.c:412
 #, c-format
 msgid "exec inject ambient variable must not be present: %s\n"
 msgstr "exec inject: ambient 変数は存在してはなりません: %s\n"
 
-#: src/exec_inject.c:381
+#: src/exec_inject.c:416
 #, c-format
 msgid "exec inject secret key must not be present: %s\n"
 msgstr "exec inject: secret key は存在してはなりません: %s\n"
 
-#: src/exec_inject.c:390
+#: src/exec_inject.c:425
 #, c-format
 msgid "exec inject required ambient variable not available: %s\n"
 msgstr "exec inject: 必須 ambient 変数を利用できません: %s\n"
 
-#: src/exec_inject.c:394
+#: src/exec_inject.c:429
 #, c-format
 msgid "exec inject required secret key not available for injection: %s\n"
 msgstr "exec inject: 注入に必要な secret key を利用できません: %s\n"
 
-#: src/exec_inject.c:412
+#: src/exec_inject.c:447
 #, c-format
 msgid "exec inject %s pentad conflict: require and omit overlap: %s\n"
 msgstr "exec inject: %s pentad が競合しています (require と omit が重複): %s\n"
 
-#: src/exec_inject.c:416
+#: src/exec_inject.c:451
 #, c-format
 msgid "exec inject %s pentad conflict: require and reject overlap: %s\n"
 msgstr ""
 "exec inject: %s pentad が競合しています (require と reject が重複): %s\n"
 
-#: src/exec_inject.c:424
+#: src/exec_inject.c:459
 #, c-format
 msgid "exec inject %s pentad conflict: omit and reject overlap: %s\n"
 msgstr "exec inject: %s pentad が競合しています (omit と reject が重複): %s\n"
 
-#: src/exec_inject.c:463
+#: src/exec_inject.c:498
 #, c-format
 msgid "invalid route pick: %s\n"
 msgstr "不正な route 選択です: %s\n"
 
-#: src/exec_inject.c:497
+#: src/exec_inject.c:532
 #, c-format
 msgid "invalid command resolution: %s\n"
 msgstr "不正な command resolution です: %s\n"
 
-#: src/exec_inject.c:514 src/exec_inject.c:1021 src/exec_inject.c:1032
+#: src/exec_inject.c:549 src/exec_inject.c:1061 src/exec_inject.c:1072
+#: src/exec_inject.c:1426
 #, c-format
 msgid "secret rename may be specified at most once\n"
 msgstr "secret rename は 1 回だけ指定できます\n"
 
-#: src/exec_inject.c:537 src/exec_inject.c:560 src/exec_inject.c:566
-#: src/exec_inject.c:592 src/exec_inject.c:626
+#: src/exec_inject.c:572 src/exec_inject.c:595 src/exec_inject.c:601
+#: src/exec_inject.c:627 src/exec_inject.c:661
 #, c-format
 msgid "invalid secret rename expression\n"
 msgstr "不正な secret rename 式です\n"
 
-#: src/exec_inject.c:550 src/exec_inject.c:642
+#: src/exec_inject.c:585 src/exec_inject.c:677
 #, c-format
 msgid "invalid secret rename regex: %s\n"
 msgstr "不正な secret rename 正規表現です: %s\n"
 
-#: src/exec_inject.c:658 src/store.c:2544 src/store.c:18705
+#: src/exec_inject.c:693 src/store.c:2544 src/store.c:18705
 #, c-format
 msgid "key is not a valid environment variable name: %s\n"
 msgstr "key は有効な環境変数名ではありません: %s\n"
 
-#: src/exec_inject.c:694 src/exec_inject.c:704
+#: src/exec_inject.c:729 src/exec_inject.c:739
 #, c-format
 msgid "failed to match secret rename against key: %s\n"
 msgstr "secret rename を key に照合できませんでした: %s\n"
 
-#: src/exec_inject.c:769
+#: src/exec_inject.c:804
 #, c-format
 msgid "invalid environment variable name from secret rename: %s\n"
 msgstr "secret rename から不正な環境変数名が生成されました: %s\n"
 
-#: src/exec_inject.c:810
+#: src/exec_inject.c:845
 #, c-format
 msgid "invalid exec inject kind: %s\n"
 msgstr "不正な exec inject kind です: %s\n"
 
-#: src/exec_inject.c:927
+#: src/exec_inject.c:962
 #, c-format
 msgid "exec: %s is no longer supported; use %s\n"
 msgstr "exec: %s はサポートされなくなりました。%s を使ってください\n"
 
-#: src/exec_inject.c:934
+#: src/exec_inject.c:969
 #, c-format
 msgid "--bulk-gate may be specified at most once\n"
 msgstr "--bulk-gate は 1 回だけ指定できます\n"
 
-#: src/exec_inject.c:948
+#: src/exec_inject.c:983
 #, c-format
 msgid "gate: %s is no longer supported; use bulk_gate: true\n"
 msgstr ""
 "gate: %s はサポートされなくなりました。bulk_gate: true を使ってください\n"
 
-#: src/exec_inject.c:951
+#: src/exec_inject.c:986
 #, c-format
 msgid "invalid bulk_gate value: %s; use bulk_gate: true\n"
 msgstr "不正な bulk_gate 値です: %s。bulk_gate: true を使ってください\n"
 
-#: src/exec_inject.c:958
+#: src/exec_inject.c:993
 #, c-format
 msgid "invalid --inject-gate value: %s; use --bulk-gate\n"
 msgstr "不正な --inject-gate 値です: %s。--bulk-gate を使ってください\n"
 
-#: src/exec_inject.c:961
+#: src/exec_inject.c:996
 #, c-format
 msgid "exec: --inject-gate is no longer supported; use --bulk-gate\n"
 msgstr ""
 "exec: --inject-gate はサポートされなくなりました。--bulk-gate を使ってくださ"
 "い\n"
 
-#: src/exec_inject.c:975 src/exec_inject.c:981 src/exec_inject.c:995
-#: src/exec_inject.c:1002
+#: src/exec_inject.c:1015 src/exec_inject.c:1021 src/exec_inject.c:1035
+#: src/exec_inject.c:1042
 #, c-format
 msgid "invalid --inject token: %s\n"
 msgstr "不正な --inject トークンです: %s\n"
 
-#: src/exec_inject.c:1056
+#: src/exec_inject.c:1096 src/exec_inject.c:1415
 #, c-format
 msgid "route:prefer may be specified at most once\n"
 msgstr "route:prefer は 1 回だけ指定できます\n"
 
-#: src/exec_inject.c:1117
+#: src/exec_inject.c:1158
 #, c-format
 msgid "invalid --inject layer: %s\n"
 msgstr "不正な --inject layer です: %s\n"
 
-#: src/exec_inject.c:1329 src/exec_inject.c:1337
+#: src/exec_inject.c:1171
+#, c-format
+msgid "profile_required may be specified at most once\n"
+msgstr "profile_required は 1 回だけ指定できます\n"
+
+#: src/exec_inject.c:1183
+#, c-format
+msgid "invalid profile_required value: %s; use true or false\n"
+msgstr ""
+"不正な profile_required 値です: %s。true または false を使ってください\n"
+
+#: src/exec_inject.c:1198
+#, c-format
+msgid "invalid empty inject profile name\n"
+msgstr "空の inject profile 名は不正です\n"
+
+#: src/exec_inject.c:1203
+#, c-format
+msgid "duplicate inject profile: %s\n"
+msgstr "inject profile が重複しています: %s\n"
+
+#: src/exec_inject.c:1227
+#, c-format
+msgid "inject profile match.command cannot be empty\n"
+msgstr "inject profile の match.command は空にできません\n"
+
+#: src/exec_inject.c:1231
+#, c-format
+msgid "inject profile match.command may be specified at most once: %s\n"
+msgstr "inject profile の match.command は 1 回だけ指定できます: %s\n"
+
+#: src/exec_inject.c:1521 src/exec_inject.c:1529
 #, c-format
 msgid "invalid arguments for exec\n"
 msgstr "exec の引数が不正です\n"
 
-#: src/exec_inject.c:1342
+#: src/exec_inject.c:1534
 #, c-format
 msgid ""
 "--json requires --dry-run for exec; use --json-summary for real executions\n"
@@ -2093,7 +2144,7 @@ msgstr ""
 "exec で --json を使うには --dry-run が必要です。実行時は --json-summary を"
 "使ってください\n"
 
-#: src/exec_inject.c:1347
+#: src/exec_inject.c:1539
 #, c-format
 msgid ""
 "--json-summary cannot be combined with --dry-run; use --dry-run --json for "
@@ -2102,92 +2153,121 @@ msgstr ""
 "--json-summary と --dry-run は同時に指定できません。preflight JSON には --"
 "dry-run --json を使ってください\n"
 
-#: src/exec_inject.c:1718
+#: src/exec_inject.c:1911
 #, c-format
 msgid "duplicate environment variable name from secret rename: %s\n"
 msgstr "secret rename で環境変数名が重複しました: %s\n"
 
-#: src/exec_inject.c:1819
+#: src/exec_inject.c:2012
 #, c-format
 msgid "ambient/secret collision on environment variable: %s\n"
 msgstr "ambient/secret が環境変数で衝突しました: %s\n"
 
-#: src/exec_inject.c:1890
+#: src/exec_inject.c:2083
 #, c-format
 msgid "exec inject forbidden variable in final child env: %s\n"
 msgstr "exec inject: 最終子環境に禁止された変数が存在します: %s\n"
 
-#: src/exec_inject.c:1950
+#: src/exec_inject.c:2143
 #, c-format
 msgid "exec inject required variable missing from final child env: %s\n"
 msgstr "exec inject: 最終子環境に必須変数がありません: %s\n"
 
-#: src/exec_inject.c:2279
+#: src/exec_inject.c:2478
 #, c-format
 msgid "ambient variable missing during exec: %s\n"
 msgstr "exec 実行中に ambient 変数がありません: %s\n"
 
-#: src/exec_inject.c:2458 src/exec_inject.c:2474 src/exec_inject.c:2483
+#: src/exec_inject.c:2590
+#, c-format
+msgid "inject profile missing match.command: %s\n"
+msgstr "inject profile に match.command がありません: %s\n"
+
+#: src/exec_inject.c:2749
+#, c-format
+msgid "multiple inject profiles matched command: %s, %s\n"
+msgstr "複数の inject profile が command に一致しました: %s, %s\n"
+
+#: src/exec_inject.c:2756
+#, c-format
+msgid "no inject profile matched command: %s\n"
+msgstr "command に一致する inject profile がありません: %s\n"
+
+#: src/exec_inject.c:2854 src/exec_inject.c:2870 src/exec_inject.c:2879
 #: src/secdat-fuse.c:1115 src/secdat-fuse.c:1133
 #, c-format
 msgid "failed to execute command: %s\n"
 msgstr "コマンドの実行に失敗しました: %s\n"
 
-#: src/exec_inject.c:2464
+#: src/exec_inject.c:2860
 #, c-format
 msgid "command resolution direct requires slash-qualified command: %s\n"
 msgstr "command resolution direct には slash 付き command が必要です: %s\n"
 
-#: src/exec_inject_policy_file.c:212
+#: src/exec_inject_policy_file.c:222
 #, c-format
 msgid "inject policy token is too large\n"
 msgstr "inject policy token が大きすぎます\n"
 
-#: src/exec_inject_policy_file.c:224
+#: src/exec_inject_policy_file.c:234
 #, c-format
 msgid "failed to build inject policy token\n"
 msgstr "inject policy token の構築に失敗しました\n"
 
-#: src/exec_inject_policy_file.c:365
+#: src/exec_inject_policy_file.c:538
 #, c-format
 msgid "failed to open inject policy file: %s\n"
 msgstr "inject policy file を開けませんでした: %s\n"
 
-#: src/exec_inject_policy_file.c:390
+#: src/exec_inject_policy_file.c:563
 #, c-format
 msgid "invalid inject policy file indentation: %s\n"
 msgstr "inject policy file のインデントが不正です: %s\n"
 
-#: src/exec_inject_policy_file.c:408
+#: src/exec_inject_policy_file.c:578 src/exec_inject_policy_file.c:589
 #, c-format
 msgid "invalid inject policy file list entry: %s\n"
 msgstr "inject policy file の list 項目が不正です: %s\n"
 
-#: src/exec_inject_policy_file.c:433 src/exec_inject_policy_file.c:596
+#: src/exec_inject_policy_file.c:624 src/exec_inject_policy_file.c:697
+#: src/exec_inject_policy_file.c:898 src/exec_inject_policy_file.c:1030
 #, c-format
 msgid "invalid inject policy file line: %s\n"
 msgstr "inject policy file の行が不正です: %s\n"
 
-#: src/exec_inject_policy_file.c:462
+#: src/exec_inject_policy_file.c:668
 #, c-format
 msgid "gate: is no longer supported; use bulk_gate: true\n"
 msgstr "gate: はサポートされなくなりました。bulk_gate: true を使ってください\n"
 
-#: src/exec_inject_policy_file.c:468
+#: src/exec_inject_policy_file.c:674
 #, c-format
 msgid "unknown inject policy file section: %s\n"
 msgstr "不明な inject policy file section です: %s\n"
 
-#: src/exec_inject_policy_file.c:483
+#: src/exec_inject_policy_file.c:714
 #, c-format
-msgid "unknown inject policy supply section: %s\n"
-msgstr "不明な inject policy supply section です: %s\n"
+msgid "unknown inject profile section: %s\n"
+msgstr "不明な inject profile section です: %s\n"
 
-#: src/exec_inject_policy_file.c:521 src/exec_inject_policy_file.c:542
-#: src/exec_inject_policy_file.c:558 src/exec_inject_policy_file.c:579
+#: src/exec_inject_policy_file.c:743 src/exec_inject_policy_file.c:766
+#: src/exec_inject_policy_file.c:820 src/exec_inject_policy_file.c:844
+#: src/exec_inject_policy_file.c:859 src/exec_inject_policy_file.c:883
+#: src/exec_inject_policy_file.c:949 src/exec_inject_policy_file.c:973
+#: src/exec_inject_policy_file.c:989 src/exec_inject_policy_file.c:1013
 #, c-format
 msgid "invalid inject policy file selector list: %s\n"
 msgstr "inject policy file の selector list が不正です: %s\n"
+
+#: src/exec_inject_policy_file.c:772
+#, c-format
+msgid "unknown inject profile match key: %s\n"
+msgstr "不明な inject profile match key です: %s\n"
+
+#: src/exec_inject_policy_file.c:784 src/exec_inject_policy_file.c:911
+#, c-format
+msgid "unknown inject policy supply section: %s\n"
+msgstr "不明な inject policy supply section です: %s\n"
 
 #: src/main.c:173
 #, c-format

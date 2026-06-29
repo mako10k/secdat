@@ -288,7 +288,7 @@ To make the requested behavior implementable, the following are treated as norma
 
 - `secdat exec CMD [ARGS...]` builds a child process environment through supply, route, and final injection layers, then executes the command
 - repeated `--inject LAYER:KIND=SELECTOR` options configure ambient, secret, route, and final rules; multiple selectors in one value are separated by `:`
-- `--inject-file FILE` loads a YAML policy file; later `--inject` options override file entries
+- `--inject-file FILE` loads a YAML policy file; base file entries apply first, the one matched command profile can refine them, and CLI `--inject` options have the highest precedence
 - `--bulk-gate` applies the bulk `bulk_select` store-attribute pre-filter before secret supply
 - `secret:rename=EXPR` applies one sed-style key-to-environment-name mapping; keys that do not match keep `env_name = key`
 - `secret:only` and `secret:omit` match store keys or mapped environment names; `secret:require` and `secret:reject` match store keys
@@ -299,10 +299,10 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat ls --safe` lists only effective keys whose resolved entry is stored encrypted at rest
 - `secdat ls --unsafe` lists only effective keys whose resolved entry is stored plaintext at rest
 - `secdat exec --dry-run CMD [ARGS...]` validates the injection plan and reports key names, environment names, injection count, and command argv without executing the child or reading secret values
-- `exec --dry-run --json` reports the same preflight data as stable JSON on standard output
+- `exec --dry-run --json` reports the same preflight data as stable JSON on standard output, including `profile_required` and `matched_profile`
 - `exec --json-summary CMD [ARGS...]` executes the child and writes a stable JSON summary to standard error after it exits, preserving child standard output for the child process
 - `exec --json-summary` and `exec --dry-run` are mutually exclusive because `--json-summary` is reserved for real executions
-- JSON summaries include domain, store, `bulk_gate`, supply/route/final plan metadata, injected key count, injected key/environment-name pairs, sanitized child argv, exit status or terminating signal, and duration
+- JSON summaries include domain, store, `bulk_gate`, `profile_required`, `matched_profile`, supply/route/final plan metadata, injected key count, injected key/environment-name pairs, sanitized child argv, exit status or terminating signal, and duration
 - preflight output and JSON summaries must not contain secret values
 - the parent process environment is not modified
 - `--command-resolution` accepts `caller-path`, `child-path`, or `direct`; the default `caller-path` keeps historical `execvpe` caller-`PATH` lookup, `child-path` resolves unqualified `CMD` using `PATH` from the final child environment, and `direct` requires a slash-qualified `CMD`
@@ -823,11 +823,12 @@ secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inj
 
 - without `secret:only`, all effective visible store keys are candidates for secret supply unless further restricted by store attribute gates
 - caller ambient variables are inherited by default unless ambient supply rules restrict them
-- `route:prefer=secret|ambient|error` resolves ambient/secret name collisions; per-name `route:NAME=...` rules may repeat; CLI route rules are matched before policy-file route rules, and first match wins within each source
+- `route:prefer=secret|ambient|error` resolves ambient/secret name collisions; per-name `route:NAME=...` rules may repeat; CLI route rules are matched before matched-profile route rules, then base policy-file route rules, and first match wins within each source
 - `secret:rename=EXPR` accepts one sed-style substitution with optional leading `/ADDRESS/`; non-matching keys keep `env_name = key`
 - `secret:only` and `secret:omit` selectors may match store keys or mapped environment names
 - duplicate mapped environment names from rename fail during planning
-- `--inject-file FILE` loads YAML policies shaped like `docs/exec-injection-design.md` §7.4; later `--inject` options override file entries, including higher precedence for CLI route rules over policy-file route rules
+- `--inject-file FILE` loads YAML policies shaped like `docs/exec-injection-design.md` §7.4; `profiles.NAME.match.command` matches slash-qualified `CMD` exactly or unqualified `CMD` by basename, `match.argv_prefix` matches command arguments from the start, `profile_required: true` fails when no profile matches, and multiple matched profiles fail closed
+- precedence is base file rules, then the matched command profile, then CLI `--inject`; route rules follow the same source order
 - `--bulk-gate` keeps only keys whose effective `bulk_select` allows bulk-gated selection; YAML policy files use `bulk_gate: true` for the same pre-filter
 - `--command-resolution caller-path|child-path|direct` controls unqualified `CMD` lookup; `caller-path` is the compatible default, `child-path` uses final child `PATH`, and `direct` requires a slash-qualified command
 - `--dry-run` prints a preflight report containing the command argv, selected key names, generated environment names, and injection count without executing the child or reading secret values
