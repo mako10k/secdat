@@ -731,6 +731,14 @@ msgstr ""
 
 #: src/cli.c:1828
 msgid ""
+"  --command-resolution MODE selects CMD lookup: caller-path (default), child-"
+"path, or direct\n"
+msgstr ""
+"  --command-resolution MODE は CMD lookup を選択します: caller-path (default)、"
+"child-path、または direct\n"
+
+#: src/cli.c:1829
+msgid ""
 "  see help inject for the rule vocabulary, selector syntax, YAML shape, and "
 "preflight examples\n"
 msgstr ""
@@ -1439,15 +1447,21 @@ msgstr ""
 
 #: src/cli.c:2190
 msgid ""
-"  files: --inject-file loads YAML keys ambient, secret, route, final, and "
-"bulk_gate; later CLI --inject options override file entries of the same "
-"kind\n"
+"  files: --inject-file accepts a small YAML subset: bulk_gate, supply, route, "
+"demand, scalar values, inline arrays, and block lists\n"
 msgstr ""
-"  ファイル: --inject-file は YAML の ambient、secret、route、final、"
-"bulk_gate を読み込みます。後続の CLI --inject は同じ種別のファイル設定を上書"
-"きします\n"
+"  ファイル: --inject-file は小さな YAML subset を受け付けます: bulk_gate、"
+"supply、route、demand、scalar 値、inline array、block list\n"
 
 #: src/cli.c:2191
+msgid ""
+"  file limits: unsupported YAML syntax fails closed; use block lists for large "
+"selector sets instead of long inline arrays\n"
+msgstr ""
+"  ファイル制約: 未対応の YAML 構文は fail closed します。大きな selector set "
+"には長い inline array ではなく block list を使ってください\n"
+
+#: src/cli.c:2192
 msgid ""
 "  gate: --bulk-gate applies the key bulk_select pre-filter before secret "
 "supply; list and export can also use --bulk-gate but do not inject into a "
@@ -2060,6 +2074,11 @@ msgstr "route:prefer は 1 回だけ指定できます\n"
 msgid "invalid --inject layer: %s\n"
 msgstr "不正な --inject layer です: %s\n"
 
+#: src/exec_inject.c:1304
+#, c-format
+msgid "invalid command resolution: %s\n"
+msgstr "不正な command resolution です: %s\n"
+
 #: src/exec_inject.c:1291 src/exec_inject.c:1299
 #, c-format
 msgid "invalid arguments for exec\n"
@@ -2106,6 +2125,11 @@ msgstr "exec inject: 最終子環境に必須変数がありません: %s\n"
 #, c-format
 msgid "ambient variable missing during exec: %s\n"
 msgstr "exec 実行中に ambient 変数がありません: %s\n"
+
+#: src/exec_inject.c:2401
+#, c-format
+msgid "command resolution direct requires slash-qualified command: %s\n"
+msgstr "command resolution direct には slash 付き command が必要です: %s\n"
 
 #: src/exec_inject.c:2339 src/exec_inject.c:2344 src/exec_inject.c:2353
 #: src/secdat-fuse.c:1115 src/secdat-fuse.c:1133

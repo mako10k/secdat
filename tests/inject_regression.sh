@@ -206,6 +206,63 @@ final_keys = json.loads(stdout)
 if final_keys != ["APP_TOKEN", "HOME", "PATH"]:
     fail(f"final only child env unexpected: {final_keys!r}")
 
+command_bin = work_root / "command-bin"
+command_bin.mkdir()
+fake_command = command_bin / "fakecmd"
+fake_command.write_text("#!/bin/sh\nprintf command-hit\n", encoding="utf-8")
+fake_command.chmod(0o755)
+command_path = f"{command_bin}:{env.get('PATH', '')}"
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "ambient:omit=PATH",
+    "--inject", "secret:only=APP_TOKEN",
+    "--inject", "final:only=APP_TOKEN",
+    "fakecmd",
+], extra_env={"PATH": command_path})
+if rc != 0 or not exec_stderr_ok(stderr) or stdout != "command-hit":
+    fail(f"default caller-path command resolution failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "ambient:omit=PATH",
+    "--inject", "secret:only=APP_TOKEN",
+    "--inject", "final:only=APP_TOKEN",
+    "--command-resolution", "child-path",
+    "fakecmd",
+], extra_env={"PATH": command_path})
+if rc != 127 or stdout != "" or "failed to execute command: fakecmd" not in stderr:
+    fail(f"child-path without final PATH should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "ambient:only=PATH",
+    "--inject", "final:only=PATH",
+    "--command-resolution", "child-path",
+    "fakecmd",
+], extra_env={"PATH": command_path})
+if rc != 0 or not exec_stderr_ok(stderr) or stdout != "command-hit":
+    fail(f"child-path command resolution failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--command-resolution", "direct",
+    "fakecmd",
+], extra_env={"PATH": command_path})
+if rc != 127 or stdout != "" or "command resolution direct requires slash-qualified command: fakecmd" not in stderr:
+    fail(f"direct command resolution should reject unqualified command: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "ambient:omit=PATH",
+    "--inject", "secret:only=APP_TOKEN",
+    "--inject", "final:only=APP_TOKEN",
+    "--command-resolution", "direct",
+    str(fake_command),
+], extra_env={"PATH": command_path})
+if rc != 0 or not exec_stderr_ok(stderr) or stdout != "command-hit":
+    fail(f"direct command resolution with slash path failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 # Route collision: default prefer secret.
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
@@ -347,6 +404,25 @@ rc, stdout, stderr = run([
 ])
 if rc != 0 or not exec_stderr_ok(stderr) or stdout != "other-secret":
     fail(f"inject-file override failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+route_policy_file = work_root / "exec.route.yaml"
+route_policy_file.write_text(
+    "supply:\n"
+    "  secret:\n"
+    "    only: [\"MY_TOKEN\"]\n"
+    "route:\n"
+    "  MY_*: ambient\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(route_policy_file),
+    "--inject", "route:MY_TOKEN=secret",
+    "python3", "-c",
+    "import os,sys; sys.stdout.write(os.environ.get('MY_TOKEN','missing'))",
+])
+if rc != 0 or not exec_stderr_ok(stderr) or stdout != "secret-token":
+    fail(f"inject-file route override failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 # secret:rename duplicate env_name is a plan error (design §6 Phase 1).
 rc, stdout, stderr = run([
@@ -503,6 +579,27 @@ rc, stdout, stderr = run([
 ])
 if rc != 2 or "gate: is no longer supported; use bulk_gate: true" not in stderr:
     fail(f"inject-file legacy gate did not fail: rc={rc} stderr={stderr!r}")
+
+large_reject_file = work_root / "large.reject.yaml"
+large_reject_file.write_text(
+    "supply:\n"
+    "  secret:\n"
+    "    reject:\n"
+    + "".join(f"      - FILLER_{index:04d}\n" for index in range(500))
+    + "      - ROOT_TOKEN\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(large_reject_file),
+    "--dry-run", "--json",
+    "python3", "-c", "pass",
+])
+if rc == 0 or "exec inject secret key must not be present: ROOT_TOKEN" not in stderr:
+    fail(f"large inject-file reject list did not fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+large_reject = json.loads(stdout)
+if "ROOT_TOKEN" not in large_reject["supply"]["secret"]["rejected_present"]:
+    fail(f"large inject-file reject list did not preserve tail selector: {large_reject!r}")
 
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
@@ -715,6 +812,7 @@ for bad_args, expected, help_target in [
     (["--inject", "not-a-valid-token"], "invalid --inject token: not-a-valid-token", "inject"),
     (["--inject", "bogus:only=FOO"], "invalid --inject layer: bogus", "inject"),
     (["--inject", "route:FOO=ambinet"], "invalid route pick: ambinet", "inject"),
+    (["--command-resolution", "mystery"], "invalid command resolution: mystery", "exec"),
     ([
         "--inject", r"secret:rename=s/^APP_\(.*\)/RENAMED_\1/",
         "--inject", r"secret:rename=s/^OTHER_\(.*\)/ALT_\1/",

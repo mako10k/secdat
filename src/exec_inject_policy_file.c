@@ -3,9 +3,11 @@
 #include "i18n.h"
 
 #include <ctype.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 
 struct secdat_exec_inject_policy;
 
@@ -189,6 +191,43 @@ static int secdat_exec_yaml_join_selectors(
     return 0;
 }
 
+static int secdat_exec_yaml_build_token(
+    char **token_out,
+    const char *layer,
+    const char *kind,
+    const char *value
+)
+{
+    char *token;
+    int written;
+    size_t layer_length = strlen(layer);
+    size_t kind_length = strlen(kind);
+    size_t value_length = strlen(value);
+    size_t token_length;
+
+    *token_out = NULL;
+    if (layer_length > SIZE_MAX - kind_length
+            || layer_length + kind_length > SIZE_MAX - value_length
+            || layer_length + kind_length + value_length > SIZE_MAX - 2) {
+        fprintf(stderr, _("inject policy token is too large\n"));
+        return 2;
+    }
+    token_length = layer_length + 1 + kind_length + 1 + value_length;
+    token = malloc(token_length + 1);
+    if (token == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    written = snprintf(token, token_length + 1, "%s:%s=%s", layer, kind, value);
+    if (written < 0 || (size_t)written != token_length) {
+        free(token);
+        fprintf(stderr, _("failed to build inject policy token\n"));
+        return 1;
+    }
+    *token_out = token;
+    return 0;
+}
+
 static int secdat_exec_yaml_apply_pentad_tokens(
     struct secdat_exec_inject_policy *policy,
     const char *layer,
@@ -197,7 +236,7 @@ static int secdat_exec_yaml_apply_pentad_tokens(
 )
 {
     char *joined = NULL;
-    char token[4096];
+    char *token = NULL;
     int status;
 
     if (selectors->count == 0) {
@@ -207,8 +246,13 @@ static int secdat_exec_yaml_apply_pentad_tokens(
     if (status != 0) {
         return status;
     }
-    snprintf(token, sizeof(token), "%s:%s=%s", layer, kind, joined);
+    status = secdat_exec_yaml_build_token(&token, layer, kind, joined);
+    if (status != 0) {
+        free(joined);
+        return status;
+    }
     status = secdat_exec_apply_inject_token(policy, token, 0);
+    free(token);
     free(joined);
     return status;
 }
@@ -220,10 +264,16 @@ static int secdat_exec_yaml_apply_scalar_token(
     const char *value
 )
 {
-    char token[4096];
+    char *token = NULL;
+    int status;
 
-    snprintf(token, sizeof(token), "%s:%s=%s", layer, kind, value);
-    return secdat_exec_apply_inject_token(policy, token, 0);
+    status = secdat_exec_yaml_build_token(&token, layer, kind, value);
+    if (status != 0) {
+        return status;
+    }
+    status = secdat_exec_apply_inject_token(policy, token, 0);
+    free(token);
+    return status;
 }
 
 static int secdat_exec_yaml_apply_route_tokens(
@@ -232,10 +282,16 @@ static int secdat_exec_yaml_apply_route_tokens(
     const char *value
 )
 {
-    char token[4096];
+    char *token = NULL;
+    int status;
 
-    snprintf(token, sizeof(token), "route:%s=%s", key, value);
-    return secdat_exec_apply_inject_token(policy, token, 0);
+    status = secdat_exec_yaml_build_token(&token, "route", key, value);
+    if (status != 0) {
+        return status;
+    }
+    status = secdat_exec_apply_inject_token(policy, token, 0);
+    free(token);
+    return status;
 }
 
 static int secdat_exec_yaml_count_indent(const char *line)
@@ -295,7 +351,9 @@ static int secdat_exec_yaml_split_key_value(const char *line, char **key_out, ch
 int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *policy, const char *path)
 {
     FILE *stream;
-    char line[4096];
+    char *line = NULL;
+    size_t line_capacity = 0;
+    ssize_t line_length;
     int section = 0;
     int subsection = 0;
     struct secdat_exec_yaml_string_list pending = {0};
@@ -308,13 +366,14 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
         return 1;
     }
 
-    while (fgets(line, sizeof(line), stream) != NULL) {
+    while ((line_length = getline(&line, &line_capacity, stream)) >= 0) {
         char *key = NULL;
         char *value = NULL;
         int indent;
         char *trimmed = line;
         const char *content;
 
+        (void)line_length;
         while (*trimmed != '\0' && (*trimmed == '\r' || *trimmed == '\n')) {
             trimmed += 1;
         }
@@ -361,8 +420,8 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
         }
 
         if (pending_kind != NULL) {
-            if (secdat_exec_yaml_apply_pentad_tokens(policy, subsection == 1 ? "ambient" : subsection == 2 ? "secret" : "final", pending_kind, &pending) != 0) {
-                status = 1;
+            status = secdat_exec_yaml_apply_pentad_tokens(policy, subsection == 1 ? "ambient" : subsection == 2 ? "secret" : "final", pending_kind, &pending);
+            if (status != 0) {
                 goto cleanup;
             }
             secdat_exec_yaml_string_list_free(&pending);
@@ -542,17 +601,18 @@ int secdat_exec_apply_inject_policy_file(struct secdat_exec_inject_policy *polic
     }
 
     if (pending_kind != NULL) {
-        if (secdat_exec_yaml_apply_pentad_tokens(
-                policy,
-                subsection == 1 ? "ambient" : subsection == 2 ? "secret" : "final",
-                pending_kind,
-                &pending) != 0) {
-            status = 1;
+        status = secdat_exec_yaml_apply_pentad_tokens(
+            policy,
+            subsection == 1 ? "ambient" : subsection == 2 ? "secret" : "final",
+            pending_kind,
+            &pending);
+        if (status != 0) {
             goto cleanup;
         }
     }
 
 cleanup:
+    free(line);
     secdat_exec_yaml_string_list_free(&pending);
     free(pending_kind);
     fclose(stream);

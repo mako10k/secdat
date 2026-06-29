@@ -971,7 +971,9 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
         if (strcmp(previous, "--inject-file") == 0) {
             return "file";
         }
-        if (strcmp(previous, "--inject") == 0 || strcmp(previous, "--bulk-gate") == 0) {
+        if (strcmp(previous, "--inject") == 0
+                || strcmp(previous, "--bulk-gate") == 0
+                || strcmp(previous, "--command-resolution") == 0) {
             return "none";
         }
     } else if (strcmp(command, "export") == 0) {
@@ -1155,7 +1157,7 @@ int secdat_cli_complete(int argc, char **argv)
         "--ignore-missing", "-f", "--help", "-h", NULL,
     };
     static const char *const exec_options[] = {
-        "--inject", "--inject-file", "--bulk-gate", "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
+        "--inject", "--inject-file", "--bulk-gate", "--command-resolution", "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
     };
     static const char *const export_options[] = {
         "--pattern", "-p", "--bulk-gate", "--help", "-h", NULL,
@@ -1483,7 +1485,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "SRC_KEYREF|@UUID DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--bulk-gate] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--bulk-gate] [--command-resolution MODE] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]");
         break;
     case SECDAT_COMMAND_EXPORT:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "export", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [--bulk-gate]");
@@ -1825,6 +1827,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  --inject LAYER:KIND=SELECTOR configures ambient, secret, route, or final rules; repeated --inject accumulates selectors of the same kind\n"));
         secdat_cli_print_detail_line(_("  --inject-file FILE loads a YAML policy; later --inject options override file entries\n"));
         secdat_cli_print_detail_line(_("  --bulk-gate applies the store bulk_select pre-filter before secret supply\n"));
+        secdat_cli_print_detail_line(_("  --command-resolution MODE selects CMD lookup: caller-path (default), child-path, or direct\n"));
         secdat_cli_print_detail_line(_("  see help inject for the rule vocabulary, selector syntax, YAML shape, and preflight examples\n"));
         return;
     }
@@ -2187,7 +2190,8 @@ static void secdat_cli_print_inject_detail(const char *program_name)
         secdat_cli_print_detail_line(_("  selectors: exact names and shell-style globs are allowed; separate multiple selectors in one value with ':'\n"));
         secdat_cli_print_detail_line(_("  route picks: route:prefer=secret, route:prefer=ambient, route:prefer=error, or route:GLOB=secret|ambient|error\n"));
         secdat_cli_print_detail_line(_("  rename: secret:rename=EXPR uses one sed-style s/// expression; generated environment names must be valid identifiers\n"));
-        secdat_cli_print_detail_line(_("  files: --inject-file loads YAML keys ambient, secret, route, final, and bulk_gate; later CLI --inject options override file entries of the same kind\n"));
+        secdat_cli_print_detail_line(_("  files: --inject-file accepts a small YAML subset: bulk_gate, supply, route, demand, scalar values, inline arrays, and block lists\n"));
+        secdat_cli_print_detail_line(_("  file limits: unsupported YAML syntax fails closed; use block lists for large selector sets instead of long inline arrays\n"));
         secdat_cli_print_detail_line(_("  gate: --bulk-gate applies the key bulk_select pre-filter before secret supply; list and export can also use --bulk-gate but do not inject into a child process\n"));
         snprintf(buffer, sizeof(buffer), _("  preflight: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"), program_name);
         secdat_cli_print_detail_line(buffer);

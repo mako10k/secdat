@@ -247,7 +247,7 @@ Direct source-object links such as
 .B ln @UUID DST_KEYREF
 are allowed only when the current context can authorize the UUID through an existing visible or unlocked domain entry; object UUID syntax is not a destination operand.
 .TP
-.B exec [\-\-inject LAYER:KIND=SELECTOR]... [\-\-inject-file FILE]... [\-\-bulk-gate] [\-\-dry-run] [\-\-json] [\-\-json-summary] [\-\-] CMD [ARGS...]
+.B exec [\-\-inject LAYER:KIND=SELECTOR]... [\-\-inject-file FILE]... [\-\-bulk-gate] [\-\-command-resolution MODE] [\-\-dry-run] [\-\-json] [\-\-json-summary] [\-\-] CMD [ARGS...]
 Build a child process environment through supply, route, and final injection layers, then execute the command.
 .B --inject
 configures ambient, secret, route, or final rules. Repeated options accumulate selectors of the same kind. Multiple selectors in one value are separated by
@@ -258,7 +258,8 @@ for the rule vocabulary, selector syntax, YAML shape, and preflight examples.
 .B --inject-file
 loads a YAML policy file. Later
 .B --inject
-options override file entries.
+options override file entries. CLI route rules take precedence over policy-file
+route rules, while order is preserved within each source.
 .B --bulk-gate
 applies the
 .B bulk_select
@@ -267,6 +268,14 @@ pre-filter before secret supply. Legacy
 and
 .BR \-\-sandbox-injectable
 are rejected with replacement hints.
+.B --command-resolution
+chooses unqualified command lookup:
+.B caller-path
+keeps the compatible caller PATH behavior,
+.B child-path
+uses PATH from the final child environment, and
+.B direct
+requires a slash-qualified command.
 .B secret:rename
 applies one sed-style key-to-environment-name mapping. Keys that do not match keep their original key name as the environment name. Generated environment names must be valid identifiers; empty, duplicate, or otherwise invalid names are rejected during planning.
 .B --dry-run

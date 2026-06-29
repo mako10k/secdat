@@ -45,6 +45,12 @@ enum secdat_exec_route_pick {
     SECDAT_EXEC_ROUTE_ERROR,
 };
 
+enum secdat_exec_command_resolution {
+    SECDAT_EXEC_COMMAND_RESOLUTION_CALLER_PATH = 0,
+    SECDAT_EXEC_COMMAND_RESOLUTION_CHILD_PATH,
+    SECDAT_EXEC_COMMAND_RESOLUTION_DIRECT,
+};
+
 struct secdat_exec_route_rule {
     char *match;
     enum secdat_exec_route_pick pick;
@@ -90,6 +96,7 @@ struct secdat_exec_options {
     int dry_run;
     int json;
     int json_summary;
+    enum secdat_exec_command_resolution command_resolution;
     size_t command_index;
 };
 
@@ -468,6 +475,27 @@ static const char *secdat_exec_route_pick_name(enum secdat_exec_route_pick pick)
     default:
         return "secret";
     }
+}
+
+static int secdat_exec_parse_command_resolution(
+    const char *value,
+    enum secdat_exec_command_resolution *resolution_out
+)
+{
+    if (strcmp(value, "caller-path") == 0) {
+        *resolution_out = SECDAT_EXEC_COMMAND_RESOLUTION_CALLER_PATH;
+        return 0;
+    }
+    if (strcmp(value, "child-path") == 0) {
+        *resolution_out = SECDAT_EXEC_COMMAND_RESOLUTION_CHILD_PATH;
+        return 0;
+    }
+    if (strcmp(value, "direct") == 0) {
+        *resolution_out = SECDAT_EXEC_COMMAND_RESOLUTION_DIRECT;
+        return 0;
+    }
+    fprintf(stderr, _("invalid command resolution: %s\n"), value);
+    return 2;
 }
 
 static int secdat_exec_parse_rename_expression(const char *expression, struct secdat_exec_secret_rename *rename)
@@ -1105,6 +1133,7 @@ static int secdat_exec_completion_option_takes_argument(const char *token)
         && (strcmp(token, "--inject") == 0
             || strcmp(token, "--inject-file") == 0
             || strcmp(token, "--inject-gate") == 0
+            || strcmp(token, "--command-resolution") == 0
             || strcmp(token, "--pattern") == 0 || strcmp(token, "-p") == 0
             || strcmp(token, "--pattern-exclude") == 0 || strcmp(token, "-x") == 0
             || strcmp(token, "--env-map-sed") == 0
@@ -1196,6 +1225,7 @@ static int secdat_exec_parse_options(
         {"json", no_argument, NULL, 1004},
         {"json-summary", no_argument, NULL, 1005},
         {"require-key", required_argument, NULL, 1006},
+        {"command-resolution", required_argument, NULL, 1010},
         {NULL, 0, NULL, 0},
     };
     char *argv[cli->argc + 2];
@@ -1205,6 +1235,7 @@ static int secdat_exec_parse_options(
 
     memset(options, 0, sizeof(*options));
     options->policy.route_prefer = SECDAT_EXEC_ROUTE_SECRET;
+    options->command_resolution = SECDAT_EXEC_COMMAND_RESOLUTION_CALLER_PATH;
     if (help_target_out != NULL) {
         *help_target_out = "exec";
     }
@@ -1285,6 +1316,13 @@ static int secdat_exec_parse_options(
                 *help_target_out = "inject";
             }
             return secdat_exec_reject_removed_legacy_flag("--require-key", "--inject secret:require=KEY");
+        case 1010:
+            status = secdat_exec_parse_command_resolution(optarg, &options->command_resolution);
+            if (status != 0) {
+                secdat_exec_options_free(options);
+                return status;
+            }
+            break;
         case '?':
         case ':':
         default:
@@ -1546,6 +1584,17 @@ static enum secdat_exec_route_pick secdat_exec_resolve_collision(
     size_t index;
 
     for (index = 0; index < policy->route_rule_count; index += 1) {
+        if (!policy->route_rules[index].from_cli) {
+            continue;
+        }
+        if (secdat_exec_selector_matches(policy->route_rules[index].match, name)) {
+            return policy->route_rules[index].pick;
+        }
+    }
+    for (index = 0; index < policy->route_rule_count; index += 1) {
+        if (policy->route_rules[index].from_cli) {
+            continue;
+        }
         if (secdat_exec_selector_matches(policy->route_rules[index].match, name)) {
             return policy->route_rules[index].pick;
         }
@@ -2306,11 +2355,81 @@ static void secdat_exec_free_child_environ(char **environ_entries, size_t enviro
     free(environ_entries);
 }
 
+static const char *secdat_exec_child_environ_get(char **environ_entries, const char *name)
+{
+    size_t name_length = strlen(name);
+    size_t index;
+
+    for (index = 0; environ_entries != NULL && environ_entries[index] != NULL; index += 1) {
+        if (strncmp(environ_entries[index], name, name_length) == 0 && environ_entries[index][name_length] == '=') {
+            return environ_entries[index] + name_length + 1;
+        }
+    }
+    return NULL;
+}
+
+static int secdat_exec_command_has_slash(const char *command)
+{
+    return strchr(command, '/') != NULL;
+}
+
+static void secdat_exec_try_child_path(char **command_argv, char **child_environ)
+{
+    const char *path = secdat_exec_child_environ_get(child_environ, "PATH");
+    const char *cursor;
+    const char *command = command_argv[0];
+    size_t command_length = strlen(command);
+    int saved_errno = ENOENT;
+
+    if (secdat_exec_command_has_slash(command)) {
+        execve(command, command_argv, child_environ);
+        return;
+    }
+    if (path == NULL) {
+        errno = ENOENT;
+        return;
+    }
+
+    cursor = path;
+    while (1) {
+        const char *separator = strchr(cursor, ':');
+        size_t directory_length = separator == NULL ? strlen(cursor) : (size_t)(separator - cursor);
+        size_t candidate_length = (directory_length == 0 ? 2 : directory_length + 1) + command_length;
+        char *candidate;
+
+        if (directory_length > (size_t)INT_MAX || candidate_length < command_length) {
+            errno = ENAMETOOLONG;
+            return;
+        }
+        candidate = malloc(candidate_length + 1);
+        if (candidate == NULL) {
+            errno = ENOMEM;
+            return;
+        }
+        if (directory_length == 0) {
+            snprintf(candidate, candidate_length + 1, "./%s", command);
+        } else {
+            snprintf(candidate, candidate_length + 1, "%.*s/%s", (int)directory_length, cursor, command);
+        }
+        execve(candidate, command_argv, child_environ);
+        if (errno != ENOENT && errno != ENOTDIR) {
+            saved_errno = errno;
+        }
+        free(candidate);
+        if (separator == NULL) {
+            break;
+        }
+        cursor = separator + 1;
+    }
+    errno = saved_errno;
+}
+
 static int secdat_exec_run_child(
     const struct secdat_domain_chain *chain,
     const char *store_name,
     const struct secdat_exec_plan *plan,
     char **command_argv,
+    enum secdat_exec_command_resolution command_resolution,
     int *exit_status_out,
     int *term_signal_out
 )
@@ -2340,7 +2459,18 @@ static int secdat_exec_run_child(
         return 1;
     }
     if (child_pid == 0) {
-        execvpe(command_argv[0], command_argv, child_environ);
+        if (command_resolution == SECDAT_EXEC_COMMAND_RESOLUTION_DIRECT
+                && !secdat_exec_command_has_slash(command_argv[0])) {
+            fprintf(stderr, _("command resolution direct requires slash-qualified command: %s\n"), command_argv[0]);
+            _exit(127);
+        }
+        if (command_resolution == SECDAT_EXEC_COMMAND_RESOLUTION_CALLER_PATH) {
+            execvpe(command_argv[0], command_argv, child_environ);
+        } else if (command_resolution == SECDAT_EXEC_COMMAND_RESOLUTION_CHILD_PATH) {
+            secdat_exec_try_child_path(command_argv, child_environ);
+        } else {
+            execve(command_argv[0], command_argv, child_environ);
+        }
         fprintf(stderr, _("failed to execute command: %s\n"), command_argv[0]);
         _exit(127);
     }
@@ -2449,7 +2579,15 @@ int secdat_exec_command(const struct secdat_cli *cli)
         int exit_status = -1;
         int term_signal = -1;
 
-        status = secdat_exec_run_child(&chain, cli->store, &plan, command_argv, &exit_status, &term_signal);
+        status = secdat_exec_run_child(
+            &chain,
+            cli->store,
+            &plan,
+            command_argv,
+            options.command_resolution,
+            &exit_status,
+            &term_signal
+        );
         ended_ms = secdat_exec_monotonic_millis();
         if (status != 0) {
             secdat_exec_plan_free(&plan);
@@ -2488,7 +2626,15 @@ int secdat_exec_command(const struct secdat_cli *cli)
         int exit_status = -1;
         int term_signal = -1;
 
-        status = secdat_exec_run_child(&chain, cli->store, &plan, command_argv, &exit_status, &term_signal);
+        status = secdat_exec_run_child(
+            &chain,
+            cli->store,
+            &plan,
+            command_argv,
+            options.command_resolution,
+            &exit_status,
+            &term_signal
+        );
         secdat_exec_plan_free(&plan);
         secdat_exec_port_free_keys(visible_keys, visible_key_count);
         secdat_exec_options_free(&options);

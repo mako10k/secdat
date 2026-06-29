@@ -293,7 +293,7 @@ if mode != "none" or values:
 mode, values, _ = run_completion("exec", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: exec option completion mode mismatch: {mode!r}")
-for expected in ["--inject", "--inject-file", "--bulk-gate", "--dry-run", "--json", "--json-summary"]:
+for expected in ["--inject", "--inject-file", "--bulk-gate", "--command-resolution", "--dry-run", "--json", "--json-summary"]:
     assert_contains(values, expected, "exec options")
 for unexpected in ["--bulk-select", "--inject-gate", "--inject-bulk-gate", "--sandbox-injectable", "--sandbox-inject", "--inject-bulk"]:
     assert_not_contains(values, unexpected, "exec options must not suggest attr/legacy flags")
@@ -309,6 +309,10 @@ if mode != "file" or values:
 mode, values, _ = run_completion("exec", "--bulk-gate", "")
 if mode != "none" or values:
     raise SystemExit(f"FAIL: exec --bulk-gate completion should not suggest values: mode={mode!r} values={values!r}")
+
+mode, values, _ = run_completion("exec", "--command-resolution", "")
+if mode != "none" or values:
+    raise SystemExit(f"FAIL: exec --command-resolution completion should not suggest token values: mode={mode!r} values={values!r}")
 
 mode, values, offset = run_completion("exec", "")
 if mode != "command" or values or offset is not None:

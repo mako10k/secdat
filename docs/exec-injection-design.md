@@ -263,8 +263,9 @@ one side supplies a name, that entry is kept without consulting `prefer`.
 Rule precedence:
 
 ```
-1. First matching per-rule entry (declaration order)
-2. Global route:prefer
+1. First matching CLI per-rule entry (CLI declaration order)
+2. First matching policy-file per-rule entry (file declaration order)
+3. Global route:prefer
 ```
 
 ### Phase 3 — Demand (final)
@@ -280,9 +281,11 @@ Rule precedence:
 ### Phase 4 — Execute
 
 1. `fork()`.
-2. In child: apply `ChildEnv` via `execvpe` with a constructed environ array.
-   `execvpe` is intentional: the command operand may be an unqualified program
-   name when `PATH` is present in `ChildEnv`.
+2. In child: apply `ChildEnv` with a constructed environ array. By default,
+   unqualified command names keep the historical `execvpe` caller-`PATH` lookup
+   behavior. `--command-resolution child-path` resolves unqualified names using
+   `PATH` from `ChildEnv`; `--command-resolution direct` requires a slash-qualified
+   command and performs no `PATH` search.
 3. Parent environ is never modified.
 4. Secret plaintext buffers are cleared after copy.
 
@@ -324,8 +327,17 @@ and YAML `gate:` are rejected with hints.
 
 ```text
 secdat [--dir DIR] [--store STORE] exec [--inject ...]... [--inject-file FILE]...
-       [--bulk-gate] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
+       [--bulk-gate] [--command-resolution MODE] [--dry-run] [--json]
+       [--json-summary] [--] CMD [ARGS...]
 ```
+
+`--command-resolution MODE` accepts:
+
+| MODE | Meaning |
+| --- | --- |
+| `caller-path` | Default. Preserve current behavior: unqualified `CMD` lookup uses the caller-side `PATH` behavior of `execvpe`, while the child still receives `ChildEnv`. |
+| `child-path` | Resolve unqualified `CMD` using `PATH` from the final child environment. Missing `PATH` means unqualified lookup fails. |
+| `direct` | Require a slash-qualified command and call it directly without any `PATH` search. |
 
 ### 7.3 Examples
 
@@ -390,7 +402,9 @@ For large policies:
 secdat exec --inject-file exec.env.yaml -- ./app
 ```
 
-CLI `--inject` after the file overrides file entries.
+CLI `--inject` after the file overrides file entries. For route rules, CLI
+rules have higher precedence than policy-file rules, while declaration order is
+preserved within each source.
 
 #### `exec.env.yaml` schema
 
@@ -499,6 +513,10 @@ names describe gate-scoped eligibility only, not absolute egress prohibition.
   host concern.
 - `final:only` is a strong isolation tool; omitting `PATH` can break the
   child — no implicit keep-list; document required vars explicitly.
+- For command lookup isolation, combine `final:only` with
+  `--command-resolution child-path` or `--command-resolution direct`; the default
+  `caller-path` mode preserves compatibility rather than making command lookup
+  part of the final environment boundary.
 - `secret:reject` checks store visibility, not ambient; use `final:reject` to
   catch ambient-only leaks after routing.
 - Parent process environ is unchanged; only the child is mutated.
