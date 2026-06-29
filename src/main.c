@@ -24,11 +24,26 @@
 #define SECDAT_BUILD_ID ""
 #endif
 
+static int bind_domain_from_directory_candidate(const char *locale_dir)
+{
+    struct stat status;
+
+    if (locale_dir == NULL || locale_dir[0] == '\0') {
+        return 0;
+    }
+
+    if (stat(locale_dir, &status) != 0 || !S_ISDIR(status.st_mode)) {
+        return 0;
+    }
+
+    bindtextdomain(PACKAGE_NAME, locale_dir);
+    return 1;
+}
+
 static int bind_domain_from_executable_candidate(const char *argv0, const char *suffix)
 {
     char locale_dir[PATH_MAX];
     const char *slash;
-    struct stat status;
     size_t base_length;
     size_t suffix_length;
 
@@ -51,12 +66,7 @@ static int bind_domain_from_executable_candidate(const char *argv0, const char *
     locale_dir[base_length] = '\0';
     strcat(locale_dir, suffix);
 
-    if (stat(locale_dir, &status) != 0 || !S_ISDIR(status.st_mode)) {
-        return 0;
-    }
-
-    bindtextdomain(PACKAGE_NAME, locale_dir);
-    return 1;
+    return bind_domain_from_directory_candidate(locale_dir);
 }
 
 static const char *secdat_program_name_for_display(const char *argv0, char *buffer, size_t size)
@@ -149,14 +159,15 @@ static void bind_domain_from_candidates(const char *argv0)
         return;
     }
 
-    bindtextdomain(PACKAGE_NAME, LOCALEDIR);
-
-    if (argv0 == NULL) {
-        bindtextdomain(PACKAGE_NAME, "./po/.locale");
+    if (bind_domain_from_directory_candidate(LOCALEDIR)) {
         return;
     }
 
-    bindtextdomain(PACKAGE_NAME, "./po/.locale");
+    if (bind_domain_from_directory_candidate("./po/.locale")) {
+        return;
+    }
+
+    bindtextdomain(PACKAGE_NAME, LOCALEDIR);
 }
 
 void secdat_i18n_init(const char *argv0)

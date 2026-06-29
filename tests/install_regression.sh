@@ -47,4 +47,39 @@ if test -e "$installed_helper"; then
     fail "uninstall-askpass-helper left the helper installed"
 fi
 
+configured_prefix=$(
+    make -s --no-print-directory -C "$build_root" -f Makefile -f - print-prefix <<'MAKE_EOF'
+print-prefix:
+	@printf '%s\n' '$(prefix)'
+MAKE_EOF
+)
+configured_localedir=$(
+    make -s --no-print-directory -C "$build_root" -f Makefile -f - print-localedir <<'MAKE_EOF'
+print-localedir:
+	@printf '%s\n' '$(localedir)'
+MAKE_EOF
+)
+
+if ! locale -a 2>/dev/null | grep -Eqi '^ja_JP\.utf-?8$'; then
+    printf 'SKIP installed locale smoke: ja_JP.UTF-8 locale is unavailable\n'
+elif test -z "$configured_prefix" || test -z "$configured_localedir"; then
+    printf 'SKIP installed locale smoke: configured prefix/localedir is unavailable\n'
+elif test "${configured_prefix#/tmp/}" = "$configured_prefix"; then
+    printf 'SKIP installed locale smoke: configured prefix is not under /tmp (%s)\n' "$configured_prefix"
+else
+    make -C "$build_root" install >/dev/null
+    runtime_secdat="$configured_prefix/bin/secdat"
+    if test ! -x "$runtime_secdat"; then
+        fail "runtime install did not install the secdat binary"
+    fi
+    runtime_output=$(
+        cd "$work_root"
+        LD_LIBRARY_PATH="$configured_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            LANGUAGE=ja LANG=ja_JP.UTF-8 LC_ALL= "$runtime_secdat" --help
+    )
+    if ! printf '%s\n' "$runtime_output" | grep -q '使い方:'; then
+        fail "installed secdat did not use the installed Japanese locale catalog from $configured_localedir"
+    fi
+fi
+
 printf 'PASS install regression\n'
