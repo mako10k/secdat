@@ -1490,13 +1490,21 @@ msgstr ""
 "入は行いません\n"
 
 #: src/cli.c:2198
+msgid ""
+"  ptyterm handoff: secdat can be an optional stdin secret provider for "
+"ptyterm; neither tool requires the other\n"
+msgstr ""
+"  ptyterm 受け渡し: secdat は ptyterm 向けの任意の stdin secret provider に"
+"なれます。どちらの tool も相手を必須とはしません\n"
+
+#: src/cli.c:2199
 #, c-format
 msgid ""
 "  preflight: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"
 msgstr ""
 "  事前検証: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"
 
-#: src/cli.c:2200
+#: src/cli.c:2201
 #, c-format
 msgid ""
 "  example: %s exec --inject ambient:omit=SECDAT_* --inject secret:only=APP_* "
@@ -1504,6 +1512,15 @@ msgid ""
 msgstr ""
 "  例: %s exec --inject ambient:omit=SECDAT_* --inject secret:only=APP_* --"
 "inject route:prefer=secret --inject final:reject=SECDAT_* -- CMD\n"
+
+#: src/cli.c:2203
+#, c-format
+msgid ""
+"  terminal handoff: %s get ROUTER_PASSWORD --stdout | ptyterm --session=1 --"
+"send-stdin --send-eol=cr --redact-sent\n"
+msgstr ""
+"  terminal 受け渡し: %s get ROUTER_PASSWORD --stdout | ptyterm --session=1 --"
+"send-stdin --send-eol=cr --redact-sent\n"
 
 #: src/cli.c:2207
 #, c-format

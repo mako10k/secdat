@@ -709,6 +709,7 @@ printf %s "$TOKEN" | secdat --dir /work/app set api/token
 secdat get api/token > token.txt
 secdat ls --pattern 'api/*'
 secdat exec --inject secret:only='aws/*' env
+secdat get ROUTER_PASSWORD --stdout | ptyterm --session=1 --send-stdin --send-eol=cr --redact-sent
 secdat --dir /work/app domain ls --pattern '/work/*'
 ```
 
@@ -838,6 +839,7 @@ secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inj
 - JSON preflight and summary output include supply, route, and final plan metadata plus `missing_required` fields where applicable
 - preflight and summary output must never include secret values
 - the parent process environment is unchanged
+- stdin-oriented consumers such as `ptyterm --send-stdin` can be connected with `secdat get KEY --stdout | ...`; this is optional stdout/stdin coupling, not a dependency between the tools
 
 Migration note:
 

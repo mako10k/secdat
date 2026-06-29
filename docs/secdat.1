@@ -275,6 +275,11 @@ pre-filter before secret supply. Legacy
 and
 .BR \-\-sandbox-injectable
 are rejected with replacement hints.
+For stdin-oriented tools such as
+.BR ptyterm (1),
+secdat can provide the secret bytes while the other tool owns the transport:
+.B secdat get ROUTER_PASSWORD --stdout | ptyterm --session=1 --send-stdin --send-eol=cr --redact-sent .
+This is optional stdout/stdin coupling; neither tool requires the other.
 .B --command-resolution
 chooses unqualified command lookup:
 .B caller-path
@@ -590,6 +595,7 @@ secdat --dir ~/project --store app export
 source <(secdat --dir ~/project --store app export)
 secdat help inject
 secdat exec --inject secret:only=APP_* --dry-run --json -- env
+secdat get ROUTER_PASSWORD --stdout | ptyterm --session=1 --send-stdin --send-eol=cr --redact-sent
 SECDAT_MASTER_KEY_PASSPHRASE=secret secdat unlock
 secdat unlock --askpass /path/to/helper
 make install-askpass-helper

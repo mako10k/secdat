@@ -409,6 +409,20 @@ highest precedence and overrides file/profile entries regardless of option order
 For route rules, the precedence order is CLI, matched profile, then base file,
 while declaration order is preserved within each source.
 
+### 7.5 Optional stdin handoff to terminal-session tools
+
+Some tools need a secret byte stream rather than a child environment. For that
+case, keep `secdat` as the secret provider and let the consuming tool own its
+transport:
+
+```sh
+secdat get ROUTER_PASSWORD --stdout | ptyterm --session=1 --send-stdin --send-eol=cr --redact-sent
+```
+
+This is intentionally loose coupling through stdout/stdin. `secdat` does not
+depend on `ptyterm`, and `ptyterm` can read from any provider that writes the
+same bytes to stdout.
+
 #### `exec.env.yaml` schema
 
 ```yaml

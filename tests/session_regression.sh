@@ -852,7 +852,9 @@ for args, fragments in [
             "rename: secret:rename=EXPR",
             "files: --inject-file accepts a small YAML subset",
             "file limits: unsupported YAML syntax fails closed",
+            "ptyterm handoff: secdat can be an optional stdin secret provider for ptyterm",
             "preflight:",
+            "terminal handoff:",
         ],
     ),
 ]:

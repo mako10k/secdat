@@ -2195,9 +2195,12 @@ static void secdat_cli_print_inject_detail(const char *program_name)
         secdat_cli_print_detail_line(_("  profile safety: profile_required: true fails when no profile matches, and multiple matching profiles fail closed\n"));
         secdat_cli_print_detail_line(_("  file limits: unsupported YAML syntax fails closed; use block lists for large selector sets instead of long inline arrays\n"));
         secdat_cli_print_detail_line(_("  gate: --bulk-gate applies the key bulk_select pre-filter before secret supply; list and export can also use --bulk-gate but do not inject into a child process\n"));
+        secdat_cli_print_detail_line(_("  ptyterm handoff: secdat can be an optional stdin secret provider for ptyterm; neither tool requires the other\n"));
         snprintf(buffer, sizeof(buffer), _("  preflight: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  example: %s exec --inject ambient:omit=SECDAT_* --inject secret:only=APP_* --inject route:prefer=secret --inject final:reject=SECDAT_* -- CMD\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  terminal handoff: %s get ROUTER_PASSWORD --stdout | ptyterm --session=1 --send-stdin --send-eol=cr --redact-sent\n"), program_name);
         secdat_cli_print_detail_line(buffer);
     }
 }
