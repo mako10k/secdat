@@ -15,7 +15,12 @@
 - Prefer a focused check immediately after the first code change for a slice.
 - Use `make` for narrow build validation.
 - Use the nearest regression script when a feature already has one.
+- When a touched or release-relevant feature is optional at configure time, explicitly enable and build it before accepting its regression as covered. For example, FUSE-related changes or releases should include `./configure --enable-fuse`, a rebuild that produces `src/secdat-fuse`, and `tests/fuse_regression.sh` unless the environment blocker is documented with evidence.
 - Run `make check` before closing an implementation issue when the change affects behavior.
+
+## GitHub Closeout Hygiene
+
+- For multi-line `gh issue comment` text, or any comment body containing backticks, dollar signs, command substitutions, quotes, or other shell-sensitive content, write the body to a temporary file and use `gh issue comment --body-file FILE` instead of an inline `--body` string.
 
 ## Project Knowledge
 
