@@ -164,6 +164,23 @@ Suggestions are derived from relation member roles and non-secret relation field
 .B id
 are not emitted as high-risk refresh targets by themselves.
 .TP
+.B relation suggest-link [\-\-cluster-field FIELD] [KEYREF]
+Explicitly scan registered domains for same-name local keys in the selected store. When
+.B KEYREF
+is supplied, its key name and store limit the scan. This command reads secret values only to compare them and never prints them. Equal pairs are emitted as
+.B link-candidate
+rows; different pairs are emitted as
+.B same-name-different-value
+rows. Output is tab-separated as
+.B STATUS KEY LEFT_CLUSTER RIGHT_CLUSTER LEFT_KEYREF RIGHT_KEYREF .
+Cluster columns read optional non-secret key metadata from
+.B link_cluster
+by default, or from
+.B \-\-cluster-field FIELD .
+Cluster identifiers are not inferred or written automatically; add them manually with
+.B meta set KEYREF link_cluster VALUE
+when useful.
+.TP
 .B relation show RELATION_ID
 Print one semantic relation without reading secret values.
 .TP
@@ -241,11 +258,18 @@ Rename or relocate one key between resolved locations.
 .B cp SRC_KEYREF DST_KEYREF
 Copy one key into another resolved location.
 .TP
-.B ln SRC_KEYREF|@UUID DST_KEYREF
+.B ln [\-\-replace] [\-\-skip-same-value-check] SRC_KEYREF|@UUID DST_KEYREF
 Link another key to the same v2 secret object. Source and destination may use explicit KEYREF domain/store qualifiers, including different v2 domains or stores. Updating the value through either key updates the shared object.
 Direct source-object links such as
 .B ln @UUID DST_KEYREF
 are allowed only when the current context can authorize the UUID through an existing visible or unlocked domain entry; object UUID syntax is not a destination operand.
+When the destination key already exists,
+.B \-\-replace
+is required and is limited to same-name source and destination key references. By default replacement first confirms both current values are equal; use
+.B \-\-skip-same-value-check
+with
+.B \-\-replace
+only when intentionally replacing a different value.
 .TP
 .B exec [\-\-inject LAYER:KIND=SELECTOR]... [\-\-inject-file FILE]... [\-\-bulk-gate] [\-\-command-resolution MODE] [\-\-dry-run] [\-\-json] [\-\-json-summary] [\-\-] CMD [ARGS...]
 Build a child process environment through supply, route, and final injection layers, then execute the command.
@@ -585,6 +609,8 @@ secdat meta mark-leaked BILLING_PASSWORD
 secdat relation set billing-login --kind credential --member id=BILLING_ID --member password=BILLING_PASSWORD --security combination-sensitive
 secdat relation search kind=credential security=combination-*
 secdat relation suggest-refresh BILLING_PASSWORD
+secdat meta set APP_TOKEN link_cluster prod
+secdat relation suggest-link APP_TOKEN
 secdat relation show billing-login
 secdat --dir ~/project domain create
 secdat --dir ~/project-restored domain move --from ~/project

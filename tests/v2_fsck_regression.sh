@@ -525,6 +525,112 @@ for fsck_domain, label in ((domain, "source"), (consumer_domain, "consumer")):
     if rc != 0 or stdout != "ok\n" or stderr != "":
         fail(f"cross-domain v2 fsck after rm failed for {label}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+same_name_source = f"{domain}/APP_SECRET"
+same_name_destination = f"{consumer_domain}/APP_SECRET"
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "set", "APP_SECRET", "--value", "consumer-secret", "--bulk-select", "named"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-name destination setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "id", "APP_SECRET"])
+if rc != 0 or stderr != "":
+    fail(f"same-name destination id failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+consumer_app_secret_id = stdout.strip()
+if consumer_app_secret_id == app_secret_id:
+    fail("same-name destination setup should create an independent object")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", same_name_source, same_name_destination])
+if rc == 0 or stdout != "" or "destination key already exists: APP_SECRET (use --replace" not in stderr:
+    fail(f"same-name ln should require explicit replace: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "--skip-same-value-check", same_name_source, same_name_destination])
+if rc != 2 or stdout != "" or "--skip-same-value-check requires --replace" not in stderr:
+    fail(f"same-name ln skip without replace should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "--replace", same_name_source, same_name_destination])
+if rc == 0 or stdout != "" or "same-name destination value differs: APP_SECRET" not in stderr:
+    fail(f"same-name ln replace should reject different values by default: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "id", "APP_SECRET"])
+if rc != 0 or stdout.strip() != consumer_app_secret_id or stderr != "":
+    fail(f"failed same-name replace should keep destination object: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "set", "APP_SECRET", "--value", "secret-value", "--bulk-select", "named"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-name equal destination setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "--replace", same_name_source, same_name_destination])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-name ln replace after value confirmation failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "id", "APP_SECRET"])
+if rc != 0 or stdout.strip() != app_secret_id or stderr != "":
+    fail(f"same-name replaced key should share source object: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "get", "APP_SECRET"])
+if rc != 0 or stdout != "secret-value" or stderr != "":
+    fail(f"same-name replaced key get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if (consumer_secret_objects_dir / f"{consumer_app_secret_id}.sec").exists() or (consumer_secret_objects_dir / f"{consumer_app_secret_id}.value").exists():
+    fail("same-name replace did not remove the destination's old object")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "secret", "status", app_secret_id])
+if rc != 0 or stderr != "":
+    fail(f"same-name linked source status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "refcount_cached=2\n", "same-name linked source cached refcount")
+assert_contains(stdout, "refcount_actual=2\n", "same-name linked source actual refcount")
+for fsck_domain, label in ((domain, "source"), (consumer_domain, "consumer")):
+    rc, stdout, stderr = run([bin_path, "--dir", str(fsck_domain), "fsck", "--format", "v2"])
+    if rc != 0 or stdout != "ok\n" or stderr != "":
+        fail(f"same-name replace fsck failed for {label}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "rm", "APP_SECRET"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-name replaced key cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(consumer_domain), "set", "APP_SECRET",
+    "--value", "secret-value", "--key-visibility", "unlocked", "--bulk-select", "exclude",
+])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-name attr-preserve destination setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "--replace", same_name_source, same_name_destination])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-name replace should preserve destination attrs: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "attr", "APP_SECRET"])
+if rc != 0 or stdout != "key_visibility=unlocked\nvalue_access=unlocked\nbulk_select=exclude\n" or stderr != "":
+    fail(f"same-name replace did not preserve attrs: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "ls", "--bulk-gate", "--pattern", "APP_SECRET"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-name replace should preserve bulk exclusion: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+consumer_hidden_link_texts = [
+    path.read_text(encoding="utf-8")
+    for path in consumer_domain_entries_dir.glob("*.dent")
+    if f"secret_id={app_secret_id}\n" in path.read_text(encoding="utf-8")
+]
+if len(consumer_hidden_link_texts) != 1:
+    fail(f"same-name replace expected one hidden destination link, found {len(consumer_hidden_link_texts)}")
+consumer_hidden_link_text = consumer_hidden_link_texts[0]
+if "key_visibility=unlocked\n" not in consumer_hidden_link_text or "encrypted_key=" not in consumer_hidden_link_text:
+    fail("same-name replace did not preserve hidden destination key visibility")
+if "bulk_select_entry=exclude\n" not in consumer_hidden_link_text:
+    fail("same-name replace did not preserve destination bulk_select entry")
+if "APP_SECRET" in consumer_hidden_link_text or "key=APP_SECRET" in consumer_hidden_link_text:
+    fail("same-name replace leaked hidden destination key name")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "rm", "APP_SECRET"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-name attr-preserve cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "set", "APP_SECRET", "--value", "consumer-different", "--bulk-select", "named"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-name skip destination setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "--replace", "--skip-same-value-check", same_name_source, same_name_destination])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-name ln replace skip value check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "id", "APP_SECRET"])
+if rc != 0 or stdout.strip() != app_secret_id or stderr != "":
+    fail(f"same-name skip replaced key should share source object: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "get", "APP_SECRET"])
+if rc != 0 or stdout != "secret-value" or stderr != "":
+    fail(f"same-name skip replaced key get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "rm", "APP_SECRET"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-name skip replaced key cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "secret", "status", app_secret_id])
+if rc != 0 or stderr != "":
+    fail(f"same-name cleanup source status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, "refcount_cached=1\n", "same-name cleanup source cached refcount")
+assert_contains(stdout, "refcount_actual=1\n", "same-name cleanup source actual refcount")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "cp", "APP_SECRET", "APP_SECRET_COPY"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"pure v2 cp failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

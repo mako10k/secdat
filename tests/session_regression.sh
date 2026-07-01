@@ -671,7 +671,8 @@ for args, marker in [
     ([bin_path, "help", "wait-unlock"], "wait-unlock [-t SECONDS|--timeout SECONDS] [-q|--quiet]"),
     ([bin_path, "help", "exec"], "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--bulk-gate] [--command-resolution MODE] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
     ([bin_path, "help", "rm"], "rm [-f|--ignore-missing] KEYREF"),
-    ([bin_path, "help", "ln"], "ln SRC_KEYREF|@UUID DST_KEYREF"),
+    ([bin_path, "help", "ln"], "ln [--replace] [--skip-same-value-check] SRC_KEYREF|@UUID DST_KEYREF"),
+    ([bin_path, "help", "relation", "suggest-link"], "relation suggest-link [--cluster-field FIELD] [KEYREF]"),
     ([bin_path, "help", "set"], "set KEYREF [-u|--unsafe|--public-value|--secret-value]"),
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--bulk-gate]"),
     ([bin_path, "help", "passwd"], "passwd [--askpass PATH]"),
@@ -824,6 +825,15 @@ for args, fragments in [
         [
             "value writes through either linked key affect the shared object",
             "domain-entry attributes remain per link",
+            "--replace allows replacing an existing same-name destination key",
+        ],
+    ),
+    (
+        [bin_path, "help", "relation", "suggest-link"],
+        [
+            "compare same-name keys across registered domains",
+            "link clusters are optional non-secret key metadata",
+            "link_cluster field",
         ],
     ),
     (

@@ -47,6 +47,7 @@ secdat [--dir DIR] [--store STORE] relation set RELATION_ID --kind KIND --member
 secdat [--dir DIR] [--store STORE] relation ls [KEYREF]
 secdat [--dir DIR] [--store STORE] relation search [FIELD|FIELD=GLOB]...
 secdat [--dir DIR] [--store STORE] relation suggest-refresh KEYREF
+secdat [--dir DIR] [--store STORE] relation suggest-link [--cluster-field FIELD] [KEYREF]
 secdat [--dir DIR] [--store STORE] relation show RELATION_ID
 secdat [--dir DIR] [--store STORE] relation rm RELATION_ID
 secdat [--dir DIR] [--store STORE] fsck [--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]
@@ -75,7 +76,7 @@ secdat [--dir DIR] [--store STORE] set KEYREF [--value|-v] VALUE
 secdat [--dir DIR] [--store STORE] rm [-f|--ignore-missing] KEYREF
 secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
-secdat [--dir DIR] [--store STORE] ln SRC_KEYREF|@UUID DST_KEYREF
+secdat [--dir DIR] [--store STORE] ln [--replace] [--skip-same-value-check] SRC_KEYREF|@UUID DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--bulk-gate]... [--command-resolution MODE] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 
@@ -381,7 +382,7 @@ To make the requested behavior implementable, the following are treated as norma
 - relation members are stored as canonical KEYREFs
 - v2 `key_visibility=unlocked` keys cannot be relation members, and keys with existing relation membership cannot be changed to `key_visibility=unlocked`, because relation records store canonical KEYREFs
 - `--security`, `--exposure`, `--impact`, and `--note` record non-secret security meaning for the relation, such as whether the combination is sensitive, which parts may be public, and what impact disclosure has
-- relation commands never read or print secret values
+- stored relation commands never read or print secret values; `relation suggest-link` is an explicit comparison command and reads values only to compare them
 - `secdat relation show RELATION_ID` prints relation metadata and canonical member KEYREFs
 - `secdat relation ls` lists relation IDs in the current domain/store
 - `secdat relation ls KEYREF` lists relation IDs containing the resolved key
@@ -393,6 +394,10 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat relation suggest-refresh KEYREF` treats the resolved key as leaked and lists high-risk refresh suggestions from registered relation records without reading secret values
 - `relation suggest-refresh` output is tab-separated as `high RELATION_ID LEAKED_ROLE REFRESH_ROLE REFRESH_KEYREF REASON`
 - refresh suggestions are derived from relation member roles and non-secret relation fields, including cross-domain relation members that reference the leaked canonical KEYREF; public-looking roles such as `id` are not emitted as high-risk refresh targets by themselves
+- `secdat relation suggest-link [KEYREF]` is an explicit scan across registered domains for same-name local keys in the selected store; if `KEYREF` is supplied, its key name and store limit the scan
+- `relation suggest-link` reads secret values only to compare them and never prints the values; equal pairs are emitted as `link-candidate`, different pairs as `same-name-different-value`
+- `relation suggest-link` output is tab-separated as `STATUS KEY LEFT_CLUSTER RIGHT_CLUSTER LEFT_KEYREF RIGHT_KEYREF`; cluster columns read optional non-secret key metadata from `link_cluster` by default, or from `--cluster-field FIELD`
+- link cluster identifiers are never inferred or written automatically; use `secdat meta set KEYREF link_cluster VALUE` when a human wants to label a same-name key group
 - `secdat relation rm RELATION_ID` removes one relation record
 - relation writes reject volatile overlay sessions and readonly sessions
 
@@ -1206,6 +1211,8 @@ Representative error messages:
 - `stdin is a terminal; refusing to read secret`
 - `key not found: api/token`
 - `destination key already exists: dst`
+- `destination key already exists: dst (use --replace to replace a same-name key after value confirmation)`
+- `same-name destination value differs: dst (use --skip-same-value-check with --replace to replace anyway)`
 - `failed to decrypt entry: db/password`
 
 ### 5.8 Concurrency and Consistency
@@ -1309,7 +1316,7 @@ The object ID is an address, not authority. Commands that accept a `secret_id` m
 Store v2 defines these command surfaces:
 
 ```text
-secdat ln SRC_KEYREF DST_KEYREF
+secdat ln [--replace] [--skip-same-value-check] SRC_KEYREF DST_KEYREF
 secdat ln @UUID DST_KEYREF
 secdat id KEYREF
 secdat secret status UUID
@@ -1320,6 +1327,7 @@ secdat gc [--orphaned] [--dangling] [--dry-run]
 Current and planned semantics:
 
 - `ln SRC_KEYREF DST_KEYREF` creates a new domain entry pointing to the source secret object; cross-domain links unwrap the object data key through the authorized source entry and rewrap it into the destination domain entry
+- if the destination key already exists, `ln` fails unless `--replace` is supplied; replacement is limited to same-name source/destination key references, confirms equal current values by default, and requires `--skip-same-value-check` to replace a different value
 - cross-domain `ln` is enabled for normal source/destination KEYREFs when both sides resolve through v2 stores; cross-domain refcount checks count all registered v2 domain entries that point at the object domain/store/UUID tuple
 - `ln @UUID DST_KEYREF` is a direct source-object link and is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry; `@UUID` is a source operand, not a destination
 - `id KEYREF` prints the resolved `secret_id` without printing the secret value

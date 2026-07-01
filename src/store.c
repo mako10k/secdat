@@ -161,6 +161,37 @@ struct secdat_attr_options {
     int set_bulk_select;
 };
 
+struct secdat_ln_options {
+    const char *source;
+    const char *destination;
+    int replace;
+    int skip_same_value_check;
+};
+
+#define SECDAT_DEFAULT_LINK_CLUSTER_FIELD "link_cluster"
+
+struct secdat_relation_suggest_link_options {
+    const char *cluster_field;
+    const char *store_name;
+    char store[PATH_MAX];
+    char key_filter[PATH_MAX];
+    int has_key_filter;
+};
+
+struct secdat_link_candidate_entry {
+    char *key;
+    char *canonical_keyref;
+    char *cluster;
+    unsigned char *plaintext;
+    size_t plaintext_length;
+};
+
+struct secdat_link_candidate_list {
+    struct secdat_link_candidate_entry *items;
+    size_t count;
+    size_t capacity;
+};
+
 struct secdat_metadata_pair {
     char *name;
     char *value;
@@ -15363,6 +15394,309 @@ cleanup:
     return status;
 }
 
+static void secdat_link_candidate_entry_reset(struct secdat_link_candidate_entry *entry)
+{
+    if (entry == NULL) {
+        return;
+    }
+    free(entry->key);
+    free(entry->canonical_keyref);
+    free(entry->cluster);
+    secdat_secure_clear(entry->plaintext, entry->plaintext_length);
+    free(entry->plaintext);
+    memset(entry, 0, sizeof(*entry));
+}
+
+static void secdat_link_candidate_list_free(struct secdat_link_candidate_list *list)
+{
+    size_t index;
+
+    if (list == NULL) {
+        return;
+    }
+    for (index = 0; index < list->count; index += 1) {
+        secdat_link_candidate_entry_reset(&list->items[index]);
+    }
+    free(list->items);
+    memset(list, 0, sizeof(*list));
+}
+
+static int secdat_link_candidate_list_append(
+    struct secdat_link_candidate_list *list,
+    const char *key,
+    const char *canonical_keyref,
+    const char *cluster,
+    unsigned char *plaintext,
+    size_t plaintext_length
+)
+{
+    struct secdat_link_candidate_entry *new_items;
+    size_t new_capacity;
+    struct secdat_link_candidate_entry entry = {0};
+
+    entry.key = strdup(key);
+    entry.canonical_keyref = strdup(canonical_keyref);
+    entry.cluster = strdup(cluster != NULL && cluster[0] != '\0' ? cluster : "-");
+    if (entry.key == NULL || entry.canonical_keyref == NULL || entry.cluster == NULL) {
+        secdat_link_candidate_entry_reset(&entry);
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    entry.plaintext = plaintext;
+    entry.plaintext_length = plaintext_length;
+
+    if (list->count == list->capacity) {
+        new_capacity = list->capacity == 0 ? 8 : list->capacity * 2;
+        new_items = realloc(list->items, sizeof(*new_items) * new_capacity);
+        if (new_items == NULL) {
+            entry.plaintext = NULL;
+            entry.plaintext_length = 0;
+            secdat_link_candidate_entry_reset(&entry);
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        list->items = new_items;
+        list->capacity = new_capacity;
+    }
+    list->items[list->count] = entry;
+    list->count += 1;
+    return 0;
+}
+
+static int secdat_compare_link_candidate_entries(const void *left, const void *right)
+{
+    const struct secdat_link_candidate_entry *left_entry = left;
+    const struct secdat_link_candidate_entry *right_entry = right;
+    int key_compare = strcmp(left_entry->key, right_entry->key);
+
+    if (key_compare != 0) {
+        return key_compare;
+    }
+    return strcmp(left_entry->canonical_keyref, right_entry->canonical_keyref);
+}
+
+static int secdat_parse_relation_suggest_link_options(
+    const struct secdat_cli *cli,
+    struct secdat_relation_suggest_link_options *options
+)
+{
+    static const struct option long_options[] = {
+        {"cluster-field", required_argument, NULL, 1000},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+
+    memset(options, 0, sizeof(*options));
+    options->cluster_field = SECDAT_DEFAULT_LINK_CLUSTER_FIELD;
+    if (secdat_copy_string(options->store, sizeof(options->store), secdat_effective_store_name(cli->store)) != 0) {
+        return 1;
+    }
+    options->store_name = options->store;
+
+    secdat_prepare_option_argv(cli, "relation suggest-link", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":", long_options, NULL)) != -1) {
+        switch (option) {
+        case 1000:
+            if (!secdat_metadata_name_is_valid(optarg)) {
+                fprintf(stderr, _("invalid metadata field: %s\n"), optarg);
+                return 2;
+            }
+            options->cluster_field = optarg;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for relation suggest-link\n"));
+            secdat_cli_print_try_help(cli, "relation");
+            return 2;
+        }
+    }
+    if (optind + 1 < argc) {
+        fprintf(stderr, _("invalid arguments for relation suggest-link\n"));
+        secdat_cli_print_try_help(cli, "relation");
+        return 2;
+    }
+    if (optind + 1 == argc) {
+        struct secdat_key_reference reference;
+
+        if (secdat_parse_key_reference(argv[optind], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
+            return 1;
+        }
+        if (secdat_copy_string(options->key_filter, sizeof(options->key_filter), reference.key) != 0
+            || secdat_copy_string(options->store, sizeof(options->store), secdat_effective_store_name(reference.store_value)) != 0) {
+            return 1;
+        }
+        options->store_name = options->store;
+        options->has_key_filter = 1;
+    }
+    return 0;
+}
+
+static int secdat_collect_relation_link_candidates_for_root(
+    const char *registered_root,
+    const struct secdat_relation_suggest_link_options *options,
+    struct secdat_link_candidate_list *candidates
+)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_key_list visible_keys = {0};
+    char domain_root[PATH_MAX];
+    size_t key_index;
+    int status = 1;
+
+    if (secdat_domain_resolve_registered_root_chain(registered_root, &chain) != 0) {
+        goto cleanup;
+    }
+    if (chain.count == 0) {
+        status = 0;
+        goto cleanup;
+    }
+    if (secdat_domain_root_path(chain.ids[0], domain_root, sizeof(domain_root)) != 0
+        || secdat_collect_visible_keys(&chain, options->store_name, NULL, NULL, &visible_keys) != 0) {
+        goto cleanup;
+    }
+    if (visible_keys.count > 1) {
+        qsort(visible_keys.items, visible_keys.count, sizeof(*visible_keys.items), secdat_compare_strings);
+    }
+
+    for (key_index = 0; key_index < visible_keys.count; key_index += 1) {
+        struct secdat_effective_entry entry = {0};
+        struct secdat_metadata_list metadata = {0};
+        unsigned char *plaintext = NULL;
+        size_t plaintext_length = 0;
+        const char *cluster;
+        char canonical_keyref[PATH_MAX * 2];
+
+        if (options->has_key_filter && strcmp(visible_keys.items[key_index], options->key_filter) != 0) {
+            continue;
+        }
+        if (secdat_resolve_effective_entry(&chain, options->store_name, visible_keys.items[key_index], 0, &entry) != 0) {
+            secdat_effective_entry_reset(&entry);
+            goto cleanup;
+        }
+        if (entry.resolved_index != 0) {
+            secdat_effective_entry_reset(&entry);
+            continue;
+        }
+        if (secdat_load_resolved_plaintext(&chain, options->store_name, visible_keys.items[key_index], &plaintext, &plaintext_length, NULL, NULL, NULL) != 0
+            || secdat_read_key_metadata(chain.ids[0], options->store_name, visible_keys.items[key_index], &metadata, 0) != 0
+            || secdat_format_canonical_key(
+                canonical_keyref,
+                sizeof(canonical_keyref),
+                visible_keys.items[key_index],
+                domain_root,
+                options->store_name,
+                1,
+                1
+            ) != 0) {
+            secdat_effective_entry_reset(&entry);
+            secdat_metadata_list_free(&metadata);
+            secdat_secure_clear(plaintext, plaintext_length);
+            free(plaintext);
+            goto cleanup;
+        }
+        cluster = secdat_metadata_list_get(&metadata, options->cluster_field);
+        if (secdat_link_candidate_list_append(
+                candidates,
+                visible_keys.items[key_index],
+                canonical_keyref,
+                cluster,
+                plaintext,
+                plaintext_length
+            ) != 0) {
+            secdat_effective_entry_reset(&entry);
+            secdat_metadata_list_free(&metadata);
+            secdat_secure_clear(plaintext, plaintext_length);
+            free(plaintext);
+            goto cleanup;
+        }
+        plaintext = NULL;
+        plaintext_length = 0;
+        secdat_effective_entry_reset(&entry);
+        secdat_metadata_list_free(&metadata);
+    }
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&visible_keys);
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
+static int secdat_print_relation_link_suggestions(
+    const struct secdat_cli *cli,
+    const struct secdat_relation_suggest_link_options *options
+)
+{
+    struct secdat_domain_root_list roots = {0};
+    struct secdat_link_candidate_list candidates = {0};
+    size_t root_index;
+    size_t left;
+    int status = 1;
+
+    (void)cli;
+    if (secdat_collect_registered_domain_roots(&roots) != 0) {
+        goto cleanup;
+    }
+    for (root_index = 0; root_index < roots.count; root_index += 1) {
+        if (secdat_collect_relation_link_candidates_for_root(roots.roots[root_index], options, &candidates) != 0) {
+            goto cleanup;
+        }
+    }
+    if (candidates.count > 1) {
+        qsort(candidates.items, candidates.count, sizeof(*candidates.items), secdat_compare_link_candidate_entries);
+    }
+    for (left = 0; left < candidates.count; left += 1) {
+        size_t right;
+
+        for (right = left + 1; right < candidates.count; right += 1) {
+            const struct secdat_link_candidate_entry *left_entry = &candidates.items[left];
+            const struct secdat_link_candidate_entry *right_entry = &candidates.items[right];
+            int values_match;
+
+            if (strcmp(left_entry->key, right_entry->key) != 0) {
+                break;
+            }
+            if (strcmp(left_entry->canonical_keyref, right_entry->canonical_keyref) == 0) {
+                continue;
+            }
+            values_match = left_entry->plaintext_length == right_entry->plaintext_length
+                && (left_entry->plaintext_length == 0
+                    || CRYPTO_memcmp(left_entry->plaintext, right_entry->plaintext, left_entry->plaintext_length) == 0);
+            printf(
+                "%s\t%s\t%s\t%s\t%s\t%s\n",
+                values_match ? "link-candidate" : "same-name-different-value",
+                left_entry->key,
+                left_entry->cluster,
+                right_entry->cluster,
+                left_entry->canonical_keyref,
+                right_entry->canonical_keyref
+            );
+        }
+    }
+    status = 0;
+
+cleanup:
+    secdat_link_candidate_list_free(&candidates);
+    secdat_domain_root_list_free(&roots);
+    return status;
+}
+
+static int secdat_command_relation_suggest_link(const struct secdat_cli *cli)
+{
+    struct secdat_relation_suggest_link_options options;
+    int parse_status;
+
+    parse_status = secdat_parse_relation_suggest_link_options(cli, &options);
+    if (parse_status != 0) {
+        return parse_status;
+    }
+    return secdat_print_relation_link_suggestions(cli, &options);
+}
+
 static int secdat_command_relation_ls(const struct secdat_cli *cli)
 {
     struct secdat_key_list relation_ids = {0};
@@ -16931,7 +17265,8 @@ static int secdat_link_v2_key(
     const char *destination_domain_id,
     const char *destination_store_name,
     const char *destination_key,
-    const struct secdat_effective_entry *source_entry
+    const struct secdat_effective_entry *source_entry,
+    const struct secdat_effective_entry *destination_attr_entry
 )
 {
     char domain_entries_dir[PATH_MAX];
@@ -16946,6 +17281,10 @@ static int secdat_link_v2_key(
     const unsigned char *object_key_ptr = NULL;
     const char *object_domain_id = source_entry->object_domain;
     const char *object_store_name = secdat_effective_entry_object_store(source_entry);
+    const struct secdat_effective_entry *entry_attr_source =
+        destination_attr_entry != NULL && destination_attr_entry->from_v2
+            ? destination_attr_entry
+            : source_entry;
     size_t references = 0;
     int status = 1;
     int entry_written = 0;
@@ -16973,9 +17312,9 @@ static int secdat_link_v2_key(
         return 1;
     }
 
-    attrs.key_visibility = source_entry->key_visibility;
+    attrs.key_visibility = entry_attr_source->key_visibility;
     attrs.value_access = object.value_access;
-    attrs.bulk_select = source_entry->bulk_select_entry;
+    attrs.bulk_select = entry_attr_source->bulk_select_entry;
     if (object.bulk_select_value == SECDAT_BULK_SELECT_VALUE_EXCLUDE) {
         attrs.bulk_select = SECDAT_BULK_SELECT_EXCLUDE;
     }
@@ -17033,39 +17372,166 @@ cleanup:
     return status;
 }
 
+static int secdat_parse_ln_options(const struct secdat_cli *cli, struct secdat_ln_options *options)
+{
+    static const struct option long_options[] = {
+        {"replace", no_argument, NULL, 1000},
+        {"skip-same-value-check", no_argument, NULL, 1001},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+
+    memset(options, 0, sizeof(*options));
+    secdat_prepare_option_argv(cli, "ln", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":", long_options, NULL)) != -1) {
+        switch (option) {
+        case 1000:
+            options->replace = 1;
+            break;
+        case 1001:
+            options->skip_same_value_check = 1;
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for ln\n"));
+            secdat_cli_print_try_help(cli, "ln");
+            return 2;
+        }
+    }
+    if (optind + 2 != argc) {
+        fprintf(stderr, _("invalid arguments for ln\n"));
+        secdat_cli_print_try_help(cli, "ln");
+        return 2;
+    }
+    if (options->skip_same_value_check && !options->replace) {
+        fprintf(stderr, _("--skip-same-value-check requires --replace\n"));
+        return 2;
+    }
+
+    options->source = argv[optind];
+    options->destination = argv[optind + 1];
+    return 0;
+}
+
+static int secdat_ln_values_match(
+    const struct secdat_domain_chain *source_chain,
+    const char *source_store_name,
+    const char *source_key,
+    const struct secdat_domain_chain *destination_chain,
+    const char *destination_store_name,
+    const char *destination_key,
+    int *matches
+)
+{
+    unsigned char *source_plaintext = NULL;
+    unsigned char *destination_plaintext = NULL;
+    size_t source_length = 0;
+    size_t destination_length = 0;
+    int status = 1;
+
+    *matches = 0;
+    if (secdat_load_resolved_plaintext(source_chain, source_store_name, source_key, &source_plaintext, &source_length, NULL, NULL, NULL) != 0
+        || secdat_load_resolved_plaintext(destination_chain, destination_store_name, destination_key, &destination_plaintext, &destination_length, NULL, NULL, NULL) != 0) {
+        goto cleanup;
+    }
+    *matches = source_length == destination_length
+        && (source_length == 0 || CRYPTO_memcmp(source_plaintext, destination_plaintext, source_length) == 0);
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(source_plaintext, source_length);
+    free(source_plaintext);
+    secdat_secure_clear(destination_plaintext, destination_length);
+    free(destination_plaintext);
+    return status;
+}
+
+static int secdat_remove_replaced_v2_entry(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    const struct secdat_effective_entry *entry
+)
+{
+    char entry_path[PATH_MAX];
+    char object_path[PATH_MAX];
+    char value_path[PATH_MAX];
+    struct secdat_v2_secret_object_info object;
+    const char *object_domain_id;
+    const char *object_store_name;
+    size_t references = 0;
+    int object_is_valid = 0;
+
+    if (!entry->from_v2 || entry->entry_id[0] == '\0') {
+        fprintf(stderr, _("destination key already exists: %s\n"), key);
+        return 1;
+    }
+
+    object_domain_id = entry->object_domain[0] == '\0' ? domain_id : entry->object_domain;
+    object_store_name = entry->object_store[0] == '\0' ? store_name : secdat_effective_entry_object_store(entry);
+    if (secdat_count_v2_secret_references_to_object(object_domain_id, object_store_name, entry->secret_id, &references) != 0
+        || secdat_build_v2_domain_entry_path(domain_id, store_name, entry->entry_id, entry_path, sizeof(entry_path)) != 0
+        || secdat_build_v2_secret_object_path(object_domain_id, object_store_name, entry->secret_id, object_path, sizeof(object_path)) != 0
+        || secdat_build_v2_secret_value_path(object_domain_id, object_store_name, entry->secret_id, value_path, sizeof(value_path)) != 0) {
+        return 1;
+    }
+    if (secdat_read_v2_secret_object_info(object_path, entry->secret_id, &object) == 0) {
+        object_is_valid = 1;
+    }
+    if (unlink(entry_path) != 0) {
+        fprintf(stderr, _("failed to remove key: %s\n"), key);
+        return 1;
+    }
+    if (!object_is_valid) {
+        return 0;
+    }
+    if (references <= 1) {
+        return secdat_remove_if_exists(value_path) != 0
+            || secdat_remove_if_exists(object_path) != 0;
+    }
+    return secdat_update_v2_secret_refcount(object_domain_id, object_store_name, entry->secret_id, references - 1);
+}
+
 static int secdat_command_ln(const struct secdat_cli *cli)
 {
+    struct secdat_ln_options options;
     struct secdat_key_reference source_reference;
     struct secdat_key_reference destination_reference;
     struct secdat_domain_chain source_chain = {0};
     struct secdat_domain_chain destination_chain = {0};
     struct secdat_effective_entry source_entry = {0};
+    struct secdat_effective_entry destination_entry = {0};
     char destination_domain_id[PATH_MAX];
-    char destination_path[PATH_MAX];
     const char *source_domain_value;
     const char *source_store_value;
     const char *source_secret_id = NULL;
     enum secdat_store_format format;
     int source_is_uuid;
+    int destination_exists = 0;
+    int same_key_name = 0;
     int status = 1;
 
-    if (cli->argc != 2) {
-        fprintf(stderr, _("invalid arguments for ln\n"));
-        secdat_cli_print_try_help(cli, "ln");
-        return 2;
+    status = secdat_parse_ln_options(cli, &options);
+    if (status != 0) {
+        return status;
     }
+    status = 1;
 
-    source_is_uuid = secdat_parse_ln_uuid_source(cli->argv[0], &source_secret_id);
+    source_is_uuid = secdat_parse_ln_uuid_source(options.source, &source_secret_id);
     if (source_is_uuid < 0) {
         secdat_cli_print_try_help(cli, "ln");
         return 2;
     }
-    if (secdat_ln_arg_is_uuid_reference(cli->argv[1])) {
-        fprintf(stderr, _("UUID references are only valid as ln source: %s\n"), cli->argv[1]);
+    if (secdat_ln_arg_is_uuid_reference(options.destination)) {
+        fprintf(stderr, _("UUID references are only valid as ln source: %s\n"), options.destination);
         secdat_cli_print_try_help(cli, "ln");
         return 2;
     }
-    if (!source_is_uuid && strcmp(cli->argv[0], cli->argv[1]) == 0) {
+    if (!source_is_uuid && strcmp(options.source, options.destination) == 0) {
         fprintf(stderr, _("source and destination keys must differ\n"));
         return 1;
     }
@@ -17073,16 +17539,17 @@ static int secdat_command_ln(const struct secdat_cli *cli)
     if (source_is_uuid) {
         source_domain_value = secdat_cli_domain_base(cli);
         source_store_value = cli->store;
-        if (secdat_parse_key_reference(cli->argv[1], secdat_cli_domain_base(cli), cli->store, &destination_reference) != 0) {
+        if (secdat_parse_key_reference(options.destination, secdat_cli_domain_base(cli), cli->store, &destination_reference) != 0) {
             return 1;
         }
     } else {
-        if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &source_reference) != 0
-            || secdat_parse_key_reference(cli->argv[1], secdat_cli_domain_base(cli), cli->store, &destination_reference) != 0) {
+        if (secdat_parse_key_reference(options.source, secdat_cli_domain_base(cli), cli->store, &source_reference) != 0
+            || secdat_parse_key_reference(options.destination, secdat_cli_domain_base(cli), cli->store, &destination_reference) != 0) {
             return 1;
         }
         source_domain_value = source_reference.domain_value;
         source_store_value = source_reference.store_value;
+        same_key_name = strcmp(source_reference.key, destination_reference.key) == 0;
     }
     if (secdat_domain_resolve_current(destination_reference.domain_value, destination_domain_id, sizeof(destination_domain_id)) != 0) {
         return 1;
@@ -17136,9 +17603,50 @@ static int secdat_command_ln(const struct secdat_cli *cli)
             goto cleanup;
         }
     }
-    if (secdat_resolve_entry_path(&destination_chain, destination_reference.store_value, destination_reference.key, destination_path, sizeof(destination_path)) == 0) {
-        fprintf(stderr, _("destination key already exists: %s\n"), destination_reference.key);
-        goto cleanup;
+    if (secdat_resolve_effective_entry(&destination_chain, destination_reference.store_value, destination_reference.key, 0, &destination_entry) == 0) {
+        destination_exists = 1;
+        if (!options.replace) {
+            fprintf(
+                stderr,
+                _("destination key already exists: %s (use --replace to replace a same-name key after value confirmation)\n"),
+                destination_reference.key
+            );
+            goto cleanup;
+        }
+        if (source_is_uuid || !same_key_name) {
+            fprintf(stderr, _("ln --replace only supports existing same-name key references\n"));
+            goto cleanup;
+        }
+        if (source_entry.resolved_index < source_chain.count
+            && destination_entry.resolved_index < destination_chain.count
+            && strcmp(source_chain.ids[source_entry.resolved_index], destination_chain.ids[destination_entry.resolved_index]) == 0
+            && strcmp(secdat_effective_store_name(source_store_value), secdat_effective_store_name(destination_reference.store_value)) == 0) {
+            fprintf(stderr, _("source and destination keys must differ\n"));
+            goto cleanup;
+        }
+        if (!options.skip_same_value_check) {
+            int values_match = 0;
+
+            if (secdat_ln_values_match(
+                    &source_chain,
+                    source_store_value,
+                    source_reference.key,
+                    &destination_chain,
+                    destination_reference.store_value,
+                    destination_reference.key,
+                    &values_match
+                ) != 0) {
+                goto cleanup;
+            }
+            if (!values_match) {
+                fprintf(
+                    stderr,
+                    _("same-name destination value differs: %s (use --skip-same-value-check with --replace to replace anyway)\n"),
+                    destination_reference.key
+                );
+                goto cleanup;
+            }
+        }
     }
 
     status = secdat_link_v2_key(
@@ -17146,10 +17654,20 @@ static int secdat_command_ln(const struct secdat_cli *cli)
         destination_domain_id,
         destination_reference.store_value,
         destination_reference.key,
-        &source_entry
+        &source_entry,
+        destination_exists ? &destination_entry : NULL
     );
+    if (status == 0 && destination_exists && destination_entry.resolved_index == 0) {
+        status = secdat_remove_replaced_v2_entry(
+            destination_domain_id,
+            destination_reference.store_value,
+            destination_reference.key,
+            &destination_entry
+        );
+    }
 
 cleanup:
+    secdat_effective_entry_reset(&destination_entry);
     secdat_effective_entry_reset(&source_entry);
     secdat_domain_chain_free(&source_chain);
     secdat_domain_chain_free(&destination_chain);
@@ -18910,6 +19428,8 @@ int secdat_run_command(const struct secdat_cli *cli)
         return secdat_command_relation_search(cli);
     case SECDAT_COMMAND_RELATION_SUGGEST_REFRESH:
         return secdat_command_relation_suggest_refresh(cli);
+    case SECDAT_COMMAND_RELATION_SUGGEST_LINK:
+        return secdat_command_relation_suggest_link(cli);
     case SECDAT_COMMAND_RELATION_SHOW:
         return secdat_command_relation_show(cli);
     case SECDAT_COMMAND_RELATION_RM:

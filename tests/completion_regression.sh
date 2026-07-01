@@ -86,7 +86,7 @@ assert_not_contains(values, "create", "help meta subcommands")
 mode, values, _ = run_completion("help", "relation", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: help relation completion mode mismatch: {mode!r}")
-for expected in ["set", "ls", "search", "suggest-refresh", "show", "rm"]:
+for expected in ["set", "ls", "search", "suggest-refresh", "suggest-link", "show", "rm"]:
     assert_contains(values, expected, "help relation subcommands")
 assert_not_contains(values, "create", "help relation subcommands")
 
@@ -366,6 +366,13 @@ if mode != "plain":
 mode, values, _ = run_completion("ln", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: ln completion mode mismatch: {mode!r}")
+for expected in ["--replace", "--skip-same-value-check"]:
+    assert_contains(values, expected, "ln options")
+
+mode, values, _ = run_completion("relation", "suggest-link", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: relation suggest-link option completion mode mismatch: {mode!r}")
+assert_contains(values, "--cluster-field", "relation suggest-link options")
 
 mode, values, _ = run_completion("unlock", "--")
 for expected in ["--duration", "--until", "--descendants", "--yes", "--readonly"]:

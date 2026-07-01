@@ -292,6 +292,43 @@ if rc != 0 or stderr != "":
     fail(f"meta mark-leaked absolute key outside domain failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_eq(stdout, expected_cross_refresh, "meta mark-leaked absolute key outside domain")
 
+link_alpha = work_root / "link-alpha"
+link_beta = work_root / "link-beta"
+link_gamma = work_root / "link-gamma"
+for link_domain in (link_alpha, link_beta, link_gamma):
+    link_domain.mkdir(parents=True)
+    rc, stdout, stderr = run([bin_path, "--dir", str(link_domain), "domain", "create"])
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"link candidate domain create failed for {link_domain}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for link_domain, value, cluster in (
+    (link_alpha, "shared-token", "prod"),
+    (link_beta, "shared-token", "prod"),
+    (link_gamma, "legacy-token", "legacy"),
+):
+    rc, stdout, stderr = run([bin_path, "--dir", str(link_domain), "set", "APP_TOKEN", "--value", value])
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"link candidate set failed for {link_domain}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    rc, stdout, stderr = run([bin_path, "--dir", str(link_domain), "meta", "set", "APP_TOKEN", "link_cluster", cluster])
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"link candidate cluster set failed for {link_domain}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+expected_link_suggestions = (
+    f"link-candidate\tAPP_TOKEN\tprod\tprod\t{link_alpha}/APP_TOKEN:default\t{link_beta}/APP_TOKEN:default\n"
+    f"same-name-different-value\tAPP_TOKEN\tprod\tlegacy\t{link_alpha}/APP_TOKEN:default\t{link_gamma}/APP_TOKEN:default\n"
+    f"same-name-different-value\tAPP_TOKEN\tprod\tlegacy\t{link_beta}/APP_TOKEN:default\t{link_gamma}/APP_TOKEN:default\n"
+)
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-link", "APP_TOKEN"])
+if rc != 0 or stderr != "":
+    fail(f"relation suggest-link failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, expected_link_suggestions, "relation suggest-link APP_TOKEN")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-link", f"{link_alpha}/APP_TOKEN"])
+if rc != 0 or stderr != "":
+    fail(f"relation suggest-link keyref failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, expected_link_suggestions, "relation suggest-link KEYREF")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-link", "--cluster-field", "deployment", "APP_TOKEN"])
+if rc != 0 or stderr != "":
+    fail(f"relation suggest-link custom cluster field failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(stdout, f"link-candidate\tAPP_TOKEN\t-\t-\t{link_alpha}/APP_TOKEN:default\t{link_beta}/APP_TOKEN:default\n", "relation suggest-link optional cluster field")
+
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "relation", "set", "bad-relation",
     "--member", "id=BILLING_ID",

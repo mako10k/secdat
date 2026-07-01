@@ -41,6 +41,7 @@ static const struct secdat_cli_subcommand_entry secdat_cli_subcommand_registry[]
     {"relation", "ls", "relation ls", SECDAT_COMMAND_RELATION_LS},
     {"relation", "search", "relation search", SECDAT_COMMAND_RELATION_SEARCH},
     {"relation", "suggest-refresh", "relation suggest-refresh", SECDAT_COMMAND_RELATION_SUGGEST_REFRESH},
+    {"relation", "suggest-link", "relation suggest-link", SECDAT_COMMAND_RELATION_SUGGEST_LINK},
     {"relation", "show", "relation show", SECDAT_COMMAND_RELATION_SHOW},
     {"relation", "rm", "relation rm", SECDAT_COMMAND_RELATION_RM},
     {"store", "create", "store create", SECDAT_COMMAND_STORE_CREATE},
@@ -755,7 +756,7 @@ static int secdat_cli_completion_is_command_with_key_operand(const char *command
                 && (strcmp(subcommand, "get") == 0 || strcmp(subcommand, "set") == 0 || strcmp(subcommand, "unset") == 0 || strcmp(subcommand, "mark-leaked") == 0))
             || (strcmp(command, "relation") == 0
                 && subcommand != NULL
-                && strcmp(subcommand, "suggest-refresh") == 0)
+                && (strcmp(subcommand, "suggest-refresh") == 0 || strcmp(subcommand, "suggest-link") == 0))
             || strcmp(command, "rm") == 0 || strcmp(command, "mask") == 0
             || strcmp(command, "unmask") == 0 || strcmp(command, "set") == 0
             || strcmp(command, "cp") == 0 || strcmp(command, "mv") == 0 || strcmp(command, "ln") == 0);
@@ -963,6 +964,10 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
                 || strcmp(previous, "--note") == 0)) {
             return "none";
         }
+        if (subcommand != NULL && strcmp(subcommand, "suggest-link") == 0
+            && strcmp(previous, "--cluster-field") == 0) {
+            return "none";
+        }
     } else if (strcmp(command, "fsck") == 0 || strcmp(command, "gc") == 0) {
         if (strcmp(previous, "--format") == 0) {
             return "none";
@@ -1140,6 +1145,9 @@ int secdat_cli_complete(int argc, char **argv)
     static const char *const relation_set_options[] = {
         "--kind", "--member", "--security", "--exposure", "--impact", "--note", "--help", "-h", NULL,
     };
+    static const char *const relation_suggest_link_options[] = {
+        "--cluster-field", "--help", "-h", NULL,
+    };
     static const char *const fsck_options[] = {
         "--orphaned", "--dangling", "--refcount", "--repair", "--format", "--help", "-h", NULL,
     };
@@ -1155,6 +1163,9 @@ int secdat_cli_complete(int argc, char **argv)
     };
     static const char *const rm_options[] = {
         "--ignore-missing", "-f", "--help", "-h", NULL,
+    };
+    static const char *const ln_options[] = {
+        "--replace", "--skip-same-value-check", "--help", "-h", NULL,
     };
     static const char *const exec_options[] = {
         "--inject", "--inject-file", "--bulk-gate", "--command-resolution", "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
@@ -1263,6 +1274,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, attr_options);
     } else if (strcmp(command, "relation") == 0 && subcommand != NULL && strcmp(subcommand, "set") == 0) {
         secdat_cli_completion_print_candidates(current, relation_set_options);
+    } else if (strcmp(command, "relation") == 0 && subcommand != NULL && strcmp(subcommand, "suggest-link") == 0) {
+        secdat_cli_completion_print_candidates(current, relation_suggest_link_options);
     } else if (strcmp(command, "fsck") == 0) {
         secdat_cli_completion_print_candidates(current, fsck_options);
     } else if (strcmp(command, "gc") == 0) {
@@ -1273,6 +1286,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, set_options);
     } else if (strcmp(command, "rm") == 0) {
         secdat_cli_completion_print_candidates(current, rm_options);
+    } else if (strcmp(command, "ln") == 0) {
+        secdat_cli_completion_print_candidates(current, ln_options);
     } else if (strcmp(command, "exec") == 0) {
         secdat_cli_completion_print_candidates(current, exec_options);
     } else if (strcmp(command, "export") == 0) {
@@ -1442,6 +1457,9 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
     case SECDAT_COMMAND_RELATION_SUGGEST_REFRESH:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation suggest-refresh", "KEYREF");
         break;
+    case SECDAT_COMMAND_RELATION_SUGGEST_LINK:
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation suggest-link", "[--cluster-field FIELD] [KEYREF]");
+        break;
     case SECDAT_COMMAND_RELATION_SHOW:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation show", "RELATION_ID");
         break;
@@ -1482,7 +1500,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "cp", "SRC_KEYREF DST_KEYREF");
         break;
     case SECDAT_COMMAND_LN:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "SRC_KEYREF|@UUID DST_KEYREF");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "[--replace] [--skip-same-value-check] SRC_KEYREF|@UUID DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--bulk-gate] [--command-resolution MODE] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]");
@@ -1660,6 +1678,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  relation: record semantic links between keys and the security meaning of those links\n"));
     secdat_cli_print_detail_line(_("  meta mark-leaked: mark one key as leaked metadata and suggest high-risk refresh targets\n"));
     secdat_cli_print_detail_line(_("  relation suggest-refresh: suggest high-risk refresh targets related to one leaked key\n"));
+    secdat_cli_print_detail_line(_("  relation suggest-link: compare same-name keys across registered domains and show link candidates\n"));
     secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and limited repair\n"));
     secdat_cli_print_detail_line(_("  gc: remove unreachable or dangling v2 graph files after review\n"));
     secdat_cli_print_detail_line(_("  mask: create a local tombstone to hide one inherited key\n"));
@@ -1762,6 +1781,11 @@ static void secdat_cli_print_target_meaning(const char *target)
         secdat_cli_print_detail_line(_("  relation suggest-refresh: suggest high-risk refresh targets related to one leaked key without reading secret values\n"));
         return;
     }
+    if (target != NULL && strcmp(target, "relation suggest-link") == 0) {
+        secdat_cli_print_detail_line(_("  relation suggest-link: compare same-name keys across registered domains and print link candidates without printing secret values\n"));
+        secdat_cli_print_detail_line(_("  link clusters are optional non-secret key metadata; by default relation suggest-link reads the link_cluster field\n"));
+        return;
+    }
     if (target != NULL && strcmp(target, "relation show") == 0) {
         secdat_cli_print_detail_line(_("  relation show: print one semantic relation without reading secret values\n"));
         return;
@@ -1820,6 +1844,7 @@ static void secdat_cli_print_target_meaning(const char *target)
     if (target != NULL && strcmp(target, "ln") == 0) {
         secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object, including cross-domain v2 links and authorized @UUID sources\n"));
         secdat_cli_print_detail_line(_("  value writes through either linked key affect the shared object; domain-entry attributes remain per link\n"));
+        secdat_cli_print_detail_line(_("  --replace allows replacing an existing same-name destination key; by default it first confirms both values are equal, and --skip-same-value-check bypasses that confirmation\n"));
         return;
     }
     if (target != NULL && strcmp(target, "exec") == 0) {
@@ -1987,13 +2012,15 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         secdat_cli_print_detail_line(buffer);
         return;
     }
-    if (strcmp(target, "relation") == 0 || strcmp(target, "relation set") == 0 || strcmp(target, "relation search") == 0 || strcmp(target, "relation suggest-refresh") == 0 || strcmp(target, "relation show") == 0) {
+    if (strcmp(target, "relation") == 0 || strcmp(target, "relation set") == 0 || strcmp(target, "relation search") == 0 || strcmp(target, "relation suggest-refresh") == 0 || strcmp(target, "relation suggest-link") == 0 || strcmp(target, "relation show") == 0) {
         char buffer[512];
         snprintf(buffer, sizeof(buffer), _("  record a credential pair: %s relation set billing-login --kind credential --member id=BILLING_ID --member password=BILLING_PASSWORD --security combination-sensitive\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  find credential relations: %s relation search kind=credential security=combination-*\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  suggest refresh targets after a leak: %s relation suggest-refresh BILLING_PASSWORD\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  find same-name cross-domain link candidates: %s relation suggest-link APP_TOKEN\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  inspect relation metadata: %s relation show billing-login\n"), program_name);
         secdat_cli_print_detail_line(buffer);
@@ -2036,6 +2063,8 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         snprintf(buffer, sizeof(buffer), _("  share one v2 secret object under another key: %s ln APP_TOKEN SERVICE_TOKEN\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  link across explicit domains/stores: %s ln /src/domain/APP_TOKEN:app /dst/domain/APP_TOKEN:ops\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  replace an existing same-name destination after value confirmation: %s ln --replace /src/domain/APP_TOKEN /dst/domain/APP_TOKEN\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         return;
     }
@@ -2415,6 +2444,7 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
         || command == SECDAT_COMMAND_META_GET || command == SECDAT_COMMAND_META_SET || command == SECDAT_COMMAND_META_UNSET
         || command == SECDAT_COMMAND_META_MARK_LEAKED
         || command == SECDAT_COMMAND_RELATION_SET || command == SECDAT_COMMAND_RELATION_LS || command == SECDAT_COMMAND_RELATION_SUGGEST_REFRESH
+        || command == SECDAT_COMMAND_RELATION_SUGGEST_LINK
         || command == SECDAT_COMMAND_MASK || command == SECDAT_COMMAND_UNMASK
         || command == SECDAT_COMMAND_EXISTS || command == SECDAT_COMMAND_ID || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
         || command == SECDAT_COMMAND_RM || command == SECDAT_COMMAND_MV || command == SECDAT_COMMAND_CP || command == SECDAT_COMMAND_LN) {
