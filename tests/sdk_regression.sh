@@ -742,4 +742,320 @@ for item in long_refreshes:
     assert_no_secret_text(json.dumps(vars(item), sort_keys=True), "Python SDK long relation refresh")
 PY
 
+go_pkg_config_dir="$work_root/go-pkgconfig"
+go_harness_dir="$work_root/go-sdk-harness"
+go_bin="${GO:-}"
+go_skip_reason=
+go_usable() {
+    local candidate="$1"
+
+    test -n "$candidate" || return 1
+    command -v "$candidate" >/dev/null 2>&1 || test -x "$candidate" || return 1
+    "$candidate" version >/dev/null 2>&1 || return 1
+}
+if test -z "$go_bin"; then
+    if command -v go >/dev/null 2>&1; then
+        go_bin="$(command -v go)"
+    elif test -x /snap/bin/go; then
+        go_bin=/snap/bin/go
+    elif test -x /usr/local/go/bin/go; then
+        go_bin=/usr/local/go/bin/go
+    fi
+fi
+if test -n "$go_bin" && ! go_usable "$go_bin"; then
+    go_skip_reason="go not runnable: $go_bin"
+    go_bin=
+fi
+if test -z "$go_bin"; then
+    printf 'SKIP Go SDK binding smoke: %s\n' "${go_skip_reason:-go not found}"
+else
+mkdir -p "$go_pkg_config_dir" "$go_harness_dir"
+cat >"$go_pkg_config_dir/libsecdat.pc" <<EOF
+prefix=$source_root
+exec_prefix=\${prefix}
+libdir=$build_root/src/.libs
+includedir=$source_root/src
+
+Name: libsecdat
+Description: C SDK for secdat secret access and session control
+Version: 0.4.2
+Libs: -L\${libdir} -Wl,-rpath,\${libdir} -lsecdat -lssl -lcrypto -ljansson
+Cflags: -I\${includedir} -I$build_root/src
+EOF
+cat >"$go_harness_dir/go.mod" <<EOF
+module secdat-go-sdk-regression
+
+go 1.21
+
+require github.com/mako10k/secdat/bindings/go v0.0.0
+
+replace github.com/mako10k/secdat/bindings/go => $source_root/bindings/go
+EOF
+cat >"$go_harness_dir/main.go" <<'GO'
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"reflect"
+	"strings"
+	"syscall"
+
+	"github.com/mako10k/secdat/bindings/go/secdat"
+)
+
+var secretValues = []string{
+	"sdk-secret-value",
+	"public-secret-value",
+	"bulk-secret-value",
+	"bulk-updated-value",
+	"long-primary-value",
+	"long-secondary-value",
+	"consumer-token",
+}
+
+func fail(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "FAIL: "+format+"\n", args...)
+	os.Exit(1)
+}
+
+func assertNoSecretText(value string, label string) {
+	for _, secret := range secretValues {
+		if strings.Contains(value, secret) {
+			fail("%s exposed a secret value: %q", label, secret)
+		}
+	}
+}
+
+func parseJSON(value string) map[string]any {
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(value), &parsed); err != nil {
+		fail("failed to parse JSON: %v", err)
+	}
+	return parsed
+}
+
+func readJSON(path string) map[string]any {
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		fail("failed to read %s: %v", path, err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(payload, &parsed); err != nil {
+		fail("failed to parse %s: %v", path, err)
+	}
+	return parsed
+}
+
+func compactJSON(value any) string {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		fail("failed to encode JSON: %v", err)
+	}
+	return string(payload)
+}
+
+func callWithCStderrSuppressed(callback func() (string, error)) (string, error) {
+	savedStderr, err := syscall.Dup(2)
+	if err != nil {
+		return "", err
+	}
+	defer syscall.Close(savedStderr)
+
+	captured, err := os.CreateTemp("", "secdat-go-sdk-stderr-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(captured.Name())
+	defer captured.Close()
+
+	if err := syscall.Dup2(int(captured.Fd()), 2); err != nil {
+		return "", err
+	}
+	defer syscall.Dup2(savedStderr, 2)
+
+	return callback()
+}
+
+func findRefreshSuggestion(
+	suggestions []secdat.RelationRefreshSuggestion,
+	relationID string,
+	leakedRole string,
+	refreshRole string,
+	refreshKeyref string,
+	reason string,
+) *secdat.RelationRefreshSuggestion {
+	for index := range suggestions {
+		item := &suggestions[index]
+		if item.Severity == "high" &&
+			item.RelationID == relationID &&
+			item.LeakedRole == leakedRole &&
+			item.RefreshRole == refreshRole &&
+			item.RefreshKeyref == refreshKeyref &&
+			item.Reason == reason {
+			return item
+		}
+	}
+	return nil
+}
+
+func main() {
+	if len(os.Args) != 5 {
+		fail("expected root, refresh domain, long role, and CLI plan path")
+	}
+	root := os.Args[1]
+	refreshDomain := os.Args[2]
+	longRole := os.Args[3]
+	cliPlanPath := os.Args[4]
+	options := secdat.Options{Dir: root, Store: "team"}
+
+	planJSON, err := secdat.ExecPlanJSON(options, secdat.ExecPlanOptions{
+		Argv: []string{"python3", "-c", "pass"},
+		InjectRules: []string{
+			"ambient:only=__SDK_NO_AMBIENT__",
+			"secret:only=API_TOKEN:BULK_TOKEN",
+			"route:prefer=secret",
+		},
+		CommandResolution: "direct",
+	})
+	if err != nil {
+		fail("Go SDK exec plan failed: %v", err)
+	}
+	cliPlan := readJSON(cliPlanPath)
+	goPlan := parseJSON(planJSON)
+	if !reflect.DeepEqual(goPlan, cliPlan) {
+		fail("Go SDK exec plan JSON differed from CLI dry-run\nCLI=%#v\nGo=%#v", cliPlan, goPlan)
+	}
+	assertNoSecretText(compactJSON(goPlan), "Go SDK exec plan")
+
+	className, err := secdat.RedactionClassName(secdat.RedactionSecretValue)
+	if err != nil || className != "secret_value" {
+		fail("Go SDK redaction class name mismatch: %q %v", className, err)
+	}
+	policyName, err := secdat.RedactionPolicyName(secdat.RedactionSecretValue)
+	if err != nil || policyName != "redact" {
+		fail("Go SDK redaction policy mismatch: %q %v", policyName, err)
+	}
+	displayLabel, err := secdat.RedactionDisplayLabel(secdat.RedactionSecretValue)
+	if err != nil || displayLabel != "secret value" {
+		fail("Go SDK redaction display label mismatch: %q %v", displayLabel, err)
+	}
+	if secdat.RedactionValueAllowed(secdat.RedactionSecretValue) {
+		fail("Go SDK redaction should not allow secret values")
+	}
+	classification, err := secdat.DescribeRedactionClass(secdat.RedactionSecretDerivedIdentifier)
+	if err != nil ||
+		classification.FieldClass != secdat.RedactionSecretDerivedIdentifier ||
+		classification.ClassName != "secret_derived_identifier" ||
+		classification.PolicyName != "label-only" ||
+		!classification.ValueAllowed {
+		fail("Go SDK redaction classification mismatch: %#v %v", classification, err)
+	}
+	fieldClassification, err := secdat.ClassifyExecJSONField("injected_keys.key")
+	if err != nil || fieldClassification.FieldClass != secdat.RedactionSecretDerivedIdentifier {
+		fail("Go SDK exec JSON field classification mismatch: %#v %v", fieldClassification, err)
+	}
+	if _, err := secdat.ClassifyExecJSONField("unknown.field"); err == nil {
+		fail("Go SDK unknown exec JSON field should fail closed")
+	}
+	redactionMetadata := []string{
+		classification.ClassName,
+		classification.PolicyName,
+		classification.DisplayLabel,
+		fieldClassification.ClassName,
+		fieldClassification.PolicyName,
+		fieldClassification.DisplayLabel,
+	}
+	for _, text := range redactionMetadata {
+		assertNoSecretText(text, "Go SDK redaction metadata")
+	}
+
+	invalidPlanJSON, err := callWithCStderrSuppressed(func() (string, error) {
+		return secdat.ExecPlanJSON(options, secdat.ExecPlanOptions{
+			Argv:              []string{"env"},
+			InjectRules:       []string{"secret:require=MISSING_GO_TOKEN"},
+			CommandResolution: "direct",
+		})
+	})
+	if err != nil {
+		fail("Go SDK invalid exec plan should return JSON: %v", err)
+	}
+	invalidPlan := parseJSON(invalidPlanJSON)
+	if invalidPlan["ok"] != false {
+		fail("Go SDK invalid exec plan should set ok=false: %#v", invalidPlan)
+	}
+	supply, _ := invalidPlan["supply"].(map[string]any)
+	secret, _ := supply["secret"].(map[string]any)
+	missingRequired, _ := secret["missing_required"].([]any)
+	foundMissing := false
+	for _, value := range missingRequired {
+		if value == "MISSING_GO_TOKEN" {
+			foundMissing = true
+			break
+		}
+	}
+	if !foundMissing {
+		fail("Go SDK invalid exec plan did not report missing required token: %#v", invalidPlan)
+	}
+	assertNoSecretText(compactJSON(invalidPlan), "Go SDK invalid exec plan")
+
+	apiKeyref := root + "/API_TOKEN:team"
+	bulkKeyref := root + "/BULK_TOKEN:team"
+	consumerKeyref := refreshDomain + "/CONSUMER_TOKEN:default"
+	longPrimaryKeyref := root + "/LONG_PRIMARY:team"
+	longSecondaryKeyref := root + "/LONG_SECONDARY:team"
+
+	refreshes, err := secdat.RelationSuggestRefresh(options, "API_TOKEN")
+	if err != nil {
+		fail("Go SDK relation refresh failed: %v", err)
+	}
+	if len(refreshes) != 4 {
+		fail("Go SDK relation refresh count mismatch: %#v", refreshes)
+	}
+	assertNoSecretText(compactJSON(refreshes), "Go SDK relation refresh")
+	if findRefreshSuggestion(refreshes, "sdk-refresh", "token", "token", apiKeyref, "leaked-secret-member") == nil {
+		fail("missing Go SDK self refresh suggestion")
+	}
+	if findRefreshSuggestion(refreshes, "sdk-refresh", "token", "bulk_token", bulkKeyref, "combination-sensitive-relation") == nil {
+		fail("missing Go SDK local related refresh suggestion")
+	}
+	if findRefreshSuggestion(refreshes, "sdk-cross-refresh", "token", "token", apiKeyref, "leaked-secret-member") == nil {
+		fail("missing Go SDK cross-domain leaked member suggestion")
+	}
+	if findRefreshSuggestion(refreshes, "sdk-cross-refresh", "token", "refresh_token", consumerKeyref, "combination-sensitive-relation") == nil {
+		fail("missing Go SDK cross-domain refresh target suggestion")
+	}
+
+	publicRefreshes, err := secdat.RelationSuggestRefresh(options, "PUBLIC_URL")
+	if err != nil {
+		fail("Go SDK public relation refresh failed: %v", err)
+	}
+	if len(publicRefreshes) != 0 {
+		fail("Go SDK public role should not produce refresh suggestions: %#v", publicRefreshes)
+	}
+
+	longRefreshes, err := secdat.RelationSuggestRefresh(options, "LONG_PRIMARY")
+	if err != nil {
+		fail("Go SDK long relation refresh failed: %v", err)
+	}
+	if len(longRefreshes) != 2 {
+		fail("Go SDK long role refresh count mismatch: %#v", longRefreshes)
+	}
+	assertNoSecretText(compactJSON(longRefreshes), "Go SDK long relation refresh")
+	if findRefreshSuggestion(longRefreshes, "sdk-long-refresh", longRole, longRole, longPrimaryKeyref, "leaked-relation-member") == nil {
+		fail("missing Go SDK long role self suggestion")
+	}
+	if findRefreshSuggestion(longRefreshes, "sdk-long-refresh", longRole, "secondary", longSecondaryKeyref, "combination-sensitive-relation") == nil {
+		fail("missing Go SDK long role related suggestion")
+	}
+}
+GO
+
+(cd "$go_harness_dir" && \
+    PKG_CONFIG_PATH="$go_pkg_config_dir" \
+    LD_LIBRARY_PATH="$build_root/src/.libs:${LD_LIBRARY_PATH:-}" \
+    "$go_bin" run . "$root_domain" "$refresh_domain" "$long_role" "$cli_plan")
+fi
+
 printf 'PASS SDK exec plan regression\n'

@@ -21,6 +21,7 @@ const (
 	KeySourceLocked KeySource = iota
 	KeySourceEnvironment
 	KeySourceSession
+	KeySourceOrphaned
 )
 
 func (source KeySource) String() string {
@@ -29,6 +30,8 @@ func (source KeySource) String() string {
 		return "environment"
 	case KeySourceSession:
 		return "session"
+	case KeySourceOrphaned:
+		return "orphaned"
 	default:
 		return "locked"
 	}
@@ -43,6 +46,7 @@ const (
 	EffectiveSourceInheritedSession
 	EffectiveSourceExplicitLock
 	EffectiveSourceBlocked
+	EffectiveSourceOrphaned
 )
 
 func (source EffectiveSource) String() string {
@@ -57,8 +61,40 @@ func (source EffectiveSource) String() string {
 		return "explicit_lock"
 	case EffectiveSourceBlocked:
 		return "blocked"
+	case EffectiveSourceOrphaned:
+		return "orphaned"
 	default:
 		return "locked"
+	}
+}
+
+type RedactionFieldClass int
+
+const (
+	RedactionSecretValue RedactionFieldClass = iota
+	RedactionSecretDerivedIdentifier
+	RedactionNonSecretMetadata
+	RedactionCommandArgv
+	RedactionPathDomainLabel
+	RedactionPublicText
+)
+
+func (fieldClass RedactionFieldClass) String() string {
+	switch fieldClass {
+	case RedactionSecretValue:
+		return "secret_value"
+	case RedactionSecretDerivedIdentifier:
+		return "secret_derived_identifier"
+	case RedactionNonSecretMetadata:
+		return "non_secret_metadata"
+	case RedactionCommandArgv:
+		return "command_argv"
+	case RedactionPathDomainLabel:
+		return "path_domain_label"
+	case RedactionPublicText:
+		return "public_text"
+	default:
+		return "unknown"
 	}
 }
 
@@ -69,11 +105,11 @@ type Options struct {
 }
 
 type ListFilters struct {
-	IncludePattern    string
-	ExcludePattern    string
-	Safe              bool
-	UnsafeStore       bool
-	BulkGate bool
+	IncludePattern string
+	ExcludePattern string
+	Safe           bool
+	UnsafeStore    bool
+	BulkGate       bool
 }
 
 type DomainFilters struct {
@@ -81,6 +117,14 @@ type DomainFilters struct {
 	IncludeAncestors   bool
 	IncludeDescendants bool
 	IncludeInherited   bool
+}
+
+type ExecPlanOptions struct {
+	InjectRules       []string
+	InjectFiles       []string
+	BulkGate          bool
+	CommandResolution string
+	Argv              []string
 }
 
 type StatusSummary struct {
@@ -126,6 +170,23 @@ type DomainMetadata struct {
 	WrappedMasterKeyPresent bool
 }
 
+type RedactionClassification struct {
+	FieldClass   RedactionFieldClass
+	ClassName    string
+	PolicyName   string
+	DisplayLabel string
+	ValueAllowed bool
+}
+
+type RelationRefreshSuggestion struct {
+	Severity      string
+	RelationID    string
+	LeakedRole    string
+	RefreshRole   string
+	RefreshKeyref string
+	Reason        string
+}
+
 type cOptions struct {
 	raw    C.struct_secdat_sdk_options
 	dir    *C.char
@@ -144,11 +205,59 @@ type cDomainFilters struct {
 	pattern *C.char
 }
 
+type cStringArray struct {
+	items  []*C.char
+	block  unsafe.Pointer
+	length int
+}
+
+type cExecPlanOptions struct {
+	raw               C.struct_secdat_sdk_exec_plan_options
+	injectRules       cStringArray
+	injectFiles       cStringArray
+	commandResolution *C.char
+	argv              cStringArray
+}
+
 func cStringOrNil(value string) *C.char {
 	if value == "" {
 		return nil
 	}
 	return C.CString(value)
+}
+
+func newCStringArray(values []string) cStringArray {
+	array := cStringArray{}
+	if len(values) == 0 {
+		return array
+	}
+	array.block = C.calloc(C.size_t(len(values)), C.size_t(unsafe.Sizeof(uintptr(0))))
+	if array.block == nil {
+		return array
+	}
+	array.length = len(values)
+	array.items = make([]*C.char, 0, len(values))
+	pointers := unsafe.Slice((**C.char)(array.block), len(values))
+	for _, value := range values {
+		item := C.CString(value)
+		array.items = append(array.items, item)
+		pointers[len(array.items)-1] = item
+	}
+	return array
+}
+
+func (array *cStringArray) ptr() **C.char {
+	if array.block == nil {
+		return nil
+	}
+	return (**C.char)(array.block)
+}
+
+func (array *cStringArray) free() {
+	for _, item := range array.items {
+		C.free(unsafe.Pointer(item))
+	}
+	C.free(array.block)
 }
 
 func newCOptions(options Options) cOptions {
@@ -197,6 +306,30 @@ func newCDomainFilters(filters DomainFilters) cDomainFilters {
 
 func (filters *cDomainFilters) free() {
 	C.free(unsafe.Pointer(filters.pattern))
+}
+
+func newCExecPlanOptions(options ExecPlanOptions) cExecPlanOptions {
+	prepared := cExecPlanOptions{}
+	prepared.injectRules = newCStringArray(options.InjectRules)
+	prepared.injectFiles = newCStringArray(options.InjectFiles)
+	prepared.argv = newCStringArray(options.Argv)
+	prepared.commandResolution = cStringOrNil(options.CommandResolution)
+	prepared.raw.inject_rules = prepared.injectRules.ptr()
+	prepared.raw.inject_rule_count = C.size_t(prepared.injectRules.length)
+	prepared.raw.inject_files = prepared.injectFiles.ptr()
+	prepared.raw.inject_file_count = C.size_t(prepared.injectFiles.length)
+	prepared.raw.bulk_gate = C.int(boolToInt(options.BulkGate))
+	prepared.raw.command_resolution = prepared.commandResolution
+	prepared.raw.argv = prepared.argv.ptr()
+	prepared.raw.argv_count = C.size_t(prepared.argv.length)
+	return prepared
+}
+
+func (options *cExecPlanOptions) free() {
+	options.injectRules.free()
+	options.injectFiles.free()
+	C.free(unsafe.Pointer(options.commandResolution))
+	options.argv.free()
 }
 
 func Get(options Options, keyref string) ([]byte, bool, error) {
@@ -459,6 +592,101 @@ func ListDomains(options Options, filters DomainFilters) ([]DomainMetadata, erro
 	return metadata, nil
 }
 
+func ExecPlanJSON(options Options, planOptions ExecPlanOptions) (string, error) {
+	prepared := newCOptions(options)
+	defer prepared.free()
+	preparedPlan := newCExecPlanOptions(planOptions)
+	defer preparedPlan.free()
+
+	var jsonOut *C.char
+	C.secdat_sdk_exec_plan_json(&prepared.raw, &preparedPlan.raw, &jsonOut)
+	if jsonOut == nil {
+		return "", ErrCallFailed
+	}
+	defer C.secdat_sdk_free(unsafe.Pointer(jsonOut))
+
+	return C.GoString(jsonOut), nil
+}
+
+func RedactionClassName(fieldClass RedactionFieldClass) (string, error) {
+	value := C.secdat_sdk_redaction_class_name(C.enum_secdat_sdk_redaction_field_class(fieldClass))
+	if value == nil {
+		return "", ErrCallFailed
+	}
+	return C.GoString(value), nil
+}
+
+func RedactionPolicyName(fieldClass RedactionFieldClass) (string, error) {
+	value := C.secdat_sdk_redaction_policy_name(C.enum_secdat_sdk_redaction_field_class(fieldClass))
+	if value == nil {
+		return "", ErrCallFailed
+	}
+	return C.GoString(value), nil
+}
+
+func RedactionDisplayLabel(fieldClass RedactionFieldClass) (string, error) {
+	value := C.secdat_sdk_redaction_display_label(C.enum_secdat_sdk_redaction_field_class(fieldClass))
+	if value == nil {
+		return "", ErrCallFailed
+	}
+	return C.GoString(value), nil
+}
+
+func RedactionValueAllowed(fieldClass RedactionFieldClass) bool {
+	return C.secdat_sdk_redaction_value_allowed(C.enum_secdat_sdk_redaction_field_class(fieldClass)) != 0
+}
+
+func DescribeRedactionClass(fieldClass RedactionFieldClass) (RedactionClassification, error) {
+	var classification C.struct_secdat_sdk_redaction_classification
+	if C.secdat_sdk_describe_redaction_class(C.enum_secdat_sdk_redaction_field_class(fieldClass), &classification) != 0 {
+		return RedactionClassification{}, ErrCallFailed
+	}
+	return redactionClassificationFromC(classification), nil
+}
+
+func ClassifyExecJSONField(fieldPath string) (RedactionClassification, error) {
+	cfieldPath := C.CString(fieldPath)
+	defer C.free(unsafe.Pointer(cfieldPath))
+
+	var classification C.struct_secdat_sdk_redaction_classification
+	if C.secdat_sdk_classify_exec_json_field(cfieldPath, &classification) != 0 {
+		return RedactionClassification{}, ErrCallFailed
+	}
+	return redactionClassificationFromC(classification), nil
+}
+
+func RelationSuggestRefresh(options Options, keyref string) ([]RelationRefreshSuggestion, error) {
+	prepared := newCOptions(options)
+	defer prepared.free()
+
+	ckeyref := C.CString(keyref)
+	defer C.free(unsafe.Pointer(ckeyref))
+
+	var result C.struct_secdat_sdk_relation_refresh_suggestion_list
+	if C.secdat_sdk_relation_suggest_refresh(&prepared.raw, ckeyref, &result) != 0 {
+		return nil, ErrCallFailed
+	}
+	defer C.secdat_sdk_free(unsafe.Pointer(result.items))
+
+	if result.count == 0 {
+		return []RelationRefreshSuggestion{}, nil
+	}
+
+	items := unsafe.Slice(result.items, int(result.count))
+	suggestions := make([]RelationRefreshSuggestion, 0, int(result.count))
+	for _, item := range items {
+		suggestions = append(suggestions, RelationRefreshSuggestion{
+			Severity:      C.GoString(item.severity),
+			RelationID:    C.GoString(item.relation_id),
+			LeakedRole:    C.GoString(item.leaked_role),
+			RefreshRole:   C.GoString(item.refresh_role),
+			RefreshKeyref: C.GoString(item.refresh_keyref),
+			Reason:        C.GoString(item.reason),
+		})
+	}
+	return suggestions, nil
+}
+
 func WaitUnlock(options Options, timeoutSeconds int64) error {
 	prepared := newCOptions(options)
 	defer prepared.free()
@@ -467,6 +695,16 @@ func WaitUnlock(options Options, timeoutSeconds int64) error {
 		return ErrCallFailed
 	}
 	return nil
+}
+
+func redactionClassificationFromC(classification C.struct_secdat_sdk_redaction_classification) RedactionClassification {
+	return RedactionClassification{
+		FieldClass:   RedactionFieldClass(classification.field_class),
+		ClassName:    C.GoString(classification.class_name),
+		PolicyName:   C.GoString(classification.policy_name),
+		DisplayLabel: C.GoString(classification.display_label),
+		ValueAllowed: classification.value_allowed != 0,
+	}
 }
 
 func boolToInt(value bool) int {
