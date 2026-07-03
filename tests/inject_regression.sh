@@ -71,6 +71,16 @@ def assert_eq(actual, expected, label):
         fail(f"{label}: expected {expected!r}, got {actual!r}")
 
 
+def assert_plan_identity(plan, label, command_resolution="caller-path"):
+    plan_hash = plan.get("plan_hash")
+    if plan.get("plan_schema_version") != 1:
+        fail(f"{label}: unexpected plan schema version: {plan!r}")
+    if not isinstance(plan_hash, str) or len(plan_hash) != 64 or any(ch not in "0123456789abcdef" for ch in plan_hash):
+        fail(f"{label}: invalid plan hash: {plan!r}")
+    if plan.get("command_resolution") != command_resolution:
+        fail(f"{label}: unexpected command resolution: {plan!r}")
+
+
 def expected_try_help(target):
     candidates = [f"Try: {bin_path} help {target}"]
     relative_bin_path = os.path.relpath(bin_path, Path.cwd())
@@ -109,6 +119,7 @@ if rc != 0 or stderr != "":
 plan = json.loads(stdout)
 if plan["ok"] is not True:
     fail(f"baseline dry-run not ok: {plan!r}")
+assert_plan_identity(plan, "baseline dry-run")
 if plan["supply"]["ambient"]["mode"] != "default" or plan["supply"]["secret"]["mode"] != "default":
     fail(f"baseline supply modes unexpected: {plan['supply']!r}")
 if plan["route"]["prefer"] != "secret":
@@ -243,6 +254,18 @@ rc, stdout, stderr = run([
 ], extra_env={"PATH": command_path})
 if rc != 0 or not exec_stderr_ok(stderr) or stdout != "command-hit":
     fail(f"child-path command resolution failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "ambient:only=PATH",
+    "--inject", "final:only=PATH",
+    "--command-resolution", "child-path",
+    "--dry-run", "--json",
+    "fakecmd",
+], extra_env={"PATH": command_path})
+if rc != 0 or stderr != "":
+    fail(f"child-path dry-run failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_plan_identity(json.loads(stdout), "child-path dry-run", "child-path")
 
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
@@ -814,15 +837,29 @@ if rc != 0 or stderr != "":
 assert_eq(json.loads(stdout), {"BULK_TOKEN": "bulk-secret"}, "bulk-gate payload")
 
 # json-summary with native --inject.
+summary_command = "import sys; sys.stdout.write('summary-ok'); sys.exit(4)"
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject", "secret:only=APP_TOKEN",
+    "--dry-run", "--json",
+    "python3", "-c", summary_command,
+])
+if rc != 0 or stderr != "":
+    fail(f"json-summary comparison dry-run failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+summary_preflight = json.loads(stdout)
+assert_plan_identity(summary_preflight, "json-summary comparison dry-run")
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "exec",
     "--inject", "secret:only=APP_TOKEN",
     "--json-summary",
-    "python3", "-c", "import sys; sys.stdout.write('summary-ok'); sys.exit(4)",
+    "python3", "-c", summary_command,
 ])
 if rc != 4 or stdout != "summary-ok":
     fail(f"json-summary exec failed: rc={rc} stdout={stdout!r}")
 summary = exec_stderr_json(stderr)
+assert_plan_identity(summary, "json-summary")
+if summary["plan_hash"] != summary_preflight["plan_hash"]:
+    fail(f"json-summary plan hash changed across runtime fields: dry_run={summary_preflight!r} summary={summary!r}")
 if summary["ok"] is not True or summary["exit_status"] != 4:
     fail(f"json-summary payload unexpected: {summary!r}")
 if summary["injected_keys"] != [{"key": "APP_TOKEN", "env_name": "APP_TOKEN"}]:

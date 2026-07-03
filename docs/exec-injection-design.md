@@ -478,10 +478,11 @@ profile matches, and multiple matching profiles also fail closed. Legacy YAML
 
 ```json
 {
+  "plan_schema_version": 1,
   "ok": true,
   "domain": "/home/user/project",
   "store": "app",
-  "dry_run": true,
+  "command_resolution": "caller-path",
   "bulk_gate": false,
   "profile_required": true,
   "matched_profile": "migrate",
@@ -511,15 +512,31 @@ profile matches, and multiple matching profiles also fail closed. Legacy YAML
     "rejected_present": []
   },
   "injected_key_count": 1,
-  "argv": ["./app"]
+  "injected_keys": [
+    { "key": "APP_TOKEN", "env_name": "APP_TOKEN" }
+  ],
+  "argv": ["./app"],
+  "plan_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "dry_run": true,
+  "exit_status": null,
+  "term_signal": null,
+  "duration_ms": null
 }
 ```
 
 `collisions` makes collision-only routing observable. Secret values and
 plaintext lengths that would reveal content are omitted.
 
+`plan_hash` is a SHA-256 hex digest of the canonical non-secret plan JSON for
+the same `plan_schema_version`. Its input includes `ok`, domain/store labels,
+`command_resolution`, bulk gate and profile metadata, supply/route/final
+metadata, injected key/environment-name pairs, and sanitized argv. Its input
+excludes `plan_hash`, `dry_run`, `exit_status`, `term_signal`, and
+`duration_ms`, so `--dry-run --json` and `--json-summary` report the same hash
+for the same plan even when the real child exits with a nonzero status.
+
 `--json-summary` appends execution metadata (exit status, signal, duration) to
-stderr after a real run, using the same plan shape.
+stderr after a real run, using the same plan shape and plan identity.
 
 ## 9. Error Messages (human)
 
@@ -588,10 +605,11 @@ Current capabilities to build on:
   without decrypting secret values.
 - `--json-summary` reuses the same plan shape after a real execution and adds
   runtime status fields on stderr, leaving child stdout to the child process.
-- The JSON plan currently exposes `ok`, domain/store labels, `dry_run`,
-  `bulk_gate`, `profile_required`, `matched_profile`, supply/route/final
-  metadata, `injected_key_count`, `injected_keys`, `argv`, and runtime status
-  fields. It does not expose a schema version or stable plan hash yet.
+- The JSON plan exposes `plan_schema_version`, `plan_hash`, `ok`,
+  domain/store labels, `command_resolution`, `dry_run`, `bulk_gate`,
+  `profile_required`, `matched_profile`, supply/route/final metadata,
+  `injected_key_count`, `injected_keys`, `argv`, and runtime status fields.
+  The plan hash excludes runtime-only fields.
 - `libsecdat` exposes get/set/session/list/domain metadata functions through
   `src/secdat-sdk.h`. It does not yet expose the exec injection planner,
   redaction helpers, or relation-refresh suggestions through the SDK.
@@ -604,7 +622,7 @@ Backlog requests:
 | Priority | Request | Scope |
 | --- | --- | --- |
 | P0 | Secret-safe redaction/classification API | Add shared core helpers that classify output fields as secret value, secret-derived identifier, non-secret metadata, command/argv, path/domain label, or public text; return redaction policy and display labels without revealing values. Use this from CLI JSON/text emitters before exposing it through bindings. |
-| P0 | Exec injection dry-run schema version and plan hash | Add top-level `plan_schema_version` and `plan_hash` to `exec --dry-run --json` and `--json-summary`. Define a canonical hash input that includes non-secret policy, selected names, provenance, route decisions, command resolution mode, and sanitized argv, while excluding secret values, plaintext lengths, duration, exit status, signal, and other runtime-only fields. |
+| P0 | Exec injection dry-run schema version and plan hash | Implemented for CLI JSON preflight and summaries. Keep the canonical hash input limited to non-secret plan metadata, and bump `plan_schema_version` before any incompatible hash-input change. |
 | P1 | SDK exec injection plan API | Add a C SDK entry point that accepts domain/store options, repeated inject rules, optional policy files, bulk gate, command resolution mode, and argv, then returns the same secret-safe plan as CLI dry-run without launching a child process or decrypting secret values. Start with a JSON-returning ABI if that is the smallest stable surface; add structured lists only when bindings need field-level ownership. |
 | P1 | SDK redaction API | Expose the shared classification/redaction primitives through `libsecdat` so bindings and `secexec` can label or redact secdat-originated fields consistently. Returned buffers remain caller-owned through `secdat_sdk_free()`. |
 | P1 | Relation refresh SDK support | Add a structured SDK equivalent of `relation suggest-refresh KEYREF` that returns rows with severity, relation id, leaked role, refresh role, refresh KEYREF, and reason. It must not read or return secret values. |
@@ -617,9 +635,9 @@ Implementation phases:
    and redaction helpers, then update CLI plan/report writers to use the shared
    labels. Safeguard with tests that fail on raw secret values and unexpected
    plaintext length disclosure.
-2. **Plan identity (P0)** - add `plan_schema_version` and `plan_hash` to CLI
-   JSON preflight/summary. Keep the first schema additive; changing hash inputs
-   later requires a schema-version bump.
+2. **Plan identity (P0)** - implemented for CLI JSON preflight/summary. Keep
+   the first schema additive; changing hash inputs later requires a
+   schema-version bump.
 3. **C SDK planner (P1)** - expose dry-run planning through `libsecdat` using
    the same planner as `exec`, with no child execution path and no duplicate
    parser semantics.

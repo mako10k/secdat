@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <fnmatch.h>
 #include <limits.h>
+#include <openssl/evp.h>
 #include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +23,9 @@
 #include <unistd.h>
 
 extern char **environ;
+
+#define SECDAT_EXEC_PLAN_SCHEMA_VERSION 1
+#define SECDAT_EXEC_PLAN_HASH_HEX_LENGTH 64
 
 struct secdat_exec_inject_policy;
 
@@ -509,6 +513,19 @@ static const char *secdat_exec_route_pick_name(enum secdat_exec_route_pick pick)
     case SECDAT_EXEC_ROUTE_SECRET:
     default:
         return "secret";
+    }
+}
+
+static const char *secdat_exec_command_resolution_name(enum secdat_exec_command_resolution resolution)
+{
+    switch (resolution) {
+    case SECDAT_EXEC_COMMAND_RESOLUTION_CHILD_PATH:
+        return "child-path";
+    case SECDAT_EXEC_COMMAND_RESOLUTION_DIRECT:
+        return "direct";
+    case SECDAT_EXEC_COMMAND_RESOLUTION_CALLER_PATH:
+    default:
+        return "caller-path";
     }
 }
 
@@ -2208,6 +2225,44 @@ static json_t *secdat_exec_json_supply_pentad(
     return pentad;
 }
 
+static int secdat_exec_sha256_hex(const char *input, char hex_out[SECDAT_EXEC_PLAN_HASH_HEX_LENGTH + 1])
+{
+    static const char hex_digits[] = "0123456789abcdef";
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_length = 0;
+    size_t index;
+
+    if (input == NULL || hex_out == NULL) {
+        return -1;
+    }
+    if (EVP_Digest(input, strlen(input), digest, &digest_length, EVP_sha256(), NULL) != 1 || digest_length != 32) {
+        return -1;
+    }
+    for (index = 0; index < digest_length; index += 1) {
+        hex_out[index * 2] = hex_digits[digest[index] >> 4];
+        hex_out[index * 2 + 1] = hex_digits[digest[index] & 0x0f];
+    }
+    hex_out[digest_length * 2] = '\0';
+    return 0;
+}
+
+static int secdat_exec_json_plan_hash(json_t *plan_root, char hash_out[SECDAT_EXEC_PLAN_HASH_HEX_LENGTH + 1])
+{
+    char *canonical;
+    int status;
+
+    if (plan_root == NULL || hash_out == NULL) {
+        return -1;
+    }
+    canonical = json_dumps(plan_root, JSON_COMPACT | JSON_SORT_KEYS);
+    if (canonical == NULL) {
+        return -1;
+    }
+    status = secdat_exec_sha256_hex(canonical, hash_out);
+    free(canonical);
+    return status;
+}
+
 static json_t *secdat_exec_build_json_report(
     const struct secdat_domain_chain *chain,
     const struct secdat_cli *cli,
@@ -2222,6 +2277,7 @@ static json_t *secdat_exec_build_json_report(
 )
 {
     char domain_label[PATH_MAX];
+    char plan_hash[SECDAT_EXEC_PLAN_HASH_HEX_LENGTH + 1];
     json_t *root = json_object();
     json_t *supply = json_object();
     json_t *ambient = NULL;
@@ -2333,10 +2389,11 @@ static json_t *secdat_exec_build_json_report(
     present = NULL;
     if (json_object_set_new(final, "missing_required", secdat_json_string_array(plan->missing_final_required, plan->missing_final_required_count)) != 0
             || json_object_set_new(final, "rejected_present", secdat_json_string_array(plan->rejected_final_present, plan->rejected_final_present_count)) != 0
+            || json_object_set_new(root, "plan_schema_version", json_integer(SECDAT_EXEC_PLAN_SCHEMA_VERSION)) != 0
             || json_object_set_new(root, "ok", json_boolean(ok)) != 0
             || json_object_set_new(root, "domain", json_string(domain_label)) != 0
             || json_object_set_new(root, "store", json_string(secdat_exec_port_effective_store_name(cli->store))) != 0
-            || json_object_set_new(root, "dry_run", json_boolean(dry_run)) != 0
+            || json_object_set_new(root, "command_resolution", json_string(secdat_exec_command_resolution_name(options->command_resolution))) != 0
             || json_object_set_new(root, "bulk_gate", json_boolean(options->policy.bulk_gate)) != 0
             || json_object_set_new(root, "profile_required", json_boolean(options->policy.profile_required)) != 0
             || json_object_set_new(root, "matched_profile", options->policy.matched_profile != NULL ? json_string(options->policy.matched_profile) : json_null()) != 0
@@ -2345,7 +2402,12 @@ static json_t *secdat_exec_build_json_report(
             || json_object_set_new(root, "final", final) != 0
             || json_object_set_new(root, "injected_key_count", json_integer((json_int_t)injected_key_count)) != 0
             || json_object_set_new(root, "injected_keys", injected_keys) != 0
-            || json_object_set_new(root, "argv", argv) != 0
+            || json_object_set_new(root, "argv", argv) != 0) {
+        goto fail;
+    }
+    if (secdat_exec_json_plan_hash(root, plan_hash) != 0
+            || json_object_set_new(root, "plan_hash", json_string(plan_hash)) != 0
+            || json_object_set_new(root, "dry_run", json_boolean(dry_run)) != 0
             || json_object_set_new(root, "exit_status", exit_status >= 0 ? json_integer(exit_status) : json_null()) != 0
             || json_object_set_new(root, "term_signal", term_signal >= 0 ? json_integer(term_signal) : json_null()) != 0
             || json_object_set_new(root, "duration_ms", duration_ms >= 0 ? json_integer(duration_ms) : json_null()) != 0) {

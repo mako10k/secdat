@@ -300,10 +300,11 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat ls --safe` lists only effective keys whose resolved entry is stored encrypted at rest
 - `secdat ls --unsafe` lists only effective keys whose resolved entry is stored plaintext at rest
 - `secdat exec --dry-run CMD [ARGS...]` validates the injection plan and reports key names, environment names, injection count, and command argv without executing the child or reading secret values
-- `exec --dry-run --json` reports the same preflight data as stable JSON on standard output, including `profile_required` and `matched_profile`
+- `exec --dry-run --json` reports the same preflight data as stable JSON on standard output, including `plan_schema_version`, `plan_hash`, `command_resolution`, `profile_required`, and `matched_profile`
 - `exec --json-summary CMD [ARGS...]` executes the child and writes a stable JSON summary to standard error after it exits, preserving child standard output for the child process
 - `exec --json-summary` and `exec --dry-run` are mutually exclusive because `--json-summary` is reserved for real executions
-- JSON summaries include domain, store, `bulk_gate`, `profile_required`, `matched_profile`, supply/route/final plan metadata, injected key count, injected key/environment-name pairs, sanitized child argv, exit status or terminating signal, and duration
+- JSON summaries include domain, store, `command_resolution`, `bulk_gate`, `profile_required`, `matched_profile`, supply/route/final plan metadata, injected key count, injected key/environment-name pairs, sanitized child argv, exit status or terminating signal, and duration
+- `plan_hash` is a SHA-256 hex digest over non-secret plan metadata for the same `plan_schema_version`; it excludes `plan_hash`, `dry_run`, `exit_status`, `term_signal`, and `duration_ms`, so JSON preflight and summary output for the same plan can be compared even when runtime status differs
 - preflight output and JSON summaries must not contain secret values
 - the parent process environment is not modified
 - `--command-resolution` accepts `caller-path`, `child-path`, or `direct`; the default `caller-path` keeps historical `execvpe` caller-`PATH` lookup, `child-path` resolves unqualified `CMD` using `PATH` from the final child environment, and `direct` requires a slash-qualified `CMD`
@@ -841,7 +842,7 @@ secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inj
 - `--json` is valid with `--dry-run` and writes the preflight report as JSON to standard output
 - `--json-summary` runs the child and writes a JSON summary to standard error after child exit so child standard output remains parseable
 - `--json-summary` cannot be combined with `--dry-run`; use `--dry-run --json` for JSON preflight
-- JSON preflight and summary output include supply, route, and final plan metadata plus `missing_required` fields where applicable
+- JSON preflight and summary output include `plan_schema_version`, `plan_hash`, `command_resolution`, supply, route, and final plan metadata plus `missing_required` fields where applicable
 - preflight and summary output must never include secret values
 - the parent process environment is unchanged
 - stdin-oriented consumers such as `ptyterm --send-stdin` can be connected with `secdat get KEY --stdout | ...`; this is optional stdout/stdin coupling, not a dependency between the tools

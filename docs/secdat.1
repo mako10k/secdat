@@ -322,9 +322,16 @@ to write that preflight report as JSON to standard output.
 runs the child and writes a JSON audit summary to standard error after child exit, preserving child standard output. It cannot be combined with
 .B --dry-run .
 JSON output includes supply, route, final plan metadata,
+.B plan_schema_version ,
+.B plan_hash ,
+.B command_resolution ,
 .B bulk_gate ,
 matched profile metadata,
 and never includes secret values.
+.B plan_hash
+is computed from non-secret plan metadata and excludes
+.B dry_run ,
+exit status, terminating signal, and duration so preflight and summary output for the same plan can be compared.
 .TP
 .B export [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-bulk-gate]
 Emit bash-oriented export lines for the current visible keys. The
