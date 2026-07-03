@@ -33,6 +33,23 @@ enum secdat_sdk_effective_source_type {
     SECDAT_SDK_EFFECTIVE_SOURCE_ORPHANED,
 };
 
+enum secdat_sdk_redaction_field_class {
+    SECDAT_SDK_REDACTION_SECRET_VALUE = 0,
+    SECDAT_SDK_REDACTION_SECRET_DERIVED_IDENTIFIER,
+    SECDAT_SDK_REDACTION_NON_SECRET_METADATA,
+    SECDAT_SDK_REDACTION_COMMAND_ARGV,
+    SECDAT_SDK_REDACTION_PATH_DOMAIN_LABEL,
+    SECDAT_SDK_REDACTION_PUBLIC_TEXT,
+};
+
+struct secdat_sdk_redaction_classification {
+    enum secdat_sdk_redaction_field_class field_class;
+    const char *class_name;
+    const char *policy_name;
+    const char *display_label;
+    int value_allowed;
+};
+
 struct secdat_sdk_options {
     const char *dir;
     const char *domain;
@@ -206,6 +223,18 @@ int secdat_sdk_exec_plan_json(
     const struct secdat_sdk_options *options,
     const struct secdat_sdk_exec_plan_options *plan_options,
     char **json_out
+);
+const char *secdat_sdk_redaction_class_name(enum secdat_sdk_redaction_field_class field_class);
+const char *secdat_sdk_redaction_policy_name(enum secdat_sdk_redaction_field_class field_class);
+const char *secdat_sdk_redaction_display_label(enum secdat_sdk_redaction_field_class field_class);
+int secdat_sdk_redaction_value_allowed(enum secdat_sdk_redaction_field_class field_class);
+int secdat_sdk_describe_redaction_class(
+    enum secdat_sdk_redaction_field_class field_class,
+    struct secdat_sdk_redaction_classification *classification_out
+);
+int secdat_sdk_classify_exec_json_field(
+    const char *field_path,
+    struct secdat_sdk_redaction_classification *classification_out
 );
 
 /* timeout_seconds <= 0 waits without a timeout, matching CLI wait-unlock without --timeout. */

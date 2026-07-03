@@ -79,10 +79,11 @@ The first SDK surface is intentionally small:
 - `secdat_sdk_list_keys()` for metadata-only key rows with names, store, canonical keyref, source domain, source type, storage mode, and non-secret attributes; `secdat_sdk_list_keys_with_patterns()` accepts repeated include/exclude glob filters without changing the base filter ABI
 - `secdat_sdk_list_stores()` and `secdat_sdk_list_domains()` for metadata-only store and domain inventory
 - `secdat_sdk_exec_plan_json()` for the same secret-safe JSON preflight shape as `exec --dry-run --json`, without launching a child process or decrypting secret values
+- `secdat_sdk_redaction_*()` helpers for the shared redaction/classification labels used by secdat-originated output, plus `secdat_sdk_classify_exec_json_field()` for versioned exec plan fields
 - `secdat_sdk_wait_unlock()` for the same programmatic wait behavior as `wait-unlock` without reading a secret value; `timeout_seconds <= 0` waits without a timeout
 - `secdat_sdk_free()` for buffers returned by the library
 
-List APIs allocate their returned item arrays in `libsecdat`; callers own those arrays and release `result.items` with `secdat_sdk_free()`. `secdat_sdk_exec_plan_json()` returns caller-owned JSON text released with `secdat_sdk_free()`. Key metadata and exec plan APIs never return plaintext values or decrypted value buffers.
+List APIs allocate their returned item arrays in `libsecdat`; callers own those arrays and release `result.items` with `secdat_sdk_free()`. `secdat_sdk_exec_plan_json()` returns caller-owned JSON text released with `secdat_sdk_free()`. Redaction helper strings are static library-owned labels and are not freed by callers. Key metadata, exec plan, and redaction APIs never return plaintext values or decrypted value buffers.
 
 The public header is [src/secdat-sdk.h](src/secdat-sdk.h). Minimal bindings live under [bindings](bindings): Python uses `ctypes`, Go uses `cgo`, Rust uses `extern "C"`, and Node uses a small N-API addon.
 Release tagging and package publication steps are captured in [docs/release-workflow.md](docs/release-workflow.md).

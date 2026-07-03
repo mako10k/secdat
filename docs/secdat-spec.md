@@ -26,9 +26,10 @@ The SDK includes metadata-only inventory calls for harness and UI backends:
 - `secdat_sdk_list_stores(options, result_out)` returns store names for the resolved current domain
 - `secdat_sdk_list_domains(options, filters, result_out)` returns registered-domain status metadata such as root, effective lock state, related domain, counts, and wrapped-key presence
 - `secdat_sdk_exec_plan_json(options, plan_options, json_out)` returns the same secret-safe JSON plan shape as `secdat exec --dry-run --json` without launching a child process or decrypting secret values; `plan_options` accepts repeated inject rules, repeated inject policy files, optional bulk gate, optional command-resolution string, and counted argv
+- `secdat_sdk_describe_redaction_class(field_class, classification_out)` and the `secdat_sdk_redaction_*()` helpers return static class, policy, display, and value-allowed metadata for secdat-originated output; `secdat_sdk_classify_exec_json_field(field_path, classification_out)` returns the classification for known exec plan JSON field paths and fails closed for unknown paths
 - `secdat_sdk_wait_unlock(options, timeout_seconds)` follows `wait-unlock` semantics for programmatic callers without reading a secret value; `timeout_seconds <= 0` waits without a timeout
 
-Returned list item arrays and SDK-owned buffers are allocated by `libsecdat` and owned by the caller; callers release `result_out->items` or returned buffers with `secdat_sdk_free()`. Metadata-only list APIs and exec plan APIs must not return plaintext secret values or decrypted value buffers.
+Returned list item arrays and SDK-owned buffers are allocated by `libsecdat` and owned by the caller; callers release `result_out->items` or returned buffers with `secdat_sdk_free()`. Redaction labels are static library-owned strings and do not need freeing. Metadata-only list APIs, exec plan APIs, and redaction APIs must not return plaintext secret values or decrypted value buffers.
 
 ### 2.1 Target CLI
 

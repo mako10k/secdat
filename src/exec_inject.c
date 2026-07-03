@@ -218,6 +218,57 @@ static const struct secdat_redaction_field_rule secdat_exec_json_field_rules[] =
 
 static void secdat_exec_string_list_free(char **items, size_t count);
 
+static int secdat_exec_sdk_redaction_field_class(
+    enum secdat_redaction_field_class field_class,
+    enum secdat_sdk_redaction_field_class *sdk_field_class_out
+)
+{
+    if (sdk_field_class_out == NULL) {
+        return 1;
+    }
+    switch (field_class) {
+    case SECDAT_REDACTION_SECRET_VALUE:
+        *sdk_field_class_out = SECDAT_SDK_REDACTION_SECRET_VALUE;
+        return 0;
+    case SECDAT_REDACTION_SECRET_DERIVED_IDENTIFIER:
+        *sdk_field_class_out = SECDAT_SDK_REDACTION_SECRET_DERIVED_IDENTIFIER;
+        return 0;
+    case SECDAT_REDACTION_NON_SECRET_METADATA:
+        *sdk_field_class_out = SECDAT_SDK_REDACTION_NON_SECRET_METADATA;
+        return 0;
+    case SECDAT_REDACTION_COMMAND_ARGV:
+        *sdk_field_class_out = SECDAT_SDK_REDACTION_COMMAND_ARGV;
+        return 0;
+    case SECDAT_REDACTION_PATH_DOMAIN_LABEL:
+        *sdk_field_class_out = SECDAT_SDK_REDACTION_PATH_DOMAIN_LABEL;
+        return 0;
+    case SECDAT_REDACTION_PUBLIC_TEXT:
+        *sdk_field_class_out = SECDAT_SDK_REDACTION_PUBLIC_TEXT;
+        return 0;
+    default:
+        return 1;
+    }
+}
+
+int secdat_sdk_classify_exec_json_field(
+    const char *field_path,
+    struct secdat_sdk_redaction_classification *classification_out
+)
+{
+    const struct secdat_redaction_field_rule *rule;
+    enum secdat_sdk_redaction_field_class sdk_field_class;
+
+    if (classification_out == NULL) {
+        return 1;
+    }
+    memset(classification_out, 0, sizeof(*classification_out));
+    rule = secdat_redaction_find_field_rule(secdat_exec_json_field_rules, field_path);
+    if (rule == NULL || secdat_exec_sdk_redaction_field_class(rule->field_class, &sdk_field_class) != 0) {
+        return 1;
+    }
+    return secdat_sdk_describe_redaction_class(sdk_field_class, classification_out);
+}
+
 static int secdat_exec_json_classified_set_new(
     json_t *object,
     const char *field_path,
