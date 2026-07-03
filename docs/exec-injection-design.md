@@ -610,9 +610,13 @@ Current capabilities to build on:
   `profile_required`, `matched_profile`, supply/route/final metadata,
   `injected_key_count`, `injected_keys`, `argv`, and runtime status fields.
   The plan hash excludes runtime-only fields.
+- The `exec` JSON writer uses internal field-classification rules before
+  setting report fields, so newly added fields must be classified as secret
+  value, secret-derived identifier, non-secret metadata, command argv,
+  path/domain label, or public text before they can be emitted.
 - `libsecdat` exposes get/set/session/list/domain metadata functions through
   `src/secdat-sdk.h`. It does not yet expose the exec injection planner,
-  redaction helpers, or relation-refresh suggestions through the SDK.
+  redaction helpers, or relation-refresh suggestions through the public SDK.
 - `relation suggest-refresh` and `meta mark-leaked` already derive refresh
   suggestions from non-secret relation records and print only severity,
   relation id, roles, canonical refresh KEYREF, and reason.
@@ -621,7 +625,7 @@ Backlog requests:
 
 | Priority | Request | Scope |
 | --- | --- | --- |
-| P0 | Secret-safe redaction/classification API | Add shared core helpers that classify output fields as secret value, secret-derived identifier, non-secret metadata, command/argv, path/domain label, or public text; return redaction policy and display labels without revealing values. Use this from CLI JSON/text emitters before exposing it through bindings. |
+| P0 | Secret-safe redaction/classification API | Implemented internally for `libsecdat` and the `exec` JSON writer. The helpers classify output fields as secret value, secret-derived identifier, non-secret metadata, command argv, path/domain label, or public text; return redaction policy and display labels without revealing values; and fail unclassified JSON field writes. Public SDK exposure remains P1. |
 | P0 | Exec injection dry-run schema version and plan hash | Implemented for CLI JSON preflight and summaries. Keep the canonical hash input limited to non-secret plan metadata, and bump `plan_schema_version` before any incompatible hash-input change. |
 | P1 | SDK exec injection plan API | Add a C SDK entry point that accepts domain/store options, repeated inject rules, optional policy files, bulk gate, command resolution mode, and argv, then returns the same secret-safe plan as CLI dry-run without launching a child process or decrypting secret values. Start with a JSON-returning ABI if that is the smallest stable surface; add structured lists only when bindings need field-level ownership. |
 | P1 | SDK redaction API | Expose the shared classification/redaction primitives through `libsecdat` so bindings and `secexec` can label or redact secdat-originated fields consistently. Returned buffers remain caller-owned through `secdat_sdk_free()`. |
@@ -631,10 +635,11 @@ Backlog requests:
 
 Implementation phases:
 
-1. **Classification foundation (P0)** - introduce internal classification labels
-   and redaction helpers, then update CLI plan/report writers to use the shared
-   labels. Safeguard with tests that fail on raw secret values and unexpected
-   plaintext length disclosure.
+1. **Classification foundation (P0)** - implemented internally with shared
+   classification labels and redaction helpers. The `exec` JSON plan/report
+   writer now routes object-field writes through classified field rules, and
+   regression coverage checks that helper output does not reveal raw secret
+   values or plaintext lengths.
 2. **Plan identity (P0)** - implemented for CLI JSON preflight/summary. Keep
    the first schema additive; changing hash inputs later requires a
    schema-version bump.

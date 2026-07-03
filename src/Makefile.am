@@ -23,6 +23,8 @@ libsecdat_la_SOURCES = \
 	i18n.h \
 	json_util.c \
 	json_util.h \
+	redaction.c \
+	redaction.h \
 	secdat-sdk.h \
 	store.c \
 	store.h \
@@ -51,8 +53,9 @@ secdat_local_headers = \
 	exec_inject.h \
 	i18n.h \
 	json_util.h \
+	redaction.h \
 	secdat-sdk.h \
 	store.h \
 	store_exec_port.h
 
-main.o cli.lo domain.lo exec_inject.lo store.lo: $(secdat_local_headers)
+main.o cli.lo domain.lo exec_inject.lo redaction.lo store.lo: $(secdat_local_headers)

@@ -5,6 +5,7 @@
 #include "domain.h"
 #include "i18n.h"
 #include "json_util.h"
+#include "redaction.h"
 #include "store.h"
 #include "store_exec_port.h"
 
@@ -171,7 +172,71 @@ struct secdat_exec_plan {
     int final_mode_only;
 };
 
+static const struct secdat_redaction_field_rule secdat_exec_json_field_rules[] = {
+    {"plan_schema_version", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"plan_hash", SECDAT_REDACTION_SECRET_DERIVED_IDENTIFIER},
+    {"ok", SECDAT_REDACTION_PUBLIC_TEXT},
+    {"domain", SECDAT_REDACTION_PATH_DOMAIN_LABEL},
+    {"store", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"command_resolution", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"bulk_gate", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"profile_required", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"matched_profile", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"supply", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"supply.ambient", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"supply.ambient.mode", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"supply.ambient.contributed", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"supply.ambient.rejected_present", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"supply.ambient.missing_required", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"supply.secret", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"supply.secret.mode", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"supply.secret.contributed", SECDAT_REDACTION_SECRET_DERIVED_IDENTIFIER},
+    {"supply.secret.rejected_present", SECDAT_REDACTION_SECRET_DERIVED_IDENTIFIER},
+    {"supply.secret.missing_required", SECDAT_REDACTION_SECRET_DERIVED_IDENTIFIER},
+    {"route", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"route.prefer", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"route.collisions", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"route.collisions.name", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"route.collisions.picked", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"final", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"final.mode", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"final.present", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"final.missing_required", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"final.rejected_present", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"injected_key_count", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"injected_keys", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"injected_keys.key", SECDAT_REDACTION_SECRET_DERIVED_IDENTIFIER},
+    {"injected_keys.env_name", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"argv", SECDAT_REDACTION_COMMAND_ARGV},
+    {"dry_run", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {"exit_status", SECDAT_REDACTION_PUBLIC_TEXT},
+    {"term_signal", SECDAT_REDACTION_PUBLIC_TEXT},
+    {"duration_ms", SECDAT_REDACTION_NON_SECRET_METADATA},
+    {NULL, SECDAT_REDACTION_PUBLIC_TEXT},
+};
+
 static void secdat_exec_string_list_free(char **items, size_t count);
+
+static int secdat_exec_json_classified_set_new(
+    json_t *object,
+    const char *field_path,
+    const char *object_key,
+    json_t *value
+)
+{
+    const struct secdat_redaction_field_rule *rule;
+
+    if (object == NULL || field_path == NULL || object_key == NULL || value == NULL) {
+        json_decref(value);
+        return -1;
+    }
+    rule = secdat_redaction_find_field_rule(secdat_exec_json_field_rules, field_path);
+    if (rule == NULL || !secdat_redaction_value_allowed(rule->field_class)) {
+        json_decref(value);
+        return -1;
+    }
+    return json_object_set_new(object, object_key, value);
+}
 
 static void secdat_exec_selector_list_free(struct secdat_exec_selector_list *list)
 {
@@ -2201,6 +2266,7 @@ static long long secdat_exec_monotonic_millis(void)
 }
 
 static json_t *secdat_exec_json_supply_pentad(
+    const char *field_prefix,
     const char *mode,
     char **contributed,
     size_t contributed_count,
@@ -2211,14 +2277,39 @@ static json_t *secdat_exec_json_supply_pentad(
 )
 {
     json_t *pentad = json_object();
+    char mode_path[128];
+    char contributed_path[128];
+    char rejected_path[128];
+    char missing_path[128];
+    int written;
 
     if (pentad == NULL) {
         return NULL;
     }
-    if (json_object_set_new(pentad, "mode", json_string(mode)) != 0
-            || json_object_set_new(pentad, "contributed", secdat_json_string_array(contributed, contributed_count)) != 0
-            || json_object_set_new(pentad, "rejected_present", secdat_json_string_array(rejected_present, rejected_present_count)) != 0
-            || json_object_set_new(pentad, "missing_required", secdat_json_string_array(missing_required, missing_required_count)) != 0) {
+    written = snprintf(mode_path, sizeof(mode_path), "%s.mode", field_prefix);
+    if (written < 0 || (size_t)written >= sizeof(mode_path)) {
+        json_decref(pentad);
+        return NULL;
+    }
+    written = snprintf(contributed_path, sizeof(contributed_path), "%s.contributed", field_prefix);
+    if (written < 0 || (size_t)written >= sizeof(contributed_path)) {
+        json_decref(pentad);
+        return NULL;
+    }
+    written = snprintf(rejected_path, sizeof(rejected_path), "%s.rejected_present", field_prefix);
+    if (written < 0 || (size_t)written >= sizeof(rejected_path)) {
+        json_decref(pentad);
+        return NULL;
+    }
+    written = snprintf(missing_path, sizeof(missing_path), "%s.missing_required", field_prefix);
+    if (written < 0 || (size_t)written >= sizeof(missing_path)) {
+        json_decref(pentad);
+        return NULL;
+    }
+    if (secdat_exec_json_classified_set_new(pentad, mode_path, "mode", json_string(mode)) != 0
+            || secdat_exec_json_classified_set_new(pentad, contributed_path, "contributed", secdat_json_string_array(contributed, contributed_count)) != 0
+            || secdat_exec_json_classified_set_new(pentad, rejected_path, "rejected_present", secdat_json_string_array(rejected_present, rejected_present_count)) != 0
+            || secdat_exec_json_classified_set_new(pentad, missing_path, "missing_required", secdat_json_string_array(missing_required, missing_required_count)) != 0) {
         json_decref(pentad);
         return NULL;
     }
@@ -2302,6 +2393,7 @@ static json_t *secdat_exec_build_json_report(
     }
 
     ambient = secdat_exec_json_supply_pentad(
+        "supply.ambient",
         plan->ambient_mode_only ? "only" : "default",
         plan->ambient_contributed,
         plan->ambient_contributed_count,
@@ -2311,6 +2403,7 @@ static json_t *secdat_exec_build_json_report(
         plan->missing_ambient_required_count
     );
     secret = secdat_exec_json_supply_pentad(
+        "supply.secret",
         plan->secret_mode_only ? "only" : "default",
         plan->secret_contributed,
         plan->secret_contributed_count,
@@ -2329,8 +2422,8 @@ static json_t *secdat_exec_build_json_report(
         json_t *collision = json_object();
 
         if (collision == NULL
-                || json_object_set_new(collision, "name", json_string(plan->collisions[index].name)) != 0
-                || json_object_set_new(collision, "picked", json_string(secdat_exec_route_pick_name(plan->collisions[index].picked))) != 0
+                || secdat_exec_json_classified_set_new(collision, "route.collisions.name", "name", json_string(plan->collisions[index].name)) != 0
+                || secdat_exec_json_classified_set_new(collision, "route.collisions.picked", "picked", json_string(secdat_exec_route_pick_name(plan->collisions[index].picked))) != 0
                 || json_array_append_new(collisions, collision) != 0) {
             json_decref(collision);
             goto fail;
@@ -2355,8 +2448,8 @@ static json_t *secdat_exec_build_json_report(
 
         injected_key_count += 1;
         if (entry == NULL
-                || json_object_set_new(entry, "key", json_string(plan->final_entries[index].secret_key)) != 0
-                || json_object_set_new(entry, "env_name", json_string(plan->final_entries[index].env_name)) != 0
+                || secdat_exec_json_classified_set_new(entry, "injected_keys.key", "key", json_string(plan->final_entries[index].secret_key)) != 0
+                || secdat_exec_json_classified_set_new(entry, "injected_keys.env_name", "env_name", json_string(plan->final_entries[index].env_name)) != 0
                 || json_array_append_new(injected_keys, entry) != 0) {
             json_decref(entry);
             goto fail;
@@ -2369,48 +2462,48 @@ static json_t *secdat_exec_build_json_report(
         }
     }
 
-    if (json_object_set_new(supply, "ambient", ambient) != 0) {
+    if (secdat_exec_json_classified_set_new(supply, "supply.ambient", "ambient", ambient) != 0) {
         goto fail;
     }
     ambient = NULL;
-    if (json_object_set_new(supply, "secret", secret) != 0) {
+    if (secdat_exec_json_classified_set_new(supply, "supply.secret", "secret", secret) != 0) {
         goto fail;
     }
     secret = NULL;
-    if (json_object_set_new(route, "prefer", json_string(secdat_exec_route_pick_name(options->policy.route_prefer))) != 0
-            || json_object_set_new(route, "collisions", collisions) != 0) {
+    if (secdat_exec_json_classified_set_new(route, "route.prefer", "prefer", json_string(secdat_exec_route_pick_name(options->policy.route_prefer))) != 0
+            || secdat_exec_json_classified_set_new(route, "route.collisions", "collisions", collisions) != 0) {
         goto fail;
     }
     collisions = NULL;
-    if (json_object_set_new(final, "mode", json_string(plan->final_mode_only ? "only" : "default")) != 0
-            || json_object_set_new(final, "present", present) != 0) {
+    if (secdat_exec_json_classified_set_new(final, "final.mode", "mode", json_string(plan->final_mode_only ? "only" : "default")) != 0
+            || secdat_exec_json_classified_set_new(final, "final.present", "present", present) != 0) {
         goto fail;
     }
     present = NULL;
-    if (json_object_set_new(final, "missing_required", secdat_json_string_array(plan->missing_final_required, plan->missing_final_required_count)) != 0
-            || json_object_set_new(final, "rejected_present", secdat_json_string_array(plan->rejected_final_present, plan->rejected_final_present_count)) != 0
-            || json_object_set_new(root, "plan_schema_version", json_integer(SECDAT_EXEC_PLAN_SCHEMA_VERSION)) != 0
-            || json_object_set_new(root, "ok", json_boolean(ok)) != 0
-            || json_object_set_new(root, "domain", json_string(domain_label)) != 0
-            || json_object_set_new(root, "store", json_string(secdat_exec_port_effective_store_name(cli->store))) != 0
-            || json_object_set_new(root, "command_resolution", json_string(secdat_exec_command_resolution_name(options->command_resolution))) != 0
-            || json_object_set_new(root, "bulk_gate", json_boolean(options->policy.bulk_gate)) != 0
-            || json_object_set_new(root, "profile_required", json_boolean(options->policy.profile_required)) != 0
-            || json_object_set_new(root, "matched_profile", options->policy.matched_profile != NULL ? json_string(options->policy.matched_profile) : json_null()) != 0
-            || json_object_set_new(root, "supply", supply) != 0
-            || json_object_set_new(root, "route", route) != 0
-            || json_object_set_new(root, "final", final) != 0
-            || json_object_set_new(root, "injected_key_count", json_integer((json_int_t)injected_key_count)) != 0
-            || json_object_set_new(root, "injected_keys", injected_keys) != 0
-            || json_object_set_new(root, "argv", argv) != 0) {
+    if (secdat_exec_json_classified_set_new(final, "final.missing_required", "missing_required", secdat_json_string_array(plan->missing_final_required, plan->missing_final_required_count)) != 0
+            || secdat_exec_json_classified_set_new(final, "final.rejected_present", "rejected_present", secdat_json_string_array(plan->rejected_final_present, plan->rejected_final_present_count)) != 0
+            || secdat_exec_json_classified_set_new(root, "plan_schema_version", "plan_schema_version", json_integer(SECDAT_EXEC_PLAN_SCHEMA_VERSION)) != 0
+            || secdat_exec_json_classified_set_new(root, "ok", "ok", json_boolean(ok)) != 0
+            || secdat_exec_json_classified_set_new(root, "domain", "domain", json_string(domain_label)) != 0
+            || secdat_exec_json_classified_set_new(root, "store", "store", json_string(secdat_exec_port_effective_store_name(cli->store))) != 0
+            || secdat_exec_json_classified_set_new(root, "command_resolution", "command_resolution", json_string(secdat_exec_command_resolution_name(options->command_resolution))) != 0
+            || secdat_exec_json_classified_set_new(root, "bulk_gate", "bulk_gate", json_boolean(options->policy.bulk_gate)) != 0
+            || secdat_exec_json_classified_set_new(root, "profile_required", "profile_required", json_boolean(options->policy.profile_required)) != 0
+            || secdat_exec_json_classified_set_new(root, "matched_profile", "matched_profile", options->policy.matched_profile != NULL ? json_string(options->policy.matched_profile) : json_null()) != 0
+            || secdat_exec_json_classified_set_new(root, "supply", "supply", supply) != 0
+            || secdat_exec_json_classified_set_new(root, "route", "route", route) != 0
+            || secdat_exec_json_classified_set_new(root, "final", "final", final) != 0
+            || secdat_exec_json_classified_set_new(root, "injected_key_count", "injected_key_count", json_integer((json_int_t)injected_key_count)) != 0
+            || secdat_exec_json_classified_set_new(root, "injected_keys", "injected_keys", injected_keys) != 0
+            || secdat_exec_json_classified_set_new(root, "argv", "argv", argv) != 0) {
         goto fail;
     }
     if (secdat_exec_json_plan_hash(root, plan_hash) != 0
-            || json_object_set_new(root, "plan_hash", json_string(plan_hash)) != 0
-            || json_object_set_new(root, "dry_run", json_boolean(dry_run)) != 0
-            || json_object_set_new(root, "exit_status", exit_status >= 0 ? json_integer(exit_status) : json_null()) != 0
-            || json_object_set_new(root, "term_signal", term_signal >= 0 ? json_integer(term_signal) : json_null()) != 0
-            || json_object_set_new(root, "duration_ms", duration_ms >= 0 ? json_integer(duration_ms) : json_null()) != 0) {
+            || secdat_exec_json_classified_set_new(root, "plan_hash", "plan_hash", json_string(plan_hash)) != 0
+            || secdat_exec_json_classified_set_new(root, "dry_run", "dry_run", json_boolean(dry_run)) != 0
+            || secdat_exec_json_classified_set_new(root, "exit_status", "exit_status", exit_status >= 0 ? json_integer(exit_status) : json_null()) != 0
+            || secdat_exec_json_classified_set_new(root, "term_signal", "term_signal", term_signal >= 0 ? json_integer(term_signal) : json_null()) != 0
+            || secdat_exec_json_classified_set_new(root, "duration_ms", "duration_ms", duration_ms >= 0 ? json_integer(duration_ms) : json_null()) != 0) {
         goto fail;
     }
     supply = NULL;
