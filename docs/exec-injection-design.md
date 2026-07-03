@@ -634,7 +634,7 @@ Backlog requests:
 | P1 | SDK exec injection plan API | Implemented for the JSON-returning C ABI. `secdat_sdk_exec_plan_json()` accepts domain/store options, repeated inject rules, optional policy files, bulk gate, command resolution mode, and argv, then returns the same secret-safe plan as CLI dry-run without launching a child process or decrypting secret values. Structured lists remain deferred until bindings need field-level ownership. |
 | P1 | SDK redaction API | Implemented for shared redaction/classification labels and exec JSON field-path classification. `secdat_sdk_describe_redaction_class()` and `secdat_sdk_redaction_*()` expose class, policy, display, and value-allowed metadata; `secdat_sdk_classify_exec_json_field()` fails closed for unknown plan fields. Returned strings are static library-owned labels. |
 | P1 | Relation refresh SDK support | Implemented through `secdat_sdk_relation_suggest_refresh()`, which returns rows with severity, relation id, leaked role, refresh role, refresh KEYREF, and reason. Rows are derived from relation metadata and canonical KEYREFs without reading or returning secret values. |
-| P2 | Binding propagation | Add Python, Go, Rust, and Node wrappers after the C ABI contracts are stable, preserving binding-local naming conventions and error handling. |
+| P2 | Binding propagation | Python wrappers are implemented for exec plan JSON, redaction/classification metadata, and relation-refresh suggestions. Go, Rust, and Node wrappers remain to be added with binding-local naming conventions and error handling. |
 | P2 | Secexec integration constraints | Document downstream responsibilities for process environment exposure, child stdout/stderr ownership, policy-file ownership, schema/hash compatibility, and no secret-value logging. |
 
 Implementation phases:
@@ -654,9 +654,11 @@ Implementation phases:
    redaction/classifier helpers and structured relation refresh suggestions are
    implemented. Relation rows stay equivalent to current CLI semantics and
    allocate result arrays and row strings in `libsecdat`.
-5. **Bindings and secexec adapter (P2)** - wrap the stable C calls in each
-   binding and document the `secexec` adapter contract against the versioned
-   plan schema.
+5. **Bindings and secexec adapter (P2)** - Python now wraps the stable C
+   calls for plan JSON, redaction/classification metadata, and relation-refresh
+   suggestions. Remaining binding work is Go, Rust, and Node propagation, plus
+   documenting the `secexec` adapter contract against the versioned plan
+   schema.
 
 Integration constraints:
 

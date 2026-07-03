@@ -14,9 +14,15 @@ Per-binding usage notes and examples live here:
 - [Rust](rust/README.md)
 - [Node](node/README.md)
 
-All bindings currently target the C ABI in [src/secdat-sdk.h](../src/secdat-sdk.h) and intentionally keep the same semantics as the CLI for domain resolution, unlocking, and stderr diagnostics.
+All bindings target the C ABI in [src/secdat-sdk.h](../src/secdat-sdk.h) and intentionally keep the same semantics as the CLI for domain resolution, unlocking, and stderr diagnostics.
 
-The current binding surface covers `get`, `set`, `exists`, `collect_status`, `list_keys`, `list_stores`, `list_domains`, `wait_unlock`, `rm`, `mv`, `cp`, `mask`, `unmask`, `unlock`, and `lock` with language-specific naming conventions.
+The shared binding surface covers `get`, `set`, `exists`, `collect_status`, `list_keys`, `list_stores`, `list_domains`, `wait_unlock`, `rm`, `mv`, `cp`, `mask`, `unmask`, `unlock`, and `lock` with language-specific naming conventions.
+
+The Python binding also wraps the secexec integration support exposed by the C ABI:
+
+- `exec_plan_json` for the same secret-safe plan JSON as `secdat exec --dry-run --json`
+- redaction metadata helpers and exec JSON field classification
+- `relation_suggest_refresh` for structured refresh suggestions equivalent to `relation suggest-refresh KEYREF`
 
 The metadata list calls return named fields and intentionally exclude plaintext secret values. C list arrays are owned by the caller and freed with `secdat_sdk_free()`; higher-level bindings copy those arrays into native objects before releasing the C memory.
 

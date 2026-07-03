@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
+from collections.abc import Sequence
 from enum import IntEnum
 from dataclasses import dataclass
 
@@ -18,6 +19,7 @@ class KeySource(IntEnum):
     LOCKED = 0
     ENVIRONMENT = 1
     SESSION = 2
+    ORPHANED = 3
 
 
 class EffectiveSource(IntEnum):
@@ -27,6 +29,16 @@ class EffectiveSource(IntEnum):
     INHERITED_SESSION = 3
     EXPLICIT_LOCK = 4
     BLOCKED = 5
+    ORPHANED = 6
+
+
+class RedactionFieldClass(IntEnum):
+    SECRET_VALUE = 0
+    SECRET_DERIVED_IDENTIFIER = 1
+    NON_SECRET_METADATA = 2
+    COMMAND_ARGV = 3
+    PATH_DOMAIN_LABEL = 4
+    PUBLIC_TEXT = 5
 
 
 class _Options(ctypes.Structure):
@@ -65,6 +77,29 @@ class _DomainFilters(ctypes.Structure):
         ("include_ancestors", ctypes.c_int),
         ("include_descendants", ctypes.c_int),
         ("include_inherited", ctypes.c_int),
+    ]
+
+
+class _ExecPlanOptions(ctypes.Structure):
+    _fields_ = [
+        ("inject_rules", ctypes.POINTER(ctypes.c_char_p)),
+        ("inject_rule_count", ctypes.c_size_t),
+        ("inject_files", ctypes.POINTER(ctypes.c_char_p)),
+        ("inject_file_count", ctypes.c_size_t),
+        ("bulk_gate", ctypes.c_int),
+        ("command_resolution", ctypes.c_char_p),
+        ("argv", ctypes.POINTER(ctypes.c_char_p)),
+        ("argv_count", ctypes.c_size_t),
+    ]
+
+
+class _RedactionClassification(ctypes.Structure):
+    _fields_ = [
+        ("field_class", ctypes.c_int),
+        ("class_name", ctypes.c_char_p),
+        ("policy_name", ctypes.c_char_p),
+        ("display_label", ctypes.c_char_p),
+        ("value_allowed", ctypes.c_int),
     ]
 
 
@@ -128,6 +163,24 @@ class _DomainMetadataList(ctypes.Structure):
     ]
 
 
+class _RelationRefreshSuggestion(ctypes.Structure):
+    _fields_ = [
+        ("severity", ctypes.c_char_p),
+        ("relation_id", ctypes.c_char_p),
+        ("leaked_role", ctypes.c_char_p),
+        ("refresh_role", ctypes.c_char_p),
+        ("refresh_keyref", ctypes.c_char_p),
+        ("reason", ctypes.c_char_p),
+    ]
+
+
+class _RelationRefreshSuggestionList(ctypes.Structure):
+    _fields_ = [
+        ("items", ctypes.POINTER(_RelationRefreshSuggestion)),
+        ("count", ctypes.c_size_t),
+    ]
+
+
 @dataclass
 class StatusSummary:
     store_count: int
@@ -175,14 +228,63 @@ class DomainMetadata:
     wrapped_master_key_present: bool
 
 
+@dataclass
+class RedactionClassification:
+    field_class: RedactionFieldClass
+    class_name: str
+    policy_name: str
+    display_label: str
+    value_allowed: bool
+
+
+@dataclass
+class RelationRefreshSuggestion:
+    severity: str
+    relation_id: str
+    leaked_role: str
+    refresh_role: str
+    refresh_keyref: str
+    reason: str
+
+
 def _encode_optional(value: str | None) -> bytes | None:
     if value is None:
         return None
     return value.encode()
 
 
+def _encode_string_array(values: Sequence[str] | None):
+    encoded = [value.encode() for value in values or []]
+    if not encoded:
+        return None, encoded
+    array_type = ctypes.c_char_p * len(encoded)
+    return array_type(*encoded), encoded
+
+
 def _decode_char_array(value) -> str:
     return bytes(value).split(b"\0", 1)[0].decode()
+
+
+def _decode_c_string(value) -> str:
+    if value is None:
+        return ""
+    return value.decode()
+
+
+def _decode_required_c_string(value, label: str) -> str:
+    if value is None:
+        raise SecdatError(f"{label} returned null text")
+    return value.decode()
+
+
+def _decode_redaction_classification(classification: _RedactionClassification) -> RedactionClassification:
+    return RedactionClassification(
+        field_class=RedactionFieldClass(classification.field_class),
+        class_name=_decode_required_c_string(classification.class_name, "redaction class_name"),
+        policy_name=_decode_required_c_string(classification.policy_name, "redaction policy_name"),
+        display_label=_decode_required_c_string(classification.display_label, "redaction display_label"),
+        value_allowed=bool(classification.value_allowed),
+    )
 
 
 def _load_library(library_path: str | None) -> ctypes.CDLL:
@@ -278,6 +380,44 @@ def _load_library(library_path: str | None) -> ctypes.CDLL:
         ctypes.POINTER(_DomainMetadataList),
     ]
     library.secdat_sdk_list_domains.restype = ctypes.c_int
+
+    library.secdat_sdk_exec_plan_json.argtypes = [
+        ctypes.POINTER(_Options),
+        ctypes.POINTER(_ExecPlanOptions),
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    library.secdat_sdk_exec_plan_json.restype = ctypes.c_int
+
+    library.secdat_sdk_redaction_class_name.argtypes = [ctypes.c_int]
+    library.secdat_sdk_redaction_class_name.restype = ctypes.c_char_p
+
+    library.secdat_sdk_redaction_policy_name.argtypes = [ctypes.c_int]
+    library.secdat_sdk_redaction_policy_name.restype = ctypes.c_char_p
+
+    library.secdat_sdk_redaction_display_label.argtypes = [ctypes.c_int]
+    library.secdat_sdk_redaction_display_label.restype = ctypes.c_char_p
+
+    library.secdat_sdk_redaction_value_allowed.argtypes = [ctypes.c_int]
+    library.secdat_sdk_redaction_value_allowed.restype = ctypes.c_int
+
+    library.secdat_sdk_describe_redaction_class.argtypes = [
+        ctypes.c_int,
+        ctypes.POINTER(_RedactionClassification),
+    ]
+    library.secdat_sdk_describe_redaction_class.restype = ctypes.c_int
+
+    library.secdat_sdk_classify_exec_json_field.argtypes = [
+        ctypes.c_char_p,
+        ctypes.POINTER(_RedactionClassification),
+    ]
+    library.secdat_sdk_classify_exec_json_field.restype = ctypes.c_int
+
+    library.secdat_sdk_relation_suggest_refresh.argtypes = [
+        ctypes.POINTER(_Options),
+        ctypes.c_char_p,
+        ctypes.POINTER(_RelationRefreshSuggestionList),
+    ]
+    library.secdat_sdk_relation_suggest_refresh.restype = ctypes.c_int
 
     library.secdat_sdk_wait_unlock.argtypes = [
         ctypes.POINTER(_Options),
@@ -484,6 +624,101 @@ class Secdat:
                     visible_key_count=int(item.visible_key_count),
                     orphaned_domain=bool(item.orphaned_domain),
                     wrapped_master_key_present=bool(item.wrapped_master_key_present),
+                )
+                for item in result_list.items[: result_list.count]
+            ]
+        finally:
+            self._lib.secdat_sdk_free(ctypes.cast(result_list.items, ctypes.c_void_p))
+
+    def exec_plan_json(
+        self,
+        argv: Sequence[str],
+        *,
+        dir: str | None = None,
+        domain: str | None = None,
+        store: str | None = None,
+        inject_rules: Sequence[str] | None = None,
+        inject_files: Sequence[str] | None = None,
+        bulk_gate: bool = False,
+        command_resolution: str | None = None,
+    ) -> str:
+        options = self._options(dir=dir, domain=domain, store=store)
+        inject_rule_array, _inject_rule_values = _encode_string_array(inject_rules)
+        inject_file_array, _inject_file_values = _encode_string_array(inject_files)
+        argv_array, _argv_values = _encode_string_array(argv)
+        plan_options = _ExecPlanOptions(
+            inject_rule_array,
+            len(inject_rules or []),
+            inject_file_array,
+            len(inject_files or []),
+            int(bulk_gate),
+            _encode_optional(command_resolution),
+            argv_array,
+            len(argv),
+        )
+        json_pointer = ctypes.c_void_p()
+        result = self._lib.secdat_sdk_exec_plan_json(ctypes.byref(options), ctypes.byref(plan_options), ctypes.byref(json_pointer))
+        try:
+            if not json_pointer.value:
+                raise SecdatError(f"secdat_sdk_exec_plan_json failed with status {result}; see stderr for details")
+            return ctypes.string_at(json_pointer.value).decode()
+        finally:
+            if json_pointer.value:
+                self._lib.secdat_sdk_free(json_pointer)
+
+    def redaction_class_name(self, field_class: RedactionFieldClass) -> str:
+        value = self._lib.secdat_sdk_redaction_class_name(int(field_class))
+        return _decode_required_c_string(value, "secdat_sdk_redaction_class_name")
+
+    def redaction_policy_name(self, field_class: RedactionFieldClass) -> str:
+        value = self._lib.secdat_sdk_redaction_policy_name(int(field_class))
+        return _decode_required_c_string(value, "secdat_sdk_redaction_policy_name")
+
+    def redaction_display_label(self, field_class: RedactionFieldClass) -> str:
+        value = self._lib.secdat_sdk_redaction_display_label(int(field_class))
+        return _decode_required_c_string(value, "secdat_sdk_redaction_display_label")
+
+    def redaction_value_allowed(self, field_class: RedactionFieldClass) -> bool:
+        return bool(self._lib.secdat_sdk_redaction_value_allowed(int(field_class)))
+
+    def describe_redaction_class(self, field_class: RedactionFieldClass) -> RedactionClassification:
+        classification = _RedactionClassification()
+        result = self._lib.secdat_sdk_describe_redaction_class(int(field_class), ctypes.byref(classification))
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_describe_redaction_class failed with status {result}; see stderr for details")
+        return _decode_redaction_classification(classification)
+
+    def classify_exec_json_field(self, field_path: str) -> RedactionClassification:
+        classification = _RedactionClassification()
+        result = self._lib.secdat_sdk_classify_exec_json_field(field_path.encode(), ctypes.byref(classification))
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_classify_exec_json_field failed with status {result}; see stderr for details")
+        return _decode_redaction_classification(classification)
+
+    def relation_suggest_refresh(
+        self,
+        keyref: str,
+        *,
+        dir: str | None = None,
+        domain: str | None = None,
+        store: str | None = None,
+    ) -> list[RelationRefreshSuggestion]:
+        options = self._options(dir=dir, domain=domain, store=store)
+        result_list = _RelationRefreshSuggestionList()
+        result = self._lib.secdat_sdk_relation_suggest_refresh(ctypes.byref(options), keyref.encode(), ctypes.byref(result_list))
+        if result != 0:
+            raise SecdatError(f"secdat_sdk_relation_suggest_refresh failed with status {result}; see stderr for details")
+        try:
+            if result_list.count == 0:
+                return []
+            return [
+                RelationRefreshSuggestion(
+                    severity=_decode_c_string(item.severity),
+                    relation_id=_decode_c_string(item.relation_id),
+                    leaked_role=_decode_c_string(item.leaked_role),
+                    refresh_role=_decode_c_string(item.refresh_role),
+                    refresh_keyref=_decode_c_string(item.refresh_keyref),
+                    reason=_decode_c_string(item.reason),
                 )
                 for item in result_list.items[: result_list.count]
             ]

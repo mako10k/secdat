@@ -578,4 +578,168 @@ for secret in ["sdk-secret-value", "public-secret-value", "bulk-secret-value", "
         raise SystemExit(f"FAIL: SDK exec plan exposed a secret value: {secret!r}")
 PY
 
+PYTHONPATH="$source_root/bindings/python" SECDAT_SDK_LIBRARY="$build_root/src/.libs/libsecdat.so" \
+python3 - "$root_domain" "$refresh_domain" "$long_role" "$cli_plan" <<'PY'
+import json
+import os
+import sys
+import tempfile
+
+from secdat_sdk import RedactionFieldClass, Secdat, SecdatError
+
+root = sys.argv[1]
+refresh_domain = sys.argv[2]
+long_role = sys.argv[3]
+cli_plan_path = sys.argv[4]
+secret_values = [
+    "sdk-secret-value",
+    "public-secret-value",
+    "bulk-secret-value",
+    "bulk-updated-value",
+    "long-primary-value",
+    "long-secondary-value",
+    "consumer-token",
+]
+
+
+def fail(message):
+    raise SystemExit(f"FAIL: {message}")
+
+
+def assert_no_secret_text(value, label):
+    for secret in secret_values:
+        if secret in value:
+            fail(f"{label} exposed a secret value: {secret!r}")
+
+
+def find_refresh_suggestion(suggestions, relation_id, leaked_role, refresh_role, refresh_keyref, reason):
+    for item in suggestions:
+        if (
+            item.severity == "high"
+            and item.relation_id == relation_id
+            and item.leaked_role == leaked_role
+            and item.refresh_role == refresh_role
+            and item.refresh_keyref == refresh_keyref
+            and item.reason == reason
+        ):
+            return item
+    return None
+
+
+def call_with_c_stderr_suppressed(callback):
+    saved_stderr = os.dup(2)
+    try:
+        with tempfile.TemporaryFile() as captured:
+            os.dup2(captured.fileno(), 2)
+            try:
+                return callback()
+            finally:
+                os.dup2(saved_stderr, 2)
+    finally:
+        os.close(saved_stderr)
+
+
+sdk = Secdat()
+plan_json = sdk.exec_plan_json(
+    ["python3", "-c", "pass"],
+    dir=root,
+    store="team",
+    inject_rules=[
+        "ambient:only=__SDK_NO_AMBIENT__",
+        "secret:only=API_TOKEN:BULK_TOKEN",
+        "route:prefer=secret",
+    ],
+    command_resolution="direct",
+)
+with open(cli_plan_path, encoding="utf-8") as handle:
+    cli_plan = json.load(handle)
+python_plan = json.loads(plan_json)
+if python_plan != cli_plan:
+    fail(f"Python SDK exec plan JSON differed from CLI dry-run\nCLI={cli_plan!r}\nPython={python_plan!r}")
+assert_no_secret_text(json.dumps(python_plan, sort_keys=True), "Python SDK exec plan")
+
+if sdk.redaction_class_name(RedactionFieldClass.SECRET_VALUE) != "secret_value":
+    fail("Python SDK redaction class name mismatch")
+if sdk.redaction_policy_name(RedactionFieldClass.SECRET_VALUE) != "redact":
+    fail("Python SDK redaction policy mismatch")
+if sdk.redaction_display_label(RedactionFieldClass.SECRET_VALUE) != "secret value":
+    fail("Python SDK redaction display label mismatch")
+if sdk.redaction_value_allowed(RedactionFieldClass.SECRET_VALUE):
+    fail("Python SDK redaction should not allow secret values")
+classification = sdk.describe_redaction_class(RedactionFieldClass.SECRET_DERIVED_IDENTIFIER)
+if (
+    classification.field_class != RedactionFieldClass.SECRET_DERIVED_IDENTIFIER
+    or classification.class_name != "secret_derived_identifier"
+    or classification.policy_name != "label-only"
+    or not classification.value_allowed
+):
+    fail(f"Python SDK redaction classification mismatch: {classification!r}")
+field_classification = sdk.classify_exec_json_field("injected_keys.key")
+if field_classification.field_class != RedactionFieldClass.SECRET_DERIVED_IDENTIFIER:
+    fail(f"Python SDK exec JSON field classification mismatch: {field_classification!r}")
+try:
+    sdk.classify_exec_json_field("unknown.field")
+except SecdatError:
+    pass
+else:
+    fail("Python SDK unknown exec JSON field should fail closed")
+invalid_plan_json = call_with_c_stderr_suppressed(
+    lambda: sdk.exec_plan_json(
+        ["env"],
+        dir=root,
+        store="team",
+        inject_rules=["secret:require=MISSING_SDK_TOKEN"],
+        command_resolution="direct",
+    )
+)
+invalid_plan = json.loads(invalid_plan_json)
+missing_required = invalid_plan.get("supply", {}).get("secret", {}).get("missing_required", [])
+if invalid_plan.get("ok") is not False or "MISSING_SDK_TOKEN" not in missing_required:
+    fail(f"Python SDK invalid exec plan did not return failure JSON: {invalid_plan!r}")
+assert_no_secret_text(json.dumps(invalid_plan, sort_keys=True), "Python SDK invalid exec plan")
+for text in [
+    classification.class_name,
+    classification.policy_name,
+    classification.display_label,
+    field_classification.class_name,
+    field_classification.policy_name,
+    field_classification.display_label,
+]:
+    assert_no_secret_text(text, "Python SDK redaction metadata")
+
+api_keyref = f"{root}/API_TOKEN:team"
+bulk_keyref = f"{root}/BULK_TOKEN:team"
+consumer_keyref = f"{refresh_domain}/CONSUMER_TOKEN:default"
+long_primary_keyref = f"{root}/LONG_PRIMARY:team"
+long_secondary_keyref = f"{root}/LONG_SECONDARY:team"
+
+refreshes = sdk.relation_suggest_refresh("API_TOKEN", dir=root, store="team")
+if len(refreshes) != 4:
+    fail(f"Python SDK relation refresh count mismatch: {refreshes!r}")
+for item in refreshes:
+    assert_no_secret_text(json.dumps(vars(item), sort_keys=True), "Python SDK relation refresh")
+if find_refresh_suggestion(refreshes, "sdk-refresh", "token", "token", api_keyref, "leaked-secret-member") is None:
+    fail("missing Python SDK self refresh suggestion")
+if find_refresh_suggestion(refreshes, "sdk-refresh", "token", "bulk_token", bulk_keyref, "combination-sensitive-relation") is None:
+    fail("missing Python SDK local related refresh suggestion")
+if find_refresh_suggestion(refreshes, "sdk-cross-refresh", "token", "token", api_keyref, "leaked-secret-member") is None:
+    fail("missing Python SDK cross-domain leaked member suggestion")
+if find_refresh_suggestion(refreshes, "sdk-cross-refresh", "token", "refresh_token", consumer_keyref, "combination-sensitive-relation") is None:
+    fail("missing Python SDK cross-domain refresh target suggestion")
+
+public_refreshes = sdk.relation_suggest_refresh("PUBLIC_URL", dir=root, store="team")
+if public_refreshes:
+    fail(f"Python SDK public role should not produce refresh suggestions: {public_refreshes!r}")
+
+long_refreshes = sdk.relation_suggest_refresh("LONG_PRIMARY", dir=root, store="team")
+if len(long_refreshes) != 2:
+    fail(f"Python SDK long role refresh count mismatch: {long_refreshes!r}")
+if find_refresh_suggestion(long_refreshes, "sdk-long-refresh", long_role, long_role, long_primary_keyref, "leaked-relation-member") is None:
+    fail("missing Python SDK long role self suggestion")
+if find_refresh_suggestion(long_refreshes, "sdk-long-refresh", long_role, "secondary", long_secondary_keyref, "combination-sensitive-relation") is None:
+    fail("missing Python SDK long role related suggestion")
+for item in long_refreshes:
+    assert_no_secret_text(json.dumps(vars(item), sort_keys=True), "Python SDK long relation refresh")
+PY
+
 printf 'PASS SDK exec plan regression\n'
