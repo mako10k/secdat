@@ -299,3 +299,112 @@ cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_harness.c" \
     -o "$work_root/sdk_harness"
 
 "$work_root/sdk_harness" "$root_domain" "$child_domain" "$orphaned_child_domain"
+
+cli_plan="$work_root/cli-plan.json"
+cli_plan_stderr="$work_root/cli-plan.stderr"
+sdk_plan="$work_root/sdk-plan.json"
+sdk_plan_stderr="$work_root/sdk-plan.stderr"
+
+if ! "$bin_path" --dir "$root_domain" --store team exec \
+        --inject "ambient:only=__SDK_NO_AMBIENT__" \
+        --inject "secret:only=API_TOKEN:BULK_TOKEN" \
+        --inject "route:prefer=secret" \
+        --command-resolution direct \
+        --dry-run --json \
+        python3 -c pass >"$cli_plan" 2>"$cli_plan_stderr"; then
+    printf 'stderr:\n%s\n' "$(cat "$cli_plan_stderr")" >&2
+    fail "CLI exec dry-run JSON plan failed"
+fi
+if test -s "$cli_plan_stderr"; then
+    printf 'stderr:\n%s\n' "$(cat "$cli_plan_stderr")" >&2
+    fail "unexpected stderr from CLI exec dry-run JSON plan"
+fi
+
+cat >"$work_root/sdk_plan_harness.c" <<'C'
+#include "secdat-sdk.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+
+static void fail(const char *message)
+{
+    fprintf(stderr, "FAIL: %s\n", message);
+    exit(1);
+}
+
+int main(int argc, char **argv)
+{
+    struct secdat_sdk_options options = {0};
+    struct secdat_sdk_exec_plan_options plan_options = {0};
+    const char *inject_rules[] = {
+        "ambient:only=__SDK_NO_AMBIENT__",
+        "secret:only=API_TOKEN:BULK_TOKEN",
+        "route:prefer=secret",
+    };
+    const char *command_argv[] = {"python3", "-c", "pass"};
+    char *json = NULL;
+
+    if (argc != 2) {
+        fail("expected root domain path");
+    }
+    options.dir = argv[1];
+    options.store = "team";
+    plan_options.inject_rules = inject_rules;
+    plan_options.inject_rule_count = sizeof(inject_rules) / sizeof(inject_rules[0]);
+    plan_options.command_resolution = "direct";
+    plan_options.argv = command_argv;
+    plan_options.argv_count = sizeof(command_argv) / sizeof(command_argv[0]);
+
+    if (secdat_sdk_exec_plan_json(&options, &plan_options, &json) != 0 || json == NULL) {
+        fail("secdat_sdk_exec_plan_json failed");
+    }
+    fputs(json, stdout);
+    fputc('\n', stdout);
+    secdat_sdk_free(json);
+    return 0;
+}
+C
+
+cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_plan_harness.c" \
+    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -Wl,-rpath,"$build_root/src/.libs" \
+    -o "$work_root/sdk_plan_harness"
+
+if ! "$work_root/sdk_plan_harness" "$root_domain" >"$sdk_plan" 2>"$sdk_plan_stderr"; then
+    printf 'stderr:\n%s\n' "$(cat "$sdk_plan_stderr")" >&2
+    fail "SDK exec JSON plan harness failed"
+fi
+if test -s "$sdk_plan_stderr"; then
+    printf 'stderr:\n%s\n' "$(cat "$sdk_plan_stderr")" >&2
+    fail "unexpected stderr from SDK exec JSON plan harness"
+fi
+
+python3 - "$cli_plan" "$sdk_plan" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    cli_plan = json.load(handle)
+with open(sys.argv[2], encoding="utf-8") as handle:
+    sdk_plan = json.load(handle)
+
+if sdk_plan != cli_plan:
+    raise SystemExit(f"FAIL: SDK exec plan JSON differed from CLI dry-run\nCLI={cli_plan!r}\nSDK={sdk_plan!r}")
+if sdk_plan.get("ok") is not True:
+    raise SystemExit(f"FAIL: SDK exec plan should be ok: {sdk_plan!r}")
+if sdk_plan.get("command_resolution") != "direct":
+    raise SystemExit(f"FAIL: SDK exec plan command resolution mismatch: {sdk_plan!r}")
+if sdk_plan.get("argv") != ["python3", "-c", "pass"]:
+    raise SystemExit(f"FAIL: SDK exec plan argv mismatch: {sdk_plan!r}")
+if sdk_plan.get("supply", {}).get("ambient", {}).get("contributed") != []:
+    raise SystemExit(f"FAIL: SDK exec plan ambient selection should be empty: {sdk_plan!r}")
+if {item["key"] for item in sdk_plan.get("injected_keys", [])} != {"API_TOKEN", "BULK_TOKEN"}:
+    raise SystemExit(f"FAIL: SDK exec plan injected keys mismatch: {sdk_plan!r}")
+
+serialized = json.dumps(sdk_plan, sort_keys=True)
+for secret in ["sdk-secret-value", "public-secret-value", "bulk-secret-value", "bulk-updated-value"]:
+    if secret in serialized:
+        raise SystemExit(f"FAIL: SDK exec plan exposed a secret value: {secret!r}")
+PY
+
+printf 'PASS SDK exec plan regression\n'

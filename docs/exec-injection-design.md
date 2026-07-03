@@ -614,9 +614,11 @@ Current capabilities to build on:
   setting report fields, so newly added fields must be classified as secret
   value, secret-derived identifier, non-secret metadata, command argv,
   path/domain label, or public text before they can be emitted.
-- `libsecdat` exposes get/set/session/list/domain metadata functions through
-  `src/secdat-sdk.h`. It does not yet expose the exec injection planner,
-  redaction helpers, or relation-refresh suggestions through the public SDK.
+- `libsecdat` exposes get/set/session/list/domain metadata functions and
+  `secdat_sdk_exec_plan_json()` through `src/secdat-sdk.h`. The exec plan API
+  returns the same secret-safe JSON shape as CLI dry-run without launching a
+  child process. Redaction helpers and relation-refresh suggestions are not yet
+  exposed through the public SDK.
 - `relation suggest-refresh` and `meta mark-leaked` already derive refresh
   suggestions from non-secret relation records and print only severity,
   relation id, roles, canonical refresh KEYREF, and reason.
@@ -627,7 +629,7 @@ Backlog requests:
 | --- | --- | --- |
 | P0 | Secret-safe redaction/classification API | Implemented internally for `libsecdat` and the `exec` JSON writer. The helpers classify output fields as secret value, secret-derived identifier, non-secret metadata, command argv, path/domain label, or public text; return redaction policy and display labels without revealing values; and fail unclassified JSON field writes. Public SDK exposure remains P1. |
 | P0 | Exec injection dry-run schema version and plan hash | Implemented for CLI JSON preflight and summaries. Keep the canonical hash input limited to non-secret plan metadata, and bump `plan_schema_version` before any incompatible hash-input change. |
-| P1 | SDK exec injection plan API | Add a C SDK entry point that accepts domain/store options, repeated inject rules, optional policy files, bulk gate, command resolution mode, and argv, then returns the same secret-safe plan as CLI dry-run without launching a child process or decrypting secret values. Start with a JSON-returning ABI if that is the smallest stable surface; add structured lists only when bindings need field-level ownership. |
+| P1 | SDK exec injection plan API | Implemented for the JSON-returning C ABI. `secdat_sdk_exec_plan_json()` accepts domain/store options, repeated inject rules, optional policy files, bulk gate, command resolution mode, and argv, then returns the same secret-safe plan as CLI dry-run without launching a child process or decrypting secret values. Structured lists remain deferred until bindings need field-level ownership. |
 | P1 | SDK redaction API | Expose the shared classification/redaction primitives through `libsecdat` so bindings and `secexec` can label or redact secdat-originated fields consistently. Returned buffers remain caller-owned through `secdat_sdk_free()`. |
 | P1 | Relation refresh SDK support | Add a structured SDK equivalent of `relation suggest-refresh KEYREF` that returns rows with severity, relation id, leaked role, refresh role, refresh KEYREF, and reason. It must not read or return secret values. |
 | P2 | Binding propagation | Add Python, Go, Rust, and Node wrappers after the C ABI contracts are stable, preserving binding-local naming conventions and error handling. |
@@ -643,9 +645,9 @@ Implementation phases:
 2. **Plan identity (P0)** - implemented for CLI JSON preflight/summary. Keep
    the first schema additive; changing hash inputs later requires a
    schema-version bump.
-3. **C SDK planner (P1)** - expose dry-run planning through `libsecdat` using
-   the same planner as `exec`, with no child execution path and no duplicate
-   parser semantics.
+3. **C SDK planner (P1)** - implemented for JSON output through
+   `secdat_sdk_exec_plan_json()`, using the same planner and report builder as
+   `exec`, with no child execution path and no duplicate planner semantics.
 4. **C SDK redaction and relation refresh (P1)** - publish redaction/classifier
    helpers and structured refresh suggestions. Keep relation rows equivalent to
    current CLI semantics and allocate result arrays in `libsecdat`.

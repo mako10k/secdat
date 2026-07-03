@@ -54,6 +54,17 @@ struct secdat_sdk_domain_filters {
     int include_inherited;
 };
 
+struct secdat_sdk_exec_plan_options {
+    const char *const *inject_rules;
+    size_t inject_rule_count;
+    const char *const *inject_files;
+    size_t inject_file_count;
+    int bulk_gate;
+    const char *command_resolution;
+    const char *const *argv;
+    size_t argv_count;
+};
+
 struct secdat_sdk_status_summary {
     size_t store_count;
     size_t visible_key_count;
@@ -190,6 +201,11 @@ int secdat_sdk_list_domains(
     const struct secdat_sdk_options *options,
     const struct secdat_sdk_domain_filters *filters,
     struct secdat_sdk_domain_metadata_list *result_out
+);
+int secdat_sdk_exec_plan_json(
+    const struct secdat_sdk_options *options,
+    const struct secdat_sdk_exec_plan_options *plan_options,
+    char **json_out
 );
 
 /* timeout_seconds <= 0 waits without a timeout, matching CLI wait-unlock without --timeout. */

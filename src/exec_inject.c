@@ -6,6 +6,7 @@
 #include "i18n.h"
 #include "json_util.h"
 #include "redaction.h"
+#include "secdat-sdk.h"
 #include "store.h"
 #include "store_exec_port.h"
 
@@ -358,6 +359,13 @@ static void secdat_exec_plan_free(struct secdat_exec_plan *plan)
     secdat_exec_string_list_free(plan->missing_final_required, plan->missing_final_required_count);
     secdat_exec_string_list_free(plan->rejected_final_present, plan->rejected_final_present_count);
     memset(plan, 0, sizeof(*plan));
+}
+
+static void secdat_exec_options_init(struct secdat_exec_options *options)
+{
+    memset(options, 0, sizeof(*options));
+    options->policy.route_prefer = SECDAT_EXEC_ROUTE_SECRET;
+    options->command_resolution = SECDAT_EXEC_COMMAND_RESOLUTION_CALLER_PATH;
 }
 
 static int secdat_exec_selector_list_append(struct secdat_exec_selector_list *list, const char *value)
@@ -1480,9 +1488,7 @@ static int secdat_exec_parse_options(
     int cli_route_prefer_seen = 0;
     int cli_secret_rename_seen = 0;
 
-    memset(options, 0, sizeof(*options));
-    options->policy.route_prefer = SECDAT_EXEC_ROUTE_SECRET;
-    options->command_resolution = SECDAT_EXEC_COMMAND_RESOLUTION_CALLER_PATH;
+    secdat_exec_options_init(options);
     if (help_target_out != NULL) {
         *help_target_out = "exec";
     }
@@ -2922,6 +2928,181 @@ static int secdat_exec_apply_command_profiles_and_cli(struct secdat_exec_options
         return status;
     }
     return secdat_exec_policy_validate_conflicts(&options->policy);
+}
+
+static const char *secdat_exec_sdk_domain_base(const struct secdat_sdk_options *options)
+{
+    if (options == NULL) {
+        return NULL;
+    }
+    return options->domain != NULL ? options->domain : options->dir;
+}
+
+static int secdat_exec_sdk_copy_argv(
+    const struct secdat_sdk_exec_plan_options *plan_options,
+    char ***command_argv_out
+)
+{
+    char **command_argv;
+    size_t index;
+
+    *command_argv_out = NULL;
+    if (plan_options == NULL || plan_options->argv == NULL || plan_options->argv_count == 0
+            || plan_options->argv_count > (size_t)INT_MAX) {
+        fprintf(stderr, _("invalid arguments for exec\n"));
+        return 1;
+    }
+    command_argv = calloc(plan_options->argv_count + 1, sizeof(*command_argv));
+    if (command_argv == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    for (index = 0; index < plan_options->argv_count; index += 1) {
+        if (plan_options->argv[index] == NULL) {
+            fprintf(stderr, _("invalid arguments for exec\n"));
+            free(command_argv);
+            return 1;
+        }
+        command_argv[index] = (char *)plan_options->argv[index];
+    }
+    *command_argv_out = command_argv;
+    return 0;
+}
+
+static int secdat_exec_apply_sdk_plan_options(
+    struct secdat_exec_options *options,
+    const struct secdat_sdk_exec_plan_options *plan_options
+)
+{
+    size_t index;
+    int status;
+
+    if (plan_options == NULL) {
+        fprintf(stderr, _("invalid arguments for exec\n"));
+        return 1;
+    }
+    for (index = 0; index < plan_options->inject_file_count; index += 1) {
+        if (plan_options->inject_files == NULL || plan_options->inject_files[index] == NULL) {
+            fprintf(stderr, _("invalid arguments for exec\n"));
+            return 1;
+        }
+        status = secdat_exec_apply_inject_policy_file(&options->policy, plan_options->inject_files[index]);
+        if (status != 0) {
+            return status;
+        }
+    }
+    if (plan_options->bulk_gate) {
+        status = secdat_exec_enable_bulk_gate(&options->policy);
+        if (status != 0) {
+            return status;
+        }
+    }
+    if (plan_options->command_resolution != NULL) {
+        status = secdat_exec_parse_command_resolution(plan_options->command_resolution, &options->command_resolution);
+        if (status != 0) {
+            return status;
+        }
+    }
+    for (index = 0; index < plan_options->inject_rule_count; index += 1) {
+        if (plan_options->inject_rules == NULL || plan_options->inject_rules[index] == NULL) {
+            fprintf(stderr, _("invalid arguments for exec\n"));
+            return 1;
+        }
+        status = secdat_exec_validate_policy_file_token(plan_options->inject_rules[index]);
+        if (status != 0) {
+            return status;
+        }
+        status = secdat_exec_append_cli_inject_token(options, plan_options->inject_rules[index]);
+        if (status != 0) {
+            return status;
+        }
+    }
+    return 0;
+}
+
+int secdat_sdk_exec_plan_json(
+    const struct secdat_sdk_options *sdk_options,
+    const struct secdat_sdk_exec_plan_options *plan_options,
+    char **json_out
+)
+{
+    struct secdat_exec_options options;
+    struct secdat_exec_plan plan = {0};
+    struct secdat_domain_chain chain = {0};
+    struct secdat_cli cli = {0};
+    char **visible_keys = NULL;
+    size_t visible_key_count = 0;
+    char **command_argv = NULL;
+    json_t *root = NULL;
+    char *json_text = NULL;
+    int status = 1;
+    int plan_status;
+
+    if (json_out == NULL) {
+        return 1;
+    }
+    *json_out = NULL;
+    secdat_exec_options_init(&options);
+
+    status = secdat_exec_sdk_copy_argv(plan_options, &command_argv);
+    if (status != 0) {
+        goto cleanup;
+    }
+    status = secdat_exec_apply_sdk_plan_options(&options, plan_options);
+    if (status != 0) {
+        goto cleanup;
+    }
+
+    cli.program_name = "libsecdat";
+    cli.dir = sdk_options != NULL ? sdk_options->dir : NULL;
+    cli.domain = sdk_options != NULL ? sdk_options->domain : NULL;
+    cli.store = sdk_options != NULL ? sdk_options->store : NULL;
+    cli.command = SECDAT_COMMAND_EXEC;
+    cli.argc = (int)plan_options->argv_count;
+    cli.argv = command_argv;
+
+    if (secdat_domain_resolve_chain(secdat_exec_sdk_domain_base(sdk_options), &chain) != 0
+            || secdat_exec_port_collect_visible_keys(&chain, cli.store, &visible_keys, &visible_key_count) != 0) {
+        goto cleanup;
+    }
+    status = secdat_exec_apply_command_profiles_and_cli(&options, command_argv);
+    if (status != 0) {
+        goto cleanup;
+    }
+
+    plan_status = secdat_exec_build_plan(&options.policy, &chain, cli.store, visible_keys, visible_key_count, &plan);
+    root = secdat_exec_build_json_report(
+        &chain,
+        &cli,
+        &options,
+        &plan,
+        command_argv,
+        plan_status == 0,
+        1,
+        -1,
+        -1,
+        -1
+    );
+    if (root == NULL) {
+        goto cleanup;
+    }
+    json_text = json_dumps(root, JSON_INDENT(2));
+    if (json_text == NULL) {
+        goto cleanup;
+    }
+    *json_out = json_text;
+    json_text = NULL;
+    status = plan_status == 0 ? 0 : 1;
+
+cleanup:
+    free(json_text);
+    json_decref(root);
+    secdat_exec_plan_free(&plan);
+    secdat_exec_port_free_keys(visible_keys, visible_key_count);
+    free(command_argv);
+    secdat_exec_options_free(&options);
+    secdat_domain_chain_free(&chain);
+    return status;
 }
 
 static void secdat_exec_try_child_path(char **command_argv, char **child_environ)
