@@ -252,6 +252,25 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "lock"], extra_env=rea
 if rc != 0 or stdout != "session locked\n" or stderr != "":
     fail(f"lock after readonly relation checks failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+long_role = "r" * 5000
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "relation", "set", "long-role-pair",
+    "--member", f"{long_role}=GENERIC_PRIMARY",
+    "--member", "secondary=GENERIC_SECONDARY",
+    "--security", "combination-sensitive",
+])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"long role relation set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+expected_long_role_refresh = (
+    expected_generic_refresh
+    + f"high\tlong-role-pair\t{long_role}\t{long_role}\t{domain}/GENERIC_PRIMARY:default\tleaked-relation-member\n"
+    + f"high\tlong-role-pair\t{long_role}\tsecondary\t{domain}/GENERIC_SECONDARY:default\tcombination-sensitive-relation\n"
+)
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-refresh", "GENERIC_PRIMARY"])
+if rc != 0 or stderr != "":
+    fail(f"relation suggest-refresh long role failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_eq(stdout, expected_long_role_refresh, "relation suggest-refresh long role")
+
 refresh_consumer = work_root / "refresh-consumer"
 refresh_consumer.mkdir(parents=True)
 rc, stdout, stderr = run([bin_path, "--dir", str(refresh_consumer), "domain", "create"])

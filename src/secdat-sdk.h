@@ -140,6 +140,20 @@ struct secdat_sdk_domain_metadata_list {
     size_t count;
 };
 
+struct secdat_sdk_relation_refresh_suggestion {
+    const char *severity;
+    const char *relation_id;
+    const char *leaked_role;
+    const char *refresh_role;
+    const char *refresh_keyref;
+    const char *reason;
+};
+
+struct secdat_sdk_relation_refresh_suggestion_list {
+    struct secdat_sdk_relation_refresh_suggestion *items;
+    size_t count;
+};
+
 int secdat_sdk_get(
     const struct secdat_sdk_options *options,
     const char *keyref,
@@ -235,6 +249,11 @@ int secdat_sdk_describe_redaction_class(
 int secdat_sdk_classify_exec_json_field(
     const char *field_path,
     struct secdat_sdk_redaction_classification *classification_out
+);
+int secdat_sdk_relation_suggest_refresh(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    struct secdat_sdk_relation_refresh_suggestion_list *result_out
 );
 
 /* timeout_seconds <= 0 waits without a timeout, matching CLI wait-unlock without --timeout. */

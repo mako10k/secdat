@@ -15264,9 +15264,103 @@ static const char *secdat_relation_refresh_reason(
     return "sensitive-relation-member";
 }
 
-static void secdat_print_relation_refresh_suggestions_for_relation(
+struct secdat_relation_refresh_suggestion_row {
+    char *severity;
+    char *relation_id;
+    char *leaked_role;
+    char *refresh_role;
+    char *refresh_keyref;
+    char *reason;
+};
+
+struct secdat_relation_refresh_suggestion_rows {
+    struct secdat_relation_refresh_suggestion_row *items;
+    size_t count;
+    size_t capacity;
+};
+
+static void secdat_relation_refresh_suggestion_row_reset(
+    struct secdat_relation_refresh_suggestion_row *row
+)
+{
+    if (row == NULL) {
+        return;
+    }
+    free(row->severity);
+    free(row->relation_id);
+    free(row->leaked_role);
+    free(row->refresh_role);
+    free(row->refresh_keyref);
+    free(row->reason);
+    memset(row, 0, sizeof(*row));
+}
+
+static void secdat_relation_refresh_suggestion_rows_free(
+    struct secdat_relation_refresh_suggestion_rows *rows
+)
+{
+    size_t index;
+
+    if (rows == NULL) {
+        return;
+    }
+    for (index = 0; index < rows->count; index += 1) {
+        secdat_relation_refresh_suggestion_row_reset(&rows->items[index]);
+    }
+    free(rows->items);
+    memset(rows, 0, sizeof(*rows));
+}
+
+static int secdat_relation_refresh_suggestion_rows_append(
+    struct secdat_relation_refresh_suggestion_rows *rows,
+    const char *severity,
+    const char *relation_id,
+    const char *leaked_role,
+    const char *refresh_role,
+    const char *refresh_keyref,
+    const char *reason
+)
+{
+    struct secdat_relation_refresh_suggestion_row item;
+    struct secdat_relation_refresh_suggestion_row *items;
+    size_t new_capacity;
+
+    if (rows == NULL) {
+        return 1;
+    }
+    memset(&item, 0, sizeof(item));
+    if (rows->count == rows->capacity) {
+        new_capacity = rows->capacity == 0 ? 8 : rows->capacity * 2;
+        if (rows->capacity > SIZE_MAX / 2 || new_capacity > SIZE_MAX / sizeof(*items)) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        items = realloc(rows->items, new_capacity * sizeof(*items));
+        if (items == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        rows->items = items;
+        rows->capacity = new_capacity;
+    }
+    if (secdat_relation_set_string(&item.severity, severity) != 0
+            || secdat_relation_set_string(&item.relation_id, relation_id) != 0
+            || secdat_relation_set_string(&item.leaked_role, leaked_role) != 0
+            || secdat_relation_set_string(&item.refresh_role, refresh_role) != 0
+            || secdat_relation_set_string(&item.refresh_keyref, refresh_keyref) != 0
+            || secdat_relation_set_string(&item.reason, reason) != 0) {
+        secdat_relation_refresh_suggestion_row_reset(&item);
+        return 1;
+    }
+    rows->items[rows->count] = item;
+    rows->count += 1;
+    return 0;
+}
+
+static int secdat_collect_relation_refresh_suggestions_for_relation(
     const struct secdat_relation_info *relation,
-    const char *canonical_keyref
+    const char *canonical_keyref,
+    struct secdat_relation_refresh_suggestion_rows *suggestions
 )
 {
     int relation_high_risk = secdat_relation_is_high_risk(relation);
@@ -15305,15 +15399,26 @@ static void secdat_print_relation_refresh_suggestions_for_relation(
                 continue;
             }
             reason = secdat_relation_refresh_reason(relation, leaked_member, refresh_member);
-            printf("high\t%s\t%s\t%s\t%s\t%s\n", relation->relation_id, leaked_member->role, refresh_member->role, refresh_member->keyref, reason);
+            if (secdat_relation_refresh_suggestion_rows_append(
+                    suggestions,
+                    "high",
+                    relation->relation_id,
+                    leaked_member->role,
+                    refresh_member->role,
+                    refresh_member->keyref,
+                    reason) != 0) {
+                return 1;
+            }
         }
     }
+    return 0;
 }
 
-static int secdat_print_relation_refresh_suggestions_for_domain_store(
+static int secdat_collect_relation_refresh_suggestions_for_domain_store(
     const char *domain_id,
     const char *store_name,
-    const char *canonical_keyref
+    const char *canonical_keyref,
+    struct secdat_relation_refresh_suggestion_rows *suggestions
 )
 {
     struct secdat_key_list relation_ids = {0};
@@ -15335,7 +15440,10 @@ static int secdat_print_relation_refresh_suggestions_for_domain_store(
             secdat_relation_info_reset(&relation);
             goto cleanup;
         }
-        secdat_print_relation_refresh_suggestions_for_relation(&relation, canonical_keyref);
+        if (secdat_collect_relation_refresh_suggestions_for_relation(&relation, canonical_keyref, suggestions) != 0) {
+            secdat_relation_info_reset(&relation);
+            goto cleanup;
+        }
         secdat_relation_info_reset(&relation);
     }
     status = 0;
@@ -15345,7 +15453,12 @@ cleanup:
     return status;
 }
 
-static int secdat_print_relation_refresh_suggestions(const struct secdat_cli *cli, const char *raw_keyref)
+static int secdat_collect_relation_refresh_suggestions(
+    const char *raw_keyref,
+    const char *fallback_dir,
+    const char *fallback_store,
+    struct secdat_relation_refresh_suggestion_rows *suggestions
+)
 {
     struct secdat_domain_root_list roots = {0};
     struct secdat_domain_chain chain = {0};
@@ -15355,10 +15468,14 @@ static int secdat_print_relation_refresh_suggestions(const struct secdat_cli *cl
     size_t store_index;
     int status = 1;
 
+    if (raw_keyref == NULL || suggestions == NULL) {
+        return 1;
+    }
+    memset(suggestions, 0, sizeof(*suggestions));
     if (secdat_canonicalize_existing_keyref(
             raw_keyref,
-            secdat_cli_domain_base(cli),
-            cli->store,
+            fallback_dir,
+            fallback_store,
             canonical_keyref,
             sizeof(canonical_keyref)) != 0) {
         return 1;
@@ -15378,7 +15495,11 @@ static int secdat_print_relation_refresh_suggestions(const struct secdat_cli *cl
             goto cleanup;
         }
         for (store_index = 0; store_index < stores.count; store_index += 1) {
-            if (secdat_print_relation_refresh_suggestions_for_domain_store(chain.ids[0], stores.items[store_index], canonical_keyref) != 0) {
+            if (secdat_collect_relation_refresh_suggestions_for_domain_store(
+                    chain.ids[0],
+                    stores.items[store_index],
+                    canonical_keyref,
+                    suggestions) != 0) {
                 goto cleanup;
             }
         }
@@ -15388,9 +15509,142 @@ static int secdat_print_relation_refresh_suggestions(const struct secdat_cli *cl
     status = 0;
 
 cleanup:
+    if (status != 0) {
+        secdat_relation_refresh_suggestion_rows_free(suggestions);
+    }
     secdat_key_list_free(&stores);
     secdat_domain_chain_free(&chain);
     secdat_domain_root_list_free(&roots);
+    return status;
+}
+
+static int secdat_print_relation_refresh_suggestions(const struct secdat_cli *cli, const char *raw_keyref)
+{
+    struct secdat_relation_refresh_suggestion_rows suggestions = {0};
+    size_t index;
+
+    if (secdat_collect_relation_refresh_suggestions(
+            raw_keyref,
+            secdat_cli_domain_base(cli),
+            cli->store,
+            &suggestions) != 0) {
+        return 1;
+    }
+    for (index = 0; index < suggestions.count; index += 1) {
+        const struct secdat_relation_refresh_suggestion_row *suggestion = &suggestions.items[index];
+
+        printf(
+            "%s\t%s\t%s\t%s\t%s\t%s\n",
+            suggestion->severity,
+            suggestion->relation_id,
+            suggestion->leaked_role,
+            suggestion->refresh_role,
+            suggestion->refresh_keyref,
+            suggestion->reason
+        );
+    }
+    secdat_relation_refresh_suggestion_rows_free(&suggestions);
+    return 0;
+}
+
+static int secdat_relation_refresh_suggestion_string_bytes_add(size_t *total, const char *value)
+{
+    size_t length = strlen(value != NULL ? value : "") + 1;
+
+    if (length > SIZE_MAX - *total) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    *total += length;
+    return 0;
+}
+
+static void secdat_relation_refresh_suggestion_sdk_copy_string(
+    const char **field,
+    char **cursor,
+    const char *value
+)
+{
+    size_t length = strlen(value != NULL ? value : "") + 1;
+
+    *field = *cursor;
+    memcpy(*cursor, value != NULL ? value : "", length);
+    *cursor += length;
+}
+
+int secdat_sdk_relation_suggest_refresh(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    struct secdat_sdk_relation_refresh_suggestion_list *result_out
+)
+{
+    struct secdat_relation_refresh_suggestion_rows suggestions = {0};
+    struct secdat_sdk_relation_refresh_suggestion *items = NULL;
+    char *cursor;
+    size_t index;
+    size_t string_bytes = 0;
+    size_t allocation_bytes;
+    int status = 1;
+
+    if (result_out == NULL) {
+        return 1;
+    }
+    memset(result_out, 0, sizeof(*result_out));
+    if (secdat_collect_relation_refresh_suggestions(
+            keyref,
+            secdat_sdk_domain_base(options),
+            options != NULL ? options->store : NULL,
+            &suggestions) != 0) {
+        return 1;
+    }
+    for (index = 0; index < suggestions.count; index += 1) {
+        const struct secdat_relation_refresh_suggestion_row *suggestion = &suggestions.items[index];
+
+        if (secdat_relation_refresh_suggestion_string_bytes_add(&string_bytes, suggestion->severity) != 0
+                || secdat_relation_refresh_suggestion_string_bytes_add(&string_bytes, suggestion->relation_id) != 0
+                || secdat_relation_refresh_suggestion_string_bytes_add(&string_bytes, suggestion->leaked_role) != 0
+                || secdat_relation_refresh_suggestion_string_bytes_add(&string_bytes, suggestion->refresh_role) != 0
+                || secdat_relation_refresh_suggestion_string_bytes_add(&string_bytes, suggestion->refresh_keyref) != 0
+                || secdat_relation_refresh_suggestion_string_bytes_add(&string_bytes, suggestion->reason) != 0) {
+            goto cleanup;
+        }
+    }
+    if (suggestions.count > 0) {
+        if (suggestions.count > SIZE_MAX / sizeof(*items)
+                || string_bytes > SIZE_MAX - (suggestions.count * sizeof(*items))) {
+            fprintf(stderr, _("out of memory\n"));
+            goto cleanup;
+        }
+        allocation_bytes = suggestions.count * sizeof(*items) + string_bytes;
+        items = calloc(1, allocation_bytes);
+        if (items == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            goto cleanup;
+        }
+        cursor = (char *)(items + suggestions.count);
+        for (index = 0; index < suggestions.count; index += 1) {
+            const struct secdat_relation_refresh_suggestion_row *suggestion = &suggestions.items[index];
+
+            secdat_relation_refresh_suggestion_sdk_copy_string(&items[index].severity, &cursor, suggestion->severity);
+            secdat_relation_refresh_suggestion_sdk_copy_string(&items[index].relation_id, &cursor, suggestion->relation_id);
+            secdat_relation_refresh_suggestion_sdk_copy_string(&items[index].leaked_role, &cursor, suggestion->leaked_role);
+            secdat_relation_refresh_suggestion_sdk_copy_string(&items[index].refresh_role, &cursor, suggestion->refresh_role);
+            secdat_relation_refresh_suggestion_sdk_copy_string(&items[index].refresh_keyref, &cursor, suggestion->refresh_keyref);
+            secdat_relation_refresh_suggestion_sdk_copy_string(&items[index].reason, &cursor, suggestion->reason);
+        }
+    }
+
+    result_out->items = items;
+    result_out->count = suggestions.count;
+    items = NULL;
+    status = 0;
+
+cleanup:
+    free(items);
+    secdat_relation_refresh_suggestion_rows_free(&suggestions);
+    if (status != 0) {
+        memset(result_out, 0, sizeof(*result_out));
+    }
     return status;
 }
 

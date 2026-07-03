@@ -25,7 +25,9 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 root_domain="$work_root/root"
 child_domain="$root_domain/child"
 orphaned_child_domain="$root_domain/orphaned-child"
-mkdir -p "$root_domain" "$child_domain" "$orphaned_child_domain"
+refresh_domain="$work_root/refresh"
+long_role="$(printf '%*s' 5000 '' | tr ' ' r)"
+mkdir -p "$root_domain" "$child_domain" "$orphaned_child_domain" "$refresh_domain"
 
 run_secdat() {
     local stdout_path="$work_root/stdout"
@@ -44,10 +46,27 @@ run_secdat() {
 run_secdat --dir "$root_domain" domain create
 run_secdat --dir "$child_domain" domain create
 run_secdat --dir "$orphaned_child_domain" domain create
+run_secdat --dir "$refresh_domain" domain create
 run_secdat --dir "$root_domain" store create team
 run_secdat --dir "$root_domain" --store team set API_TOKEN --value sdk-secret-value
 run_secdat --dir "$root_domain" --store team set PUBLIC_URL --unsafe --value public-secret-value
 run_secdat --dir "$root_domain" --store team set BULK_TOKEN --bulk-select include --value bulk-secret-value
+run_secdat --dir "$root_domain" --store team set LONG_PRIMARY --value long-primary-value
+run_secdat --dir "$root_domain" --store team set LONG_SECONDARY --value long-secondary-value
+run_secdat --dir "$refresh_domain" set CONSUMER_TOKEN --value consumer-token
+run_secdat --dir "$root_domain" --store team relation set sdk-refresh \
+    --member token=API_TOKEN \
+    --member bulk_token=BULK_TOKEN \
+    --member account=PUBLIC_URL \
+    --security combination-sensitive
+run_secdat --dir "$refresh_domain" relation set sdk-cross-refresh \
+    --member "token=$root_domain/API_TOKEN:team" \
+    --member refresh_token=CONSUMER_TOKEN \
+    --security combination-sensitive
+run_secdat --dir "$root_domain" --store team relation set sdk-long-refresh \
+    --member "$long_role=LONG_PRIMARY" \
+    --member secondary=LONG_SECONDARY \
+    --security combination-sensitive
 run_secdat --dir "$orphaned_child_domain" set ORPHANED_SDK_KEY --value orphaned-sdk-value
 rmdir "$orphaned_child_domain"
 
@@ -66,7 +85,13 @@ static void fail(const char *message)
 
 static int string_has_secret(const char *value)
 {
-    return strstr(value, "sdk-secret-value") != NULL || strstr(value, "public-secret-value") != NULL;
+    return strstr(value, "sdk-secret-value") != NULL
+        || strstr(value, "public-secret-value") != NULL
+        || strstr(value, "bulk-secret-value") != NULL
+        || strstr(value, "bulk-updated-value") != NULL
+        || strstr(value, "long-primary-value") != NULL
+        || strstr(value, "long-secondary-value") != NULL
+        || strstr(value, "consumer-token") != NULL;
 }
 
 static void assert_no_key_value(const struct secdat_sdk_key_metadata *item)
@@ -138,11 +163,60 @@ static const struct secdat_sdk_domain_metadata *find_domain(
     return NULL;
 }
 
+static const struct secdat_sdk_relation_refresh_suggestion *find_refresh_suggestion(
+    const struct secdat_sdk_relation_refresh_suggestion_list *list,
+    const char *relation_id,
+    const char *leaked_role,
+    const char *refresh_role,
+    const char *refresh_keyref,
+    const char *reason
+)
+{
+    size_t index;
+
+    for (index = 0; index < list->count; index += 1) {
+        const struct secdat_sdk_relation_refresh_suggestion *item = &list->items[index];
+
+        if (strcmp(item->severity, "high") == 0
+            && strcmp(item->relation_id, relation_id) == 0
+            && strcmp(item->leaked_role, leaked_role) == 0
+            && strcmp(item->refresh_role, refresh_role) == 0
+            && strcmp(item->refresh_keyref, refresh_keyref) == 0
+            && strcmp(item->reason, reason) == 0) {
+            return item;
+        }
+    }
+    return NULL;
+}
+
+static void assert_no_refresh_secret(const struct secdat_sdk_relation_refresh_suggestion *item)
+{
+    if (string_has_secret(item->severity)
+        || string_has_secret(item->relation_id)
+        || string_has_secret(item->leaked_role)
+        || string_has_secret(item->refresh_role)
+        || string_has_secret(item->refresh_keyref)
+        || string_has_secret(item->reason)) {
+        fail("relation refresh suggestion exposed a secret value");
+    }
+}
+
+static void format_expected_keyref(char *buffer, size_t size, const char *domain, const char *keyref)
+{
+    int written = snprintf(buffer, size, "%s/%s", domain, keyref);
+
+    if (written < 0 || (size_t)written >= size) {
+        fail("expected keyref path was too long");
+    }
+}
+
 int main(int argc, char **argv)
 {
     const char *root;
     const char *child;
     const char *orphaned_child;
+    const char *refresh_domain;
+    const char *long_role;
     struct secdat_sdk_options root_options = {0};
     struct secdat_sdk_options child_options = {0};
     struct secdat_sdk_list_filters public_filter = {0};
@@ -154,21 +228,31 @@ int main(int argc, char **argv)
     struct secdat_sdk_key_metadata_list child_keys = {0};
     struct secdat_sdk_store_metadata_list stores = {0};
     struct secdat_sdk_domain_metadata_list domains = {0};
+    struct secdat_sdk_relation_refresh_suggestion_list refreshes = {0};
+    struct secdat_sdk_relation_refresh_suggestion_list public_refreshes = {0};
+    struct secdat_sdk_relation_refresh_suggestion_list long_refreshes = {0};
     const struct secdat_sdk_key_metadata *api_token;
     const struct secdat_sdk_key_metadata *public_url;
     const struct secdat_sdk_key_metadata *bulk_token;
     const struct secdat_sdk_domain_metadata *orphaned_domain;
+    char expected_api_keyref[PATH_MAX * 2];
+    char expected_bulk_keyref[PATH_MAX * 2];
+    char expected_consumer_keyref[PATH_MAX * 2];
+    char expected_long_primary_keyref[PATH_MAX * 2];
+    char expected_long_secondary_keyref[PATH_MAX * 2];
     unsigned char *value = NULL;
     size_t value_length = 0;
     int unsafe_store = 0;
     size_t index;
 
-    if (argc != 4) {
-        fail("expected root, child, and orphaned child paths");
+    if (argc != 6) {
+        fail("expected root, child, orphaned child, refresh domain, and long role");
     }
     root = argv[1];
     child = argv[2];
     orphaned_child = argv[3];
+    refresh_domain = argv[4];
+    long_role = argv[5];
     root_options.dir = root;
     root_options.store = "team";
     child_options.dir = child;
@@ -258,6 +342,93 @@ int main(int argc, char **argv)
     }
     secdat_sdk_free(child_keys.items);
 
+    format_expected_keyref(expected_api_keyref, sizeof(expected_api_keyref), root, "API_TOKEN:team");
+    format_expected_keyref(expected_bulk_keyref, sizeof(expected_bulk_keyref), root, "BULK_TOKEN:team");
+    format_expected_keyref(expected_consumer_keyref, sizeof(expected_consumer_keyref), refresh_domain, "CONSUMER_TOKEN:default");
+    format_expected_keyref(expected_long_primary_keyref, sizeof(expected_long_primary_keyref), root, "LONG_PRIMARY:team");
+    format_expected_keyref(expected_long_secondary_keyref, sizeof(expected_long_secondary_keyref), root, "LONG_SECONDARY:team");
+    if (secdat_sdk_relation_suggest_refresh(&root_options, "API_TOKEN", &refreshes) != 0) {
+        fail("secdat_sdk_relation_suggest_refresh failed");
+    }
+    if (refreshes.count != 4) {
+        fail("relation refresh suggestion count mismatch");
+    }
+    for (index = 0; index < refreshes.count; index += 1) {
+        assert_no_refresh_secret(&refreshes.items[index]);
+    }
+    if (find_refresh_suggestion(
+            &refreshes,
+            "sdk-refresh",
+            "token",
+            "token",
+            expected_api_keyref,
+            "leaked-secret-member") == NULL) {
+        fail("missing SDK self refresh suggestion");
+    }
+    if (find_refresh_suggestion(
+            &refreshes,
+            "sdk-refresh",
+            "token",
+            "bulk_token",
+            expected_bulk_keyref,
+            "combination-sensitive-relation") == NULL) {
+        fail("missing SDK local related refresh suggestion");
+    }
+    if (find_refresh_suggestion(
+            &refreshes,
+            "sdk-cross-refresh",
+            "token",
+            "token",
+            expected_api_keyref,
+            "leaked-secret-member") == NULL) {
+        fail("missing SDK cross-domain leaked member suggestion");
+    }
+    if (find_refresh_suggestion(
+            &refreshes,
+            "sdk-cross-refresh",
+            "token",
+            "refresh_token",
+            expected_consumer_keyref,
+            "combination-sensitive-relation") == NULL) {
+        fail("missing SDK cross-domain refresh target suggestion");
+    }
+    secdat_sdk_free(refreshes.items);
+    if (secdat_sdk_relation_suggest_refresh(&root_options, "PUBLIC_URL", &public_refreshes) != 0) {
+        fail("secdat_sdk_relation_suggest_refresh public role failed");
+    }
+    if (public_refreshes.count != 0) {
+        fail("public relation role should not produce high-risk refresh suggestions");
+    }
+    secdat_sdk_free(public_refreshes.items);
+    if (secdat_sdk_relation_suggest_refresh(&root_options, "LONG_PRIMARY", &long_refreshes) != 0) {
+        fail("secdat_sdk_relation_suggest_refresh long role failed");
+    }
+    if (long_refreshes.count != 2) {
+        fail("long role relation refresh suggestion count mismatch");
+    }
+    for (index = 0; index < long_refreshes.count; index += 1) {
+        assert_no_refresh_secret(&long_refreshes.items[index]);
+    }
+    if (find_refresh_suggestion(
+            &long_refreshes,
+            "sdk-long-refresh",
+            long_role,
+            long_role,
+            expected_long_primary_keyref,
+            "leaked-relation-member") == NULL) {
+        fail("missing SDK long role self suggestion");
+    }
+    if (find_refresh_suggestion(
+            &long_refreshes,
+            "sdk-long-refresh",
+            long_role,
+            "secondary",
+            expected_long_secondary_keyref,
+            "combination-sensitive-relation") == NULL) {
+        fail("missing SDK long role related suggestion");
+    }
+    secdat_sdk_free(long_refreshes.items);
+
     if (secdat_sdk_wait_unlock(&root_options, 1) != 0) {
         fail("secdat_sdk_wait_unlock did not accept SECDAT_MASTER_KEY");
     }
@@ -298,7 +469,7 @@ cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_harness.c" \
     -Wl,-rpath,"$build_root/src/.libs" \
     -o "$work_root/sdk_harness"
 
-"$work_root/sdk_harness" "$root_domain" "$child_domain" "$orphaned_child_domain"
+"$work_root/sdk_harness" "$root_domain" "$child_domain" "$orphaned_child_domain" "$refresh_domain" "$long_role"
 
 cli_plan="$work_root/cli-plan.json"
 cli_plan_stderr="$work_root/cli-plan.stderr"
