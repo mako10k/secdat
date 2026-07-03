@@ -573,6 +573,81 @@ names describe gate-scoped eligibility only, not absolute egress prohibition.
 | PR-7 | Regression suite for scenarios in §7.3, §15, and error table §9 |
 | PR-8 | User docs: `secdat-spec.md`, `secdat.1`, `README.md`, `po/ja.po` |
 
+### 12.1 Secexec Integration Backlog
+
+Purpose: let process-wrapping tools such as `secexec` consume secdat's
+injection planner, relation-refresh logic, and redaction policy through stable
+APIs instead of scraping CLI text or reimplementing secret classification. The
+integration contract must preserve the current rule that preflight and
+metadata-only surfaces never print secret values or plaintext lengths.
+
+Current capabilities to build on:
+
+- `exec --inject` already lowers CLI and YAML policy into one supply -> route
+  -> final plan, validates it before launch, and supports `--dry-run --json`
+  without decrypting secret values.
+- `--json-summary` reuses the same plan shape after a real execution and adds
+  runtime status fields on stderr, leaving child stdout to the child process.
+- The JSON plan currently exposes `ok`, domain/store labels, `dry_run`,
+  `bulk_gate`, `profile_required`, `matched_profile`, supply/route/final
+  metadata, `injected_key_count`, `injected_keys`, `argv`, and runtime status
+  fields. It does not expose a schema version or stable plan hash yet.
+- `libsecdat` exposes get/set/session/list/domain metadata functions through
+  `src/secdat-sdk.h`. It does not yet expose the exec injection planner,
+  redaction helpers, or relation-refresh suggestions through the SDK.
+- `relation suggest-refresh` and `meta mark-leaked` already derive refresh
+  suggestions from non-secret relation records and print only severity,
+  relation id, roles, canonical refresh KEYREF, and reason.
+
+Backlog requests:
+
+| Priority | Request | Scope |
+| --- | --- | --- |
+| P0 | Secret-safe redaction/classification API | Add shared core helpers that classify output fields as secret value, secret-derived identifier, non-secret metadata, command/argv, path/domain label, or public text; return redaction policy and display labels without revealing values. Use this from CLI JSON/text emitters before exposing it through bindings. |
+| P0 | Exec injection dry-run schema version and plan hash | Add top-level `plan_schema_version` and `plan_hash` to `exec --dry-run --json` and `--json-summary`. Define a canonical hash input that includes non-secret policy, selected names, provenance, route decisions, command resolution mode, and sanitized argv, while excluding secret values, plaintext lengths, duration, exit status, signal, and other runtime-only fields. |
+| P1 | SDK exec injection plan API | Add a C SDK entry point that accepts domain/store options, repeated inject rules, optional policy files, bulk gate, command resolution mode, and argv, then returns the same secret-safe plan as CLI dry-run without launching a child process or decrypting secret values. Start with a JSON-returning ABI if that is the smallest stable surface; add structured lists only when bindings need field-level ownership. |
+| P1 | SDK redaction API | Expose the shared classification/redaction primitives through `libsecdat` so bindings and `secexec` can label or redact secdat-originated fields consistently. Returned buffers remain caller-owned through `secdat_sdk_free()`. |
+| P1 | Relation refresh SDK support | Add a structured SDK equivalent of `relation suggest-refresh KEYREF` that returns rows with severity, relation id, leaked role, refresh role, refresh KEYREF, and reason. It must not read or return secret values. |
+| P2 | Binding propagation | Add Python, Go, Rust, and Node wrappers after the C ABI contracts are stable, preserving binding-local naming conventions and error handling. |
+| P2 | Secexec integration constraints | Document downstream responsibilities for process environment exposure, child stdout/stderr ownership, policy-file ownership, schema/hash compatibility, and no secret-value logging. |
+
+Implementation phases:
+
+1. **Classification foundation (P0)** - introduce internal classification labels
+   and redaction helpers, then update CLI plan/report writers to use the shared
+   labels. Safeguard with tests that fail on raw secret values and unexpected
+   plaintext length disclosure.
+2. **Plan identity (P0)** - add `plan_schema_version` and `plan_hash` to CLI
+   JSON preflight/summary. Keep the first schema additive; changing hash inputs
+   later requires a schema-version bump.
+3. **C SDK planner (P1)** - expose dry-run planning through `libsecdat` using
+   the same planner as `exec`, with no child execution path and no duplicate
+   parser semantics.
+4. **C SDK redaction and relation refresh (P1)** - publish redaction/classifier
+   helpers and structured refresh suggestions. Keep relation rows equivalent to
+   current CLI semantics and allocate result arrays in `libsecdat`.
+5. **Bindings and secexec adapter (P2)** - wrap the stable C calls in each
+   binding and document the `secexec` adapter contract against the versioned
+   plan schema.
+
+Integration constraints:
+
+- Plans, hashes, classifier output, redaction output, and relation-refresh rows
+  must never include secret values or value lengths.
+- Environment injection still places plaintext into the child process
+  environment during real execution. `secexec` must treat the child process,
+  process listing, core dumps, shell tracing, and child logs as separate
+  exposure surfaces.
+- `secdat` owns secret selection, routing, final validation, relation refresh
+  derivation, and redaction classification. `secexec` owns process supervision,
+  terminal/session transport, and any downstream log sinks.
+- Policy files and CLI rules remain secdat grammar. Downstream tools may pass
+  them through or author them, but must not accept a near-compatible dialect.
+- Hash consumers must compare only within the same `plan_schema_version`.
+  Cross-version compatibility requires an explicit migration decision.
+- SDK result buffers and arrays are allocated by `libsecdat` and released with
+  `secdat_sdk_free()`, matching the existing list API ownership model.
+
 ## 13. Open Questions
 
 1. ~~**`--inject-file` format** — YAML only, or also JSON?~~ **Decided:** YAML only.
