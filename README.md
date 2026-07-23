@@ -224,6 +224,31 @@ For current-domain state inspection, `list` can show active tombstones, orphaned
 ./src/secdat --dir ~/example/project/child list --safe
 ```
 
+`list --all-masks` is the identity-mask inspection surface. Its text form
+prints authorized mask names only; use `--json` for classifications and exact
+counts. It includes
+canonical v2 masks and legacy name tombstones, including masks that are dormant
+behind a local entry or orphaned from their original target. Use `--json` to
+inspect `state`, `record_kind`, `resolution`, `mask_chain_id`, and target UUIDs:
+
+```sh
+./src/secdat --dir ~/example/project/child list --all-masks
+./src/secdat --dir ~/example/project/child list --all-masks --json
+```
+
+Canonical records bind an inherited `entry_id`; another `ln` alias of the same
+`secret_id` is not implicitly masked. A legacy name tombstone is reported as
+`ambiguous` unless it can be bound to exactly one visible v2 ancestor entry.
+Names protected by `key_visibility=unlocked` are omitted while locked and
+included only in `redacted_mask_count`; text output emits an omission warning.
+In JSON, `mask_count = visible_mask_count + redacted_mask_count`. Until the
+inspection migration in the next implementation slice, canonical masks appear
+only under `--all-masks`; the legacy `--masked` and `--orphaned` filters still
+inspect name tombstones only. `--all-masks` is exclusive with those legacy
+filters and with the local-entry filters. Text output has one line per mask
+record, so the same name may appear more than once; use JSON chain and target
+fields to distinguish those records.
+
 For idempotent cleanup in shell automation, `rm --ignore-missing` treats an absent key as a successful no-op:
 
 ```sh

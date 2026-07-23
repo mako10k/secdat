@@ -1137,7 +1137,7 @@ int secdat_cli_complete(int argc, char **argv)
     };
     static const char *const list_options[] = {
         "--masked", "-m", "--overridden", "-o", "--orphaned", "-O", "--safe", "-e", "--unsafe", "-u",
-        "--public-value", "--secret-value", "--bulk-gate", "--help", "-h", NULL,
+        "--public-value", "--secret-value", "--bulk-gate", "--all-masks", "--json", "--help", "-h", NULL,
     };
     static const char *const attr_options[] = {
         "--key-visibility", "--value-access", "--bulk-select", "--help", "-h", NULL,
@@ -1425,7 +1425,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--bulk-gate] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store] [--json]");
         break;
     case SECDAT_COMMAND_LIST:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "list", "[-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--bulk-gate]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "list", "[-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--bulk-gate] [--all-masks [--json]]");
         break;
     case SECDAT_COMMAND_ATTR:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "attr", "KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include]");
@@ -1672,7 +1672,7 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("\nCommands:\n"));
     secdat_cli_print_detail_line(_("  help: show global help or detailed help for one command\n"));
     secdat_cli_print_detail_line(_("  ls: list effective keys visible from the current domain view, optionally filtered by safe or unsafe storage\n"));
-    secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe local state, or filter entries with --bulk-gate\n"));
+    secdat_cli_print_detail_line(_("  list: inspect current-domain entries or identity and legacy masks with --all-masks [--json]\n"));
     secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and bulk_select attribute\n"));
     secdat_cli_print_detail_line(_("  meta: manage non-secret searchable metadata without reading secret values\n"));
     secdat_cli_print_detail_line(_("  relation: record semantic links between keys and the security meaning of those links\n"));
@@ -1727,7 +1727,9 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "list") == 0) {
-        secdat_cli_print_detail_line(_("  list: inspect current-domain masked, overridden, orphaned, safe, unsafe local state, or filter entries with --bulk-gate\n"));
+        secdat_cli_print_detail_line(_("  list: inspect current-domain entries or identity and legacy masks with --all-masks [--json]\n"));
+        secdat_cli_print_detail_line(_("  --all-masks prints authorized names; add --json for active, dormant, orphaned, identity, and redacted counts\n"));
+        secdat_cli_print_detail_line(_("  --all-masks is exclusive with other filters; --masked and --orphaned currently inspect legacy masks only\n"));
         return;
     }
     if (target != NULL && strcmp(target, "attr") == 0) {

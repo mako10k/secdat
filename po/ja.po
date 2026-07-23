@@ -279,12 +279,63 @@ msgstr ""
 "式で絞り込んで一覧します\n"
 
 #: src/cli.c:1675 src/cli.c:1730
-msgid ""
-"  list: inspect current-domain masked, overridden, orphaned, safe, unsafe "
-"local state, or filter entries with --bulk-gate\n"
-msgstr ""
-"  list: 現在の domain の masked・overridden・orphaned・safe・unsafe な local "
-"state を確認するか、--bulk-gate で entry を絞り込みます\n"
+msgid "  list: inspect current-domain entries or identity and legacy masks with --all-masks [--json]\n"
+msgstr "  list: 現在のドメインのエントリー、または --all-masks [--json] で ID 連動 mask と従来の名前 mask を確認します\n"
+
+#: src/cli.c:1731
+msgid "  --all-masks prints authorized names; add --json for active, dormant, orphaned, identity, and redacted counts\n"
+msgstr "  --all-masks は表示を許可された名前を出力します。active・dormant・orphaned の状態、ID、非表示件数には --json を付けます\n"
+
+#: src/cli.c:1732
+msgid "  --all-masks is exclusive with other filters; --masked and --orphaned currently inspect legacy masks only\n"
+msgstr "  --all-masks は他の filter と同時指定できません。現在 --masked と --orphaned が確認するのは従来の名前 mask だけです\n"
+
+#: src/store.c
+msgid "invalid v2 masks directory\n"
+msgstr "v2 mask directory が不正です\n"
+
+#: src/store.c
+msgid "failed to inspect v2 masks directory\n"
+msgstr "v2 mask directory を確認できませんでした\n"
+
+#: src/store.c
+#, c-format
+msgid "invalid v2 mask target store: %s\n"
+msgstr "v2 mask の target store が不正です: %s\n"
+
+#: src/store.c
+#, c-format
+msgid "duplicate v2 mask target entry: %s\n"
+msgstr "v2 mask の target entry が重複しています: %s\n"
+
+#: src/store.c
+#, c-format
+msgid "invalid encrypted v2 mask name: %s\n"
+msgstr "暗号化された v2 mask name が不正です: %s\n"
+
+#: src/store.c
+#, c-format
+msgid "invalid v2 mask target: %s\n"
+msgstr "v2 mask の target が不正です: %s\n"
+
+#: src/store.c
+#, c-format
+msgid "invalid v2 mask target name: %s\n"
+msgstr "v2 mask の target name が不正です: %s\n"
+
+#: src/store.c
+#, c-format
+msgid "invalid v2 mask record: %s\n"
+msgstr "v2 mask record が不正です: %s\n"
+
+#: src/store.c
+#, c-format
+msgid "%zu hidden mask(s) omitted; unlock the affected domains or use --json for counts\n"
+msgstr "%zu 件の非表示 mask を省略しました。対象ドメインを unlock するか、件数確認には --json を使用してください\n"
+
+#: src/store.c
+msgid "cannot analyze mask impact while hidden mask names are locked\n"
+msgstr "非表示の mask name が lock されているため mask の影響を解析できません\n"
 
 #: src/cli.c:1676 src/cli.c:1734
 msgid ""

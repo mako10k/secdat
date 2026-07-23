@@ -57,7 +57,7 @@ task MASK_READ_MODEL NOW -> MASK_MODEL_OBSERVABLE:
     共通impact analyzer、最小のlist --all-masks --json観測面、
     tests/mask_identity_regression.shを実装・review・commitする。
   duration 5p
-  status planned
+  status done
   priority 90
   requires:
     CODEX 1

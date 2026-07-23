@@ -17,6 +17,7 @@
 #include <limits.h>
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
+#include <openssl/hmac.h>
 #include <openssl/rand.h>
 #include <regex.h>
 #include <stdint.h>
@@ -75,6 +76,7 @@ static const char secdat_relation_magic[] = "SECDATREL1";
 static const char secdat_store_format_magic[] = "SECDATSTORE1";
 static const char secdat_v2_domain_entry_magic[] = "SECDATDENT1";
 static const char secdat_v2_secret_object_magic[] = "SECDATSECOBJ1";
+static const char secdat_v2_mask_magic[] = "SECDATMASK1";
 
 struct secdat_key_list {
     char **items;
@@ -121,6 +123,8 @@ struct secdat_list_options {
     int masked;
     int overridden;
     int orphaned;
+    int all_masks;
+    int json;
     int safe;
     int unsafe_store;
     int bulk_gate;
@@ -341,6 +345,56 @@ struct secdat_v2_secret_object_info {
     int has_value_payload;
     size_t refcount;
     size_t value_payload_length;
+};
+
+enum secdat_mask_record_kind {
+    SECDAT_MASK_RECORD_CANONICAL = 0,
+    SECDAT_MASK_RECORD_LEGACY,
+};
+
+enum secdat_mask_resolution {
+    SECDAT_MASK_RESOLUTION_BOUND = 0,
+    SECDAT_MASK_RESOLUTION_AMBIGUOUS,
+};
+
+enum secdat_mask_state {
+    SECDAT_MASK_STATE_ACTIVE = 0,
+    SECDAT_MASK_STATE_DORMANT,
+    SECDAT_MASK_STATE_ORPHANED,
+};
+
+struct secdat_v2_mask_record {
+    char mask_chain_id[64];
+    char target_entry_id[64];
+    char target_secret_id[64];
+    char predecessor_entry_id[64];
+    char last_known_target_domain[PATH_MAX];
+    char last_known_target_store[PATH_MAX];
+    char last_known_key[PATH_MAX];
+    char encrypted_last_known_key[SECDAT_V2_TEXT_FILE_MAX];
+    enum secdat_key_visibility key_visibility;
+    int has_predecessor_entry_id;
+    int has_last_known_key;
+    int has_encrypted_last_known_key;
+};
+
+struct secdat_mask_view {
+    enum secdat_mask_record_kind record_kind;
+    enum secdat_mask_resolution resolution;
+    enum secdat_mask_state state;
+    char key[PATH_MAX];
+    char mask_chain_id[64];
+    char target_entry_id[64];
+    char target_secret_id[64];
+    char target_domain[PATH_MAX];
+    char orphan_reason[64];
+};
+
+struct secdat_mask_view_list {
+    struct secdat_mask_view *items;
+    size_t count;
+    size_t capacity;
+    size_t redacted_count;
 };
 
 struct secdat_key_access_options {
@@ -2750,6 +2804,8 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
         {"masked", no_argument, NULL, 'm'},
         {"overridden", no_argument, NULL, 'o'},
         {"orphaned", no_argument, NULL, 'O'},
+        {"all-masks", no_argument, NULL, 1001},
+        {"json", no_argument, NULL, 1002},
         {"safe", no_argument, NULL, 'e'},
         {"unsafe", no_argument, NULL, 'u'},
         {"secret-value", no_argument, NULL, 'e'},
@@ -2777,6 +2833,12 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
             break;
         case 'O':
             options->orphaned = 1;
+            break;
+        case 1001:
+            options->all_masks = 1;
+            break;
+        case 1002:
+            options->json = 1;
             break;
         case 'e':
             options->safe = 1;
@@ -2806,8 +2868,17 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
         return 2;
     }
 
+    if ((options->json && !options->all_masks)
+        || (options->all_masks
+            && (options->masked || options->overridden || options->orphaned
+                || options->safe || options->unsafe_store || options->bulk_gate))) {
+        fprintf(stderr, _("invalid arguments for list\n"));
+        secdat_cli_print_try_help(cli, "list");
+        return 2;
+    }
+
     if (!options->masked && !options->overridden && !options->orphaned
-        && !options->safe && !options->unsafe_store && !options->bulk_gate) {
+        && !options->all_masks && !options->safe && !options->unsafe_store && !options->bulk_gate) {
         fprintf(stderr, _("missing state filter for list\n"));
         secdat_cli_print_try_help(cli, "list");
         return 2;
@@ -10923,6 +10994,16 @@ static int secdat_v2_domain_entries_dir(const char *domain_id, const char *store
     return secdat_join_path(buffer, size, store_root, "domain-ent");
 }
 
+static int secdat_v2_masks_dir(const char *domain_id, const char *store_name, char *buffer, size_t size)
+{
+    char store_root[PATH_MAX];
+
+    if (secdat_store_root(domain_id, store_name, store_root, sizeof(store_root)) != 0) {
+        return 1;
+    }
+    return secdat_join_path(buffer, size, store_root, "masks");
+}
+
 static int secdat_v2_objects_dir(const char *domain_id, const char *store_name, char *buffer, size_t size)
 {
     char store_root[PATH_MAX];
@@ -11050,6 +11131,22 @@ static int secdat_uuid_is_valid(const char *value)
             continue;
         }
         if (!isxdigit((unsigned char)value[index])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int secdat_domain_id_is_valid(const char *value)
+{
+    size_t index;
+
+    if (value == NULL || strlen(value) != 32) {
+        return 0;
+    }
+    for (index = 0; index < 32; index += 1) {
+        if (!isdigit((unsigned char)value[index])
+            && (value[index] < 'a' || value[index] > 'f')) {
             return 0;
         }
     }
@@ -13132,6 +13229,930 @@ static int secdat_lookup_v2_domain_entry_authoritative(
     return secdat_lookup_v2_domain_entry_internal(domain_id, store_name, key, info, entry_path, entry_path_size, 1);
 }
 
+static const char *secdat_mask_record_kind_name(enum secdat_mask_record_kind kind)
+{
+    return kind == SECDAT_MASK_RECORD_CANONICAL ? "canonical" : "legacy";
+}
+
+static const char *secdat_mask_resolution_name(enum secdat_mask_resolution resolution)
+{
+    return resolution == SECDAT_MASK_RESOLUTION_BOUND ? "bound" : "ambiguous";
+}
+
+static const char *secdat_mask_state_name(enum secdat_mask_state state)
+{
+    switch (state) {
+    case SECDAT_MASK_STATE_ACTIVE:
+        return "active";
+    case SECDAT_MASK_STATE_DORMANT:
+        return "dormant";
+    case SECDAT_MASK_STATE_ORPHANED:
+        return "orphaned";
+    default:
+        return "orphaned";
+    }
+}
+
+static void secdat_mask_view_list_free(struct secdat_mask_view_list *list)
+{
+    free(list->items);
+    memset(list, 0, sizeof(*list));
+}
+
+static int secdat_mask_view_list_append(
+    struct secdat_mask_view_list *list,
+    const struct secdat_mask_view *view
+)
+{
+    struct secdat_mask_view *resized;
+    size_t next_capacity;
+
+    if (list->count == list->capacity) {
+        next_capacity = list->capacity == 0 ? 8 : list->capacity * 2;
+        resized = realloc(list->items, next_capacity * sizeof(*resized));
+        if (resized == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        list->items = resized;
+        list->capacity = next_capacity;
+    }
+    list->items[list->count] = *view;
+    list->count += 1;
+    return 0;
+}
+
+static int secdat_compare_mask_views(const void *left_raw, const void *right_raw)
+{
+    const struct secdat_mask_view *left = left_raw;
+    const struct secdat_mask_view *right = right_raw;
+    int compared;
+
+    compared = strcmp(left->key, right->key);
+    if (compared != 0) {
+        return compared;
+    }
+    if (left->record_kind != right->record_kind) {
+        return left->record_kind < right->record_kind ? -1 : 1;
+    }
+    compared = strcmp(left->mask_chain_id, right->mask_chain_id);
+    if (compared != 0) {
+        return compared;
+    }
+    return strcmp(left->target_entry_id, right->target_entry_id);
+}
+
+static int secdat_build_v2_mask_path(
+    const char *domain_id,
+    const char *store_name,
+    const char *target_entry_id,
+    char *buffer,
+    size_t size
+)
+{
+    char masks_dir[PATH_MAX];
+
+    if (secdat_v2_masks_dir(domain_id, store_name, masks_dir, sizeof(masks_dir)) != 0) {
+        return 1;
+    }
+    if (snprintf(buffer, size, "%s/%s.mask", masks_dir, target_entry_id) >= (int)size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_read_v2_mask_record(
+    const char *path,
+    const char *file_target_entry_id,
+    struct secdat_v2_mask_record *record
+)
+{
+    struct stat file_status;
+    char *text = NULL;
+    char *line;
+    char *saveptr = NULL;
+    char *decoded = NULL;
+    size_t length = 0;
+    int seen_version = 0;
+    int seen_chain = 0;
+    int seen_target_entry = 0;
+    int seen_target_secret = 0;
+    int seen_target_domain = 0;
+    int seen_target_store = 0;
+    int seen_key_visibility = 0;
+    int seen_key_encryption = 0;
+    int valid = 0;
+
+    memset(record, 0, sizeof(*record));
+    if (lstat(path, &file_status) != 0
+        || !S_ISREG(file_status.st_mode)
+        || (file_status.st_mode & 077) != 0
+        || !secdat_uuid_is_valid(file_target_entry_id)
+        || secdat_read_v2_text_file(path, secdat_v2_mask_magic, &text, &length) != 0) {
+        return 1;
+    }
+
+    line = strtok_r(text, "\n", &saveptr);
+    while ((line = strtok_r(NULL, "\n", &saveptr)) != NULL) {
+        char *separator;
+
+        if (line[0] == '\0') {
+            continue;
+        }
+        separator = strchr(line, '=');
+        if (separator == NULL) {
+            goto cleanup;
+        }
+        *separator = '\0';
+        separator += 1;
+
+        if (strcmp(line, "version") == 0) {
+            if (seen_version || strcmp(separator, "1") != 0) {
+                goto cleanup;
+            }
+            seen_version = 1;
+            continue;
+        }
+        if (strcmp(line, "mask_chain_id") == 0) {
+            if (seen_chain || !secdat_uuid_is_valid(separator)
+                || secdat_copy_string(record->mask_chain_id, sizeof(record->mask_chain_id), separator) != 0) {
+                goto cleanup;
+            }
+            seen_chain = 1;
+            continue;
+        }
+        if (strcmp(line, "target_entry_id") == 0) {
+            if (seen_target_entry || !secdat_uuid_is_valid(separator)
+                || strcmp(separator, file_target_entry_id) != 0
+                || secdat_copy_string(record->target_entry_id, sizeof(record->target_entry_id), separator) != 0) {
+                goto cleanup;
+            }
+            seen_target_entry = 1;
+            continue;
+        }
+        if (strcmp(line, "target_secret_id") == 0) {
+            if (seen_target_secret || !secdat_uuid_is_valid(separator)
+                || secdat_copy_string(record->target_secret_id, sizeof(record->target_secret_id), separator) != 0) {
+                goto cleanup;
+            }
+            seen_target_secret = 1;
+            continue;
+        }
+        if (strcmp(line, "predecessor_entry_id") == 0) {
+            if (record->has_predecessor_entry_id || !secdat_uuid_is_valid(separator)
+                || secdat_copy_string(record->predecessor_entry_id, sizeof(record->predecessor_entry_id), separator) != 0) {
+                goto cleanup;
+            }
+            record->has_predecessor_entry_id = 1;
+            continue;
+        }
+        if (strcmp(line, "last_known_target_domain") == 0
+            || strcmp(line, "last_known_target_store") == 0
+            || strcmp(line, "last_known_key") == 0) {
+            char *destination;
+            size_t destination_size;
+            int *seen;
+
+            if (secdat_unescape_component(separator, &decoded) != 0 || decoded[0] == '\0') {
+                goto cleanup;
+            }
+            if (strcmp(line, "last_known_target_domain") == 0) {
+                destination = record->last_known_target_domain;
+                destination_size = sizeof(record->last_known_target_domain);
+                seen = &seen_target_domain;
+            } else if (strcmp(line, "last_known_target_store") == 0) {
+                destination = record->last_known_target_store;
+                destination_size = sizeof(record->last_known_target_store);
+                seen = &seen_target_store;
+            } else {
+                destination = record->last_known_key;
+                destination_size = sizeof(record->last_known_key);
+                seen = &record->has_last_known_key;
+            }
+            if (*seen || secdat_copy_string(destination, destination_size, decoded) != 0) {
+                goto cleanup;
+            }
+            if (strcmp(line, "last_known_target_domain") == 0
+                && !secdat_domain_id_is_valid(destination)) {
+                goto cleanup;
+            }
+            *seen = 1;
+            free(decoded);
+            decoded = NULL;
+            continue;
+        }
+        if (strcmp(line, "key_visibility") == 0) {
+            if (seen_key_visibility) {
+                goto cleanup;
+            }
+            if (strcmp(separator, "always") == 0) {
+                record->key_visibility = SECDAT_KEY_VISIBILITY_ALWAYS;
+            } else if (strcmp(separator, "unlocked") == 0) {
+                record->key_visibility = SECDAT_KEY_VISIBILITY_UNLOCKED;
+            } else {
+                goto cleanup;
+            }
+            seen_key_visibility = 1;
+            continue;
+        }
+        if (strcmp(line, "key_encryption") == 0) {
+            if (seen_key_encryption || strcmp(separator, "aes-256-gcm-mask-name-v1") != 0) {
+                goto cleanup;
+            }
+            seen_key_encryption = 1;
+            continue;
+        }
+        if (strcmp(line, "encrypted_last_known_key") == 0) {
+            if (record->has_encrypted_last_known_key
+                || strlen(separator) < (SECDAT_NONCE_LEN + SECDAT_TAG_LEN) * 2
+                || !secdat_hex_string_is_valid(separator)
+                || secdat_copy_string(
+                    record->encrypted_last_known_key,
+                    sizeof(record->encrypted_last_known_key),
+                    separator
+                ) != 0) {
+                goto cleanup;
+            }
+            record->has_encrypted_last_known_key = 1;
+            continue;
+        }
+        goto cleanup;
+    }
+
+    valid = seen_version && seen_chain && seen_target_entry && seen_target_secret
+        && seen_target_domain && seen_target_store && seen_key_visibility
+        && ((record->key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS
+                && record->has_last_known_key
+                && !seen_key_encryption
+                && !record->has_encrypted_last_known_key)
+            || (record->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED
+                && !record->has_last_known_key
+                && seen_key_encryption
+                && record->has_encrypted_last_known_key));
+    if (valid && record->has_last_known_key && !secdat_is_valid_env_name(record->last_known_key)) {
+        valid = 0;
+    }
+
+cleanup:
+    free(decoded);
+    secdat_secure_clear(text, length);
+    free(text);
+    return valid ? 0 : 1;
+}
+
+static int secdat_lookup_v2_domain_entry_by_id(
+    const char *domain_id,
+    const char *store_name,
+    const char *entry_id,
+    struct secdat_v2_domain_entry_info *info
+)
+{
+    char entry_path[PATH_MAX];
+
+    if (secdat_build_v2_domain_entry_path(domain_id, store_name, entry_id, entry_path, sizeof(entry_path)) != 0) {
+        return SECDAT_V2_LOOKUP_ERROR;
+    }
+    if (!secdat_file_exists(entry_path)) {
+        return SECDAT_V2_LOOKUP_ABSENT;
+    }
+    if (secdat_read_v2_domain_entry_info(entry_path, entry_id, info) != 0) {
+        fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry_id);
+        return SECDAT_V2_LOOKUP_ERROR;
+    }
+    return SECDAT_V2_LOOKUP_FOUND;
+}
+
+static int secdat_decrypt_v2_mask_last_known_key(
+    const char *mask_domain_id,
+    const struct secdat_v2_mask_record *record,
+    char *key,
+    size_t key_size
+)
+{
+    static const unsigned char key_context[] = "secdat:v2-mask-last-known-key:v1\0";
+    EVP_CIPHER_CTX *context = NULL;
+    struct secdat_domain_chain chain = {0};
+    unsigned char master_derived_key[32];
+    unsigned char mask_key[EVP_MAX_MD_SIZE];
+    unsigned int mask_key_length = 0;
+    unsigned char *derivation_input = NULL;
+    unsigned char *encrypted = NULL;
+    unsigned char *plaintext = NULL;
+    const unsigned char *nonce;
+    const unsigned char *ciphertext;
+    const unsigned char *tag;
+    size_t derivation_input_length = 0;
+    size_t encrypted_length = 0;
+    size_t ciphertext_length = 0;
+    int written_length = 0;
+    int final_length = 0;
+    int status = 1;
+
+    if (record->key_visibility != SECDAT_KEY_VISIBILITY_UNLOCKED
+        || !record->has_encrypted_last_known_key) {
+        return 1;
+    }
+    if (secdat_domain_chain_from_id(mask_domain_id, &chain) != 0
+        || secdat_derive_key(&chain, master_derived_key, NULL) != 0) {
+        goto cleanup;
+    }
+    derivation_input_length = sizeof(key_context) - 1 + strlen(mask_domain_id);
+    derivation_input = malloc(derivation_input_length);
+    if (derivation_input == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    memcpy(derivation_input, key_context, sizeof(key_context) - 1);
+    memcpy(
+        derivation_input + sizeof(key_context) - 1,
+        mask_domain_id,
+        strlen(mask_domain_id)
+    );
+    if (HMAC(
+            EVP_sha256(),
+            master_derived_key,
+            sizeof(master_derived_key),
+            derivation_input,
+            derivation_input_length,
+            mask_key,
+            &mask_key_length
+        ) == NULL
+        || mask_key_length != 32
+        || secdat_hex_decode_bytes(
+            record->encrypted_last_known_key,
+            &encrypted,
+            &encrypted_length
+        ) != 0
+        || encrypted_length < SECDAT_NONCE_LEN + SECDAT_TAG_LEN) {
+        goto cleanup;
+    }
+
+    ciphertext_length = encrypted_length - SECDAT_NONCE_LEN - SECDAT_TAG_LEN;
+    nonce = encrypted;
+    ciphertext = encrypted + SECDAT_NONCE_LEN;
+    tag = ciphertext + ciphertext_length;
+    plaintext = malloc(ciphertext_length + 1);
+    if (plaintext == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    context = EVP_CIPHER_CTX_new();
+    if (context == NULL
+        || EVP_DecryptInit_ex(context, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1
+        || EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, SECDAT_NONCE_LEN, NULL) != 1
+        || EVP_DecryptInit_ex(context, NULL, NULL, mask_key, nonce) != 1
+        || EVP_DecryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            (const unsigned char *)secdat_v2_mask_magic,
+            (int)strlen(secdat_v2_mask_magic)
+        ) != 1
+        || EVP_DecryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            (const unsigned char *)record->mask_chain_id,
+            (int)strlen(record->mask_chain_id) + 1
+        ) != 1
+        || EVP_DecryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            (const unsigned char *)record->target_entry_id,
+            (int)strlen(record->target_entry_id) + 1
+        ) != 1
+        || EVP_DecryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            (const unsigned char *)record->last_known_target_domain,
+            (int)strlen(record->last_known_target_domain) + 1
+        ) != 1
+        || EVP_DecryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            (const unsigned char *)record->last_known_target_store,
+            (int)strlen(record->last_known_target_store)
+        ) != 1
+        || EVP_DecryptUpdate(
+            context,
+            plaintext,
+            &written_length,
+            ciphertext,
+            (int)ciphertext_length
+        ) != 1
+        || EVP_CIPHER_CTX_ctrl(
+            context,
+            EVP_CTRL_GCM_SET_TAG,
+            SECDAT_TAG_LEN,
+            (void *)tag
+        ) != 1
+        || EVP_DecryptFinal_ex(context, plaintext + written_length, &final_length) != 1) {
+        goto cleanup;
+    }
+    written_length += final_length;
+    if (written_length <= 0
+        || (size_t)written_length >= key_size
+        || memchr(plaintext, '\0', (size_t)written_length) != NULL) {
+        goto cleanup;
+    }
+    memcpy(key, plaintext, (size_t)written_length);
+    key[written_length] = '\0';
+    if (!secdat_is_valid_env_name(key)) {
+        key[0] = '\0';
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    secdat_domain_chain_free(&chain);
+    secdat_secure_clear(master_derived_key, sizeof(master_derived_key));
+    secdat_secure_clear(mask_key, sizeof(mask_key));
+    secdat_secure_clear(derivation_input, derivation_input_length);
+    free(derivation_input);
+    secdat_secure_clear(encrypted, encrypted_length);
+    free(encrypted);
+    secdat_secure_clear(plaintext, ciphertext_length);
+    free(plaintext);
+    if (context != NULL) {
+        EVP_CIPHER_CTX_free(context);
+    }
+    return status;
+}
+
+static int secdat_v2_store_has_inaccessible_hidden_entries(
+    const char *domain_id,
+    const char *store_name,
+    int *has_inaccessible
+)
+{
+    char entries_dir[PATH_MAX];
+    char entry_path[PATH_MAX];
+    struct secdat_key_list entry_ids = {0};
+    struct secdat_v2_domain_entry_info info;
+    size_t index;
+    int status = 1;
+
+    *has_inaccessible = 0;
+    if (secdat_v2_domain_entry_key_access_available(domain_id)) {
+        return 0;
+    }
+    if (secdat_v2_domain_entries_dir(domain_id, store_name, entries_dir, sizeof(entries_dir)) != 0
+        || secdat_collect_directory_keys(entries_dir, ".dent", &entry_ids) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < entry_ids.count; index += 1) {
+        if (secdat_build_v2_domain_entry_path(domain_id, store_name, entry_ids.items[index], entry_path, sizeof(entry_path)) != 0
+            || secdat_read_v2_domain_entry_info(entry_path, entry_ids.items[index], &info) != 0) {
+            fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry_ids.items[index]);
+            goto cleanup;
+        }
+        if (info.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+            *has_inaccessible = 1;
+            break;
+        }
+    }
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&entry_ids);
+    return status;
+}
+
+static int secdat_classify_canonical_mask(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const struct secdat_v2_mask_record *record,
+    struct secdat_mask_view_list *views
+)
+{
+    struct secdat_mask_view view;
+    struct secdat_v2_domain_entry_info target;
+    struct secdat_effective_entry nearer_entry = {0};
+    struct secdat_domain_chain nearer_chain;
+    size_t target_index = SIZE_MAX;
+    size_t index;
+    int lookup_status;
+    int found_count = 0;
+    int status = 1;
+
+    memset(&view, 0, sizeof(view));
+    view.record_kind = SECDAT_MASK_RECORD_CANONICAL;
+    view.resolution = SECDAT_MASK_RESOLUTION_BOUND;
+    if (strcmp(record->last_known_target_store, secdat_effective_store_name(store_name)) != 0) {
+        fprintf(stderr, _("invalid v2 mask target store: %s\n"), record->target_entry_id);
+        return 1;
+    }
+    if (secdat_copy_string(view.mask_chain_id, sizeof(view.mask_chain_id), record->mask_chain_id) != 0
+        || secdat_copy_string(view.target_entry_id, sizeof(view.target_entry_id), record->target_entry_id) != 0) {
+        return 1;
+    }
+
+    for (index = 1; index < chain->count; index += 1) {
+        enum secdat_store_format format;
+
+        if (secdat_read_store_format(chain->ids[index], store_name, &format) != 0) {
+            return 1;
+        }
+        if (format == SECDAT_STORE_FORMAT_INVALID) {
+            fprintf(stderr, _("invalid store format marker\n"));
+            return 1;
+        }
+        if (format != SECDAT_STORE_FORMAT_V2) {
+            continue;
+        }
+        lookup_status = secdat_lookup_v2_domain_entry_by_id(
+            chain->ids[index],
+            store_name,
+            record->target_entry_id,
+            &target
+        );
+        if (lookup_status == SECDAT_V2_LOOKUP_ERROR) {
+            return 1;
+        }
+        if (lookup_status == SECDAT_V2_LOOKUP_FOUND) {
+            found_count += 1;
+            target_index = index;
+        }
+    }
+    if (found_count > 1) {
+        fprintf(stderr, _("duplicate v2 mask target entry: %s\n"), record->target_entry_id);
+        return 1;
+    }
+
+    if (found_count == 0) {
+        int last_known_in_scope = 0;
+
+        for (index = 0; index < chain->count; index += 1) {
+            if (strcmp(chain->ids[index], record->last_known_target_domain) == 0) {
+                last_known_in_scope = 1;
+                break;
+            }
+        }
+        view.state = SECDAT_MASK_STATE_ORPHANED;
+        if (secdat_copy_string(
+                view.orphan_reason,
+                sizeof(view.orphan_reason),
+                last_known_in_scope ? "missing-entry" : "out-of-scope"
+            ) != 0) {
+            return 1;
+        }
+        if (record->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+            if (!secdat_v2_domain_entry_key_access_available(chain->ids[0])
+                || !secdat_v2_domain_entry_key_access_available(
+                    record->last_known_target_domain
+                )) {
+                views->redacted_count += 1;
+                return 0;
+            }
+            if (secdat_decrypt_v2_mask_last_known_key(
+                    chain->ids[0],
+                    record,
+                    view.key,
+                    sizeof(view.key)
+                ) != 0) {
+                fprintf(stderr, _("invalid encrypted v2 mask name: %s\n"), record->target_entry_id);
+                return 1;
+            }
+        } else if (secdat_copy_string(view.key, sizeof(view.key), record->last_known_key) != 0) {
+            return 1;
+        }
+        if (secdat_copy_string(
+                view.target_domain,
+                sizeof(view.target_domain),
+                record->last_known_target_domain
+            ) != 0) {
+            return 1;
+        }
+        return secdat_mask_view_list_append(views, &view);
+    }
+
+    if (strcmp(target.secret_id, record->target_secret_id) != 0
+        || strcmp(chain->ids[target_index], record->last_known_target_domain) != 0
+        || target.key_visibility != record->key_visibility) {
+        fprintf(stderr, _("invalid v2 mask target: %s\n"), record->target_entry_id);
+        return 1;
+    }
+    if (secdat_copy_string(
+            view.target_secret_id,
+            sizeof(view.target_secret_id),
+            target.secret_id
+        ) != 0) {
+        return 1;
+    }
+    if (target.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+        if (!secdat_v2_domain_entry_key_access_available(chain->ids[target_index])
+            || !secdat_v2_domain_entry_key_access_available(chain->ids[0])) {
+            views->redacted_count += 1;
+            return 0;
+        }
+        if (secdat_v2_decrypt_domain_entry_key(chain->ids[target_index], &target) != 0
+            || secdat_decrypt_v2_mask_last_known_key(
+                chain->ids[0],
+                record,
+                view.key,
+                sizeof(view.key)
+            ) != 0) {
+            fprintf(stderr, _("invalid v2 domain entry: %s\n"), target.entry_id);
+            return 1;
+        }
+    }
+    if (!target.has_key
+        || (target.key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS
+            && secdat_copy_string(view.key, sizeof(view.key), target.key) != 0)
+        || secdat_copy_string(view.target_domain, sizeof(view.target_domain), chain->ids[target_index]) != 0) {
+        return 1;
+    }
+    if (target.key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS
+        && strcmp(record->last_known_key, target.key) != 0) {
+        fprintf(stderr, _("invalid v2 mask target name: %s\n"), record->target_entry_id);
+        return 1;
+    }
+    if (strcmp(view.key, target.key) != 0) {
+        fprintf(stderr, _("invalid v2 mask target name: %s\n"), record->target_entry_id);
+        return 1;
+    }
+
+    nearer_chain.ids = chain->ids;
+    nearer_chain.count = target_index;
+    if (secdat_resolve_effective_entry(&nearer_chain, store_name, target.key, 0, &nearer_entry) == 0) {
+        view.state = SECDAT_MASK_STATE_DORMANT;
+    } else {
+        view.state = SECDAT_MASK_STATE_ACTIVE;
+    }
+    status = secdat_mask_view_list_append(views, &view);
+    secdat_effective_entry_reset(&nearer_entry);
+    return status;
+}
+
+static int secdat_collect_canonical_mask_views(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    struct secdat_mask_view_list *views
+)
+{
+    char masks_dir[PATH_MAX];
+    char mask_path[PATH_MAX];
+    struct stat directory_status;
+    struct secdat_key_list target_entry_ids = {0};
+    struct secdat_v2_mask_record record;
+    size_t index;
+    int status = 1;
+
+    if (chain->count == 0
+        || secdat_v2_masks_dir(chain->ids[0], store_name, masks_dir, sizeof(masks_dir)) != 0) {
+        goto cleanup;
+    }
+    if (lstat(masks_dir, &directory_status) == 0) {
+        if (!S_ISDIR(directory_status.st_mode) || (directory_status.st_mode & 077) != 0) {
+            fprintf(stderr, _("invalid v2 masks directory\n"));
+            goto cleanup;
+        }
+    } else if (errno != ENOENT) {
+        fprintf(stderr, _("failed to inspect v2 masks directory\n"));
+        goto cleanup;
+    }
+    if (secdat_collect_directory_keys(masks_dir, ".mask", &target_entry_ids) != 0) {
+        goto cleanup;
+    }
+    if (target_entry_ids.count > 1) {
+        qsort(target_entry_ids.items, target_entry_ids.count, sizeof(*target_entry_ids.items), secdat_compare_strings);
+    }
+    for (index = 0; index < target_entry_ids.count; index += 1) {
+        if (secdat_build_v2_mask_path(
+                chain->ids[0],
+                store_name,
+                target_entry_ids.items[index],
+                mask_path,
+                sizeof(mask_path)
+            ) != 0
+            || secdat_read_v2_mask_record(mask_path, target_entry_ids.items[index], &record) != 0) {
+            fprintf(stderr, _("invalid v2 mask record: %s\n"), target_entry_ids.items[index]);
+            goto cleanup;
+        }
+        if (secdat_classify_canonical_mask(chain, store_name, &record, views) != 0) {
+            goto cleanup;
+        }
+    }
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&target_entry_ids);
+    return status;
+}
+
+static int secdat_classify_legacy_mask(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    struct secdat_mask_view_list *views
+)
+{
+    struct secdat_mask_view view;
+    struct secdat_v2_domain_entry_info entry;
+    struct secdat_effective_entry local_entry = {0};
+    struct secdat_domain_chain local_chain;
+    char entry_path[PATH_MAX];
+    size_t index;
+    size_t candidate_count = 0;
+    int saw_v1_candidate = 0;
+    int inaccessible_candidate = 0;
+    int status = 1;
+
+    memset(&view, 0, sizeof(view));
+    view.record_kind = SECDAT_MASK_RECORD_LEGACY;
+    if (secdat_copy_string(view.key, sizeof(view.key), key) != 0) {
+        return 1;
+    }
+
+    for (index = 1; index < chain->count; index += 1) {
+        enum secdat_store_format format;
+
+        if (secdat_read_store_format(chain->ids[index], store_name, &format) != 0) {
+            goto cleanup;
+        }
+        if (format == SECDAT_STORE_FORMAT_INVALID) {
+            fprintf(stderr, _("invalid store format marker\n"));
+            goto cleanup;
+        }
+        if (format == SECDAT_STORE_FORMAT_V2) {
+            int lookup_status = secdat_lookup_v2_domain_entry(
+                chain->ids[index],
+                store_name,
+                key,
+                &entry,
+                entry_path,
+                sizeof(entry_path)
+            );
+            int has_inaccessible = 0;
+
+            if (lookup_status > SECDAT_V2_LOOKUP_ABSENT
+                || secdat_v2_store_has_inaccessible_hidden_entries(
+                    chain->ids[index],
+                    store_name,
+                    &has_inaccessible
+                ) != 0) {
+                goto cleanup;
+            }
+            if (lookup_status == SECDAT_V2_LOOKUP_FOUND) {
+                candidate_count += 1;
+                if (candidate_count == 1
+                    && (secdat_copy_string(view.target_entry_id, sizeof(view.target_entry_id), entry.entry_id) != 0
+                        || secdat_copy_string(view.target_secret_id, sizeof(view.target_secret_id), entry.secret_id) != 0
+                        || secdat_copy_string(view.target_domain, sizeof(view.target_domain), chain->ids[index]) != 0)) {
+                    goto cleanup;
+                }
+            }
+            if (has_inaccessible) {
+                inaccessible_candidate = 1;
+            }
+            continue;
+        }
+
+        if (secdat_build_entry_path(chain->ids[index], store_name, key, entry_path, sizeof(entry_path)) != 0) {
+            goto cleanup;
+        }
+        if (secdat_file_exists(entry_path)) {
+            candidate_count += 1;
+            saw_v1_candidate = 1;
+        }
+    }
+
+    view.resolution = candidate_count == 1 && !saw_v1_candidate && !inaccessible_candidate
+        ? SECDAT_MASK_RESOLUTION_BOUND
+        : SECDAT_MASK_RESOLUTION_AMBIGUOUS;
+    if (view.resolution == SECDAT_MASK_RESOLUTION_AMBIGUOUS) {
+        view.target_entry_id[0] = '\0';
+        view.target_secret_id[0] = '\0';
+        view.target_domain[0] = '\0';
+    }
+
+    local_chain.ids = chain->ids;
+    local_chain.count = chain->count == 0 ? 0 : 1;
+    if (local_chain.count > 0
+        && secdat_resolve_effective_entry(&local_chain, store_name, key, 0, &local_entry) == 0) {
+        view.state = SECDAT_MASK_STATE_DORMANT;
+    } else if (candidate_count == 0 && !inaccessible_candidate) {
+        view.state = SECDAT_MASK_STATE_ORPHANED;
+        if (secdat_copy_string(view.orphan_reason, sizeof(view.orphan_reason), "missing-entry") != 0) {
+            goto cleanup;
+        }
+    } else {
+        view.state = SECDAT_MASK_STATE_ACTIVE;
+    }
+
+    status = secdat_mask_view_list_append(views, &view);
+
+cleanup:
+    secdat_effective_entry_reset(&local_entry);
+    return status;
+}
+
+static int secdat_collect_legacy_mask_views(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    struct secdat_mask_view_list *views
+)
+{
+    char tombstones_dir[PATH_MAX];
+    struct secdat_key_list tombstones = {0};
+    struct secdat_key_list overlay_entries = {0};
+    struct secdat_key_list overlay_tombstones = {0};
+    size_t index;
+    int status = 1;
+
+    if (chain->count == 0
+        || secdat_store_tombstones_dir(chain->ids[0], store_name, tombstones_dir, sizeof(tombstones_dir)) != 0
+        || secdat_collect_directory_keys(tombstones_dir, ".tomb", &tombstones) != 0
+        || secdat_active_overlay_collect_keys(
+            chain,
+            chain->ids[0],
+            store_name,
+            &overlay_entries,
+            &overlay_tombstones
+        ) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < overlay_tombstones.count; index += 1) {
+        if (!secdat_key_list_contains(&tombstones, overlay_tombstones.items[index])
+            && secdat_key_list_append(&tombstones, overlay_tombstones.items[index]) != 0) {
+            goto cleanup;
+        }
+    }
+    if (tombstones.count > 1) {
+        qsort(tombstones.items, tombstones.count, sizeof(*tombstones.items), secdat_compare_strings);
+    }
+    for (index = 0; index < tombstones.count; index += 1) {
+        if (secdat_classify_legacy_mask(chain, store_name, tombstones.items[index], views) != 0) {
+            goto cleanup;
+        }
+    }
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&tombstones);
+    secdat_key_list_free(&overlay_entries);
+    secdat_key_list_free(&overlay_tombstones);
+    return status;
+}
+
+static int secdat_collect_mask_views(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    struct secdat_mask_view_list *views
+)
+{
+    if (secdat_collect_canonical_mask_views(chain, store_name, views) != 0
+        || secdat_collect_legacy_mask_views(chain, store_name, views) != 0) {
+        return 1;
+    }
+    if (views->count > 1) {
+        qsort(views->items, views->count, sizeof(*views->items), secdat_compare_mask_views);
+    }
+    return 0;
+}
+
+/*
+ * This is the common, read-only seam for mutation preflight. A caller can
+ * inspect every classified mask (key == NULL), or ask whether one binding
+ * name is a direct hit. Mutating callers must set require_complete so hidden
+ * rows cannot be mistaken for authoritative absence.
+ */
+static int secdat_analyze_mask_impacts(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    int require_complete,
+    struct secdat_mask_view_list *views,
+    size_t *direct_hit_count
+)
+{
+    size_t index;
+    size_t matches = 0;
+
+    if (secdat_collect_mask_views(chain, store_name, views) != 0) {
+        return 1;
+    }
+    if (key != NULL) {
+        for (index = 0; index < views->count; index += 1) {
+            if (strcmp(views->items[index].key, key) == 0) {
+                matches += 1;
+            }
+        }
+    }
+    if (direct_hit_count != NULL) {
+        *direct_hit_count = matches;
+    }
+    if (require_complete && views->redacted_count > 0) {
+        fprintf(stderr, _("cannot analyze mask impact while hidden mask names are locked\n"));
+        return 1;
+    }
+    return 0;
+}
+
 static int secdat_load_v2_secret_attrs(
     const char *domain_id,
     const char *store_name,
@@ -14441,10 +15462,66 @@ static int secdat_command_gc(const struct secdat_cli *cli)
     return 0;
 }
 
+static void secdat_print_mask_json_nullable_string(const char *value)
+{
+    if (value == NULL || value[0] == '\0') {
+        fputs("null", stdout);
+        return;
+    }
+    secdat_write_json_string(stdout, value);
+}
+
+static void secdat_print_mask_views_json(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const struct secdat_mask_view_list *views
+)
+{
+    size_t index;
+
+    fputs("{\n  \"schema_version\": \"secdat.mask-list.v1\",\n  \"domain_id\": ", stdout);
+    secdat_write_json_string(stdout, chain->count == 0 ? "" : chain->ids[0]);
+    fputs(",\n  \"store\": ", stdout);
+    secdat_write_json_string(stdout, secdat_effective_store_name(store_name));
+    fputs(",\n  \"masks\": [", stdout);
+    for (index = 0; index < views->count; index += 1) {
+        const struct secdat_mask_view *view = &views->items[index];
+
+        fputs(index == 0 ? "\n    {\n" : ",\n    {\n", stdout);
+        fputs("      \"key\": ", stdout);
+        secdat_write_json_string(stdout, view->key);
+        fputs(",\n      \"state\": ", stdout);
+        secdat_write_json_string(stdout, secdat_mask_state_name(view->state));
+        fputs(",\n      \"record_kind\": ", stdout);
+        secdat_write_json_string(stdout, secdat_mask_record_kind_name(view->record_kind));
+        fputs(",\n      \"resolution\": ", stdout);
+        secdat_write_json_string(stdout, secdat_mask_resolution_name(view->resolution));
+        fputs(",\n      \"mask_chain_id\": ", stdout);
+        secdat_print_mask_json_nullable_string(view->mask_chain_id);
+        fputs(",\n      \"target_entry_id\": ", stdout);
+        secdat_print_mask_json_nullable_string(view->target_entry_id);
+        fputs(",\n      \"target_secret_id\": ", stdout);
+        secdat_print_mask_json_nullable_string(view->target_secret_id);
+        fputs(",\n      \"target_domain_id\": ", stdout);
+        secdat_print_mask_json_nullable_string(view->target_domain);
+        fputs(",\n      \"orphan_reason\": ", stdout);
+        secdat_print_mask_json_nullable_string(view->orphan_reason);
+        fputs("\n    }", stdout);
+    }
+    printf(
+        "\n  ],\n  \"mask_count\": %zu,\n  \"visible_mask_count\": %zu,\n"
+        "  \"redacted_mask_count\": %zu\n}\n",
+        views->count + views->redacted_count,
+        views->count,
+        views->redacted_count
+    );
+}
+
 static int secdat_command_list(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
     struct secdat_key_list keys = {0};
+    struct secdat_mask_view_list mask_views = {0};
     struct secdat_list_options options;
     size_t index;
     int status;
@@ -14455,6 +15532,37 @@ static int secdat_command_list(const struct secdat_cli *cli)
     }
     if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
         return 1;
+    }
+    if (options.all_masks) {
+        if (secdat_analyze_mask_impacts(
+                &chain,
+                cli->store,
+                NULL,
+                0,
+                &mask_views,
+                NULL
+            ) != 0) {
+            secdat_mask_view_list_free(&mask_views);
+            secdat_domain_chain_free(&chain);
+            return 1;
+        }
+        if (options.json) {
+            secdat_print_mask_views_json(&chain, cli->store, &mask_views);
+        } else {
+            for (index = 0; index < mask_views.count; index += 1) {
+                puts(mask_views.items[index].key);
+            }
+            if (mask_views.redacted_count > 0) {
+                fprintf(
+                    stderr,
+                    _("%zu hidden mask(s) omitted; unlock the affected domains or use --json for counts\n"),
+                    mask_views.redacted_count
+                );
+            }
+        }
+        secdat_mask_view_list_free(&mask_views);
+        secdat_domain_chain_free(&chain);
+        return 0;
     }
     if (secdat_collect_list_keys(&chain, cli->store, &options, &keys) != 0) {
         secdat_domain_chain_free(&chain);

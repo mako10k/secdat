@@ -39,7 +39,7 @@ The intended command set is:
 ```text
 secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--bulk-gate] [--canonical|--canonical-domain|--canonical-store]
 
-secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--bulk-gate]
+secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--bulk-gate] [--all-masks [--json]]
 secdat [--dir DIR] [--store STORE] attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include]
 secdat [--dir DIR] [--store STORE] meta get KEYREF
 secdat [--dir DIR] [--store STORE] meta set KEYREF FIELD VALUE
@@ -252,8 +252,37 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat list --masked` lists keys hidden by active local tombstones in the resolved current domain
 - `secdat list --orphaned` lists keys with local tombstones whose parent-visible value no longer exists
 - `secdat list --overridden` lists keys stored locally that also remain visible from a parent domain
+- `secdat list --all-masks` lists canonical identity masks and legacy name tombstones, including active, dormant, and orphaned state
+- `secdat list --all-masks` text output prints authorized mask names; classification requires `--json`, and omitted hidden rows produce a warning
+- `secdat list --all-masks --json` reports schema `secdat.mask-list.v1`, record kind, resolution, state, chain ID, target UUIDs, target domain, orphan reason, visible count, and redacted count
+- JSON count invariants are `mask_count = visible_mask_count + redacted_mask_count` and `visible_mask_count = masks.length`
+- canonical records use `target_entry_id` as matching authority; `target_secret_id` is a consistency check and does not mask other aliases
+- a unique visible v2 ancestor lets a legacy tombstone report `resolution=bound`; multiple, absent, v1, or locked-hidden candidates remain `resolution=ambiguous`
+- canonical records remain `resolution=bound` when orphaned because their entry UUID binding is unambiguous even when the target is missing or outside the current inheritance scope
+- `target_domain_id` is the current bound target domain for reachable records and the last-known target domain for orphaned canonical records
+- hidden mask names are omitted while their mask domain is locked and increase `redacted_mask_count`; authorized output never substitutes a guessed name
+- JSON nullable fields have record semantics: legacy rows have `mask_chain_id=null`; legacy ambiguous rows have all target identity/domain fields `null`; reachable authorized rows expose verified target IDs; canonical orphan rows retain `target_entry_id` and last-known `target_domain_id` but use `target_secret_id=null`; `orphan_reason` is `null` unless state is orphaned
+- `--json` is valid on `list` only with `--all-masks`
+- `--all-masks` is mutually exclusive with `--masked`, `--orphaned`, `--overridden`, `--safe`, `--unsafe`, and `--bulk-gate`
+- until identity-mask inspection filters are added, `--masked` and `--orphaned` inspect only legacy name tombstones; canonical masks are visible only through `--all-masks`
+- text output is one line per authorized mask record, not one line per unique key; duplicate names are possible and JSON identifies the records
 - `list` operates on current-domain local state rather than the effective visible view returned by `ls`
 - `list` requires at least one state filter in the initial implementation
+
+Canonical v2 mask records are read from
+`STORE_ROOT/masks/<target_entry_id>.mask`. Version 1 uses magic
+`SECDATMASK1` and requires `version`, `mask_chain_id`, `target_entry_id`,
+`target_secret_id`, last-known target domain/store, `key_visibility`, and a
+last-known key representation. `predecessor_entry_id` is optional. Visible
+names use escaped `last_known_key`. Hidden names use
+`key_encryption=aes-256-gcm-mask-name-v1` and
+`encrypted_last_known_key=HEX`; the payload is nonce, ciphertext, and GCM tag.
+Its record key is HMAC-SHA256 of the master-derived key over
+`"secdat:v2-mask-last-known-key:v1\0" || current_mask_domain_id`, and its AAD
+binds the record magic, chain ID, target entry ID, target domain, and target
+store. Unknown, duplicate, missing, malformed, or filename-mismatched fields
+make the canonical record corrupt and fail inspection rather than falling back
+to legacy semantics.
 
 #### FR-3b Tombstone Operations
 
@@ -336,7 +365,8 @@ To make the requested behavior implementable, the following are treated as norma
 - `secdat list --overridden` lists current-domain concrete entries that override a visible parent key
 - `secdat list --safe` lists current-domain concrete entries stored encrypted at rest
 - `secdat list --unsafe` lists current-domain concrete entries stored plaintext at rest
-- combining multiple `list` filters returns the union of the selected current-domain categories
+- `secdat list --all-masks [--json]` inspects both identity-linked and legacy masks without limiting the result to active masks
+- combining multiple legacy local-state `list` filters returns their union; `--all-masks` is a separate, mutually exclusive inspection mode
 
 #### FR-3ab Secret Attributes
 

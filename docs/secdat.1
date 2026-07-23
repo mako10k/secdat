@@ -76,7 +76,7 @@ Use
 .B --json
 for machine-readable key metadata, including key name, store name, source domain, canonical key reference, safe/unsafe storage mode, and non-secret attributes.
 .TP
-.B list [\-m|\-\-masked] [\-o|\-\-overridden] [\-O|\-\-orphaned] [\-e|\-\-safe] [\-u|\-\-unsafe] [\-\-bulk-gate]
+.B list [\-m|\-\-masked] [\-o|\-\-overridden] [\-O|\-\-orphaned] [\-e|\-\-safe] [\-u|\-\-unsafe] [\-\-bulk-gate] [\-\-all-masks [\-\-json]]
 Inspect current-domain local state. Use
 .B --masked
 for active tombstones,
@@ -84,6 +84,30 @@ for active tombstones,
 for tombstones whose parent-visible value is already gone, and
 .B --overridden
 for local keys that still shadow a parent-visible key.
+Use
+.B --all-masks
+to print authorized names for canonical identity-linked masks and legacy name
+tombstones. Hidden names omitted while locked produce a warning. With
+.BR --json ,
+the command additionally reports active, dormant, or orphaned state, record
+kind, bound or ambiguous resolution, chain and target identity, orphan reason,
+visible count, and the count of hidden-name masks omitted while locked.
+The total
+.B mask_count
+equals
+.B visible_mask_count
+plus
+.BR redacted_mask_count .
+Canonical masks target one inherited entry UUID; they do not implicitly target
+other aliases of the same secret UUID.
+.B --all-masks
+is mutually exclusive with the legacy tombstone and local-entry filters.
+Until identity-mask filters are added, canonical masks are not included by
+.B --masked
+or
+.BR --orphaned .
+Text output contains one line per authorized mask record, so names can repeat;
+use JSON to distinguish records by chain and target identity.
 .TP
 .B attr KEYREF [\-\-key-visibility always|unlocked] [\-\-value-access unlocked|always] [\-\-bulk-select exclude|named|include]
 Show or update one key's attributes. v1 stores support only
