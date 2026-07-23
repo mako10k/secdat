@@ -69,7 +69,7 @@ task MASK_INSPECTION MASK_MODEL_OBSERVABLE -> MASK_INSPECTION_ACCEPTED:
     Issue #162。dormant/orphaned/all-masks filter、long/JSON認可、
     fsck分類、rollback-safe migration dry-runを実装・review・commitする。
   duration 5p
-  status planned
+  status done
   priority 80
   requires:
     CODEX 1
@@ -82,7 +82,7 @@ task MASK_WRITES MASK_INSPECTION_ACCEPTED -> MASK_WRITES_ACCEPTED:
     legacy dual-write、rebind、fallback chain、chain-aware unmask、
     mask系dry-run/JSONと対応help/spec/man/completion/poを実装・review・commitする。
   duration 13p
-  status planned
+  status active
   priority 70
   requires:
     CODEX 1

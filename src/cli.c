@@ -1136,8 +1136,8 @@ int secdat_cli_complete(int argc, char **argv)
         "--canonical", "-c", "--canonical-domain", "-D", "--canonical-store", "-S", "--json", "--help", "-h", NULL,
     };
     static const char *const list_options[] = {
-        "--masked", "-m", "--overridden", "-o", "--orphaned", "-O", "--safe", "-e", "--unsafe", "-u",
-        "--public-value", "--secret-value", "--bulk-gate", "--all-masks", "--json", "--help", "-h", NULL,
+        "--masked", "-m", "--dormant", "--overridden", "-o", "--orphaned", "-O", "--safe", "-e", "--unsafe", "-u",
+        "--public-value", "--secret-value", "--bulk-gate", "--all-masks", "--long", "--json", "--help", "-h", NULL,
     };
     static const char *const attr_options[] = {
         "--key-visibility", "--value-access", "--bulk-select", "--help", "-h", NULL,
@@ -1425,7 +1425,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ls", "[GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN] [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--bulk-gate] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-store] [--json]");
         break;
     case SECDAT_COMMAND_LIST:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "list", "[-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--bulk-gate] [--all-masks [--json]]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "list", "[-m|--masked] [--dormant] [-O|--orphaned] [--all-masks] [--long|--json] [-o|--overridden] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--bulk-gate]");
         break;
     case SECDAT_COMMAND_ATTR:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "attr", "KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include]");
@@ -1672,7 +1672,7 @@ static void secdat_cli_print_command_meanings(void)
     printf(_("\nCommands:\n"));
     secdat_cli_print_detail_line(_("  help: show global help or detailed help for one command\n"));
     secdat_cli_print_detail_line(_("  ls: list effective keys visible from the current domain view, optionally filtered by safe or unsafe storage\n"));
-    secdat_cli_print_detail_line(_("  list: inspect current-domain entries or identity and legacy masks with --all-masks [--json]\n"));
+    secdat_cli_print_detail_line(_("  list: inspect current-domain entries or identity and legacy masks by state, with long or JSON detail\n"));
     secdat_cli_print_detail_line(_("  attr: show or update one key's visibility, value-access, and bulk_select attribute\n"));
     secdat_cli_print_detail_line(_("  meta: manage non-secret searchable metadata without reading secret values\n"));
     secdat_cli_print_detail_line(_("  relation: record semantic links between keys and the security meaning of those links\n"));
@@ -1727,9 +1727,12 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "list") == 0) {
-        secdat_cli_print_detail_line(_("  list: inspect current-domain entries or identity and legacy masks with --all-masks [--json]\n"));
-        secdat_cli_print_detail_line(_("  --all-masks prints authorized names; add --json for active, dormant, orphaned, identity, and redacted counts\n"));
-        secdat_cli_print_detail_line(_("  --all-masks is exclusive with other filters; --masked and --orphaned currently inspect legacy masks only\n"));
+        secdat_cli_print_detail_line(_("  list: inspect current-domain entries or identity and legacy masks by state, with long or JSON detail\n"));
+        secdat_cli_print_detail_line(_("  --masked, --dormant, and --orphaned select mask states; combine them or use --all-masks for all three\n"));
+        secdat_cli_print_detail_line(_("  --long and --json report record kind, resolution, chain, authorized target identity, and orphan reason\n"));
+        secdat_cli_print_detail_line(_("  locked hidden names are omitted; state=unknown means observation is incomplete, not a fourth stored state, and lists explicit candidates\n"));
+        secdat_cli_print_detail_line(_("  JSON reports visible and redacted unknown-state counts and whether the selected-state result is complete\n"));
+        secdat_cli_print_detail_line(_("  --long and --json cannot be combined with local-entry filters; short state filters return a union\n"));
         return;
     }
     if (target != NULL && strcmp(target, "attr") == 0) {
@@ -1799,6 +1802,11 @@ static void secdat_cli_print_target_meaning(const char *target)
     if (target != NULL && strcmp(target, "fsck") == 0) {
         secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and limited repair\n"));
         secdat_cli_print_detail_line(_("  with no filters, fsck runs orphaned, dangling, and refcount checks; --repair only rebuilds cached v2 refcounts\n"));
+        secdat_cli_print_detail_line(_("  v2 mask checks report orphaned-mask, ambiguous-mask, dangling-mask, and incomplete-mask-state; dormant masks are valid\n"));
+        secdat_cli_print_detail_line(_("  corrupt mask rows use a non-reversible record-sha256 handle; <redacted> means the identity is not authorized\n"));
+        secdat_cli_print_detail_line(_("  record-sha256 is the first 16 SHA-256 hex digits of the .mask filename UUID; match it inside the protected masks directory\n"));
+        secdat_cli_print_detail_line(_("  no automatic mask-record repair is available; preserve a corrupt record until its intended mask can be recovered\n"));
+        secdat_cli_print_detail_line(_("  unlock affected domains for <redacted> rows and rerun list --all-masks --long and fsck\n"));
         return;
     }
     if (target != NULL && strcmp(target, "gc") == 0) {
@@ -1931,6 +1939,9 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "store migrate") == 0) {
         secdat_cli_print_detail_line(_("  store migrate: validate one v1 store; without --dry-run, write the side-by-side v2 domain-entry/object graph and leave v1 fallback files in place\n"));
+        secdat_cli_print_detail_line(_("  mask plan counts separate existing canonical masks, conversion candidates, ambiguous legacy masks, and v1 rollback blockers\n"));
+        secdat_cli_print_detail_line(_("  dry-run mask-plan rows name each authorized candidate, ambiguity, or existing canonical mask; ambiguity remains fail closed and does not alone block migration\n"));
+        secdat_cli_print_detail_line(_("  an unverifiable legacy projection blocks migration; unlock affected domains, inspect masks, and retry the dry-run\n"));
         return;
     }
     if (target != NULL && strcmp(target, "store finalize-migration") == 0) {

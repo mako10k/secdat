@@ -39,7 +39,7 @@ The intended command set is:
 ```text
 secdat [--dir DIR] [--store STORE] ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]... [-x GLOBPATTERN|--pattern-exclude GLOBPATTERN]... [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--metadata] [--bulk-gate] [--canonical|--canonical-domain|--canonical-store]
 
-secdat [--dir DIR] [--store STORE] list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--bulk-gate] [--all-masks [--json]]
+secdat [--dir DIR] [--store STORE] list [-m|--masked] [--dormant] [-O|--orphaned] [--all-masks] [--long|--json] [-o|--overridden] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--bulk-gate]
 secdat [--dir DIR] [--store STORE] attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include]
 secdat [--dir DIR] [--store STORE] meta get KEYREF
 secdat [--dir DIR] [--store STORE] meta set KEYREF FIELD VALUE
@@ -249,23 +249,26 @@ To make the requested behavior implementable, the following are treated as norma
 
 #### FR-3aa Local-State Listing
 
-- `secdat list --masked` lists keys hidden by active local tombstones in the resolved current domain
-- `secdat list --orphaned` lists keys with local tombstones whose parent-visible value no longer exists
+- `secdat list --masked` lists active canonical or legacy masks in the resolved current domain
+- `secdat list --dormant` lists masks preserved behind a nearer local entry
+- `secdat list --orphaned` lists canonical or legacy masks whose target entry is no longer reachable
 - `secdat list --overridden` lists keys stored locally that also remain visible from a parent domain
 - `secdat list --all-masks` lists canonical identity masks and legacy name tombstones, including active, dormant, and orphaned state
-- `secdat list --all-masks` text output prints authorized mask names; classification requires `--json`, and omitted hidden rows produce a warning
-- `secdat list --all-masks --json` reports schema `secdat.mask-list.v1`, record kind, resolution, state, chain ID, target UUIDs, target domain, orphan reason, visible count, and redacted count
+- mask state filters may be combined, and `--all-masks` is equivalent to `--masked --dormant --orphaned`
+- short text output prints authorized mask names; `--long` prints tab-separated classification fields, and omitted hidden rows produce a warning
+- mask-filtered `list --json` reports schema `secdat.mask-list.v2`, record kind, resolution, nullable state and per-row completeness/candidates, chain ID, target UUIDs, target domain, orphan reason, visible count, redacted count, visible/redacted/total unknown-state counts, and state-filter completeness
 - JSON count invariants are `mask_count = visible_mask_count + redacted_mask_count` and `visible_mask_count = masks.length`
 - canonical records use `target_entry_id` as matching authority; `target_secret_id` is a consistency check and does not mask other aliases
 - a unique visible v2 ancestor lets a legacy tombstone report `resolution=bound`; multiple, absent, v1, or locked-hidden candidates remain `resolution=ambiguous`
 - canonical records remain `resolution=bound` when orphaned because their entry UUID binding is unambiguous even when the target is missing or outside the current inheritance scope
 - `target_domain_id` is the current bound target domain for reachable records and the last-known target domain for orphaned canonical records
 - hidden mask names are omitted while their mask domain is locked and increase `redacted_mask_count`; authorized output never substitutes a guessed name
+- a hidden reachable canonical mask that cannot be classified as active or dormant increases `redacted_state_unknown_count`; active/dormant selections conservatively include it and report `state_filter_complete=false`, while an orphan-only selection does not misclassify it as orphaned
+- a visible legacy mask whose target existence cannot be decided while an ancestor has locked hidden names has `state=null`, `state_complete=false`, and a narrowed `state_candidates` array; it is conservatively included only when a requested state filter intersects those candidates, increases `visible_state_unknown_count`, and makes the result incomplete instead of presenting a provisional state as fact
 - JSON nullable fields have record semantics: legacy rows have `mask_chain_id=null`; legacy ambiguous rows have all target identity/domain fields `null`; reachable authorized rows expose verified target IDs; canonical orphan rows retain `target_entry_id` and last-known `target_domain_id` but use `target_secret_id=null`; `orphan_reason` is `null` unless state is orphaned
-- `--json` is valid on `list` only with `--all-masks`
-- `--all-masks` is mutually exclusive with `--masked`, `--orphaned`, `--overridden`, `--safe`, `--unsafe`, and `--bulk-gate`
-- until identity-mask inspection filters are added, `--masked` and `--orphaned` inspect only legacy name tombstones; canonical masks are visible only through `--all-masks`
-- text output is one line per authorized mask record, not one line per unique key; duplicate names are possible and JSON identifies the records
+- `--long` and `--json` are valid on `list` only with at least one mask-state filter or `--all-masks`
+- `--long` and `--json` are mutually exclusive with `--overridden`, `--safe`, `--unsafe`, and `--bulk-gate`; in a short mixed union, a local-entry match does not add a duplicate when mask rows already represent that name
+- short and long text output is one line per authorized mask record, not one line per unique key; duplicate names are possible and long/JSON identity fields distinguish the records
 - `list` operates on current-domain local state rather than the effective visible view returned by `ls`
 - `list` requires at least one state filter in the initial implementation
 
@@ -360,13 +363,14 @@ to legacy semantics.
 
 #### FR-7e Local State Inspection
 
-- `secdat list --masked` lists current-domain tombstones that still hide a visible parent key
-- `secdat list --orphaned` lists current-domain tombstones whose parent key is no longer visible
+- `secdat list --masked` lists current-domain active canonical and legacy masks
+- `secdat list --dormant` lists current-domain masks shadowed by a nearer local entry
+- `secdat list --orphaned` lists current-domain masks whose target is no longer reachable
 - `secdat list --overridden` lists current-domain concrete entries that override a visible parent key
 - `secdat list --safe` lists current-domain concrete entries stored encrypted at rest
 - `secdat list --unsafe` lists current-domain concrete entries stored plaintext at rest
-- `secdat list --all-masks [--json]` inspects both identity-linked and legacy masks without limiting the result to active masks
-- combining multiple legacy local-state `list` filters returns their union; `--all-masks` is a separate, mutually exclusive inspection mode
+- `secdat list --all-masks [--long|--json]` inspects both identity-linked and legacy masks without limiting the result to active masks
+- mask state filters combine as a union; short text mask filters, including `--all-masks`, may also be combined with legacy local-entry filters without collapsing distinct mask records, while `--long` and `--json` remain mask-only inspection modes
 
 #### FR-3ab Secret Attributes
 
@@ -462,6 +466,13 @@ to legacy semantics.
 - v2 dangling checks report domain entries that point to missing or invalid secret objects as `dangling-entry	ENTRY_ID	missing-secret`
 - v2 dangling checks report standalone or invalid object value sidecars as `dangling-value	UUID	missing-secret` or `dangling-value	NAME	invalid-value`
 - v2 dangling checks report duplicate logical key entries as `duplicate-key	KEY	multiple-entries`
+- v2 orphan checks report authorized canonical or legacy mask names whose target is missing or out of scope as `orphaned-mask	KEY	REASON`
+- v2 dangling checks report malformed or target-inconsistent canonical records as `dangling-mask	record-sha256:HEX	invalid-record|invalid-target`; the handle is a stable 64-bit truncated SHA-256 of the mask filename entry UUID, allowing protected-directory correlation without printing that UUID or trusting record metadata
+- operators correlate `record-sha256:HEX` by hashing each protected `.mask` filename UUID without its suffix and comparing the first 16 lowercase hex digits; no automatic mask-record repair exists, so the corrupt record is preserved until its intended policy can be recovered
+- when locked hidden ancestor names prevent a definitive legacy state, fsck reports `incomplete-mask-state	KEY	locked-ancestor` instead of claiming the selected check is clean
+- a valid canonical dormant mask is preserved policy state and is not an fsck issue
+- locked mask inspection follows normal authorization boundaries and does not print a hidden name or unauthorized target UUID merely to classify an fsck issue; `<redacted>` identifies a valid but unauthorized mask row, while `record-sha256:HEX` identifies a corrupt record for inspection in the protected masks directory
+- when list encounters a malformed canonical record it directs the operator to `fsck --format v2 --dangling` for the diagnostic handle
 - v2 refcount checks report cached object refcount mismatches as `refcount-mismatch	SECRET_ID	expected=N actual=M`
 - `fsck --format v2 --refcount --repair` rewrites only rebuildable cached object refcounts and reports `repaired-refcount	SECRET_ID	expected=N actual=M`
 - `fsck --repair` must not delete orphaned secrets, dangling entries, values, tombstones, or any non-derived data
@@ -573,8 +584,10 @@ to legacy semantics.
 - `secdat [--dir DIR] store ls PATTERN` and `secdat [--dir DIR] store ls --pattern PATTERN` are equivalent
 - `secdat [--dir DIR] store migrate STORE --to-format v2 --dry-run` validates one v1 store and reports the v2 migration plan without writing v2 files
 - `secdat [--dir DIR] store migrate STORE --to-format v2` writes side-by-side v2 domain-entry/object graph files, verifies them with v2 fsck, marks the store as v2, and leaves v1 value files in place
-- migration output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `public_values`, `encrypted_values`, `bulk_select_entries` (bulk-gated eligible entries), and `issues`
-- migration refuses invalid v1 entries, invalid sidecars, orphaned sidecars, orphaned tombstones, and pre-existing v2 migration artifacts
+- migration output includes `domain_entries`, `secret_objects`, `metadata_sidecars`, `tombstones`, `canonical_masks`, `canonical_mask_candidates`, `ambiguous_legacy_masks`, `rollback_mask_blockers`, `public_values`, `encrypted_values`, `bulk_select_entries` (bulk-gated eligible entries), and `issues`
+- dry-run emits `mask-plan	canonical-candidate	KEY	target_entry_id=UUID`, `mask-plan	legacy-ambiguous	KEY	retained-fail-closed`, or `mask-plan	canonical-existing	KEY	rollback-check` for each authorized record in those planning classes; `canonical-candidate` is limited to a bound legacy target without an existing canonical record and does not mean this migration slice writes one, while ambiguity remains fail closed without alone blocking migration
+- a legacy tombstone is a canonical mask candidate only when it resolves to exactly one visible v2 ancestor entry and that target does not already have a canonical record; absent, multiple, v1, or locked-hidden candidates remain ambiguous and retain fail-closed legacy behavior
+- migration refuses invalid v1 entries, invalid or orphaned sidecars, canonical masks that cannot be projected to a retained v1 tombstone for rollback, and pre-existing v2 migration artifacts; an ambiguous legacy tombstone is reported but is not itself a migration blocker
 - `secdat [--dir DIR] store finalize-migration STORE --from-format v1 --dry-run` inspects legacy v1 fallback entry/metadata files in a migrated v2 store without deleting them
 - `secdat [--dir DIR] store finalize-migration STORE --from-format v1` removes removable legacy v1 fallback files only when no blockers remain
 - finalize dry-run reports removable legacy files as `would-remove-*` rows and blocking files as `cannot-finalize` rows; non-dry-run reports successful cleanup as `removed-*` rows

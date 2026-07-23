@@ -13,6 +13,7 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
 python3 - "$bin_path" "$work_root" <<'PY'
 import json
+import hashlib
 import os
 import subprocess
 import sys
@@ -161,6 +162,12 @@ legacy_multi_parent_entry = "16666666-6666-4666-8666-666666666666"
 legacy_multi_parent_secret = "26666666-6666-4666-8666-666666666666"
 legacy_multi_root_entry = "17777777-7777-4777-8777-777777777777"
 legacy_multi_root_secret = "27777777-7777-4777-8777-777777777777"
+legacy_local_missing_entry = "1eeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+legacy_local_missing_secret = "2eeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+legacy_blocked_entry = "1fffffff-ffff-4fff-8fff-ffffffffffff"
+legacy_blocked_secret = "2fffffff-ffff-4fff-8fff-ffffffffffff"
+local_safe_entry = "1abababa-baba-4aba-8aba-abababababab"
+local_safe_secret = "2abababa-baba-4aba-8aba-abababababab"
 orphan_entry = "18888888-8888-4888-8888-888888888888"
 orphan_secret = "28888888-8888-4888-8888-888888888888"
 outside_entry = "1bbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
@@ -183,6 +190,19 @@ write_entry(
     legacy_multi_root_secret,
     "LEGACY_MULTI",
 )
+write_entry(
+    child_store,
+    legacy_local_missing_entry,
+    legacy_local_missing_secret,
+    "LEGACY_LOCAL_MISSING",
+)
+write_entry(
+    root_store,
+    legacy_blocked_entry,
+    legacy_blocked_secret,
+    "LEGACY_BLOCKED",
+)
+write_entry(child_store, local_safe_entry, local_safe_secret, "LOCAL_SAFE")
 write_entry(outside_store, outside_entry, outside_secret, "OUT_OF_SCOPE")
 
 write_mask(
@@ -220,8 +240,17 @@ write_mask(
 
 tombstones = child_store / "tombstones"
 tombstones.mkdir(parents=True, exist_ok=True)
-for key in ("LEGACY_ONE", "LEGACY_MULTI", "LEGACY_MISSING"):
+for key in (
+    "LEGACY_ONE",
+    "LEGACY_MULTI",
+    "LEGACY_MISSING",
+    "LEGACY_LOCAL_MISSING",
+    "LEGACY_BLOCKED",
+):
     (tombstones / f"{key}.tomb").write_bytes(b"")
+parent_tombstones = parent_store / "tombstones"
+parent_tombstones.mkdir(parents=True, exist_ok=True)
+(parent_tombstones / "LEGACY_BLOCKED.tomb").write_bytes(b"")
 
 rc, stdout, stderr = run(
     [bin_path, "--dir", str(child), "list", "--all-masks", "--json"]
@@ -235,14 +264,18 @@ try:
     report = json.loads(stdout)
 except json.JSONDecodeError as error:
     fail(f"mask JSON is invalid: {error}: {stdout!r}")
-if report.get("schema_version") != "secdat.mask-list.v1":
+if report.get("schema_version") != "secdat.mask-list.v2":
     fail(f"unexpected mask JSON schema: {report!r}")
 if report.get("domain_id") != child_id or report.get("store") != "default":
     fail(f"unexpected mask JSON scope: {report!r}")
 if (
-    report.get("mask_count") != 7
-    or report.get("visible_mask_count") != 7
+    report.get("mask_count") != 9
+    or report.get("visible_mask_count") != 9
     or report.get("redacted_mask_count") != 0
+    or report.get("visible_state_unknown_count") != 0
+    or report.get("redacted_state_unknown_count") != 0
+    or report.get("state_unknown_count") != 0
+    or report.get("state_filter_complete") is not True
 ):
     fail(f"unexpected mask counts: {report!r}")
 
@@ -254,6 +287,8 @@ expected_keys = {
     "LEGACY_ONE",
     "LEGACY_MULTI",
     "LEGACY_MISSING",
+    "LEGACY_LOCAL_MISSING",
+    "LEGACY_BLOCKED",
     "OUT_OF_SCOPE",
 }
 if set(rows) != expected_keys:
@@ -265,6 +300,8 @@ expected = {
     "LEGACY_ONE": ("active", "legacy", "bound"),
     "LEGACY_MULTI": ("active", "legacy", "ambiguous"),
     "LEGACY_MISSING": ("orphaned", "legacy", "ambiguous"),
+    "LEGACY_LOCAL_MISSING": ("orphaned", "legacy", "ambiguous"),
+    "LEGACY_BLOCKED": ("dormant", "legacy", "bound"),
     "OUT_OF_SCOPE": ("orphaned", "canonical", "bound"),
 }
 for key, classification in expected.items():
@@ -272,6 +309,8 @@ for key, classification in expected.items():
     actual = (row["state"], row["record_kind"], row["resolution"])
     if actual != classification:
         fail(f"unexpected classification for {key}: {row!r}")
+    if row.get("state_complete") is not True:
+        fail(f"unlocked mask state must be complete for {key}: {row!r}")
 if rows["ACTIVE"]["target_entry_id"] != active_entry:
     fail(f"canonical target identity was not exposed: {rows['ACTIVE']!r}")
 if rows["LEGACY_ONE"]["target_entry_id"] != legacy_one_entry:
@@ -290,6 +329,77 @@ if (
 ):
     fail(f"unreachable target secret identity must not be exposed: {rows!r}")
 
+state_filters = {
+    "--masked": {"ACTIVE", "LEGACY_ONE", "LEGACY_MULTI"},
+    "--dormant": {"DORMANT", "LEGACY_BLOCKED"},
+    "--orphaned": {
+        "ORPHAN",
+        "OUT_OF_SCOPE",
+        "LEGACY_MISSING",
+        "LEGACY_LOCAL_MISSING",
+    },
+}
+for state_filter, expected_state_keys in state_filters.items():
+    rc, stdout, stderr = run(
+        [
+            bin_path,
+            "--dir",
+            str(child),
+            "list",
+            state_filter,
+            "--json",
+        ]
+    )
+    if rc != 0 or stderr != "":
+        fail(
+            f"mask state filter {state_filter} failed: "
+            f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+        )
+    state_report = json.loads(stdout)
+    actual_state_keys = {row["key"] for row in state_report["masks"]}
+    if actual_state_keys != expected_state_keys:
+        fail(
+            f"mask state filter {state_filter} mismatch: "
+            f"{actual_state_keys!r}"
+        )
+    if (
+        state_report["mask_count"] != len(expected_state_keys)
+        or state_report["visible_mask_count"] != len(expected_state_keys)
+        or state_report["redacted_mask_count"] != 0
+        or state_report["visible_state_unknown_count"] != 0
+        or state_report["redacted_state_unknown_count"] != 0
+        or state_report["state_unknown_count"] != 0
+        or state_report["state_filter_complete"] is not True
+    ):
+        fail(f"mask state filter counts mismatch: {state_report!r}")
+
+rc, stdout, stderr = run(
+    [
+        bin_path,
+        "--dir",
+        str(child),
+        "list",
+        "--masked",
+        "--dormant",
+        "--long",
+    ]
+)
+if rc != 0 or stderr != "":
+    fail(
+        "combined mask long inspection failed: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+long_rows = stdout.splitlines()
+if len(long_rows) != 5:
+    fail(f"combined mask long row count mismatch: {long_rows!r}")
+for expected_fragment in (
+    f"ACTIVE\tdomain_id={child_id}\tstore=default\tstate=active\tstate_complete=yes\tstate_candidates=-\trecord_kind=canonical\tresolution=bound",
+    f"DORMANT\tdomain_id={child_id}\tstore=default\tstate=dormant\tstate_complete=yes\tstate_candidates=-\trecord_kind=canonical\tresolution=bound",
+    f"LEGACY_MULTI\tdomain_id={child_id}\tstore=default\tstate=active\tstate_complete=yes\tstate_candidates=-\trecord_kind=legacy\tresolution=ambiguous",
+):
+    if not any(row.startswith(expected_fragment) for row in long_rows):
+        fail(f"combined mask long output missing {expected_fragment!r}: {long_rows!r}")
+
 rc, stdout, stderr = run([bin_path, "--dir", str(child), "list", "--all-masks"])
 if rc != 0 or stderr != "":
     fail(
@@ -299,10 +409,44 @@ if rc != 0 or stderr != "":
 if stdout.splitlines() != sorted(expected_keys):
     fail(f"mask text output was not stable and sorted: {stdout!r}")
 
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "list", "--dormant", "--safe"]
+)
+if (
+    rc != 0
+    or stderr != ""
+    or stdout.splitlines()
+    != ["DORMANT", "LEGACY_BLOCKED", "LEGACY_LOCAL_MISSING", "LOCAL_SAFE"]
+):
+    fail(
+        "mixed mask/local list filters must return a deduplicated union: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "list", "--all-masks", "--safe"]
+)
+if (
+    rc != 0
+    or stderr != ""
+    or stdout.splitlines() != sorted(expected_keys | {"LOCAL_SAFE"})
+):
+    fail(
+        "--all-masks must be equivalent to all three short state filters: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+
 rc, stdout, stderr = run([bin_path, "--dir", str(child), "list", "--json"])
 if rc != 2 or stdout != "" or "invalid arguments for list\n" not in stderr:
     fail(
         "list --json without --all-masks must be rejected: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "list", "--all-masks", "--long", "--json"]
+)
+if rc != 2 or stdout != "" or "invalid arguments for list\n" not in stderr:
+    fail(
+        "list --long and --json together must be rejected: "
         f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
     )
 
@@ -337,12 +481,123 @@ if rc != 0 or stderr != "":
     )
 locked_report = json.loads(stdout)
 if (
-    locked_report["mask_count"] != 8
-    or locked_report["visible_mask_count"] != 7
+    locked_report["mask_count"] != 10
+    or locked_report["visible_mask_count"] != 9
     or locked_report["redacted_mask_count"] != 1
+    or locked_report["visible_state_unknown_count"] != 3
+    or locked_report["redacted_state_unknown_count"] != 1
+    or locked_report["state_unknown_count"] != 4
+    or locked_report["state_filter_complete"] is not False
     or "LOCKED_HIDDEN_NAME" in stdout
 ):
     fail(f"locked hidden mask leaked or was not counted: {locked_report!r}")
+locked_rows = {row["key"]: row for row in locked_report["masks"]}
+if (
+    locked_rows["LEGACY_MISSING"].get("state") is not None
+    or locked_rows["LEGACY_MISSING"].get("state_complete") is not False
+    or locked_rows["LEGACY_MISSING"].get("state_candidates")
+    != ["active", "dormant", "orphaned"]
+):
+    fail(f"locked legacy uncertainty was not exposed: {locked_rows!r}")
+if locked_rows["LEGACY_ONE"].get("state_complete") is not True:
+    fail(f"visible inherited target must keep a complete state: {locked_rows!r}")
+if locked_rows["LEGACY_BLOCKED"].get("state_candidates") != ["active", "dormant"]:
+    fail(f"locked parent barrier candidates were not narrowed: {locked_rows!r}")
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "list", "--all-masks", "--long"],
+    run_env=locked_env,
+)
+locked_long_rows = {
+    line.split("\t", 1)[0]: line
+    for line in stdout.splitlines()
+    if "\t" in line
+}
+if (
+    rc != 0
+    or stderr
+    != (
+        "1 hidden mask(s) omitted; unlock the affected domains or use --json for counts\n"
+        "4 mask state(s) are incomplete while ancestor key names are locked; "
+        "unlock the affected domains or use --json for counts\n"
+    )
+    or "LEGACY_MISSING" not in locked_long_rows
+    or "\tstate=unknown\tstate_complete=no\tstate_candidates=active,dormant,orphaned\t"
+    not in locked_long_rows.get("LEGACY_MISSING", "")
+    or "LEGACY_BLOCKED" not in locked_long_rows
+    or "\tstate=unknown\tstate_complete=no\tstate_candidates=active,dormant\t"
+    not in locked_long_rows.get("LEGACY_BLOCKED", "")
+    or "LOCKED_HIDDEN_NAME" in stdout
+    or hidden_entry in stdout
+    or hidden_secret in stdout
+):
+    fail(
+        "locked long inspection must expose uncertainty without hidden identity: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+locked_filter_expectations = {
+    "--masked": (
+        {"ACTIVE", "LEGACY_ONE", "LEGACY_MULTI", "LEGACY_MISSING", "LEGACY_BLOCKED"},
+        1,
+        3,
+    ),
+    "--dormant": (
+        {"DORMANT", "LEGACY_BLOCKED", "LEGACY_MISSING", "LEGACY_LOCAL_MISSING"},
+        1,
+        4,
+    ),
+    "--orphaned": (
+        {"ORPHAN", "OUT_OF_SCOPE", "LEGACY_MISSING", "LEGACY_LOCAL_MISSING"},
+        0,
+        2,
+    ),
+}
+for state_filter, (
+    expected_locked_keys,
+    expected_redacted_count,
+    expected_unknown_count,
+) in locked_filter_expectations.items():
+    rc, stdout, stderr = run(
+        [bin_path, "--dir", str(child), "list", state_filter, "--json"],
+        run_env=locked_env,
+    )
+    if rc != 0 or stderr != "":
+        fail(
+            f"locked state filter {state_filter} failed: "
+            f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+        )
+    filtered_report = json.loads(stdout)
+    filtered_keys = {row["key"] for row in filtered_report["masks"]}
+    if (
+        filtered_keys != expected_locked_keys
+        or filtered_report["redacted_mask_count"] != expected_redacted_count
+        or filtered_report["state_unknown_count"] != expected_unknown_count
+        or filtered_report["state_filter_complete"] is not False
+    ):
+        fail(
+            f"locked state filter {state_filter} did not honor candidates: "
+            f"{filtered_report!r}"
+        )
+
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "list", "--orphaned", "--json"],
+    run_env=locked_env,
+)
+if rc != 0 or stderr != "":
+    fail(
+        "locked orphan filter failed: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+locked_orphan_report = json.loads(stdout)
+if (
+    locked_orphan_report["mask_count"] != 4
+    or locked_orphan_report["visible_mask_count"] != 4
+    or locked_orphan_report["redacted_mask_count"] != 0
+    or locked_orphan_report["visible_state_unknown_count"] != 2
+    or locked_orphan_report["redacted_state_unknown_count"] != 0
+    or locked_orphan_report["state_unknown_count"] != 2
+    or locked_orphan_report["state_filter_complete"] is not False
+):
+    fail(f"locked reachable mask must not inflate orphan count: {locked_orphan_report!r}")
 
 rc, stdout, stderr = run(
     [bin_path, "--dir", str(child), "list", "--all-masks"],
@@ -352,10 +607,31 @@ if (
     rc != 0
     or "LOCKED_HIDDEN_NAME" in stdout
     or stderr
-    != "1 hidden mask(s) omitted; unlock the affected domains or use --json for counts\n"
+    != (
+        "1 hidden mask(s) omitted; unlock the affected domains or use --json for counts\n"
+        "4 mask state(s) are incomplete while ancestor key names are locked; "
+        "unlock the affected domains or use --json for counts\n"
+    )
 ):
     fail(
         "locked hidden text inspection must warn about omitted rows: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "fsck", "--format", "v2", "--orphaned"],
+    run_env=locked_env,
+)
+if (
+    rc != 1
+    or stderr != ""
+    or "incomplete-mask-state\tLEGACY_MISSING\tlocked-ancestor\n" not in stdout
+    or "incomplete-mask-state\tLEGACY_BLOCKED\tlocked-ancestor\n" in stdout
+    or "LOCKED_HIDDEN_NAME" in stdout
+    or hidden_entry in stdout
+    or hidden_secret in stdout
+):
+    fail(
+        "locked fsck must report incomplete legacy state without leaking hidden identity: "
         f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
     )
 (child_store / "masks" / f"{hidden_entry}.mask").unlink()
@@ -392,15 +668,97 @@ if rc != 0 or stderr != "":
     )
 partial_report = json.loads(stdout)
 if (
-    partial_report["mask_count"] != 8
-    or partial_report["visible_mask_count"] != 7
+    partial_report["mask_count"] != 10
+    or partial_report["visible_mask_count"] != 9
     or partial_report["redacted_mask_count"] != 1
+    or partial_report["visible_state_unknown_count"] != 0
+    or partial_report["redacted_state_unknown_count"] != 0
+    or partial_report["state_unknown_count"] != 0
+    or partial_report["state_filter_complete"] is not True
     or "PARTIALLY_UNLOCKED_HIDDEN_ORPHAN" in stdout
     or hidden_orphan_entry in stdout
     or hidden_orphan_secret in stdout
 ):
     fail(f"partially unlocked hidden orphan leaked identity: {partial_report!r}")
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "fsck", "--format", "v2", "--orphaned"],
+    run_env=locked_env,
+)
+if (
+    rc != 1
+    or stderr != ""
+    or "orphaned-mask\t<redacted>\tmissing-entry\n" not in stdout
+    or "PARTIALLY_UNLOCKED_HIDDEN_ORPHAN" in stdout
+    or hidden_orphan_entry in stdout
+    or hidden_orphan_secret in stdout
+):
+    fail(
+        "locked fsck must report a hidden orphan without leaking identity: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
 (child_store / "masks" / f"{hidden_orphan_entry}.mask").unlink()
+
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "fsck", "--format", "v2", "--orphaned"]
+)
+if rc != 1 or stderr != "":
+    fail(
+        "v2 fsck orphaned mask classification failed: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+for expected_row in (
+    "orphaned-mask\tORPHAN\tmissing-entry\n",
+    "orphaned-mask\tOUT_OF_SCOPE\tout-of-scope\n",
+    "orphaned-mask\tLEGACY_MISSING\tmissing-entry\n",
+):
+    if expected_row not in stdout:
+        fail(f"v2 fsck missing mask classification {expected_row!r}: {stdout!r}")
+if "DORMANT" in stdout:
+    fail(f"canonical dormant mask must not be an fsck error: {stdout!r}")
+
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "fsck", "--format", "v2", "--dangling"]
+)
+if (
+    rc != 1
+    or stderr != ""
+    or "ambiguous-mask\tLEGACY_MULTI\tunresolved-target\n" not in stdout
+    or "DORMANT" in stdout
+):
+    fail(
+        "v2 fsck legacy ambiguity classification failed: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+
+invalid_target_secret = "2ddddddd-dddd-4ddd-8ddd-dddddddddddd"
+write_mask(
+    child_store,
+    "3ddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    legacy_one_entry,
+    invalid_target_secret,
+    parent_id,
+    "LEGACY_ONE",
+)
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "fsck", "--format", "v2", "--dangling"]
+)
+invalid_target_handle = (
+    "record-sha256:"
+    + hashlib.sha256(legacy_one_entry.encode("utf-8")).hexdigest()[:16]
+)
+if (
+    rc != 1
+    or stderr != ""
+    or f"dangling-mask\t{invalid_target_handle}\tinvalid-target\n" not in stdout
+    or legacy_one_entry in stdout
+    or invalid_target_secret in stdout
+    or "LEGACY_ONE" in stdout
+):
+    fail(
+        "v2 fsck must classify target-inconsistent canonical masks without leakage: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+(child_store / "masks" / f"{legacy_one_entry}.mask").unlink()
 
 invalid_domain_entry = "1ddddddd-dddd-4ddd-8ddd-dddddddddddd"
 write_mask(
@@ -417,7 +775,11 @@ rc, stdout, stderr = run(
 if (
     rc != 1
     or stdout != ""
-    or f"invalid v2 mask record: {invalid_domain_entry}\n" not in stderr
+    or (
+        "invalid v2 mask record: <redacted>; "
+        "run fsck --format v2 --dangling for a diagnostic handle\n"
+    )
+    not in stderr
 ):
     fail(
         "malformed canonical target domain must fail before path lookup: "
@@ -438,10 +800,31 @@ rc, stdout, stderr = run(
 if (
     rc != 1
     or stdout != ""
-    or f"invalid v2 mask record: {malformed_entry}\n" not in stderr
+    or (
+        "invalid v2 mask record: <redacted>; "
+        "run fsck --format v2 --dangling for a diagnostic handle\n"
+    )
+    not in stderr
 ):
     fail(
         "malformed canonical mask must fail closed: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "fsck", "--format", "v2", "--dangling"]
+)
+malformed_handle = (
+    "record-sha256:"
+    + hashlib.sha256(malformed_entry.encode("utf-8")).hexdigest()[:16]
+)
+if (
+    rc != 1
+    or stderr != ""
+    or f"dangling-mask\t{malformed_handle}\tinvalid-record\n" not in stdout
+    or malformed_entry in stdout
+):
+    fail(
+        "v2 fsck must classify malformed canonical masks: "
         f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
     )
 

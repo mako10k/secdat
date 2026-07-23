@@ -106,6 +106,10 @@ for expected in [
     "secret_objects=2\n",
     "metadata_sidecars=1\n",
     "tombstones=0\n",
+    "canonical_masks=0\n",
+    "canonical_mask_candidates=0\n",
+    "ambiguous_legacy_masks=0\n",
+    "rollback_mask_blockers=0\n",
     "public_values=1\n",
     "encrypted_values=1\n",
     "bulk_select_entries=0\n",
@@ -193,6 +197,10 @@ for expected in [
     "secret_objects=2\n",
     "metadata_sidecars=1\n",
     "tombstones=0\n",
+    "canonical_masks=0\n",
+    "canonical_mask_candidates=0\n",
+    "ambiguous_legacy_masks=0\n",
+    "rollback_mask_blockers=0\n",
     "public_values=1\n",
     "encrypted_values=1\n",
     "bulk_select_entries=0\n",
@@ -474,6 +482,39 @@ if rc != 0 or stdout != "secret-token" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "--store", "app", "mask", "APP_TOKEN"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"child mask should hide inherited finalized v2 key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+child_tombstones = list(Path(env["XDG_DATA_HOME"]).rglob("APP_TOKEN.tomb"))
+if len(child_tombstones) != 1:
+    fail(f"expected one child APP_TOKEN tombstone, found {child_tombstones!r}")
+(child_tombstones[0].parent / "MISSING.tomb").write_bytes(b"")
+rc, stdout, stderr = run(
+    [
+        bin_path,
+        "--dir",
+        str(child_domain),
+        "store",
+        "migrate",
+        "app",
+        "--to-format",
+        "v2",
+        "--dry-run",
+    ]
+)
+if rc != 0 or stderr != "":
+    fail(
+        "child mask migration dry-run failed: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+for expected in [
+    "mask-plan\tcanonical-candidate\tAPP_TOKEN\ttarget_entry_id=",
+    "mask-plan\tlegacy-ambiguous\tMISSING\tretained-fail-closed\n",
+    "tombstones=2\n",
+    "canonical_masks=0\n",
+    "canonical_mask_candidates=1\n",
+    "ambiguous_legacy_masks=1\n",
+    "rollback_mask_blockers=0\n",
+    "issues=0\n",
+]:
+    assert_contains(stdout, expected, "child mask migration dry-run")
 rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "--store", "app", "list", "--masked"])
 if rc != 0 or stdout != "APP_TOKEN\n" or stderr != "":
     fail(f"child list --masked should show finalized v2 tombstone: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -486,6 +527,163 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "--store", "app", "get", "APP_TOKEN"])
 if rc != 0 or stdout != "secret-token" or stderr != "":
     fail(f"child unmask should restore finalized v2 key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+parent_entry_paths = [
+    path
+    for path in (store_root / "domain-ent").glob("*.dent")
+    if "key=APP_TOKEN\n" in path.read_text(encoding="utf-8")
+]
+if len(parent_entry_paths) != 1:
+    fail(f"expected one parent APP_TOKEN domain entry, found {parent_entry_paths!r}")
+parent_entry_fields = dict(
+    line.split("=", 1)
+    for line in parent_entry_paths[0].read_text(encoding="utf-8").splitlines()
+    if "=" in line
+)
+child_store_root = child_tombstones[0].parent.parent
+child_masks = child_store_root / "masks"
+child_masks.mkdir(mode=0o700, exist_ok=True)
+rollback_mask_path = child_masks / f"{parent_entry_fields['entry_id']}.mask"
+rollback_mask_path.write_text(
+    "\n".join(
+        [
+            "SECDATMASK1",
+            "version=1",
+            "mask_chain_id=41111111-1111-4111-8111-111111111111",
+            f"target_entry_id={parent_entry_fields['entry_id']}",
+            f"target_secret_id={parent_entry_fields['secret_id']}",
+            f"last_known_target_domain={store_root.parents[1].name}",
+            "last_known_target_store=app",
+            "key_visibility=always",
+            "last_known_key=APP_TOKEN",
+            "",
+        ]
+    ),
+    encoding="utf-8",
+)
+rollback_mask_path.chmod(0o600)
+invalid_compat_tombstone = child_tombstones[0]
+invalid_compat_tombstone.mkdir()
+rc, stdout, stderr = run(
+    [
+        bin_path,
+        "--dir",
+        str(child_domain),
+        "store",
+        "migrate",
+        "app",
+        "--to-format",
+        "v2",
+        "--dry-run",
+    ]
+)
+if (
+    rc != 1
+    or stderr != ""
+    or "mask-plan\tcanonical-existing\tAPP_TOKEN\trollback-check\n" not in stdout
+    or "cannot-migrate\tdangling-tombstone\tAPP_TOKEN\tinvalid-tombstone\n"
+    not in stdout
+    or "cannot-migrate\trollback-mask\tAPP_TOKEN\tmissing-legacy-tombstone\n"
+    not in stdout
+    or "canonical_masks=1\n" not in stdout
+    or "canonical_mask_candidates=0\n" not in stdout
+    or "ambiguous_legacy_masks=1\n" not in stdout
+    or "rollback_mask_blockers=1\n" not in stdout
+    or "issues=2\n" not in stdout
+):
+    fail(
+        "migration dry-run must report canonical-only rollback blockers: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+rc, stdout, stderr = run(
+    [
+        bin_path,
+        "--dir",
+        str(child_domain),
+        "store",
+        "migrate",
+        "app",
+        "--to-format",
+        "v2",
+    ]
+)
+if (
+    rc != 1
+    or stderr != ""
+    or "cannot-migrate\tdangling-tombstone\tAPP_TOKEN\tinvalid-tombstone\n"
+    not in stdout
+    or "cannot-migrate\trollback-mask\tAPP_TOKEN\tmissing-legacy-tombstone\n"
+    not in stdout
+    or "rollback_mask_blockers=1\n" not in stdout
+):
+    fail(
+        "rollback blocker must reject non-dry-run migration: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+if (
+    (child_store_root / "format").exists()
+    or any((child_store_root / "domain-ent").glob("*.dent"))
+    or any((child_store_root / "objects" / "secret").glob("*.sec"))
+):
+    fail("rejected rollback-blocked migration wrote v2 artifacts")
+invalid_compat_tombstone.rmdir()
+invalid_compat_tombstone.write_bytes(b"")
+rc, stdout, stderr = run(
+    [
+        bin_path,
+        "--dir",
+        str(child_domain),
+        "store",
+        "migrate",
+        "app",
+        "--to-format",
+        "v2",
+        "--dry-run",
+    ]
+)
+if (
+    rc != 0
+    or stderr != ""
+    or "mask-plan\tcanonical-existing\tAPP_TOKEN\trollback-check\n" not in stdout
+    or "mask-plan\tcanonical-candidate\tAPP_TOKEN\t" in stdout
+    or "canonical_masks=1\n" not in stdout
+    or "canonical_mask_candidates=0\n" not in stdout
+    or "ambiguous_legacy_masks=1\n" not in stdout
+    or "rollback_mask_blockers=0\n" not in stdout
+    or "issues=0\n" not in stdout
+):
+    fail(
+        "canonical mask with retained v1 tombstone must pass migration dry-run: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+rc, stdout, stderr = run(
+    [
+        bin_path,
+        "--dir",
+        str(child_domain),
+        "store",
+        "migrate",
+        "app",
+        "--to-format",
+        "v2",
+    ]
+)
+if (
+    rc != 0
+    or stderr != ""
+    or "canonical_masks=1\n" not in stdout
+    or "canonical_mask_candidates=0\n" not in stdout
+    or "ambiguous_legacy_masks=1\n" not in stdout
+    or "rollback_mask_blockers=0\n" not in stdout
+    or "issues=0\n" not in stdout
+    or "verified=yes\n" not in stdout
+):
+    fail(
+        "ambiguous legacy mask must remain fail closed without blocking migration: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+if not rollback_mask_path.is_file() or not invalid_compat_tombstone.is_file():
+    fail("successful migration did not preserve canonical mask and rollback tombstone")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "finalize-migration", "app", "--from-format", "v1", "--dry-run"])
 if rc != 0 or stderr != "":

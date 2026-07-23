@@ -214,25 +214,27 @@ To hide an inherited key in a child domain without touching the parent value, us
 ./src/secdat --dir ~/example/project/child unmask API_TOKEN
 ```
 
-For current-domain state inspection, `list` can show active tombstones, orphaned tombstones, and local overrides:
+For current-domain state inspection, `list` can show active, dormant, or
+orphaned masks and local overrides:
 
 ```sh
 ./src/secdat --dir ~/example/project/child list --masked
+./src/secdat --dir ~/example/project/child list --dormant
 ./src/secdat --dir ~/example/project/child list --orphaned
 ./src/secdat --dir ~/example/project/child list --overridden
 ./src/secdat --dir ~/example/project/child list --unsafe
 ./src/secdat --dir ~/example/project/child list --safe
 ```
 
-`list --all-masks` is the identity-mask inspection surface. Its text form
-prints authorized mask names only; use `--json` for classifications and exact
-counts. It includes
-canonical v2 masks and legacy name tombstones, including masks that are dormant
-behind a local entry or orphaned from their original target. Use `--json` to
-inspect `state`, `record_kind`, `resolution`, `mask_chain_id`, and target UUIDs:
+`--masked`, `--dormant`, and `--orphaned` select those states for both
+canonical v2 masks and legacy name tombstones. They can be combined;
+`--all-masks` is equivalent to selecting all three. Short text prints
+authorized names only. Use `--long` or `--json` to inspect `state`,
+`record_kind`, `resolution`, `mask_chain_id`, target UUIDs, and orphan reason:
 
 ```sh
 ./src/secdat --dir ~/example/project/child list --all-masks
+./src/secdat --dir ~/example/project/child list --masked --dormant --long
 ./src/secdat --dir ~/example/project/child list --all-masks --json
 ```
 
@@ -241,13 +243,25 @@ Canonical records bind an inherited `entry_id`; another `ln` alias of the same
 `ambiguous` unless it can be bound to exactly one visible v2 ancestor entry.
 Names protected by `key_visibility=unlocked` are omitted while locked and
 included only in `redacted_mask_count`; text output emits an omission warning.
-In JSON, `mask_count = visible_mask_count + redacted_mask_count`. Until the
-inspection migration in the next implementation slice, canonical masks appear
-only under `--all-masks`; the legacy `--masked` and `--orphaned` filters still
-inspect name tombstones only. `--all-masks` is exclusive with those legacy
-filters and with the local-entry filters. Text output has one line per mask
-record, so the same name may appear more than once; use JSON chain and target
-fields to distinguish those records.
+In JSON, `mask_count = visible_mask_count + redacted_mask_count`.
+`visible_state_unknown_count` counts visible legacy mask names whose target
+state cannot be resolved because an ancestor has locked hidden names;
+`redacted_state_unknown_count` counts hidden reachable canonical masks whose
+active or dormant state cannot be distinguished. Rows and the result expose
+`state_complete`, and `state_filter_complete=false` marks a conservative
+selection. A visible uncertain legacy row uses `state: null`, lists its
+narrowed `state_candidates`, and is conservatively included only when the
+requested filter intersects those candidates; long output uses
+`state=unknown`. This is an observation result while locked, not a fourth
+persisted mask state. An orphan-only filter does not count a hidden reachable
+canonical mask as orphaned. Short text warns when the state result is
+incomplete.
+`--long` and `--json`
+are exclusive with local-entry filters. A short mixed union does not add a
+local-entry row when the name is already represented by mask rows, while
+retaining one row per mask record. The same mask name may therefore appear
+more than once; use long or JSON chain and target fields to distinguish those
+records.
 
 For idempotent cleanup in shell automation, `rm --ignore-missing` treats an absent key as a successful no-op:
 
@@ -344,10 +358,26 @@ For migration preparation and v2 cache maintenance, `fsck` checks the current do
 ./src/secdat store finalize-migration default --from-format v1
 ```
 
-Clean output is `ok`. v1 issues are tab-separated rows such as `orphaned-metadata	KEY	missing-entry`, `orphaned-key-metadata	KEY	missing-entry`, `orphaned-tombstone	KEY	missing-parent`, `dangling-entry	KEY	invalid-entry`, `dangling-metadata	KEY	invalid-metadata`, `dangling-key-metadata	KEY	invalid-metadata`, or `dangling-relation	RELATION_ID	missing-key:ROLE`. `--refcount` is currently a clean no-op for v1 because secret objects and hard links arrive with store v2. Stores marked with the v2 format marker can also be checked with `fsck --format v2`, which reports domain-entry/object graph issues such as `orphaned-secret	UUID	missing-entry`, `orphaned-value	UUID	missing-secret`, `dangling-entry	ENTRY_ID	missing-secret`, `dangling-value	UUID	missing-secret`, `duplicate-key	KEY	multiple-entries`, and `refcount-mismatch	SECRET_ID	expected=N actual=M`; searchable key metadata and relations are checked in v2 stores as well. `fsck --format v2 --refcount --repair` rewrites only rebuildable cached object refcounts and emits `repaired-refcount	SECRET_ID	expected=N actual=M`; it does not delete orphaned secrets, dangling entries, values, tombstones, key metadata, or relations.
+Clean output is `ok`. v1 issues are tab-separated rows such as `orphaned-metadata	KEY	missing-entry`, `orphaned-key-metadata	KEY	missing-entry`, `orphaned-tombstone	KEY	missing-parent`, `dangling-entry	KEY	invalid-entry`, `dangling-metadata	KEY	invalid-metadata`, `dangling-key-metadata	KEY	invalid-metadata`, or `dangling-relation	RELATION_ID	missing-key:ROLE`. `--refcount` is currently a clean no-op for v1 because secret objects and hard links arrive with store v2. Stores marked with the v2 format marker can also be checked with `fsck --format v2`, which reports domain-entry/object graph issues such as `orphaned-secret	UUID	missing-entry`, `orphaned-value	UUID	missing-secret`, `dangling-entry	ENTRY_ID	missing-secret`, `dangling-value	UUID	missing-secret`, `duplicate-key	KEY	multiple-entries`, and `refcount-mismatch	SECRET_ID	expected=N actual=M`. It also reports `orphaned-mask`, `ambiguous-mask`, `dangling-mask`, and `incomplete-mask-state` classifications; a valid dormant canonical mask is preserved state and is not an error. A corrupt canonical record uses `record-sha256:HEX`, a stable 64-bit truncated SHA-256 handle derived from its mask filename entry UUID, without printing that UUID or trusting record metadata. To match it, compute the first 16 hex digits of SHA-256 over each `.mask` filename without the suffix inside the protected masks directory. `<redacted>` instead means a valid mask identity is not authorized in the current locked view; unlock affected domains and rerun `list --all-masks --long` and fsck. `list` directs malformed-record failures to `fsck --format v2 --dangling` to obtain the handle. No automatic mask-record repair exists; preserve the corrupt record until its intended mask can be recovered rather than trying `fsck --repair`, which only repairs refcounts. Searchable key metadata and relations are checked in v2 stores as well. `fsck --format v2 --refcount --repair` rewrites only rebuildable cached object refcounts and emits `repaired-refcount	SECRET_ID	expected=N actual=M`; it does not delete orphaned secrets, dangling entries, values, masks, key metadata, or relations.
 `gc --format v2 --dry-run` reports v2 graph artifacts that would be removed as `would-remove-*` rows. Without `--dry-run`, `gc` removes orphaned secret object artifacts, standalone object value sidecars, and dangling v2 domain-entry/object artifacts, but does not touch legacy v1 key/value fallback files.
 `secret status UUID` prints one v2 secret object's non-secret metadata, cached and actual refcounts, orphaned state, object payload presence, and legacy sidecar presence without reading the secret value. UUID lookup is scoped to the current domain/store object view; when following a cross-domain link, use the object-owning domain/store context for direct UUID status.
-`store migrate STORE --to-format v2 --dry-run` validates the selected v1 store and prints the number of domain entries, secret objects, metadata sidecars, tombstones, public values, encrypted values, and bulk_select entries that would be created or preserved by the v2 migration path. Without `--dry-run`, migration writes side-by-side v2 domain-entry/object graph files, verifies them with `fsck --format v2`, marks the store as v2, and leaves the v1 value files in place for compatibility.
+`store migrate STORE --to-format v2 --dry-run` validates the selected v1 store
+and prints the number of domain entries, secret objects, metadata sidecars,
+tombstones, public values, encrypted values, and bulk_select entries that
+would be created or preserved. It also reports existing canonical masks,
+legacy tombstones that are canonical mask candidates, ambiguous tombstones
+that must remain fail-closed, and canonical-only masks that would block safe
+v1 rollback. Dry-run `mask-plan` rows have the forms
+`canonical-candidate	KEY	target_entry_id=UUID`,
+`legacy-ambiguous	KEY	retained-fail-closed`, and
+`canonical-existing	KEY	rollback-check`. The candidate row is a planning
+classification for a bound legacy tombstone whose target has no existing
+canonical record, not a promise that this migration slice writes that record.
+Ambiguous tombstones remain fail-closed but do not alone block migration.
+Without
+`--dry-run`, migration writes the side-by-side v2 domain-entry/object graph,
+verifies it with `fsck --format v2`, marks the store as v2, and leaves v1
+values and tombstones in place for compatibility.
 `store finalize-migration STORE --from-format v1 --dry-run` inspects the legacy v1 fallback files left after migration. It reports v1 entry files that still block finalization because their v2 objects do not yet have valid object-owned value payloads or valid legacy object value sidecars, and reports legacy entry/metadata files that would be removable after values have been rewritten or removed. Without `--dry-run`, it removes only those legacy entry/metadata files when no blockers remain; if any blocker exists, it reports the blockers and removes nothing.
 The safe migration sequence is: dry-run migrate, migrate, `fsck --format v2`, rewrite or remove fallback-backed values, dry-run finalize, then finalize. A migrated value blocks finalization until it has object-owned v2 value material. Today that happens when the value is set again, removed, or rewritten through a value-access change; if it is already in the intended mode, change it once and change it back or set the same secret value again.
 For stores marked as v2, `ls`, `exists`, `attr`, `set`, `get`, `rm`, `cp`, `mv`, `ln`, and `id KEYREF` use the v2 domain-entry/object graph. Hidden keys are visible to those commands only while unlocked; writes that could create a new v2 entry require unlock when hidden entries make absence impossible to prove. `ln SRC DST` creates another v2 domain entry pointing to the same secret object, including across explicit source/destination KEYREF domains and stores, so updates through either key affect both. `ln @UUID DST_KEYREF` uses a secret object UUID as the source only after the current context authorizes that UUID through an existing visible or unlocked entry; `@UUID` is rejected as a destination. New or rewritten v2 values are stored as a binary payload inside the secret object's `.sec` file; encrypted values use the object data key. Legacy `.value` sidecars and `SECDAT1` value payloads remain readable for migration compatibility. Domain entries record the object domain/store separately from the entry domain/store. `id` prints the resolved `secret_id` without reading the value. Migrated stores keep their preserved v1 value files as a fallback until a value is rewritten into v2 object-owned storage. v2-only errors print a migration dry-run hint; set `SECDAT_SUPPRESS_MIGRATION_HINTS=1` to hide those hints.

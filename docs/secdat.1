@@ -76,38 +76,64 @@ Use
 .B --json
 for machine-readable key metadata, including key name, store name, source domain, canonical key reference, safe/unsafe storage mode, and non-secret attributes.
 .TP
-.B list [\-m|\-\-masked] [\-o|\-\-overridden] [\-O|\-\-orphaned] [\-e|\-\-safe] [\-u|\-\-unsafe] [\-\-bulk-gate] [\-\-all-masks [\-\-json]]
+.B list [\-m|\-\-masked] [\-\-dormant] [\-O|\-\-orphaned] [\-\-all-masks] [\-\-long|\-\-json] [\-o|\-\-overridden] [\-e|\-\-safe] [\-u|\-\-unsafe] [\-\-bulk-gate]
 Inspect current-domain local state. Use
 .B --masked
-for active tombstones,
+for active masks,
+.B --dormant
+for masks preserved behind a nearer local entry,
 .B --orphaned
-for tombstones whose parent-visible value is already gone, and
+for masks whose target is no longer reachable, and
 .B --overridden
 for local keys that still shadow a parent-visible key.
 Use
 .B --all-masks
-to print authorized names for canonical identity-linked masks and legacy name
-tombstones. Hidden names omitted while locked produce a warning. With
+as shorthand for all three mask-state filters. The filters include canonical
+identity-linked masks and legacy name tombstones and may be combined. Hidden
+names omitted while locked produce a warning. With
+.B --long
+or
 .BR --json ,
-the command additionally reports active, dormant, or orphaned state, record
+the command reports active, dormant, or orphaned state, record
 kind, bound or ambiguous resolution, chain and target identity, orphan reason,
-visible count, and the count of hidden-name masks omitted while locked.
+and authorized names. JSON additionally reports visible and redacted counts.
 The total
 .B mask_count
 equals
 .B visible_mask_count
 plus
 .BR redacted_mask_count .
+Hidden reachable masks whose active or dormant state cannot be distinguished
+increase
+.BR redacted_state_unknown_count ;
+visible legacy masks made uncertain by locked ancestor names use
+.BR state=unknown ,
+set
+.BR state_complete=no ,
+list the narrowed
+.BR state_candidates ,
+and increase
+.BR visible_state_unknown_count .
+They are conservatively included only by filters that intersect those
+candidates. The JSON
+.B state_unknown_count
+combines selected visible and redacted uncertainty, and an affected state
+filter reports
+.BR state_filter_complete=false .
+The unknown value describes incomplete observation while locked, not a fourth
+persisted mask state.
+An orphan-only filter does not count a hidden reachable canonical mask as
+orphaned.
 Canonical masks target one inherited entry UUID; they do not implicitly target
 other aliases of the same secret UUID.
-.B --all-masks
-is mutually exclusive with the legacy tombstone and local-entry filters.
-Until identity-mask filters are added, canonical masks are not included by
-.B --masked
-or
-.BR --orphaned .
+.B --long
+and
+.B --json
+are mutually exclusive with local-entry filters. In a short mixed union, a
+local-entry match does not add a duplicate when mask rows already represent
+that name; distinct mask records remain separate rows.
 Text output contains one line per authorized mask record, so names can repeat;
-use JSON to distinguish records by chain and target identity.
+use long or JSON output to distinguish records by chain and target identity.
 .TP
 .B attr KEYREF [\-\-key-visibility always|unlocked] [\-\-value-access unlocked|always] [\-\-bulk-select exclude|named|include]
 Show or update one key's attributes. v1 stores support only
@@ -228,6 +254,26 @@ reports invalid entries, attribute sidecars, searchable key metadata, invalid re
 is currently a clean no-op for v1 because shared secret objects arrive with store v2. Stores with the v2 format marker are checked with
 .B --format v2 ,
 which scans the domain-entry to secret-object graph and reports orphaned secrets, standalone object value sidecars, dangling entries or objects, and cached refcount mismatches.
+It also reports orphaned masks, ambiguous legacy masks, malformed canonical
+mask records, and
+.B incomplete-mask-state
+when locked ancestor names prevent definitive classification. A valid dormant
+canonical mask is preserved policy state and is not an error. A corrupt record
+appears as
+.BR record-sha256:HEX ,
+a stable 64-bit truncated SHA-256 handle derived from the mask filename entry
+UUID. Match it by hashing each protected
+.B .mask
+filename UUID without its suffix and comparing the first 16 lowercase hex
+digits. No automatic mask-record repair is available; preserve the corrupt
+record until its intended policy can be recovered. A valid but unauthorized identity appears as
+.BR <redacted> .
+Unlock affected domains and rerun
+.B list --all-masks --long
+and fsck for an authorized view of a redacted row. A list failure on a
+malformed record directs the operator to
+.B fsck --format v2 --dangling
+for the diagnostic handle.
 .B --repair
 is supported with
 .B --format v2 --refcount
@@ -446,7 +492,18 @@ Inspect v2 secret-object metadata by UUID without reading secret values.
 .B store migrate STORE \-\-to-format v2 [\-\-dry-run]
 Validate one v1 store and print the v2 migration plan. Without
 .B --dry-run ,
-write side-by-side v2 domain-entry/object graph files, verify them with v2 fsck, mark the store as v2, and leave v1 value files in place. Output includes domain-entry, secret-object, sidecar, tombstone, public-value, encrypted-value, bulk_select entry, and issue counts.
+write side-by-side v2 domain-entry/object graph files, verify them with v2 fsck, mark the store as v2, and leave v1 value files in place. Output includes domain-entry, secret-object, sidecar, tombstone, existing canonical-mask, canonical-mask candidate, ambiguous legacy-mask, rollback-mask blocker, public-value, encrypted-value, bulk_select entry, and issue counts. Dry-run
+.B mask-plan
+rows use
+.BR canonical-candidate ,
+.BR legacy-ambiguous ,
+or
+.BR canonical-existing
+to name each authorized planning record. A canonical candidate is not a
+promise that this migration slice writes a canonical mask and excludes a
+legacy target that already has a canonical record. Ambiguous legacy masks
+remain fail closed and do not alone block migration. A canonical mask without
+an equivalent retained v1 tombstone is a rollback blocker.
 Some v2-only errors print this dry-run command as a hint; set
 .B SECDAT_SUPPRESS_MIGRATION_HINTS=1
 to hide those hints.

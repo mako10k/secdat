@@ -121,9 +121,11 @@ struct secdat_export_options {
 
 struct secdat_list_options {
     int masked;
+    int dormant;
     int overridden;
     int orphaned;
     int all_masks;
+    int long_output;
     int json;
     int safe;
     int unsafe_store;
@@ -241,6 +243,7 @@ struct secdat_fsck_options {
     int dangling;
     int refcount;
     int repair;
+    int skip_masks;
 };
 
 struct secdat_fsck_report {
@@ -293,6 +296,10 @@ struct secdat_store_migrate_report {
     size_t secret_objects;
     size_t metadata_sidecars;
     size_t tombstones;
+    size_t canonical_masks;
+    size_t canonical_mask_candidates;
+    size_t ambiguous_legacy_masks;
+    size_t rollback_mask_blockers;
     size_t public_values;
     size_t encrypted_values;
     size_t bulk_select_entries;
@@ -382,6 +389,8 @@ struct secdat_mask_view {
     enum secdat_mask_record_kind record_kind;
     enum secdat_mask_resolution resolution;
     enum secdat_mask_state state;
+    int state_unknown;
+    unsigned int state_candidates;
     char key[PATH_MAX];
     char mask_chain_id[64];
     char target_entry_id[64];
@@ -395,6 +404,9 @@ struct secdat_mask_view_list {
     size_t count;
     size_t capacity;
     size_t redacted_count;
+    size_t redacted_state_counts[3];
+    size_t redacted_unknown_state_count;
+    size_t visible_unknown_state_count;
 };
 
 struct secdat_key_access_options {
@@ -2804,7 +2816,9 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
         {"masked", no_argument, NULL, 'm'},
         {"overridden", no_argument, NULL, 'o'},
         {"orphaned", no_argument, NULL, 'O'},
+        {"dormant", no_argument, NULL, 1003},
         {"all-masks", no_argument, NULL, 1001},
+        {"long", no_argument, NULL, 1004},
         {"json", no_argument, NULL, 1002},
         {"safe", no_argument, NULL, 'e'},
         {"unsafe", no_argument, NULL, 'u'},
@@ -2834,8 +2848,14 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
         case 'O':
             options->orphaned = 1;
             break;
+        case 1003:
+            options->dormant = 1;
+            break;
         case 1001:
             options->all_masks = 1;
+            break;
+        case 1004:
+            options->long_output = 1;
             break;
         case 1002:
             options->json = 1;
@@ -2868,16 +2888,25 @@ static int secdat_parse_list_options(const struct secdat_cli *cli, struct secdat
         return 2;
     }
 
-    if ((options->json && !options->all_masks)
-        || (options->all_masks
-            && (options->masked || options->overridden || options->orphaned
-                || options->safe || options->unsafe_store || options->bulk_gate))) {
+    if (options->json && options->long_output) {
+        fprintf(stderr, _("invalid arguments for list\n"));
+        secdat_cli_print_try_help(cli, "list");
+        return 2;
+    }
+    if ((options->json || options->long_output)
+        && !(options->masked || options->dormant || options->orphaned || options->all_masks)) {
+        fprintf(stderr, _("invalid arguments for list\n"));
+        secdat_cli_print_try_help(cli, "list");
+        return 2;
+    }
+    if ((options->json || options->long_output)
+        && (options->overridden || options->safe || options->unsafe_store || options->bulk_gate)) {
         fprintf(stderr, _("invalid arguments for list\n"));
         secdat_cli_print_try_help(cli, "list");
         return 2;
     }
 
-    if (!options->masked && !options->overridden && !options->orphaned
+    if (!options->masked && !options->dormant && !options->overridden && !options->orphaned
         && !options->all_masks && !options->safe && !options->unsafe_store && !options->bulk_gate) {
         fprintf(stderr, _("missing state filter for list\n"));
         secdat_cli_print_try_help(cli, "list");
@@ -13279,6 +13308,9 @@ static int secdat_mask_view_list_append(
     }
     list->items[list->count] = *view;
     list->count += 1;
+    if (view->state_unknown) {
+        list->visible_unknown_state_count += 1;
+    }
     return 0;
 }
 
@@ -13505,7 +13537,8 @@ static int secdat_lookup_v2_domain_entry_by_id(
     const char *domain_id,
     const char *store_name,
     const char *entry_id,
-    struct secdat_v2_domain_entry_info *info
+    struct secdat_v2_domain_entry_info *info,
+    int emit_diagnostics
 )
 {
     char entry_path[PATH_MAX];
@@ -13517,7 +13550,9 @@ static int secdat_lookup_v2_domain_entry_by_id(
         return SECDAT_V2_LOOKUP_ABSENT;
     }
     if (secdat_read_v2_domain_entry_info(entry_path, entry_id, info) != 0) {
-        fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry_id);
+        if (emit_diagnostics) {
+            fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry_id);
+        }
         return SECDAT_V2_LOOKUP_ERROR;
     }
     return SECDAT_V2_LOOKUP_FOUND;
@@ -13726,7 +13761,8 @@ static int secdat_classify_canonical_mask(
     const struct secdat_domain_chain *chain,
     const char *store_name,
     const struct secdat_v2_mask_record *record,
-    struct secdat_mask_view_list *views
+    struct secdat_mask_view_list *views,
+    int emit_identity_diagnostics
 )
 {
     struct secdat_mask_view view;
@@ -13743,7 +13779,9 @@ static int secdat_classify_canonical_mask(
     view.record_kind = SECDAT_MASK_RECORD_CANONICAL;
     view.resolution = SECDAT_MASK_RESOLUTION_BOUND;
     if (strcmp(record->last_known_target_store, secdat_effective_store_name(store_name)) != 0) {
-        fprintf(stderr, _("invalid v2 mask target store: %s\n"), record->target_entry_id);
+        if (emit_identity_diagnostics) {
+            fprintf(stderr, _("invalid v2 mask target store: %s\n"), record->target_entry_id);
+        }
         return 1;
     }
     if (secdat_copy_string(view.mask_chain_id, sizeof(view.mask_chain_id), record->mask_chain_id) != 0
@@ -13768,7 +13806,8 @@ static int secdat_classify_canonical_mask(
             chain->ids[index],
             store_name,
             record->target_entry_id,
-            &target
+            &target,
+            emit_identity_diagnostics
         );
         if (lookup_status == SECDAT_V2_LOOKUP_ERROR) {
             return 1;
@@ -13779,7 +13818,9 @@ static int secdat_classify_canonical_mask(
         }
     }
     if (found_count > 1) {
-        fprintf(stderr, _("duplicate v2 mask target entry: %s\n"), record->target_entry_id);
+        if (emit_identity_diagnostics) {
+            fprintf(stderr, _("duplicate v2 mask target entry: %s\n"), record->target_entry_id);
+        }
         return 1;
     }
 
@@ -13806,6 +13847,7 @@ static int secdat_classify_canonical_mask(
                     record->last_known_target_domain
                 )) {
                 views->redacted_count += 1;
+                views->redacted_state_counts[SECDAT_MASK_STATE_ORPHANED] += 1;
                 return 0;
             }
             if (secdat_decrypt_v2_mask_last_known_key(
@@ -13814,7 +13856,9 @@ static int secdat_classify_canonical_mask(
                     view.key,
                     sizeof(view.key)
                 ) != 0) {
-                fprintf(stderr, _("invalid encrypted v2 mask name: %s\n"), record->target_entry_id);
+                if (emit_identity_diagnostics) {
+                    fprintf(stderr, _("invalid encrypted v2 mask name: %s\n"), record->target_entry_id);
+                }
                 return 1;
             }
         } else if (secdat_copy_string(view.key, sizeof(view.key), record->last_known_key) != 0) {
@@ -13833,7 +13877,9 @@ static int secdat_classify_canonical_mask(
     if (strcmp(target.secret_id, record->target_secret_id) != 0
         || strcmp(chain->ids[target_index], record->last_known_target_domain) != 0
         || target.key_visibility != record->key_visibility) {
-        fprintf(stderr, _("invalid v2 mask target: %s\n"), record->target_entry_id);
+        if (emit_identity_diagnostics) {
+            fprintf(stderr, _("invalid v2 mask target: %s\n"), record->target_entry_id);
+        }
         return 1;
     }
     if (secdat_copy_string(
@@ -13847,6 +13893,7 @@ static int secdat_classify_canonical_mask(
         if (!secdat_v2_domain_entry_key_access_available(chain->ids[target_index])
             || !secdat_v2_domain_entry_key_access_available(chain->ids[0])) {
             views->redacted_count += 1;
+            views->redacted_unknown_state_count += 1;
             return 0;
         }
         if (secdat_v2_decrypt_domain_entry_key(chain->ids[target_index], &target) != 0
@@ -13856,7 +13903,9 @@ static int secdat_classify_canonical_mask(
                 view.key,
                 sizeof(view.key)
             ) != 0) {
-            fprintf(stderr, _("invalid v2 domain entry: %s\n"), target.entry_id);
+            if (emit_identity_diagnostics) {
+                fprintf(stderr, _("invalid v2 domain entry: %s\n"), target.entry_id);
+            }
             return 1;
         }
     }
@@ -13868,11 +13917,15 @@ static int secdat_classify_canonical_mask(
     }
     if (target.key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS
         && strcmp(record->last_known_key, target.key) != 0) {
-        fprintf(stderr, _("invalid v2 mask target name: %s\n"), record->target_entry_id);
+        if (emit_identity_diagnostics) {
+            fprintf(stderr, _("invalid v2 mask target name: %s\n"), record->target_entry_id);
+        }
         return 1;
     }
     if (strcmp(view.key, target.key) != 0) {
-        fprintf(stderr, _("invalid v2 mask target name: %s\n"), record->target_entry_id);
+        if (emit_identity_diagnostics) {
+            fprintf(stderr, _("invalid v2 mask target name: %s\n"), record->target_entry_id);
+        }
         return 1;
     }
 
@@ -13930,10 +13983,21 @@ static int secdat_collect_canonical_mask_views(
                 sizeof(mask_path)
             ) != 0
             || secdat_read_v2_mask_record(mask_path, target_entry_ids.items[index], &record) != 0) {
-            fprintf(stderr, _("invalid v2 mask record: %s\n"), target_entry_ids.items[index]);
+            fprintf(
+                stderr,
+                _("invalid v2 mask record: %s; run fsck --format v2 --dangling for a diagnostic handle\n"),
+                "<redacted>"
+            );
             goto cleanup;
         }
-        if (secdat_classify_canonical_mask(chain, store_name, &record, views) != 0) {
+        if (secdat_classify_canonical_mask(
+                chain,
+                store_name,
+                &record,
+                views,
+                0
+            ) != 0) {
+            fprintf(stderr, _("invalid v2 mask target: %s\n"), "<redacted>");
             goto cleanup;
         }
     }
@@ -13960,6 +14024,8 @@ static int secdat_classify_legacy_mask(
     size_t candidate_count = 0;
     int saw_v1_candidate = 0;
     int inaccessible_candidate = 0;
+    int parent_visible = 0;
+    int local_entry_present = 0;
     int status = 1;
 
     memset(&view, 0, sizeof(view));
@@ -14032,16 +14098,41 @@ static int secdat_classify_legacy_mask(
 
     local_chain.ids = chain->ids;
     local_chain.count = chain->count == 0 ? 0 : 1;
-    if (local_chain.count > 0
-        && secdat_resolve_effective_entry(&local_chain, store_name, key, 0, &local_entry) == 0) {
-        view.state = SECDAT_MASK_STATE_DORMANT;
-    } else if (candidate_count == 0 && !inaccessible_candidate) {
-        view.state = SECDAT_MASK_STATE_ORPHANED;
-        if (secdat_copy_string(view.orphan_reason, sizeof(view.orphan_reason), "missing-entry") != 0) {
-            goto cleanup;
+    if (chain->count > 1) {
+        parent_visible = secdat_parent_has_visible_key(chain, store_name, key);
+    }
+    local_entry_present = local_chain.count > 0
+        && secdat_resolve_effective_entry(&local_chain, store_name, key, 0, &local_entry) == 0;
+    if (candidate_count == 0) {
+        if (inaccessible_candidate) {
+            view.state_unknown = 1;
+            if (local_entry_present) {
+                view.state = SECDAT_MASK_STATE_DORMANT;
+                view.state_candidates = (1u << SECDAT_MASK_STATE_DORMANT)
+                    | (1u << SECDAT_MASK_STATE_ORPHANED);
+            } else {
+                view.state = SECDAT_MASK_STATE_ACTIVE;
+                view.state_candidates = (1u << SECDAT_MASK_STATE_ACTIVE)
+                    | (1u << SECDAT_MASK_STATE_DORMANT)
+                    | (1u << SECDAT_MASK_STATE_ORPHANED);
+            }
+        } else {
+            view.state = SECDAT_MASK_STATE_ORPHANED;
+            if (secdat_copy_string(view.orphan_reason, sizeof(view.orphan_reason), "missing-entry") != 0) {
+                goto cleanup;
+            }
         }
-    } else {
+    } else if (local_entry_present) {
+        view.state = SECDAT_MASK_STATE_DORMANT;
+    } else if (parent_visible) {
         view.state = SECDAT_MASK_STATE_ACTIVE;
+    } else if (inaccessible_candidate) {
+        view.state_unknown = 1;
+        view.state = SECDAT_MASK_STATE_ACTIVE;
+        view.state_candidates = (1u << SECDAT_MASK_STATE_ACTIVE)
+            | (1u << SECDAT_MASK_STATE_DORMANT);
+    } else {
+        view.state = SECDAT_MASK_STATE_DORMANT;
     }
 
     status = secdat_mask_view_list_append(views, &view);
@@ -14146,7 +14237,8 @@ static int secdat_analyze_mask_impacts(
     if (direct_hit_count != NULL) {
         *direct_hit_count = matches;
     }
-    if (require_complete && views->redacted_count > 0) {
+    if (require_complete
+        && (views->redacted_count > 0 || views->visible_unknown_state_count > 0)) {
         fprintf(stderr, _("cannot analyze mask impact while hidden mask names are locked\n"));
         return 1;
     }
@@ -14846,6 +14938,209 @@ static void secdat_fsck_report_repair(struct secdat_fsck_report *report, const c
     report->repairs += 1;
 }
 
+static int secdat_mask_record_diagnostic_handle(
+    const char *target_entry_id,
+    char *buffer,
+    size_t buffer_size
+)
+{
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_length = 0;
+
+    if (EVP_Digest(
+            target_entry_id,
+            strlen(target_entry_id),
+            digest,
+            &digest_length,
+            EVP_sha256(),
+            NULL
+        ) != 1
+        || digest_length != 32
+        || snprintf(
+            buffer,
+            buffer_size,
+            "record-sha256:%02x%02x%02x%02x%02x%02x%02x%02x",
+            digest[0],
+            digest[1],
+            digest[2],
+            digest[3],
+            digest[4],
+            digest[5],
+            digest[6],
+            digest[7]
+        ) >= (int)buffer_size) {
+        fprintf(stderr, _("failed to encode mask diagnostic handle\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_fsck_check_v2_masks(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const struct secdat_fsck_options *options,
+    struct secdat_fsck_report *report
+)
+{
+    char masks_dir[PATH_MAX];
+    char mask_path[PATH_MAX];
+    char diagnostic_handle[64];
+    struct stat directory_status;
+    struct secdat_key_list target_entry_ids = {0};
+    struct secdat_mask_view_list views = {0};
+    struct secdat_v2_mask_record record;
+    size_t index;
+    int status = 1;
+
+    if (chain->count == 0
+        || secdat_v2_masks_dir(chain->ids[0], store_name, masks_dir, sizeof(masks_dir)) != 0) {
+        goto cleanup;
+    }
+    if (lstat(masks_dir, &directory_status) == 0) {
+        if (!S_ISDIR(directory_status.st_mode) || (directory_status.st_mode & 077) != 0) {
+            if (options->dangling) {
+                secdat_fsck_report_issue(report, "dangling-mask", "masks", "invalid-directory");
+            }
+            status = 0;
+            goto cleanup;
+        }
+    } else if (errno != ENOENT) {
+        fprintf(stderr, _("failed to inspect v2 masks directory\n"));
+        goto cleanup;
+    }
+    if (secdat_collect_directory_keys(masks_dir, ".mask", &target_entry_ids) != 0) {
+        goto cleanup;
+    }
+    if (target_entry_ids.count > 1) {
+        qsort(
+            target_entry_ids.items,
+            target_entry_ids.count,
+            sizeof(*target_entry_ids.items),
+            secdat_compare_strings
+        );
+    }
+    for (index = 0; index < target_entry_ids.count; index += 1) {
+        secdat_mask_view_list_free(&views);
+        if (secdat_build_v2_mask_path(
+                chain->ids[0],
+                store_name,
+                target_entry_ids.items[index],
+                mask_path,
+                sizeof(mask_path)
+            ) != 0) {
+            goto cleanup;
+        }
+        if (secdat_read_v2_mask_record(mask_path, target_entry_ids.items[index], &record) != 0) {
+            if (secdat_mask_record_diagnostic_handle(
+                    target_entry_ids.items[index],
+                    diagnostic_handle,
+                    sizeof(diagnostic_handle)
+                ) != 0) {
+                goto cleanup;
+            }
+            if (options->dangling) {
+                secdat_fsck_report_issue(
+                    report,
+                    "dangling-mask",
+                    diagnostic_handle,
+                    "invalid-record"
+                );
+            }
+            continue;
+        }
+        if (secdat_classify_canonical_mask(
+                chain,
+                store_name,
+                &record,
+                &views,
+                0
+            ) != 0) {
+            if (secdat_mask_record_diagnostic_handle(
+                    target_entry_ids.items[index],
+                    diagnostic_handle,
+                    sizeof(diagnostic_handle)
+                ) != 0) {
+                goto cleanup;
+            }
+            if (options->dangling) {
+                secdat_fsck_report_issue(
+                    report,
+                    "dangling-mask",
+                    diagnostic_handle,
+                    "invalid-target"
+                );
+            }
+            continue;
+        }
+        if (options->orphaned
+            && views.count == 0
+            && views.redacted_state_counts[SECDAT_MASK_STATE_ORPHANED] > 0) {
+            const char *reason = "out-of-scope";
+            size_t chain_index;
+
+            for (chain_index = 0; chain_index < chain->count; chain_index += 1) {
+                if (strcmp(chain->ids[chain_index], record.last_known_target_domain) == 0) {
+                    reason = "missing-entry";
+                    break;
+                }
+            }
+            secdat_fsck_report_issue(report, "orphaned-mask", "<redacted>", reason);
+        }
+        if (options->orphaned
+            && views.count == 1
+            && views.items[0].state == SECDAT_MASK_STATE_ORPHANED) {
+            secdat_fsck_report_issue(
+                report,
+                "orphaned-mask",
+                views.items[0].key,
+                views.items[0].orphan_reason
+            );
+        }
+    }
+
+    secdat_mask_view_list_free(&views);
+    if (secdat_collect_legacy_mask_views(chain, store_name, &views) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < views.count; index += 1) {
+        if (options->orphaned
+            && views.items[index].state_unknown
+            && (views.items[index].state_candidates
+                & (1u << SECDAT_MASK_STATE_ORPHANED)) != 0) {
+            secdat_fsck_report_issue(
+                report,
+                "incomplete-mask-state",
+                views.items[index].key,
+                "locked-ancestor"
+            );
+        }
+        if (options->dangling
+            && views.items[index].resolution == SECDAT_MASK_RESOLUTION_AMBIGUOUS) {
+            secdat_fsck_report_issue(
+                report,
+                "ambiguous-mask",
+                views.items[index].key,
+                "unresolved-target"
+            );
+        }
+        if (options->orphaned
+            && views.items[index].state == SECDAT_MASK_STATE_ORPHANED) {
+            secdat_fsck_report_issue(
+                report,
+                "orphaned-mask",
+                views.items[index].key,
+                views.items[index].orphan_reason
+            );
+        }
+    }
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&target_entry_ids);
+    secdat_mask_view_list_free(&views);
+    return status;
+}
+
 static void secdat_gc_report_removal(struct secdat_gc_report *report, int dry_run, const char *kind, const char *key, const char *detail)
 {
     printf("%s-%s\t%s\t%s\n", dry_run ? "would-remove" : "removed", kind, key, detail);
@@ -14898,6 +15193,7 @@ static int secdat_fsck_v1_store(
     char tombstones_dir[PATH_MAX];
     char entry_path[PATH_MAX];
     char metadata_path[PATH_MAX];
+    char tombstone_path[PATH_MAX];
     struct secdat_key_list entries = {0};
     struct secdat_key_list metadata = {0};
     struct secdat_key_list tombstones = {0};
@@ -15186,7 +15482,9 @@ static int secdat_fsck_v2_store(
         }
     }
 
-    if (secdat_fsck_check_v2_key_metadata(current_domain_id, store_name, options, report) != 0
+    if ((!options->skip_masks
+            && secdat_fsck_check_v2_masks(chain, store_name, options, report) != 0)
+        || secdat_fsck_check_v2_key_metadata(current_domain_id, store_name, options, report) != 0
         || secdat_fsck_check_relations(current_domain_id, store_name, options, report) != 0) {
         goto cleanup;
     }
@@ -15471,7 +15769,94 @@ static void secdat_print_mask_json_nullable_string(const char *value)
     secdat_write_json_string(stdout, value);
 }
 
-static void secdat_print_mask_views_json(
+static int secdat_list_selects_mask_state(
+    const struct secdat_list_options *options,
+    enum secdat_mask_state state
+)
+{
+    if (options->all_masks) {
+        return 1;
+    }
+    return (state == SECDAT_MASK_STATE_ACTIVE && options->masked)
+        || (state == SECDAT_MASK_STATE_DORMANT && options->dormant)
+        || (state == SECDAT_MASK_STATE_ORPHANED && options->orphaned);
+}
+
+static void secdat_filter_mask_views(
+    const struct secdat_list_options *options,
+    struct secdat_mask_view_list *views
+)
+{
+    size_t read_index;
+    size_t write_index = 0;
+    size_t redacted_count = 0;
+    size_t visible_unknown_state_count = 0;
+    size_t state_index;
+
+    for (read_index = 0; read_index < views->count; read_index += 1) {
+        int selected = secdat_list_selects_mask_state(
+            options,
+            views->items[read_index].state
+        );
+
+        if (views->items[read_index].state_unknown) {
+            selected = options->all_masks
+                || (options->masked
+                    && (views->items[read_index].state_candidates
+                        & (1u << SECDAT_MASK_STATE_ACTIVE)) != 0)
+                || (options->dormant
+                    && (views->items[read_index].state_candidates
+                        & (1u << SECDAT_MASK_STATE_DORMANT)) != 0)
+                || (options->orphaned
+                    && (views->items[read_index].state_candidates
+                        & (1u << SECDAT_MASK_STATE_ORPHANED)) != 0);
+        }
+        if (!selected) {
+            continue;
+        }
+        if (write_index != read_index) {
+            views->items[write_index] = views->items[read_index];
+        }
+        if (views->items[read_index].state_unknown) {
+            visible_unknown_state_count += 1;
+        }
+        write_index += 1;
+    }
+    views->count = write_index;
+    views->visible_unknown_state_count = visible_unknown_state_count;
+    for (state_index = 0; state_index < 3; state_index += 1) {
+        if (secdat_list_selects_mask_state(options, (enum secdat_mask_state)state_index)) {
+            redacted_count += views->redacted_state_counts[state_index];
+        }
+    }
+    if (options->all_masks || options->masked || options->dormant) {
+        redacted_count += views->redacted_unknown_state_count;
+    }
+    views->redacted_count = redacted_count;
+}
+
+static const char *secdat_mask_text_nullable_string(const char *value)
+{
+    return value == NULL || value[0] == '\0' ? "-" : value;
+}
+
+static const char *secdat_mask_state_candidates_text(unsigned int candidates)
+{
+    switch (candidates) {
+    case (1u << SECDAT_MASK_STATE_ACTIVE) | (1u << SECDAT_MASK_STATE_DORMANT):
+        return "active,dormant";
+    case (1u << SECDAT_MASK_STATE_DORMANT) | (1u << SECDAT_MASK_STATE_ORPHANED):
+        return "dormant,orphaned";
+    case (1u << SECDAT_MASK_STATE_ACTIVE)
+        | (1u << SECDAT_MASK_STATE_DORMANT)
+        | (1u << SECDAT_MASK_STATE_ORPHANED):
+        return "active,dormant,orphaned";
+    default:
+        return "-";
+    }
+}
+
+static void secdat_print_mask_views_long(
     const struct secdat_domain_chain *chain,
     const char *store_name,
     const struct secdat_mask_view_list *views
@@ -15479,7 +15864,41 @@ static void secdat_print_mask_views_json(
 {
     size_t index;
 
-    fputs("{\n  \"schema_version\": \"secdat.mask-list.v1\",\n  \"domain_id\": ", stdout);
+    for (index = 0; index < views->count; index += 1) {
+        const struct secdat_mask_view *view = &views->items[index];
+
+        printf(
+            "%s\tdomain_id=%s\tstore=%s\tstate=%s\tstate_complete=%s"
+            "\tstate_candidates=%s\trecord_kind=%s\tresolution=%s\tmask_chain_id=%s"
+            "\ttarget_entry_id=%s\ttarget_secret_id=%s\ttarget_domain_id=%s"
+            "\torphan_reason=%s\n",
+            view->key,
+            chain->count == 0 ? "-" : chain->ids[0],
+            secdat_effective_store_name(store_name),
+            view->state_unknown ? "unknown" : secdat_mask_state_name(view->state),
+            view->state_unknown ? "no" : "yes",
+            secdat_mask_state_candidates_text(view->state_candidates),
+            secdat_mask_record_kind_name(view->record_kind),
+            secdat_mask_resolution_name(view->resolution),
+            secdat_mask_text_nullable_string(view->mask_chain_id),
+            secdat_mask_text_nullable_string(view->target_entry_id),
+            secdat_mask_text_nullable_string(view->target_secret_id),
+            secdat_mask_text_nullable_string(view->target_domain),
+            secdat_mask_text_nullable_string(view->orphan_reason)
+        );
+    }
+}
+
+static void secdat_print_mask_views_json(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const struct secdat_list_options *options,
+    const struct secdat_mask_view_list *views
+)
+{
+    size_t index;
+
+    fputs("{\n  \"schema_version\": \"secdat.mask-list.v2\",\n  \"domain_id\": ", stdout);
     secdat_write_json_string(stdout, chain->count == 0 ? "" : chain->ids[0]);
     fputs(",\n  \"store\": ", stdout);
     secdat_write_json_string(stdout, secdat_effective_store_name(store_name));
@@ -15491,7 +15910,34 @@ static void secdat_print_mask_views_json(
         fputs("      \"key\": ", stdout);
         secdat_write_json_string(stdout, view->key);
         fputs(",\n      \"state\": ", stdout);
-        secdat_write_json_string(stdout, secdat_mask_state_name(view->state));
+        if (view->state_unknown) {
+            fputs("null", stdout);
+        } else {
+            secdat_write_json_string(stdout, secdat_mask_state_name(view->state));
+        }
+        printf(",\n      \"state_complete\": %s", view->state_unknown ? "false" : "true");
+        fputs(",\n      \"state_candidates\": ", stdout);
+        if (view->state_unknown) {
+            unsigned int candidates = view->state_candidates;
+            int first_candidate = 1;
+            size_t state_index;
+
+            fputs("[", stdout);
+            for (state_index = 0; state_index < 3; state_index += 1) {
+                if ((candidates & (1u << state_index)) == 0) {
+                    continue;
+                }
+                fputs(first_candidate ? "" : ", ", stdout);
+                secdat_write_json_string(
+                    stdout,
+                    secdat_mask_state_name((enum secdat_mask_state)state_index)
+                );
+                first_candidate = 0;
+            }
+            fputs("]", stdout);
+        } else {
+            fputs("null", stdout);
+        }
         fputs(",\n      \"record_kind\": ", stdout);
         secdat_write_json_string(stdout, secdat_mask_record_kind_name(view->record_kind));
         fputs(",\n      \"resolution\": ", stdout);
@@ -15510,10 +15956,27 @@ static void secdat_print_mask_views_json(
     }
     printf(
         "\n  ],\n  \"mask_count\": %zu,\n  \"visible_mask_count\": %zu,\n"
-        "  \"redacted_mask_count\": %zu\n}\n",
+        "  \"redacted_mask_count\": %zu,\n"
+        "  \"visible_state_unknown_count\": %zu,\n"
+        "  \"redacted_state_unknown_count\": %zu,\n"
+        "  \"state_unknown_count\": %zu,\n"
+        "  \"state_filter_complete\": %s\n}\n",
         views->count + views->redacted_count,
         views->count,
-        views->redacted_count
+        views->redacted_count,
+        views->visible_unknown_state_count,
+        (options->all_masks || options->masked || options->dormant)
+            ? views->redacted_unknown_state_count
+            : 0,
+        views->visible_unknown_state_count
+            + ((options->all_masks || options->masked || options->dormant)
+                ? views->redacted_unknown_state_count
+                : 0),
+        (views->visible_unknown_state_count > 0
+            || ((options->all_masks || options->masked || options->dormant)
+                && views->redacted_unknown_state_count > 0))
+            ? "false"
+            : "true"
     );
 }
 
@@ -15521,9 +15984,13 @@ static int secdat_command_list(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
     struct secdat_key_list keys = {0};
+    struct secdat_key_list combined_keys = {0};
     struct secdat_mask_view_list mask_views = {0};
     struct secdat_list_options options;
+    struct secdat_list_options entry_options;
     size_t index;
+    int mask_selection;
+    int entry_selection;
     int status;
 
     status = secdat_parse_list_options(cli, &options);
@@ -15533,7 +16000,9 @@ static int secdat_command_list(const struct secdat_cli *cli)
     if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
         return 1;
     }
-    if (options.all_masks) {
+    mask_selection = options.masked || options.dormant || options.orphaned || options.all_masks;
+    entry_selection = options.overridden || options.safe || options.unsafe_store || options.bulk_gate;
+    if (mask_selection) {
         if (secdat_analyze_mask_impacts(
                 &chain,
                 cli->store,
@@ -15546,22 +16015,97 @@ static int secdat_command_list(const struct secdat_cli *cli)
             secdat_domain_chain_free(&chain);
             return 1;
         }
+        secdat_filter_mask_views(&options, &mask_views);
         if (options.json) {
-            secdat_print_mask_views_json(&chain, cli->store, &mask_views);
+            secdat_print_mask_views_json(&chain, cli->store, &options, &mask_views);
+        } else if (options.long_output) {
+            secdat_print_mask_views_long(&chain, cli->store, &mask_views);
+        } else if (entry_selection) {
+            entry_options = options;
+            entry_options.masked = 0;
+            entry_options.dormant = 0;
+            entry_options.orphaned = 0;
+            entry_options.all_masks = 0;
+            entry_options.long_output = 0;
+            entry_options.json = 0;
+            if (secdat_collect_list_keys(&chain, cli->store, &entry_options, &keys) != 0) {
+                secdat_mask_view_list_free(&mask_views);
+                secdat_domain_chain_free(&chain);
+                secdat_key_list_free(&keys);
+                return 1;
+            }
+            for (index = 0; index < keys.count; index += 1) {
+                size_t mask_index;
+                int mask_name_present = 0;
+
+                for (mask_index = 0; mask_index < mask_views.count; mask_index += 1) {
+                    if (strcmp(keys.items[index], mask_views.items[mask_index].key) == 0) {
+                        mask_name_present = 1;
+                        break;
+                    }
+                }
+                if (!mask_name_present
+                    && secdat_key_list_append_duplicate(&combined_keys, keys.items[index]) != 0) {
+                    secdat_mask_view_list_free(&mask_views);
+                    secdat_domain_chain_free(&chain);
+                    secdat_key_list_free(&keys);
+                    secdat_key_list_free(&combined_keys);
+                    return 1;
+                }
+            }
+            for (index = 0; index < mask_views.count; index += 1) {
+                if (secdat_key_list_append_duplicate(
+                        &combined_keys,
+                        mask_views.items[index].key
+                    ) != 0) {
+                    secdat_mask_view_list_free(&mask_views);
+                    secdat_domain_chain_free(&chain);
+                    secdat_key_list_free(&keys);
+                    secdat_key_list_free(&combined_keys);
+                    return 1;
+                }
+            }
+            if (combined_keys.count > 1) {
+                qsort(
+                    combined_keys.items,
+                    combined_keys.count,
+                    sizeof(*combined_keys.items),
+                    secdat_compare_strings
+                );
+            }
+            for (index = 0; index < combined_keys.count; index += 1) {
+                puts(combined_keys.items[index]);
+            }
         } else {
             for (index = 0; index < mask_views.count; index += 1) {
                 puts(mask_views.items[index].key);
             }
-            if (mask_views.redacted_count > 0) {
-                fprintf(
-                    stderr,
-                    _("%zu hidden mask(s) omitted; unlock the affected domains or use --json for counts\n"),
-                    mask_views.redacted_count
-                );
-            }
+        }
+        if (!options.json && mask_views.redacted_count > 0) {
+            fprintf(
+                stderr,
+                _("%zu hidden mask(s) omitted; unlock the affected domains or use --json for counts\n"),
+                mask_views.redacted_count
+            );
+        }
+        if (!options.json
+            && (mask_views.visible_unknown_state_count
+                + ((options.all_masks || options.masked || options.dormant)
+                    ? mask_views.redacted_unknown_state_count
+                    : 0)) > 0) {
+            fprintf(
+                stderr,
+                _("%zu mask state(s) are incomplete while ancestor key names are locked; unlock the affected domains or use --json for counts\n"),
+                mask_views.visible_unknown_state_count
+                    + ((options.all_masks || options.masked || options.dormant)
+                        ? mask_views.redacted_unknown_state_count
+                        : 0)
+            );
         }
         secdat_mask_view_list_free(&mask_views);
         secdat_domain_chain_free(&chain);
+        secdat_key_list_free(&keys);
+        secdat_key_list_free(&combined_keys);
         return 0;
     }
     if (secdat_collect_list_keys(&chain, cli->store, &options, &keys) != 0) {
@@ -15576,6 +16120,7 @@ static int secdat_command_list(const struct secdat_cli *cli)
 
     secdat_domain_chain_free(&chain);
     secdat_key_list_free(&keys);
+    secdat_key_list_free(&combined_keys);
     return 0;
 }
 
@@ -19524,6 +20069,17 @@ static void secdat_store_migrate_report_issue(
     report->issues += 1;
 }
 
+static void secdat_store_migrate_report_rollback_blocker(
+    struct secdat_store_migrate_report *report,
+    const char *key,
+    const char *detail
+)
+{
+    printf("cannot-migrate\trollback-mask\t%s\t%s\n", key, detail);
+    report->rollback_mask_blockers += 1;
+    report->issues += 1;
+}
+
 static void secdat_store_migrate_v1_plan_free(struct secdat_store_migrate_v1_plan *plan)
 {
     secdat_key_list_free(&plan->entries);
@@ -19540,11 +20096,15 @@ static int secdat_store_migrate_prepare_v2(
 {
     char entry_path[PATH_MAX];
     char metadata_path[PATH_MAX];
+    char tombstone_path[PATH_MAX];
     struct stat store_status;
     struct secdat_secret_attrs attrs;
+    struct secdat_mask_view_list canonical_masks = {0};
+    struct secdat_mask_view_list legacy_mask = {0};
     const char *current_domain_id;
     enum secdat_store_format format;
     size_t index;
+    size_t canonical_index;
     int unsafe_store = 0;
     int status = 1;
 
@@ -19628,18 +20188,124 @@ static int secdat_store_migrate_prepare_v2(
             secdat_store_migrate_report_issue(report, "orphaned-metadata", plan->metadata.items[index], "missing-entry");
         }
     }
+    if (secdat_collect_canonical_mask_views(
+            chain,
+            options->store_name,
+            &canonical_masks
+        ) != 0) {
+        goto cleanup;
+    }
+    report->canonical_masks = canonical_masks.count + canonical_masks.redacted_count;
     for (index = 0; index < plan->tombstones.count; index += 1) {
-        if (!secdat_parent_has_visible_key(chain, options->store_name, plan->tombstones.items[index])) {
-            secdat_store_migrate_report_issue(report, "orphaned-tombstone", plan->tombstones.items[index], "missing-parent");
+        int already_canonical = 0;
+
+        if (secdat_build_tombstone_path(
+                current_domain_id,
+                options->store_name,
+                plan->tombstones.items[index],
+                tombstone_path,
+                sizeof(tombstone_path)
+            ) != 0) {
+            goto cleanup;
         }
+        if (!secdat_file_exists(tombstone_path)) {
+            secdat_store_migrate_report_issue(
+                report,
+                "dangling-tombstone",
+                plan->tombstones.items[index],
+                "invalid-tombstone"
+            );
+            continue;
+        }
+        secdat_mask_view_list_free(&legacy_mask);
+        if (secdat_classify_legacy_mask(
+                chain,
+                options->store_name,
+                plan->tombstones.items[index],
+                &legacy_mask
+            ) != 0
+            || legacy_mask.count != 1) {
+            goto cleanup;
+        }
+        if (legacy_mask.items[0].resolution == SECDAT_MASK_RESOLUTION_BOUND) {
+            for (canonical_index = 0;
+                 canonical_index < canonical_masks.count;
+                 canonical_index += 1) {
+                if (strcmp(
+                        canonical_masks.items[canonical_index].target_entry_id,
+                        legacy_mask.items[0].target_entry_id
+                    ) == 0) {
+                    already_canonical = 1;
+                    break;
+                }
+            }
+            if (!already_canonical) {
+                report->canonical_mask_candidates += 1;
+                if (options->dry_run) {
+                    printf(
+                        "mask-plan\tcanonical-candidate\t%s\ttarget_entry_id=%s\n",
+                        legacy_mask.items[0].key,
+                        legacy_mask.items[0].target_entry_id
+                    );
+                }
+            }
+        } else {
+            report->ambiguous_legacy_masks += 1;
+            if (options->dry_run) {
+                printf(
+                    "mask-plan\tlegacy-ambiguous\t%s\tretained-fail-closed\n",
+                    legacy_mask.items[0].key
+                );
+            }
+        }
+    }
+    for (index = 0; index < canonical_masks.count; index += 1) {
+        if (options->dry_run) {
+            printf(
+                "mask-plan\tcanonical-existing\t%s\trollback-check\n",
+                canonical_masks.items[index].key
+            );
+        }
+        if (secdat_build_tombstone_path(
+                current_domain_id,
+                options->store_name,
+                canonical_masks.items[index].key,
+                tombstone_path,
+                sizeof(tombstone_path)
+            ) != 0) {
+            goto cleanup;
+        }
+        if (!secdat_key_list_contains(&plan->tombstones, canonical_masks.items[index].key)
+            || !secdat_file_exists(tombstone_path)) {
+            secdat_store_migrate_report_rollback_blocker(
+                report,
+                canonical_masks.items[index].key,
+                "missing-legacy-tombstone"
+            );
+        }
+    }
+    for (index = 0; index < canonical_masks.redacted_count; index += 1) {
+        secdat_store_migrate_report_rollback_blocker(
+            report,
+            "<redacted>",
+            "unverifiable-legacy-projection"
+        );
     }
 
     if (report->issues > 0) {
+        printf("canonical_masks=%zu\n", report->canonical_masks);
+        printf("canonical_mask_candidates=%zu\n", report->canonical_mask_candidates);
+        printf("ambiguous_legacy_masks=%zu\n", report->ambiguous_legacy_masks);
+        printf("rollback_mask_blockers=%zu\n", report->rollback_mask_blockers);
         printf("issues=%zu\n", report->issues);
-        return 1;
+        goto cleanup;
     }
 
     status = 0;
+
+cleanup:
+    secdat_mask_view_list_free(&canonical_masks);
+    secdat_mask_view_list_free(&legacy_mask);
     return status;
 }
 
@@ -19665,6 +20331,10 @@ static int secdat_store_migrate_dry_run_v2(
     printf("secret_objects=%zu\n", report->secret_objects);
     printf("metadata_sidecars=%zu\n", report->metadata_sidecars);
     printf("tombstones=%zu\n", report->tombstones);
+    printf("canonical_masks=%zu\n", report->canonical_masks);
+    printf("canonical_mask_candidates=%zu\n", report->canonical_mask_candidates);
+    printf("ambiguous_legacy_masks=%zu\n", report->ambiguous_legacy_masks);
+    printf("rollback_mask_blockers=%zu\n", report->rollback_mask_blockers);
     printf("public_values=%zu\n", report->public_values);
     printf("encrypted_values=%zu\n", report->encrypted_values);
     printf("bulk_select_entries=%zu\n", report->bulk_select_entries);
@@ -19710,7 +20380,7 @@ static int secdat_store_migrate_write_v2(
 {
     struct secdat_store_migrate_v1_plan plan = {0};
     struct secdat_key_list written_paths = {0};
-    struct secdat_fsck_options fsck_options = {"v2", 1, 1, 1, 0};
+    struct secdat_fsck_options fsck_options = {"v2", 1, 1, 1, 0, 1};
     struct secdat_fsck_report fsck_report;
     char domain_entries_dir[PATH_MAX];
     char secret_objects_dir[PATH_MAX];
@@ -19822,6 +20492,10 @@ static int secdat_store_migrate_write_v2(
     printf("secret_objects=%zu\n", report->secret_objects);
     printf("metadata_sidecars=%zu\n", report->metadata_sidecars);
     printf("tombstones=%zu\n", report->tombstones);
+    printf("canonical_masks=%zu\n", report->canonical_masks);
+    printf("canonical_mask_candidates=%zu\n", report->canonical_mask_candidates);
+    printf("ambiguous_legacy_masks=%zu\n", report->ambiguous_legacy_masks);
+    printf("rollback_mask_blockers=%zu\n", report->rollback_mask_blockers);
     printf("public_values=%zu\n", report->public_values);
     printf("encrypted_values=%zu\n", report->encrypted_values);
     printf("bulk_select_entries=%zu\n", report->bulk_select_entries);

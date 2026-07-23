@@ -180,7 +180,7 @@ for unexpected in ["--bulk-select", "--inject", "--inject-file", "--inject-gate"
 mode, values, _ = run_completion("list", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: list option completion mode mismatch: {mode!r}")
-for expected in ["--masked", "--safe", "--unsafe", "--bulk-gate", "--public-value", "--secret-value", "--all-masks", "--json"]:
+for expected in ["--masked", "--dormant", "--safe", "--unsafe", "--bulk-gate", "--public-value", "--secret-value", "--all-masks", "--long", "--json"]:
     assert_contains(values, expected, "list options")
 for unexpected in ["--bulk-select", "--inject", "--inject-file", "--inject-gate", "--inject-bulk-gate", "--sandbox-injectable"]:
     assert_not_contains(values, unexpected, "list options must not suggest attr/exec/legacy flags")

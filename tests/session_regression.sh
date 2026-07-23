@@ -658,7 +658,7 @@ for args, marker in [
     ([bin_path, "help", "unlock"], "unlock [-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH] [--gui]"),
     ([bin_path, "help", "inherit"], "[-d DIR|--dir DIR] inherit"),
     ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [-i|--inherit] [-s|--save]"),
-    ([bin_path, "help", "list"], "list [-m|--masked] [-o|--overridden] [-O|--orphaned] [-e|--safe|--secret-value] [-u|--unsafe|--public-value] [--bulk-gate]"),
+    ([bin_path, "help", "list"], "list [-m|--masked] [--dormant] [-O|--orphaned] [--all-masks] [--long|--json]"),
     ([bin_path, "help", "attr"], "attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include]"),
     ([bin_path, "help", "fsck"], "fsck [--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]"),
     ([bin_path, "help", "gc"], "gc [--orphaned] [--dangling] [--dry-run] [--format v2]"),
@@ -756,10 +756,21 @@ if misaligned_usage_columns:
 
 for args, fragments in [
     (
+        [bin_path, "help", "list"],
+        [
+            "list: inspect current-domain entries or identity and legacy masks by state",
+            "--masked, --dormant, and --orphaned select mask states",
+            "state=unknown means observation is incomplete, not a fourth stored state",
+        ],
+    ),
+    (
         [bin_path, "help", "store", "migrate"],
         [
             "store migrate: validate one v1 store;",
             "leave v1 fallback files in place",
+            "existing canonical masks, conversion candidates, ambiguous legacy masks",
+            "unverifiable legacy projection blocks migration",
+            "dry-run mask-plan rows name each authorized candidate, ambiguity, or existing canonical mask",
             "write the v2 graph after reviewing the dry-run output:",
         ],
     ),
@@ -768,6 +779,9 @@ for args, fragments in [
         [
             "store migrate: validate one v1 store;",
             "leave v1 fallback files in place",
+            "existing canonical masks, conversion candidates, ambiguous legacy masks",
+            "unverifiable legacy projection blocks migration",
+            "dry-run mask-plan rows name each authorized candidate, ambiguity, or existing canonical mask",
             "write the v2 graph after reviewing the dry-run output:",
         ],
     ),
@@ -811,6 +825,11 @@ for args, fragments in [
         [
             "with no filters, fsck runs orphaned, dangling, and refcount checks",
             "--repair only rebuilds cached v2 refcounts",
+            "orphaned-mask, ambiguous-mask, dangling-mask, and incomplete-mask-state",
+            "corrupt mask rows use a non-reversible record-sha256 handle",
+            "<redacted> means the identity is not authorized",
+            "first 16 SHA-256 hex digits of the .mask filename UUID",
+            "no automatic mask-record repair is available",
         ],
     ),
     (
