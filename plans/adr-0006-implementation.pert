@@ -1,0 +1,168 @@
+project ADR0006:
+  version 1
+  title "UUID-stable mv and identity-linked masks"
+  description |
+    ADR 0006を実装issue #161から#169まで順番に進める。
+    各taskはfocused regression、設計整合性review、non-WIP commit、
+    issueへの結果記録とcloseまでを完了条件に含む。
+    task=edge、milestone=nodeとし、後段は前段の受け入れ完了まで開始しない。
+  as_of 2026-07-23
+  duration_unit point
+  velocity 5p/1d
+  finish ADR0006_ACCEPTED
+
+resource CODEX:
+  title "実装担当枠"
+  capacity 1
+
+resource REVIEW:
+  title "設計整合性レビュー枠"
+  capacity 1
+
+milestone NOW:
+  title "計画コミット完了"
+  state reached
+
+milestone MASK_MODEL_OBSERVABLE:
+  title "mask read modelを外部観測可能"
+
+milestone MASK_INSPECTION_ACCEPTED:
+  title "mask inspectionとmigration dry-run受け入れ完了"
+
+milestone MASK_WRITES_ACCEPTED:
+  title "canonical mask writeとchain操作受け入れ完了"
+
+milestone MASK_IMPACT_ACCEPTED:
+  title "mutation impactと警告契約受け入れ完了"
+
+milestone LOCAL_MV_ACCEPTED:
+  title "local UUID-stable mv受け入れ完了"
+
+milestone SOURCE_ABSENCE_ACCEPTED:
+  title "source-effective absence受け入れ完了"
+
+milestone INHERITED_MV_ACCEPTED:
+  title "inherited mvとpropagate受け入れ完了"
+
+milestone CROSS_NAMESPACE_ACCEPTED:
+  title "cross-domain/store mv受け入れ完了"
+
+milestone ADR0006_ACCEPTED:
+  title "全surfaceと全体回帰受け入れ完了"
+
+task MASK_READ_MODEL NOW -> MASK_MODEL_OBSERVABLE:
+  title "canonical mask read modelとimpact classifierを実装する"
+  description |
+    Issue #161。canonical/legacy parser、entry_id到達性、state分類、
+    共通impact analyzer、最小のlist --all-masks --json観測面、
+    tests/mask_identity_regression.shを実装・review・commitする。
+  duration 5p
+  status planned
+  priority 90
+  requires:
+    CODEX 1
+    REVIEW 1
+
+task MASK_INSPECTION MASK_MODEL_OBSERVABLE -> MASK_INSPECTION_ACCEPTED:
+  title "mask inspectionとmigration dry-runを完成する"
+  description |
+    Issue #162。dormant/orphaned/all-masks filter、long/JSON認可、
+    fsck分類、rollback-safe migration dry-runを実装・review・commitする。
+  duration 5p
+  status planned
+  priority 80
+  requires:
+    CODEX 1
+    REVIEW 1
+
+task MASK_WRITES MASK_INSPECTION_ACCEPTED -> MASK_WRITES_ACCEPTED:
+  title "transaction基盤とrollback-safe canonical mask writeを実装する"
+  description |
+    Issue #163。operation plan/snapshot、journal/staged commit/recoveryを先に作り、
+    legacy dual-write、rebind、fallback chain、chain-aware unmask、
+    mask系dry-run/JSONと対応help/spec/man/completion/poを実装・review・commitする。
+  duration 13p
+  status planned
+  priority 70
+  requires:
+    CODEX 1
+    REVIEW 1
+
+task MASK_IMPACT_WRITES MASK_WRITES_ACCEPTED -> MASK_IMPACT_ACCEPTED:
+  title "全mutationにmask impactと直交警告を適用する"
+  description |
+    Issue #164。set/cp/ln/rm/load/multi-setのpreserve/reject、
+    default/on/off警告、direct-hit、whole-batch transaction、
+    dry-run/JSONと対応help/spec/man/completion/poを実装・review・commitする。
+  duration 21p
+  status planned
+  priority 60
+  requires:
+    CODEX 1
+    REVIEW 1
+
+task LOCAL_UUID_MV MASK_IMPACT_ACCEPTED -> LOCAL_MV_ACCEPTED:
+  title "same-domain/store UUID-stable v2 mvを実装する"
+  description |
+    Issue #165。entry_id/secret_idを維持するentry rename、
+    descendant maskのlast-known更新とinaccessible preflight、metadata移動、
+    link/refcount不変、journal recovery、dry-run/JSON、
+    対応help/spec/man/completion/poを実装・review・commitする。
+  duration 13p
+  status planned
+  priority 50
+  requires:
+    CODEX 1
+    REVIEW 1
+
+task SOURCE_ABSENCE LOCAL_MV_ACCEPTED -> SOURCE_ABSENCE_ACCEPTED:
+  title "local override move後のsource absenceを保存する"
+  description |
+    Issue #166。source-mask-created、preserve/reject planning、
+    inherited fallback非露出、dry-run/JSON、
+    対応help/spec/man/completion/poを実装・review・commitする。
+  duration 8p
+  status planned
+  priority 40
+  requires:
+    CODEX 1
+    REVIEW 1
+
+task INHERITED_MV SOURCE_ABSENCE_ACCEPTED -> INHERITED_MV_ACCEPTED:
+  title "inherited-source mvとmask propagateを実装する"
+  description |
+    Issue #167。新entry_idと同一secret_idのmaterialize、
+    source mask、registered descendant preflight、propagate、dry-run/JSON、
+    対応help/spec/man/completion/poを実装・review・commitする。
+  duration 21p
+  status planned
+  priority 30
+  requires:
+    CODEX 1
+    REVIEW 1
+
+task CROSS_NAMESPACE_MV INHERITED_MV_ACCEPTED -> CROSS_NAMESPACE_ACCEPTED:
+  title "guarded cross-domain/store v2 mvを実装する"
+  description |
+    Issue #168。object-owner lifecycle guard、rewrap、既存journalの
+    cross-domain recovery、changed-since-plan、dry-run/JSON、fault regression、
+    対応help/spec/man/completion/poを実装・review・commitする。
+  duration 34p
+  status planned
+  priority 20
+  requires:
+    CODEX 1
+    REVIEW 1
+
+task SURFACE_COMPLETION CROSS_NAMESPACE_ACCEPTED -> ADR0006_ACCEPTED:
+  title "SDK FUSE migrationと全surface整合性監査を完成する"
+  description |
+    Issue #169。versioned SDK impact API、FUSE audit、migration finalization、
+    各sliceで更新済みのhelp/spec/man/README/completion/poを最終監査し、
+    optional FUSE buildとmake checkを完了してreview・commitする。
+  duration 21p
+  status planned
+  priority 10
+  requires:
+    CODEX 1
+    REVIEW 1
