@@ -972,6 +972,11 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
         if (strcmp(previous, "--format") == 0) {
             return "none";
         }
+    } else if (strcmp(command, "unmask") == 0) {
+        if (strcmp(previous, "--mask-chain") == 0
+            || strcmp(previous, "--mask-warnings") == 0) {
+            return "none";
+        }
     } else if (strcmp(command, "exec") == 0) {
         if (strcmp(previous, "--inject-file") == 0) {
             return "file";
@@ -1154,6 +1159,13 @@ int secdat_cli_complete(int argc, char **argv)
     static const char *const gc_options[] = {
         "--orphaned", "--dangling", "--dry-run", "--format", "--help", "-h", NULL,
     };
+    static const char *const mask_options[] = {
+        "--rebind", "--dry-run", "--json", "--help", "-h", NULL,
+    };
+    static const char *const unmask_options[] = {
+        "--dry-run", "--json", "--mask-chain", "--mask-warnings",
+        "--warn-mask", "--no-warn-mask", "--help", "-h", NULL,
+    };
     static const char *const get_options[] = {
         "--on-demand-unlock", "-w", "--unlock-timeout", "-t", "--stdout", "-o", "--shellescaped", "-e", "--help", "-h", NULL,
     };
@@ -1280,6 +1292,10 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, fsck_options);
     } else if (strcmp(command, "gc") == 0) {
         secdat_cli_completion_print_candidates(current, gc_options);
+    } else if (strcmp(command, "mask") == 0) {
+        secdat_cli_completion_print_candidates(current, mask_options);
+    } else if (strcmp(command, "unmask") == 0) {
+        secdat_cli_completion_print_candidates(current, unmask_options);
     } else if (strcmp(command, "get") == 0) {
         secdat_cli_completion_print_candidates(current, get_options);
     } else if (strcmp(command, "set") == 0) {
@@ -1473,10 +1489,10 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "gc", "[--orphaned] [--dangling] [--dry-run] [--format v2]");
         break;
     case SECDAT_COMMAND_MASK:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mask", "KEYREF");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mask", "[--rebind] [--dry-run] [--json] KEYREF");
         break;
     case SECDAT_COMMAND_UNMASK:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "unmask", "KEYREF");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "unmask", "[--dry-run] [--json] [--mask-chain UUID] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] KEYREF");
         break;
     case SECDAT_COMMAND_EXISTS:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exists", "KEYREF");
@@ -1681,8 +1697,8 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  relation suggest-link: compare same-name keys across registered domains and show link candidates\n"));
     secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and limited repair\n"));
     secdat_cli_print_detail_line(_("  gc: remove unreachable or dangling v2 graph files after review\n"));
-    secdat_cli_print_detail_line(_("  mask: create a local tombstone to hide one inherited key\n"));
-    secdat_cli_print_detail_line(_("  unmask: remove one local tombstone from the current domain\n"));
+    secdat_cli_print_detail_line(_("  mask: create a rollback-safe identity mask for one inherited key, or atomically rebind an orphan barrier\n"));
+    secdat_cli_print_detail_line(_("  unmask: atomically remove one logical mask chain, with explicit chain selection when names are ambiguous\n"));
     secdat_cli_print_detail_line(_("  exists: check whether one resolved key is visible from the current domain view\n"));
     secdat_cli_print_detail_line(_("  id: print the v2 secret object UUID for one resolved key without reading its value\n"));
     secdat_cli_print_detail_line(_("  get: decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock\n"));
@@ -1815,11 +1831,18 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "mask") == 0) {
-        secdat_cli_print_detail_line(_("  mask: create a local tombstone to hide one inherited key\n"));
+        secdat_cli_print_detail_line(_("  mask: create a canonical identity mask and, for public names, its v1 rollback-compatible tombstone in one recoverable transaction\n"));
+        secdat_cli_print_detail_line(_("  hidden names remain canonical-only; an unsafe v1 rollback projection is rejected before mutation\n"));
+        secdat_cli_print_detail_line(_("  --rebind repairs a legacy or orphan barrier by attaching the current unique inherited target without an exposure window\n"));
+        secdat_cli_print_detail_line(_("  when rebind has multiple candidates, use domain ls --ancestors and id KEY in each ancestor to locate duplicates before retrying\n"));
+        secdat_cli_print_detail_line(_("  --dry-run reports the immutable plan; --json uses secdat.mask-operation-plan.v1 for dry-run and committed results\n"));
         return;
     }
     if (target != NULL && strcmp(target, "unmask") == 0) {
-        secdat_cli_print_detail_line(_("  unmask: remove one local tombstone from the current domain\n"));
+        secdat_cli_print_detail_line(_("  unmask: atomically remove the unique logical mask chain controlling one key\n"));
+        secdat_cli_print_detail_line(_("  name-only removal refuses competing chains and chains protecting multiple names; inspect list --all-masks --long and retry with --mask-chain UUID\n"));
+        secdat_cli_print_detail_line(_("  --mask-chain must identify a chain that protects the requested key; --dry-run/--json list every affected authorized key slot\n"));
+        secdat_cli_print_detail_line(_("  deferred-exposure warnings default to on; --mask-warnings=default|on|off, --warn-mask, and --no-warn-mask change warnings only\n"));
         return;
     }
     if (target != NULL && strcmp(target, "exists") == 0) {
@@ -2052,6 +2075,24 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         snprintf(buffer, sizeof(buffer), _("  preview unreachable v2 graph files before deletion: %s gc --format v2 --dry-run\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  delete the reviewed unreachable v2 graph files: %s gc --format v2\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        return;
+    }
+    if (strcmp(target, "mask") == 0) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  preview the canonical identity and any safe rollback projection: %s mask --dry-run --json API_TOKEN\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  repair an orphan barrier without exposing the replacement target: %s mask --rebind API_TOKEN\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        return;
+    }
+    if (strcmp(target, "unmask") == 0) {
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer), _("  preview every record removed from the unique chain: %s unmask --dry-run --json API_TOKEN\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  inspect and explicitly remove one multi-name chain: %s unmask --dry-run --mask-chain UUID API_TOKEN\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  suppress only the post-commit warning: %s unmask --no-warn-mask API_TOKEN\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         return;
     }

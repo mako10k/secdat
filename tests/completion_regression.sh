@@ -185,6 +185,41 @@ for expected in ["--masked", "--dormant", "--safe", "--unsafe", "--bulk-gate", "
 for unexpected in ["--bulk-select", "--inject", "--inject-file", "--inject-gate", "--inject-bulk-gate", "--sandbox-injectable"]:
     assert_not_contains(values, unexpected, "list options must not suggest attr/exec/legacy flags")
 
+mode, values, _ = run_completion("mask", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: mask option completion mode mismatch: {mode!r}")
+for expected in ["--rebind", "--dry-run", "--json"]:
+    assert_contains(values, expected, "mask options")
+for unexpected in ["--mask-chain", "--mask-warnings", "--no-warn-mask"]:
+    assert_not_contains(values, unexpected, "mask options must not suggest unmask-only flags")
+
+mode, values, _ = run_completion("unmask", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: unmask option completion mode mismatch: {mode!r}")
+for expected in [
+    "--dry-run",
+    "--json",
+    "--mask-chain",
+    "--mask-warnings",
+    "--warn-mask",
+    "--no-warn-mask",
+]:
+    assert_contains(values, expected, "unmask options")
+
+mode, values, _ = run_completion("unmask", "--mask-chain", "")
+if mode != "none" or values:
+    raise SystemExit(
+        "FAIL: unmask --mask-chain completion should not expose UUIDs: "
+        f"mode={mode!r} values={values!r}"
+    )
+
+mode, values, _ = run_completion("unmask", "--mask-warnings", "")
+if mode != "none" or values:
+    raise SystemExit(
+        "FAIL: unmask --mask-warnings completion should stay silent: "
+        f"mode={mode!r} values={values!r}"
+    )
+
 mode, values, _ = run_completion("unlock", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: unlock option completion mode mismatch: {mode!r}")

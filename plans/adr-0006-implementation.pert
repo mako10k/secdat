@@ -82,7 +82,7 @@ task MASK_WRITES MASK_INSPECTION_ACCEPTED -> MASK_WRITES_ACCEPTED:
     legacy dual-write、rebind、fallback chain、chain-aware unmask、
     mask系dry-run/JSONと対応help/spec/man/completion/poを実装・review・commitする。
   duration 13p
-  status active
+  status done
   priority 70
   requires:
     CODEX 1
@@ -95,7 +95,7 @@ task MASK_IMPACT_WRITES MASK_WRITES_ACCEPTED -> MASK_IMPACT_ACCEPTED:
     default/on/off警告、direct-hit、whole-batch transaction、
     dry-run/JSONと対応help/spec/man/completion/poを実装・review・commitする。
   duration 21p
-  status planned
+  status active
   priority 60
   requires:
     CODEX 1

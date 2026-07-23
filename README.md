@@ -207,12 +207,44 @@ else
 fi
 ```
 
-To hide an inherited key in a child domain without touching the parent value, use `mask`. To remove that local tombstone later, use `unmask`:
+To hide an inherited key in a child domain without touching the parent value,
+use `mask`. In a v2 store this writes a canonical mask targeting the inherited
+entry UUID and, for a publicly named target, a v1-compatible name tombstone.
+Hidden-name targets use only the encrypted-name canonical record; if a retained
+v1 fallback would require exposing that name, `mask` fails before mutation.
+The files commit through a recoverable journal, so a restart leaves either the
+old state or the complete new state. Preview the same immutable plan with `--dry-run`; use
+`--json` for the `secdat.mask-operation-plan.v1` schema:
 
 ```sh
+./src/secdat --dir ~/example/project/child mask --dry-run --json API_TOKEN
 ./src/secdat --dir ~/example/project/child mask API_TOKEN
 ./src/secdat --dir ~/example/project/child unmask API_TOKEN
 ```
+
+Repeated `mask` of the same target retains its `mask_chain_id` and is a no-op.
+A nearer local entry may coexist with the inherited-entry mask, in which case
+the mask is dormant. `mask --rebind KEY` atomically attaches a legacy or
+orphan barrier to the current unique inherited target while retaining orphan
+history in the same chain. If multiple inherited candidates remain, inspect
+`list --all-masks --long` and resolve that ambiguity before retrying rebind.
+
+`unmask KEY` removes the one logical chain controlling that authorized name.
+Name-only removal refuses competing chains and a chain that has come to
+protect multiple names. Inspect it with `list --all-masks --long`, then use the
+displayed chain only with the matching key:
+
+```sh
+./src/secdat --dir ~/example/project/child unmask --dry-run \
+  --mask-chain MASK_CHAIN_UUID --json API_TOKEN
+./src/secdat --dir ~/example/project/child unmask \
+  --mask-chain MASK_CHAIN_UUID API_TOKEN
+```
+
+When a local override remains, `unmask` warns after commit that removing that
+local entry later may expose inheritance. `--mask-warnings=default|on|off`,
+`--warn-mask`, and `--no-warn-mask` control only this warning; they do not
+change the plan, persisted state, success, or exit status.
 
 For current-domain state inspection, `list` can show active, dormant, or
 orphaned masks and local overrides:

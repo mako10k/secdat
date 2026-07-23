@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fnmatch.h>
+#include <jansson.h>
 #include <limits.h>
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
@@ -26,6 +27,7 @@
 #include <strings.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -64,6 +66,8 @@
 #define SECDAT_METADATA_TEXT_FILE_MAX 32768
 #define SECDAT_V2_OBJECT_KEY_LEN 32
 #define SECDAT_KEY_SUGGESTION_LIMIT 5
+#define SECDAT_TRANSACTION_MAX_TARGETS 256
+#define SECDAT_SHA256_HEX_LENGTH 64
 
 static const unsigned char secdat_entry_magic[8] = {'S', 'E', 'C', 'D', 'A', 'T', '1', '\0'};
 static const unsigned char secdat_v2_value_magic[8] = {'S', 'E', 'C', 'D', 'V', 'A', 'L', '2'};
@@ -77,6 +81,9 @@ static const char secdat_store_format_magic[] = "SECDATSTORE1";
 static const char secdat_v2_domain_entry_magic[] = "SECDATDENT1";
 static const char secdat_v2_secret_object_magic[] = "SECDATSECOBJ1";
 static const char secdat_v2_mask_magic[] = "SECDATMASK1";
+static const char secdat_v2_compat_tombstone_magic[] = "SECDATMASKCOMPAT1";
+static const char secdat_transaction_magic[] = "SECDATTXN1";
+static int secdat_command_transaction_lock_fd = -1;
 
 struct secdat_key_list {
     char **items;
@@ -409,6 +416,49 @@ struct secdat_mask_view_list {
     size_t visible_unknown_state_count;
 };
 
+enum secdat_transaction_state {
+    SECDAT_TRANSACTION_STAGING = 0,
+    SECDAT_TRANSACTION_PREPARED,
+    SECDAT_TRANSACTION_COMMITTING,
+    SECDAT_TRANSACTION_COMMITTED,
+};
+
+enum secdat_transaction_artifact_kind {
+    SECDAT_TRANSACTION_ARTIFACT_MASK = 0,
+    SECDAT_TRANSACTION_ARTIFACT_TOMBSTONE,
+    SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY,
+};
+
+struct secdat_transaction_target {
+    enum secdat_transaction_artifact_kind kind;
+    char domain_id[PATH_MAX];
+    char store_name[PATH_MAX];
+    char name[PATH_MAX];
+    char path[PATH_MAX];
+    char before_digest[SECDAT_SHA256_HEX_LENGTH + 1];
+    char after_digest[SECDAT_SHA256_HEX_LENGTH + 1];
+    unsigned char *before_data;
+    size_t before_length;
+    unsigned char *after_data;
+    size_t after_length;
+    int before_exists;
+    int after_exists;
+};
+
+struct secdat_transaction {
+    char operation_id[64];
+    char command[64];
+    char owner_domain_id[PATH_MAX];
+    char owner_store_name[PATH_MAX];
+    char transactions_root[PATH_MAX];
+    char operation_dir[PATH_MAX];
+    enum secdat_transaction_state state;
+    struct secdat_transaction_target *targets;
+    size_t target_count;
+    size_t target_capacity;
+    int lock_fd;
+};
+
 struct secdat_key_access_options {
     int allow_on_demand_unlock;
     int timeout_configured;
@@ -419,6 +469,95 @@ struct secdat_get_options {
     const char *keyref;
     int shellescaped;
     struct secdat_key_access_options access;
+};
+
+struct secdat_mask_command_options {
+    const char *keyref;
+    const char *mask_chain_id;
+    int mask_warnings;
+    int mask_warnings_configured;
+    int rebind;
+    int dry_run;
+    int json;
+};
+
+enum secdat_mask_warning_policy {
+    SECDAT_MASK_WARNINGS_DEFAULT = 0,
+    SECDAT_MASK_WARNINGS_ON,
+    SECDAT_MASK_WARNINGS_OFF,
+};
+
+static const char *secdat_mask_warning_policy_name(
+    enum secdat_mask_warning_policy policy
+)
+{
+    switch (policy) {
+    case SECDAT_MASK_WARNINGS_ON:
+        return "on";
+    case SECDAT_MASK_WARNINGS_OFF:
+        return "off";
+    case SECDAT_MASK_WARNINGS_DEFAULT:
+    default:
+        return "default";
+    }
+}
+
+struct secdat_mask_write_plan {
+    struct secdat_v2_mask_record record;
+    unsigned char *record_payload;
+    size_t record_payload_length;
+    unsigned char *tombstone_before_data;
+    size_t tombstone_before_length;
+    unsigned char *target_entry_before_data;
+    size_t target_entry_before_length;
+    unsigned char tombstone_payload[128];
+    size_t tombstone_payload_length;
+    char key[PATH_MAX];
+    char mask_domain_id[PATH_MAX];
+    char store_name[PATH_MAX];
+    char target_domain_id[PATH_MAX];
+    int rebind;
+    int no_op;
+    int write_mask;
+    int write_tombstone;
+    int tombstone_before_exists;
+    int retains_predecessor;
+};
+
+struct secdat_unmask_record_plan {
+    char target_entry_id[64];
+    char key[PATH_MAX];
+    unsigned char *before_data;
+    size_t before_length;
+};
+
+struct secdat_unmask_tombstone_plan {
+    char key[PATH_MAX];
+    unsigned char *before_data;
+    size_t before_length;
+    int before_exists;
+    unsigned char after_data[128];
+    size_t after_length;
+    int after_exists;
+};
+
+struct secdat_unmask_plan {
+    struct secdat_unmask_record_plan *records;
+    size_t record_count;
+    struct secdat_unmask_tombstone_plan *tombstones;
+    size_t tombstone_count;
+    struct secdat_key_list affected_keys;
+    char requested_key[PATH_MAX];
+    char mask_domain_id[PATH_MAX];
+    char store_name[PATH_MAX];
+    char mask_chain_id[64];
+    char resulting_effective_state[32];
+    size_t remaining_mask_chain_count;
+    size_t remaining_legacy_barrier_count;
+    enum secdat_mask_warning_policy warning_requested;
+    int warning_effective;
+    int local_override_present;
+    int legacy_only;
 };
 
 struct secdat_wait_unlock_options {
@@ -705,6 +844,8 @@ static int secdat_update_v2_secret_refcount(
 );
 static int secdat_atomic_write_file(const char *path, const unsigned char *data, size_t length);
 static int secdat_remove_if_exists(const char *path);
+static int secdat_recover_transactions(void);
+static int secdat_test_signal_transaction_lock_attempt(unsigned char signal);
 static int secdat_parse_i64(const char *value, time_t *result);
 static int secdat_session_agent_connect_chain_details(const struct secdat_domain_chain *chain, size_t *matched_index, size_t *blocked_index);
 static int secdat_session_agent_status(const struct secdat_domain_chain *chain, struct secdat_session_record *record);
@@ -8998,7 +9139,7 @@ static int secdat_decrypt_value(
     unsigned char algorithm;
     uint32_t ciphertext_length;
     size_t header_length;
-    size_t payload_length;
+    size_t payload_length = 0;
     size_t decoded_length;
     int written_length;
     int final_length;
@@ -13354,6 +13495,2062 @@ static int secdat_build_v2_mask_path(
     return 0;
 }
 
+static const char *secdat_transaction_state_name(enum secdat_transaction_state state)
+{
+    switch (state) {
+    case SECDAT_TRANSACTION_STAGING:
+        return "staging";
+    case SECDAT_TRANSACTION_PREPARED:
+        return "prepared";
+    case SECDAT_TRANSACTION_COMMITTING:
+        return "committing";
+    case SECDAT_TRANSACTION_COMMITTED:
+        return "committed";
+    default:
+        return NULL;
+    }
+}
+
+static int secdat_transaction_parse_state(
+    const char *value,
+    enum secdat_transaction_state *state
+)
+{
+    if (strcmp(value, "staging") == 0) {
+        *state = SECDAT_TRANSACTION_STAGING;
+    } else if (strcmp(value, "prepared") == 0) {
+        *state = SECDAT_TRANSACTION_PREPARED;
+    } else if (strcmp(value, "committing") == 0) {
+        *state = SECDAT_TRANSACTION_COMMITTING;
+    } else if (strcmp(value, "committed") == 0) {
+        *state = SECDAT_TRANSACTION_COMMITTED;
+    } else {
+        return 1;
+    }
+    return 0;
+}
+
+static const char *secdat_transaction_artifact_kind_name(
+    enum secdat_transaction_artifact_kind kind
+)
+{
+    switch (kind) {
+    case SECDAT_TRANSACTION_ARTIFACT_MASK:
+        return "mask";
+    case SECDAT_TRANSACTION_ARTIFACT_TOMBSTONE:
+        return "tombstone";
+    case SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY:
+        return "domain-entry";
+    default:
+        return NULL;
+    }
+}
+
+static int secdat_transaction_parse_artifact_kind(
+    const char *value,
+    enum secdat_transaction_artifact_kind *kind
+)
+{
+    if (strcmp(value, "mask") == 0) {
+        *kind = SECDAT_TRANSACTION_ARTIFACT_MASK;
+    } else if (strcmp(value, "tombstone") == 0) {
+        *kind = SECDAT_TRANSACTION_ARTIFACT_TOMBSTONE;
+    } else if (strcmp(value, "domain-entry") == 0) {
+        *kind = SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY;
+    } else {
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_sha256_hex(
+    const unsigned char *data,
+    size_t length,
+    char digest_hex[SECDAT_SHA256_HEX_LENGTH + 1]
+)
+{
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_length = 0;
+    size_t index;
+
+    if (EVP_Digest(data, length, digest, &digest_length, EVP_sha256(), NULL) != 1
+        || digest_length != 32) {
+        fprintf(stderr, _("failed to calculate transaction digest\n"));
+        return 1;
+    }
+    for (index = 0; index < digest_length; index += 1) {
+        snprintf(digest_hex + index * 2, 3, "%02x", digest[index]);
+    }
+    digest_hex[SECDAT_SHA256_HEX_LENGTH] = '\0';
+    return 0;
+}
+
+static int secdat_transaction_digest_is_valid(const char *value)
+{
+    return value != NULL
+        && strlen(value) == SECDAT_SHA256_HEX_LENGTH
+        && secdat_hex_string_is_valid(value);
+}
+
+static int secdat_fsync_directory(const char *path)
+{
+    int descriptor = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+
+    if (descriptor < 0) {
+        fprintf(stderr, _("failed to open directory for fsync: %s\n"), path);
+        return 1;
+    }
+    if (fsync(descriptor) != 0) {
+        fprintf(stderr, _("failed to fsync directory: %s\n"), path);
+        close(descriptor);
+        return 1;
+    }
+    if (close(descriptor) != 0) {
+        fprintf(stderr, _("failed to close directory: %s\n"), path);
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_fsync_parent_directory(const char *path)
+{
+    char parent[PATH_MAX];
+    char *separator;
+
+    if (secdat_copy_string(parent, sizeof(parent), path) != 0) {
+        return 1;
+    }
+    separator = strrchr(parent, '/');
+    if (separator == NULL || separator == parent) {
+        fprintf(stderr, _("invalid path: %s\n"), path);
+        return 1;
+    }
+    *separator = '\0';
+    return secdat_fsync_directory(parent);
+}
+
+static int secdat_transaction_root_path(char *buffer, size_t size)
+{
+    char state_dir[PATH_MAX];
+
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
+        return 1;
+    }
+    return snprintf(buffer, size, "%s/transactions", state_dir) >= (int)size;
+}
+
+static int secdat_transaction_validate_directory(const char *path)
+{
+    struct stat status;
+
+    if (lstat(path, &status) != 0
+        || !S_ISDIR(status.st_mode)
+        || (status.st_mode & 077) != 0) {
+        fprintf(stderr, _("invalid transaction directory: %s\n"), path);
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_transaction_ensure_root(char *root, size_t root_size)
+{
+    char state_dir[PATH_MAX];
+
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || secdat_ensure_directory(state_dir, 0700) != 0
+        || secdat_transaction_root_path(root, root_size) != 0
+        || secdat_ensure_directory(root, 0700) != 0
+        || secdat_fsync_directory(state_dir) != 0) {
+        return 1;
+    }
+    return secdat_transaction_validate_directory(root);
+}
+
+static int secdat_transaction_open_lock(const char *root)
+{
+    char lock_path[PATH_MAX];
+    const char *test_sync =
+        getenv("SECDAT_TEST_TRANSACTION_LOCK_ATTEMPT_FD");
+    struct stat status;
+    int descriptor;
+
+    if (snprintf(lock_path, sizeof(lock_path), "%s/lock", root) >= (int)sizeof(lock_path)) {
+        fprintf(stderr, _("path is too long\n"));
+        return -1;
+    }
+    descriptor = open(lock_path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (descriptor < 0
+        || fstat(descriptor, &status) != 0
+        || !S_ISREG(status.st_mode)
+        || (status.st_mode & 077) != 0) {
+        if (descriptor >= 0) {
+            close(descriptor);
+        }
+        fprintf(stderr, _("invalid transaction lock\n"));
+        return -1;
+    }
+    if (test_sync != NULL) {
+        if (flock(descriptor, LOCK_EX | LOCK_NB) == 0) {
+            if (secdat_test_signal_transaction_lock_attempt('A') != 0) {
+                close(descriptor);
+                return -1;
+            }
+            return descriptor;
+        }
+        if ((errno != EWOULDBLOCK && errno != EAGAIN)
+            || secdat_test_signal_transaction_lock_attempt('B') != 0) {
+            fprintf(stderr, _("failed to lock transactions\n"));
+            close(descriptor);
+            return -1;
+        }
+    }
+    if (flock(descriptor, LOCK_EX) != 0) {
+        fprintf(stderr, _("failed to lock transactions\n"));
+        close(descriptor);
+        return -1;
+    }
+    return descriptor;
+}
+
+static void secdat_transaction_reset(struct secdat_transaction *transaction)
+{
+    size_t index;
+
+    for (index = 0; index < transaction->target_count; index += 1) {
+        secdat_secure_clear(
+            transaction->targets[index].before_data,
+            transaction->targets[index].before_length
+        );
+        free(transaction->targets[index].before_data);
+        secdat_secure_clear(
+            transaction->targets[index].after_data,
+            transaction->targets[index].after_length
+        );
+        free(transaction->targets[index].after_data);
+    }
+    free(transaction->targets);
+    if (transaction->lock_fd >= 0) {
+        (void)flock(transaction->lock_fd, LOCK_UN);
+        close(transaction->lock_fd);
+    }
+    memset(transaction, 0, sizeof(*transaction));
+    transaction->lock_fd = -1;
+}
+
+static int secdat_transaction_target_path(
+    enum secdat_transaction_artifact_kind kind,
+    const char *domain_id,
+    const char *store_name,
+    const char *name,
+    char *path,
+    size_t path_size
+)
+{
+    if (!secdat_domain_id_is_valid(domain_id)
+        || store_name == NULL
+        || store_name[0] == '\0') {
+        return 1;
+    }
+    switch (kind) {
+    case SECDAT_TRANSACTION_ARTIFACT_MASK:
+        if (!secdat_uuid_is_valid(name)) {
+            return 1;
+        }
+        return secdat_build_v2_mask_path(domain_id, store_name, name, path, path_size);
+    case SECDAT_TRANSACTION_ARTIFACT_TOMBSTONE:
+        if (!secdat_is_valid_env_name(name)) {
+            return 1;
+        }
+        return secdat_build_tombstone_path(domain_id, store_name, name, path, path_size);
+    case SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY:
+        if (!secdat_uuid_is_valid(name)) {
+            return 1;
+        }
+        return secdat_build_v2_domain_entry_path(
+            domain_id,
+            store_name,
+            name,
+            path,
+            path_size
+        );
+    default:
+        return 1;
+    }
+}
+
+static int secdat_transaction_read_target(
+    const char *path,
+    unsigned char **data,
+    size_t *length,
+    int *exists
+)
+{
+    struct stat status;
+
+    *data = NULL;
+    *length = 0;
+    *exists = 0;
+    if (lstat(path, &status) != 0) {
+        if (errno == ENOENT) {
+            return 0;
+        }
+        fprintf(stderr, _("failed to inspect transaction target: %s\n"), path);
+        return 1;
+    }
+    if (!S_ISREG(status.st_mode) || (status.st_mode & 077) != 0) {
+        fprintf(stderr, _("invalid transaction target: %s\n"), path);
+        return 1;
+    }
+    if (secdat_read_file(path, data, length) != 0) {
+        return 1;
+    }
+    *exists = 1;
+    return 0;
+}
+
+static int secdat_transaction_open_child_directory(
+    int parent_fd,
+    const char *name
+)
+{
+    struct stat status;
+    int descriptor = openat(
+        parent_fd,
+        name,
+        O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+    );
+
+    if (descriptor < 0
+        || fstat(descriptor, &status) != 0
+        || !S_ISDIR(status.st_mode)
+        || (status.st_mode & 022) != 0) {
+        if (descriptor >= 0) {
+            close(descriptor);
+        }
+        return -1;
+    }
+    return descriptor;
+}
+
+static int secdat_transaction_open_target_parent(
+    const struct secdat_transaction_target *target,
+    char *basename,
+    size_t basename_size
+)
+{
+    char state_dir[PATH_MAX];
+    char *escaped_store = NULL;
+    char *escaped_name = NULL;
+    int descriptor = -1;
+    int next_descriptor = -1;
+    const char *components[6];
+    size_t component_count = 0;
+    size_t index;
+
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || secdat_escape_component(target->store_name, &escaped_store) != 0) {
+        goto cleanup;
+    }
+    components[component_count++] = "domains";
+    components[component_count++] = "by-id";
+    components[component_count++] = target->domain_id;
+    components[component_count++] = "stores";
+    components[component_count++] = escaped_store;
+    if (target->kind == SECDAT_TRANSACTION_ARTIFACT_MASK) {
+        components[component_count++] = "masks";
+        if (snprintf(
+                basename,
+                basename_size,
+                "%s.mask",
+                target->name
+            ) >= (int)basename_size) {
+            goto cleanup;
+        }
+    } else if (target->kind == SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY) {
+        components[component_count++] = "domain-ent";
+        if (snprintf(
+                basename,
+                basename_size,
+                "%s.dent",
+                target->name
+            ) >= (int)basename_size) {
+            goto cleanup;
+        }
+    } else if (target->kind == SECDAT_TRANSACTION_ARTIFACT_TOMBSTONE) {
+        components[component_count++] = "tombstones";
+        if (secdat_escape_component(target->name, &escaped_name) != 0
+            || snprintf(
+                basename,
+                basename_size,
+                "%s.tomb",
+                escaped_name
+            ) >= (int)basename_size) {
+            goto cleanup;
+        }
+    } else {
+        goto cleanup;
+    }
+    descriptor = open(
+        state_dir,
+        O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+    );
+    if (descriptor < 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < component_count; index += 1) {
+        next_descriptor = secdat_transaction_open_child_directory(
+            descriptor,
+            components[index]
+        );
+        close(descriptor);
+        descriptor = next_descriptor;
+        next_descriptor = -1;
+        if (descriptor < 0) {
+            goto cleanup;
+        }
+    }
+    {
+        DIR *directory = fdopendir(dup(descriptor));
+        struct dirent *entry;
+        int removed = 0;
+
+        if (directory == NULL) {
+            close(descriptor);
+            descriptor = -1;
+            goto cleanup;
+        }
+        while ((entry = readdir(directory)) != NULL) {
+            struct stat temporary_status;
+
+            if (strncmp(entry->d_name, ".tmp.", 5) != 0
+                || !secdat_uuid_is_valid(entry->d_name + 5)) {
+                continue;
+            }
+            if (fstatat(
+                    descriptor,
+                    entry->d_name,
+                    &temporary_status,
+                    AT_SYMLINK_NOFOLLOW
+                ) != 0
+                || !S_ISREG(temporary_status.st_mode)
+                || (temporary_status.st_mode & 077) != 0
+                || unlinkat(descriptor, entry->d_name, 0) != 0) {
+                closedir(directory);
+                close(descriptor);
+                descriptor = -1;
+                goto cleanup;
+            }
+            removed = 1;
+        }
+        if (closedir(directory) != 0
+            || (removed && fsync(descriptor) != 0)) {
+            close(descriptor);
+            descriptor = -1;
+            goto cleanup;
+        }
+    }
+
+cleanup:
+    free(escaped_store);
+    free(escaped_name);
+    if (descriptor < 0) {
+        fprintf(stderr, _("invalid transaction target directory\n"));
+    }
+    return descriptor;
+}
+
+static int secdat_transaction_read_live_target(
+    const struct secdat_transaction_target *target,
+    unsigned char **data,
+    size_t *length,
+    int *exists
+)
+{
+    char basename[PATH_MAX];
+    struct stat status;
+    int parent_fd = -1;
+    int descriptor = -1;
+    unsigned char *buffer = NULL;
+    size_t offset = 0;
+    int result = 1;
+
+    *data = NULL;
+    *length = 0;
+    *exists = 0;
+    parent_fd = secdat_transaction_open_target_parent(
+        target,
+        basename,
+        sizeof(basename)
+    );
+    if (parent_fd < 0) {
+        goto cleanup;
+    }
+    descriptor = openat(
+        parent_fd,
+        basename,
+        O_RDONLY | O_CLOEXEC | O_NOFOLLOW
+    );
+    if (descriptor < 0) {
+        if (errno == ENOENT) {
+            result = 0;
+            goto cleanup;
+        }
+        goto cleanup;
+    }
+    if (fstat(descriptor, &status) != 0
+        || !S_ISREG(status.st_mode)
+        || (status.st_mode & 077) != 0
+        || status.st_size < 0
+        || (uintmax_t)status.st_size > SIZE_MAX) {
+        goto cleanup;
+    }
+    buffer = malloc(status.st_size == 0 ? 1 : (size_t)status.st_size);
+    if (buffer == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    while (offset < (size_t)status.st_size) {
+        ssize_t count = read(
+            descriptor,
+            buffer + offset,
+            (size_t)status.st_size - offset
+        );
+
+        if (count <= 0) {
+            goto cleanup;
+        }
+        offset += (size_t)count;
+    }
+    *data = buffer;
+    buffer = NULL;
+    *length = offset;
+    *exists = 1;
+    result = 0;
+
+cleanup:
+    free(buffer);
+    if (descriptor >= 0) {
+        close(descriptor);
+    }
+    if (parent_fd >= 0) {
+        close(parent_fd);
+    }
+    if (result != 0) {
+        fprintf(stderr, _("failed to read transaction target\n"));
+    }
+    return result;
+}
+
+static int secdat_transaction_target_matches(
+    const struct secdat_transaction_target *target,
+    int after,
+    int *matches
+)
+{
+    unsigned char *data = NULL;
+    size_t length = 0;
+    int exists = 0;
+    char digest[SECDAT_SHA256_HEX_LENGTH + 1];
+    int expected_exists = after ? target->after_exists : target->before_exists;
+    const char *expected_digest = after ? target->after_digest : target->before_digest;
+    int status = 1;
+
+    *matches = 0;
+    if (secdat_transaction_read_live_target(
+            target,
+            &data,
+            &length,
+            &exists
+        ) != 0) {
+        goto cleanup;
+    }
+    if (exists != expected_exists) {
+        status = 0;
+        goto cleanup;
+    }
+    if (!exists) {
+        *matches = 1;
+        status = 0;
+        goto cleanup;
+    }
+    if (secdat_sha256_hex(data, length, digest) != 0) {
+        goto cleanup;
+    }
+    *matches = strcmp(digest, expected_digest) == 0;
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(data, length);
+    free(data);
+    return status;
+}
+
+static int secdat_transaction_blob_path(
+    const struct secdat_transaction *transaction,
+    size_t index,
+    int after,
+    char *path,
+    size_t path_size
+)
+{
+    return snprintf(
+        path,
+        path_size,
+        "%s/%s.%04zu",
+        transaction->operation_dir,
+        after ? "after" : "before",
+        index
+    ) >= (int)path_size;
+}
+
+static int secdat_transaction_manifest_path(
+    const struct secdat_transaction *transaction,
+    char *path,
+    size_t path_size
+)
+{
+    return snprintf(path, path_size, "%s/journal", transaction->operation_dir)
+        >= (int)path_size;
+}
+
+static int secdat_transaction_write_manifest(struct secdat_transaction *transaction)
+{
+    json_t *root = NULL;
+    json_t *targets = NULL;
+    char journal_path[PATH_MAX];
+    char *json_text = NULL;
+    unsigned char *payload = NULL;
+    size_t payload_length = 0;
+    size_t payload_buffer_size;
+    size_t index;
+    int written;
+    int status = 1;
+
+    root = json_object();
+    targets = json_array();
+    if (root == NULL || targets == NULL
+        || json_object_set_new(root, "version", json_integer(1)) != 0
+        || json_object_set_new(root, "operation_id", json_string(transaction->operation_id)) != 0
+        || json_object_set_new(root, "command", json_string(transaction->command)) != 0
+        || json_object_set_new(root, "owner_domain_id", json_string(transaction->owner_domain_id)) != 0
+        || json_object_set_new(root, "owner_store", json_string(transaction->owner_store_name)) != 0
+        || json_object_set_new(
+            root,
+            "state",
+            json_string(secdat_transaction_state_name(transaction->state))
+        ) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < transaction->target_count; index += 1) {
+        const struct secdat_transaction_target *target = &transaction->targets[index];
+        json_t *item = json_object();
+
+        if (item == NULL
+            || json_object_set_new(item, "domain_id", json_string(target->domain_id)) != 0
+            || json_object_set_new(item, "store", json_string(target->store_name)) != 0
+            || json_object_set_new(
+                item,
+                "kind",
+                json_string(secdat_transaction_artifact_kind_name(target->kind))
+            ) != 0
+            || json_object_set_new(item, "name", json_string(target->name)) != 0
+            || json_object_set_new(
+                item,
+                "before",
+                json_string(target->before_exists ? target->before_digest : "absent")
+            ) != 0
+            || json_object_set_new(
+                item,
+                "after",
+                json_string(target->after_exists ? target->after_digest : "absent")
+            ) != 0) {
+            json_decref(item);
+            goto cleanup;
+        }
+        if (json_array_append(targets, item) != 0) {
+            json_decref(item);
+            goto cleanup;
+        }
+        json_decref(item);
+    }
+    if (json_object_set(root, "targets", targets) != 0) {
+        goto cleanup;
+    }
+    json_decref(targets);
+    targets = NULL;
+    json_text = json_dumps(root, JSON_COMPACT | JSON_SORT_KEYS);
+    if (json_text == NULL) {
+        goto cleanup;
+    }
+    payload_length = strlen(secdat_transaction_magic) + 1 + strlen(json_text) + 1;
+    payload_buffer_size = payload_length + 1;
+    payload = malloc(payload_buffer_size);
+    if (payload == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    written = snprintf(
+        (char *)payload,
+        payload_buffer_size,
+        "%s\n%s\n",
+        secdat_transaction_magic,
+        json_text
+    );
+    if (written < 0 || (size_t)written != payload_length
+        || secdat_transaction_manifest_path(
+            transaction,
+            journal_path,
+            sizeof(journal_path)
+        ) != 0
+        || secdat_atomic_write_file(journal_path, payload, payload_length) != 0
+        || secdat_fsync_directory(transaction->operation_dir) != 0) {
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    json_decref(targets);
+    json_decref(root);
+    free(json_text);
+    secdat_secure_clear(payload, payload_length);
+    free(payload);
+    return status;
+}
+
+static int secdat_transaction_append_target(
+    struct secdat_transaction *transaction,
+    enum secdat_transaction_artifact_kind kind,
+    const char *domain_id,
+    const char *store_name,
+    const char *name,
+    const unsigned char *expected_before_data,
+    size_t expected_before_length,
+    int expected_before_exists,
+    const unsigned char *after_data,
+    size_t after_length,
+    int after_exists
+)
+{
+    struct secdat_transaction_target target;
+    struct secdat_transaction_target *resized;
+    unsigned char *live_before_data = NULL;
+    size_t live_before_length = 0;
+    int live_before_exists = 0;
+    size_t next_capacity;
+    size_t index;
+
+    if (transaction->target_count >= SECDAT_TRANSACTION_MAX_TARGETS) {
+        fprintf(stderr, _("transaction has too many targets\n"));
+        return 1;
+    }
+    if (kind == SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY
+        && (!expected_before_exists
+            || !after_exists
+            || expected_before_length != after_length
+            || CRYPTO_memcmp(
+                expected_before_data,
+                after_data,
+                expected_before_length
+            ) != 0)) {
+        fprintf(stderr, _("invalid transaction validation target\n"));
+        return 1;
+    }
+    memset(&target, 0, sizeof(target));
+    target.kind = kind;
+    target.after_exists = after_exists;
+    if (secdat_copy_string(target.domain_id, sizeof(target.domain_id), domain_id) != 0
+        || secdat_copy_string(
+            target.store_name,
+            sizeof(target.store_name),
+            secdat_effective_store_name(store_name)
+        ) != 0
+        || secdat_copy_string(target.name, sizeof(target.name), name) != 0
+        || secdat_transaction_target_path(
+            kind,
+            target.domain_id,
+            target.store_name,
+            target.name,
+            target.path,
+            sizeof(target.path)
+        ) != 0
+        || secdat_transaction_read_live_target(
+            &target,
+            &live_before_data,
+            &live_before_length,
+            &live_before_exists
+        ) != 0) {
+        goto error;
+    }
+    if (live_before_exists != expected_before_exists
+        || (live_before_exists
+            && (live_before_length != expected_before_length
+                || CRYPTO_memcmp(
+                    live_before_data,
+                    expected_before_data,
+                    expected_before_length
+                ) != 0))) {
+        fprintf(stderr, _("transaction changed since plan\n"));
+        goto error;
+    }
+    target.before_exists = expected_before_exists;
+    if (expected_before_exists) {
+        target.before_data = malloc(
+            expected_before_length == 0 ? 1 : expected_before_length
+        );
+        if (target.before_data == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            goto error;
+        }
+        if (expected_before_length > 0) {
+            memcpy(
+                target.before_data,
+                expected_before_data,
+                expected_before_length
+            );
+        }
+        target.before_length = expected_before_length;
+    }
+    for (index = 0; index < transaction->target_count; index += 1) {
+        if (strcmp(transaction->targets[index].path, target.path) == 0) {
+            fprintf(stderr, _("duplicate transaction target\n"));
+            goto error;
+        }
+    }
+    if (target.before_exists
+        && secdat_sha256_hex(
+            target.before_data,
+            target.before_length,
+            target.before_digest
+        ) != 0) {
+        goto error;
+    }
+    if (after_exists) {
+        target.after_data = malloc(after_length == 0 ? 1 : after_length);
+        if (target.after_data == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            goto error;
+        }
+        if (after_length > 0) {
+            memcpy(target.after_data, after_data, after_length);
+        }
+        target.after_length = after_length;
+        if (secdat_sha256_hex(
+                target.after_data,
+                target.after_length,
+                target.after_digest
+            ) != 0) {
+            goto error;
+        }
+    }
+    if (transaction->target_count == transaction->target_capacity) {
+        next_capacity = transaction->target_capacity == 0
+            ? 4
+            : transaction->target_capacity * 2;
+        resized = realloc(transaction->targets, next_capacity * sizeof(*resized));
+        if (resized == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            goto error;
+        }
+        transaction->targets = resized;
+        transaction->target_capacity = next_capacity;
+    }
+    transaction->targets[transaction->target_count] = target;
+    transaction->target_count += 1;
+    secdat_secure_clear(live_before_data, live_before_length);
+    free(live_before_data);
+    return 0;
+
+error:
+    secdat_secure_clear(live_before_data, live_before_length);
+    free(live_before_data);
+    secdat_secure_clear(target.before_data, target.before_length);
+    free(target.before_data);
+    secdat_secure_clear(target.after_data, target.after_length);
+    free(target.after_data);
+    return 1;
+}
+
+static void secdat_transaction_fault_inject(const char *boundary)
+{
+    const char *requested = getenv("SECDAT_TEST_TRANSACTION_CRASH_AFTER");
+
+    if (requested != NULL && strcmp(requested, boundary) == 0) {
+        _exit(86);
+    }
+}
+
+static int secdat_test_synchronize_mask_plan(void)
+{
+    const char *value = getenv("SECDAT_TEST_MASK_PLAN_SYNC_FD");
+    char *end = NULL;
+    long parsed;
+    unsigned char signal = 'R';
+    ssize_t result;
+
+    if (value == NULL) {
+        return 0;
+    }
+    errno = 0;
+    parsed = strtol(value, &end, 10);
+    if (errno != 0
+        || end == value
+        || *end != '\0'
+        || parsed < 3
+        || parsed > INT_MAX) {
+        fprintf(stderr, "invalid test mask plan synchronization fd\n");
+        return 1;
+    }
+    do {
+        result = write((int)parsed, &signal, sizeof(signal));
+    } while (result < 0 && errno == EINTR);
+    if (result != (ssize_t)sizeof(signal)) {
+        fprintf(stderr, "failed to signal prepared test mask plan\n");
+        return 1;
+    }
+    do {
+        result = read((int)parsed, &signal, sizeof(signal));
+    } while (result < 0 && errno == EINTR);
+    if (result != (ssize_t)sizeof(signal) || signal != 'G') {
+        fprintf(stderr, "failed to resume prepared test mask plan\n");
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_test_signal_transaction_lock_attempt(unsigned char signal)
+{
+    const char *value = getenv("SECDAT_TEST_TRANSACTION_LOCK_ATTEMPT_FD");
+    static int signaled = 0;
+    char *end = NULL;
+    long parsed;
+    ssize_t result;
+
+    if (value == NULL || signaled) {
+        return 0;
+    }
+    errno = 0;
+    parsed = strtol(value, &end, 10);
+    if (errno != 0
+        || end == value
+        || *end != '\0'
+        || parsed < 3
+        || parsed > INT_MAX) {
+        fprintf(stderr, "invalid test transaction lock synchronization fd\n");
+        return 1;
+    }
+    do {
+        result = write((int)parsed, &signal, sizeof(signal));
+    } while (result < 0 && errno == EINTR);
+    if (result != (ssize_t)sizeof(signal)) {
+        fprintf(stderr, "failed to signal test transaction lock attempt\n");
+        return 1;
+    }
+    signaled = 1;
+    return 0;
+}
+
+static int secdat_json_object_has_exact_keys(
+    const json_t *object,
+    const char *const *keys,
+    size_t key_count
+)
+{
+    size_t index;
+
+    if (!json_is_object(object) || json_object_size(object) != key_count) {
+        return 0;
+    }
+    for (index = 0; index < key_count; index += 1) {
+        if (json_object_get(object, keys[index]) == NULL) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int secdat_json_is_canonical_string(const json_t *value)
+{
+    const char *text;
+
+    if (!json_is_string(value)) {
+        return 0;
+    }
+    text = json_string_value(value);
+    return json_string_length(value) == strlen(text);
+}
+
+static int secdat_transaction_read_blob(
+    const char *path,
+    const char *expected_digest,
+    unsigned char **data,
+    size_t *length
+)
+{
+    int exists = 0;
+    char digest[SECDAT_SHA256_HEX_LENGTH + 1];
+
+    if (secdat_transaction_read_target(path, data, length, &exists) != 0
+        || !exists
+        || secdat_sha256_hex(*data, *length, digest) != 0
+        || strcmp(digest, expected_digest) != 0) {
+        fprintf(stderr, _("invalid transaction blob: %s\n"), path);
+        secdat_secure_clear(*data, *length);
+        free(*data);
+        *data = NULL;
+        *length = 0;
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_transaction_load(
+    const char *transactions_root,
+    const char *operation_id,
+    struct secdat_transaction *transaction
+)
+{
+    static const char *const root_keys[] = {
+        "version",
+        "operation_id",
+        "command",
+        "owner_domain_id",
+        "owner_store",
+        "state",
+        "targets",
+    };
+    static const char *const target_keys[] = {
+        "domain_id",
+        "store",
+        "kind",
+        "name",
+        "before",
+        "after",
+    };
+    char journal_path[PATH_MAX];
+    unsigned char *payload = NULL;
+    size_t payload_length = 0;
+    int journal_exists = 0;
+    const char *json_text;
+    size_t json_length;
+    json_error_t error;
+    json_t *root = NULL;
+    json_t *targets;
+    json_t *value;
+    const char *text;
+    size_t index;
+    int status = 1;
+
+    memset(transaction, 0, sizeof(*transaction));
+    transaction->lock_fd = -1;
+    if (!secdat_uuid_is_valid(operation_id)
+        || secdat_copy_string(
+            transaction->transactions_root,
+            sizeof(transaction->transactions_root),
+            transactions_root
+        ) != 0
+        || secdat_copy_string(
+            transaction->operation_id,
+            sizeof(transaction->operation_id),
+            operation_id
+        ) != 0
+        || snprintf(
+            transaction->operation_dir,
+            sizeof(transaction->operation_dir),
+            "%s/%s",
+            transactions_root,
+            operation_id
+        ) >= (int)sizeof(transaction->operation_dir)
+        || secdat_transaction_validate_directory(transaction->operation_dir) != 0
+        || secdat_transaction_manifest_path(
+            transaction,
+            journal_path,
+            sizeof(journal_path)
+        ) != 0
+        || secdat_transaction_read_target(
+            journal_path,
+            &payload,
+            &payload_length,
+            &journal_exists
+        ) != 0
+        || !journal_exists) {
+        goto cleanup;
+    }
+    if (payload_length <= strlen(secdat_transaction_magic) + 2
+        || memcmp(
+            payload,
+            secdat_transaction_magic,
+            strlen(secdat_transaction_magic)
+        ) != 0
+        || payload[strlen(secdat_transaction_magic)] != '\n') {
+        goto cleanup;
+    }
+    json_text = (const char *)payload + strlen(secdat_transaction_magic) + 1;
+    json_length = payload_length - strlen(secdat_transaction_magic) - 1;
+    root = json_loadb(
+        json_text,
+        json_length,
+        JSON_REJECT_DUPLICATES,
+        &error
+    );
+    if (!secdat_json_object_has_exact_keys(
+            root,
+            root_keys,
+            sizeof(root_keys) / sizeof(root_keys[0])
+        )
+        || !json_is_integer(json_object_get(root, "version"))
+        || json_integer_value(json_object_get(root, "version")) != 1) {
+        goto cleanup;
+    }
+    value = json_object_get(root, "operation_id");
+    if (!secdat_json_is_canonical_string(value)
+        || strcmp(json_string_value(value), operation_id) != 0) {
+        goto cleanup;
+    }
+    value = json_object_get(root, "command");
+    if (!secdat_json_is_canonical_string(value)
+        || (strcmp(json_string_value(value), "mask") != 0
+            && strcmp(json_string_value(value), "unmask") != 0
+            && strcmp(json_string_value(value), "mask-rebind") != 0)
+        || secdat_copy_string(
+            transaction->command,
+            sizeof(transaction->command),
+            json_string_value(value)
+        ) != 0) {
+        goto cleanup;
+    }
+    value = json_object_get(root, "owner_domain_id");
+    if (!secdat_json_is_canonical_string(value)
+        || !secdat_domain_id_is_valid(json_string_value(value))
+        || secdat_copy_string(
+            transaction->owner_domain_id,
+            sizeof(transaction->owner_domain_id),
+            json_string_value(value)
+        ) != 0) {
+        goto cleanup;
+    }
+    value = json_object_get(root, "owner_store");
+    if (!secdat_json_is_canonical_string(value)
+        || json_string_length(value) == 0
+        || secdat_copy_string(
+            transaction->owner_store_name,
+            sizeof(transaction->owner_store_name),
+            json_string_value(value)
+        ) != 0) {
+        goto cleanup;
+    }
+    value = json_object_get(root, "state");
+    if (!secdat_json_is_canonical_string(value)
+        || secdat_transaction_parse_state(
+            json_string_value(value),
+            &transaction->state
+        ) != 0) {
+        goto cleanup;
+    }
+    targets = json_object_get(root, "targets");
+    if (!json_is_array(targets)
+        || json_array_size(targets) == 0
+        || json_array_size(targets) > SECDAT_TRANSACTION_MAX_TARGETS) {
+        goto cleanup;
+    }
+    transaction->target_count = json_array_size(targets);
+    transaction->target_capacity = transaction->target_count;
+    transaction->targets = calloc(
+        transaction->target_count,
+        sizeof(*transaction->targets)
+    );
+    if (transaction->targets == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    for (index = 0; index < transaction->target_count; index += 1) {
+        struct secdat_transaction_target *target = &transaction->targets[index];
+        json_t *item = json_array_get(targets, index);
+        char blob_path[PATH_MAX];
+        size_t duplicate_index;
+
+        if (!secdat_json_object_has_exact_keys(
+                item,
+                target_keys,
+                sizeof(target_keys) / sizeof(target_keys[0])
+            )) {
+            goto cleanup;
+        }
+        value = json_object_get(item, "domain_id");
+        if (!secdat_json_is_canonical_string(value)
+            || !secdat_domain_id_is_valid(json_string_value(value))
+            || secdat_copy_string(
+                target->domain_id,
+                sizeof(target->domain_id),
+                json_string_value(value)
+            ) != 0) {
+            goto cleanup;
+        }
+        value = json_object_get(item, "store");
+        if (!secdat_json_is_canonical_string(value)
+            || json_string_length(value) == 0
+            || secdat_copy_string(
+                target->store_name,
+                sizeof(target->store_name),
+                json_string_value(value)
+            ) != 0) {
+            goto cleanup;
+        }
+        value = json_object_get(item, "kind");
+        if (!secdat_json_is_canonical_string(value)
+            || secdat_transaction_parse_artifact_kind(
+                json_string_value(value),
+                &target->kind
+            ) != 0) {
+            goto cleanup;
+        }
+        value = json_object_get(item, "name");
+        if (!secdat_json_is_canonical_string(value)
+            || secdat_copy_string(
+                target->name,
+                sizeof(target->name),
+                json_string_value(value)
+            ) != 0
+            || secdat_transaction_target_path(
+                target->kind,
+                target->domain_id,
+                target->store_name,
+                target->name,
+                target->path,
+                sizeof(target->path)
+            ) != 0) {
+            goto cleanup;
+        }
+        for (duplicate_index = 0; duplicate_index < index; duplicate_index += 1) {
+            if (strcmp(
+                    transaction->targets[duplicate_index].path,
+                    target->path
+                ) == 0) {
+                goto cleanup;
+            }
+        }
+        value = json_object_get(item, "before");
+        if (!secdat_json_is_canonical_string(value)) {
+            goto cleanup;
+        }
+        text = json_string_value(value);
+        if (strcmp(text, "absent") == 0) {
+            target->before_exists = 0;
+        } else if (secdat_transaction_digest_is_valid(text)
+            && secdat_copy_string(
+                target->before_digest,
+                sizeof(target->before_digest),
+                text
+            ) == 0) {
+            target->before_exists = 1;
+        } else {
+            goto cleanup;
+        }
+        value = json_object_get(item, "after");
+        if (!secdat_json_is_canonical_string(value)) {
+            goto cleanup;
+        }
+        text = json_string_value(value);
+        if (strcmp(text, "absent") == 0) {
+            target->after_exists = 0;
+        } else if (secdat_transaction_digest_is_valid(text)
+            && secdat_copy_string(
+                target->after_digest,
+                sizeof(target->after_digest),
+                text
+            ) == 0) {
+            target->after_exists = 1;
+        } else {
+            goto cleanup;
+        }
+        if (target->kind == SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY
+            && (!target->before_exists
+                || !target->after_exists
+                || strcmp(
+                    target->before_digest,
+                    target->after_digest
+                ) != 0)) {
+            goto cleanup;
+        }
+        if (transaction->state == SECDAT_TRANSACTION_STAGING) {
+            continue;
+        }
+        if (target->before_exists) {
+            if (secdat_transaction_blob_path(
+                    transaction,
+                    index,
+                    0,
+                    blob_path,
+                    sizeof(blob_path)
+                ) != 0
+                || secdat_transaction_read_blob(
+                    blob_path,
+                    target->before_digest,
+                    &target->before_data,
+                    &target->before_length
+                ) != 0) {
+                goto cleanup;
+            }
+        }
+        if (target->after_exists) {
+            if (secdat_transaction_blob_path(
+                    transaction,
+                    index,
+                    1,
+                    blob_path,
+                    sizeof(blob_path)
+                ) != 0
+                || secdat_transaction_read_blob(
+                    blob_path,
+                    target->after_digest,
+                    &target->after_data,
+                    &target->after_length
+                ) != 0) {
+                goto cleanup;
+            }
+        }
+    }
+    status = 0;
+
+cleanup:
+    json_decref(root);
+    secdat_secure_clear(payload, payload_length);
+    free(payload);
+    if (status != 0) {
+        fprintf(stderr, _("invalid transaction journal: %s\n"), operation_id);
+        secdat_transaction_reset(transaction);
+    }
+    return status;
+}
+
+static int secdat_transaction_directory_entry_allowed(
+    const struct secdat_transaction *transaction,
+    const char *name
+)
+{
+    size_t index;
+    char expected[64];
+
+    if (strcmp(name, "journal") == 0) {
+        return 1;
+    }
+    for (index = 0; index < transaction->target_count; index += 1) {
+        if (transaction->targets[index].before_exists) {
+            snprintf(expected, sizeof(expected), "before.%04zu", index);
+            if (strcmp(name, expected) == 0) {
+                return 1;
+            }
+        }
+        if (transaction->targets[index].after_exists) {
+            snprintf(expected, sizeof(expected), "after.%04zu", index);
+            if (strcmp(name, expected) == 0) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int secdat_transaction_validate_operation_files(
+    const struct secdat_transaction *transaction
+)
+{
+    DIR *directory = opendir(transaction->operation_dir);
+    struct dirent *entry;
+
+    if (directory == NULL) {
+        fprintf(
+            stderr,
+            _("failed to open transaction directory: %s\n"),
+            transaction->operation_dir
+        );
+        return 1;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (!secdat_transaction_directory_entry_allowed(
+                transaction,
+                entry->d_name
+            )) {
+            fprintf(
+                stderr,
+                _("unexpected transaction file: %s\n"),
+                entry->d_name
+            );
+            closedir(directory);
+            return 1;
+        }
+    }
+    if (closedir(directory) != 0) {
+        fprintf(stderr, _("failed to close transaction directory\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_transaction_cleanup_temporary_files(
+    const struct secdat_transaction *transaction
+)
+{
+    DIR *directory = opendir(transaction->operation_dir);
+    struct dirent *entry;
+    int removed = 0;
+
+    if (directory == NULL) {
+        fprintf(
+            stderr,
+            _("failed to open transaction directory: %s\n"),
+            transaction->operation_dir
+        );
+        return 1;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        char path[PATH_MAX];
+        struct stat status;
+
+        if (strncmp(entry->d_name, ".tmp.", 5) != 0) {
+            continue;
+        }
+        if (snprintf(
+                path,
+                sizeof(path),
+                "%s/%s",
+                transaction->operation_dir,
+                entry->d_name
+            ) >= (int)sizeof(path)
+            || lstat(path, &status) != 0
+            || !S_ISREG(status.st_mode)
+            || (status.st_mode & 077) != 0
+            || unlink(path) != 0) {
+            closedir(directory);
+            fprintf(
+                stderr,
+                _("invalid transaction temporary file: %s\n"),
+                entry->d_name
+            );
+            return 1;
+        }
+        removed = 1;
+    }
+    if (closedir(directory) != 0
+        || (removed
+            && secdat_fsync_directory(transaction->operation_dir) != 0)) {
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_transaction_cleanup(struct secdat_transaction *transaction)
+{
+    char path[PATH_MAX];
+    size_t index;
+
+    if (transaction->operation_dir[0] == '\0') {
+        return 0;
+    }
+    if (secdat_transaction_validate_operation_files(transaction) != 0) {
+        return 1;
+    }
+    for (index = 0; index < transaction->target_count; index += 1) {
+        if (transaction->targets[index].before_exists
+            && (secdat_transaction_blob_path(
+                    transaction,
+                    index,
+                    0,
+                    path,
+                    sizeof(path)
+                ) != 0
+                || secdat_remove_if_exists(path) != 0)) {
+            return 1;
+        }
+        if (transaction->targets[index].after_exists
+            && (secdat_transaction_blob_path(
+                    transaction,
+                    index,
+                    1,
+                    path,
+                    sizeof(path)
+                ) != 0
+                || secdat_remove_if_exists(path) != 0)) {
+            return 1;
+        }
+    }
+    if (secdat_transaction_manifest_path(transaction, path, sizeof(path)) != 0
+        || secdat_remove_if_exists(path) != 0
+        || rmdir(transaction->operation_dir) != 0
+        || secdat_fsync_directory(transaction->transactions_root) != 0) {
+        fprintf(
+            stderr,
+            _("failed to remove completed transaction: %s\n"),
+            transaction->operation_id
+        );
+        return 1;
+    }
+    transaction->operation_dir[0] = '\0';
+    return 0;
+}
+
+static int secdat_transaction_apply_target(
+    const struct secdat_transaction_target *target
+)
+{
+    char basename[PATH_MAX];
+    char temporary_name[96] = "";
+    char temporary_id[64];
+    int parent_fd = -1;
+    int descriptor = -1;
+    size_t offset = 0;
+    int result = 1;
+
+    parent_fd = secdat_transaction_open_target_parent(
+        target,
+        basename,
+        sizeof(basename)
+    );
+    if (parent_fd < 0) {
+        goto cleanup;
+    }
+    if (target->after_exists) {
+        if (secdat_generate_uuid_v4(
+                temporary_id,
+                sizeof(temporary_id)
+            ) != 0
+            || snprintf(
+                temporary_name,
+                sizeof(temporary_name),
+                ".tmp.%s",
+                temporary_id
+            ) >= (int)sizeof(temporary_name)) {
+            goto cleanup;
+        }
+        descriptor = openat(
+            parent_fd,
+            temporary_name,
+            O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+            0600
+        );
+        if (descriptor < 0) {
+            goto cleanup;
+        }
+        while (offset < target->after_length) {
+            ssize_t count = write(
+                descriptor,
+                target->after_data + offset,
+                target->after_length - offset
+            );
+
+            if (count <= 0) {
+                goto cleanup;
+            }
+            offset += (size_t)count;
+        }
+        if (fsync(descriptor) != 0) {
+            goto cleanup;
+        }
+        if (close(descriptor) != 0) {
+            descriptor = -1;
+            goto cleanup;
+        }
+        descriptor = -1;
+        if (renameat(
+                parent_fd,
+                temporary_name,
+                parent_fd,
+                basename
+            ) != 0) {
+            goto cleanup;
+        }
+        temporary_name[0] = '\0';
+    } else if (unlinkat(parent_fd, basename, 0) != 0
+        && errno != ENOENT) {
+        goto cleanup;
+    }
+    if (fsync(parent_fd) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    if (descriptor >= 0) {
+        close(descriptor);
+    }
+    if (parent_fd >= 0) {
+        if (result != 0
+            && temporary_name[0] != '\0') {
+            (void)unlinkat(parent_fd, temporary_name, 0);
+        }
+        close(parent_fd);
+    }
+    if (result != 0) {
+        fprintf(stderr, _("failed to apply transaction target\n"));
+    }
+    return result;
+}
+
+static int secdat_transaction_recover_one(struct secdat_transaction *transaction)
+{
+    unsigned char *needs_apply = NULL;
+    size_t index;
+    int status = 1;
+
+    if (secdat_transaction_cleanup_temporary_files(transaction) != 0) {
+        return 1;
+    }
+    if (transaction->state == SECDAT_TRANSACTION_STAGING
+        || transaction->state == SECDAT_TRANSACTION_PREPARED) {
+        return secdat_transaction_cleanup(transaction);
+    }
+    if (transaction->state == SECDAT_TRANSACTION_COMMITTING) {
+        needs_apply = calloc(transaction->target_count, sizeof(*needs_apply));
+        if (needs_apply == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        /*
+         * Validate the complete recovery frontier before changing any live
+         * target. Otherwise a tampered later target could be discovered only
+         * after an earlier target had already been rolled forward.
+         */
+        for (index = 0; index < transaction->target_count; index += 1) {
+            int matches_before = 0;
+            int matches_after = 0;
+
+            if (secdat_transaction_target_matches(
+                    &transaction->targets[index],
+                    1,
+                    &matches_after
+                ) != 0) {
+                goto cleanup;
+            }
+            if (matches_after) {
+                continue;
+            }
+            if (secdat_transaction_target_matches(
+                    &transaction->targets[index],
+                    0,
+                    &matches_before
+                ) != 0
+                || !matches_before) {
+                fprintf(
+                    stderr,
+                    _("transaction target changed during recovery: %s\n"),
+                    transaction->operation_id
+                );
+                goto cleanup;
+            }
+            needs_apply[index] = 1;
+        }
+        for (index = 0; index < transaction->target_count; index += 1) {
+            if (!needs_apply[index]) {
+                continue;
+            }
+            if (secdat_transaction_apply_target(
+                    &transaction->targets[index]
+                ) != 0) {
+                goto cleanup;
+            }
+        }
+        transaction->state = SECDAT_TRANSACTION_COMMITTED;
+        if (secdat_transaction_write_manifest(transaction) != 0) {
+            goto cleanup;
+        }
+    }
+    for (index = 0; index < transaction->target_count; index += 1) {
+        int matches_after = 0;
+
+        if (transaction->targets[index].kind
+            == SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY) {
+            continue;
+        }
+        if (secdat_transaction_target_matches(
+                &transaction->targets[index],
+                1,
+                &matches_after
+            ) != 0
+            || !matches_after) {
+            fprintf(
+                stderr,
+                _("committed transaction target is inconsistent: %s\n"),
+                transaction->operation_id
+            );
+            goto cleanup;
+        }
+    }
+    status = secdat_transaction_cleanup(transaction);
+
+cleanup:
+    free(needs_apply);
+    return status;
+}
+
+static int secdat_transaction_cleanup_unpublished_directory(
+    const char *transactions_root,
+    const char *operation_id
+)
+{
+    char operation_dir[PATH_MAX];
+    DIR *directory;
+    struct dirent *entry;
+
+    if (snprintf(
+            operation_dir,
+            sizeof(operation_dir),
+            "%s/%s",
+            transactions_root,
+            operation_id
+        ) >= (int)sizeof(operation_dir)
+        || secdat_transaction_validate_directory(operation_dir) != 0) {
+        return 1;
+    }
+    directory = opendir(operation_dir);
+    if (directory == NULL) {
+        return 1;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        char path[PATH_MAX];
+
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (strncmp(entry->d_name, ".tmp.", 5) != 0
+            || snprintf(
+                path,
+                sizeof(path),
+                "%s/%s",
+                operation_dir,
+                entry->d_name
+            ) >= (int)sizeof(path)
+            || unlink(path) != 0) {
+            closedir(directory);
+            fprintf(
+                stderr,
+                _("invalid unpublished transaction: %s\n"),
+                operation_id
+            );
+            return 1;
+        }
+    }
+    if (closedir(directory) != 0
+        || rmdir(operation_dir) != 0
+        || secdat_fsync_directory(transactions_root) != 0) {
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_recover_transactions_locked(const char *transactions_root)
+{
+    DIR *directory;
+    struct dirent *entry;
+    struct secdat_key_list operation_ids = {0};
+    size_t index;
+    int status = 1;
+
+    directory = opendir(transactions_root);
+    if (directory == NULL) {
+        fprintf(stderr, _("failed to open transactions directory\n"));
+        return 1;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0
+            || strcmp(entry->d_name, "lock") == 0) {
+            continue;
+        }
+        if (!secdat_uuid_is_valid(entry->d_name)
+            || secdat_key_list_append(&operation_ids, entry->d_name) != 0) {
+            fprintf(stderr, _("invalid transaction entry: %s\n"), entry->d_name);
+            closedir(directory);
+            goto cleanup;
+        }
+    }
+    if (closedir(directory) != 0) {
+        goto cleanup;
+    }
+    if (operation_ids.count > 1) {
+        qsort(
+            operation_ids.items,
+            operation_ids.count,
+            sizeof(*operation_ids.items),
+            secdat_compare_strings
+        );
+    }
+    for (index = 0; index < operation_ids.count; index += 1) {
+        struct secdat_transaction transaction;
+        char operation_dir[PATH_MAX];
+        char journal_path[PATH_MAX];
+        struct stat journal_status;
+
+        if (snprintf(
+                operation_dir,
+                sizeof(operation_dir),
+                "%s/%s",
+                transactions_root,
+                operation_ids.items[index]
+            ) >= (int)sizeof(operation_dir)
+            || snprintf(
+                journal_path,
+                sizeof(journal_path),
+                "%s/journal",
+                operation_dir
+            ) >= (int)sizeof(journal_path)) {
+            goto cleanup;
+        }
+        if (lstat(journal_path, &journal_status) != 0 && errno == ENOENT) {
+            if (secdat_transaction_cleanup_unpublished_directory(
+                    transactions_root,
+                    operation_ids.items[index]
+                ) != 0) {
+                goto cleanup;
+            }
+            continue;
+        }
+        if (secdat_transaction_load(
+                transactions_root,
+                operation_ids.items[index],
+                &transaction
+            ) != 0) {
+            goto cleanup;
+        }
+        if (secdat_transaction_recover_one(&transaction) != 0) {
+            secdat_transaction_reset(&transaction);
+            goto cleanup;
+        }
+        secdat_transaction_reset(&transaction);
+    }
+    status = 0;
+
+cleanup:
+    secdat_key_list_free(&operation_ids);
+    return status;
+}
+
+static int secdat_recover_transactions(void)
+{
+    char transactions_root[PATH_MAX];
+    struct stat status;
+    int lock_fd;
+    int result;
+
+    if (secdat_transaction_root_path(
+            transactions_root,
+            sizeof(transactions_root)
+        ) != 0) {
+        return 1;
+    }
+    if (lstat(transactions_root, &status) != 0) {
+        if (errno == ENOENT) {
+            return 0;
+        }
+        fprintf(stderr, _("failed to inspect transactions directory\n"));
+        return 1;
+    }
+    if (secdat_transaction_validate_directory(transactions_root) != 0) {
+        return 1;
+    }
+    lock_fd = secdat_transaction_open_lock(transactions_root);
+    if (lock_fd < 0) {
+        return 1;
+    }
+    result = secdat_recover_transactions_locked(transactions_root);
+    (void)flock(lock_fd, LOCK_UN);
+    close(lock_fd);
+    return result;
+}
+
+static int secdat_transaction_begin(
+    struct secdat_transaction *transaction,
+    const char *command,
+    const char *owner_domain_id,
+    const char *owner_store_name
+)
+{
+    memset(transaction, 0, sizeof(*transaction));
+    transaction->lock_fd = -1;
+    transaction->state = SECDAT_TRANSACTION_STAGING;
+    if (!secdat_domain_id_is_valid(owner_domain_id)
+        || secdat_copy_string(
+            transaction->command,
+            sizeof(transaction->command),
+            command
+        ) != 0
+        || secdat_copy_string(
+            transaction->owner_domain_id,
+            sizeof(transaction->owner_domain_id),
+            owner_domain_id
+        ) != 0
+        || secdat_copy_string(
+            transaction->owner_store_name,
+            sizeof(transaction->owner_store_name),
+            secdat_effective_store_name(owner_store_name)
+        ) != 0
+        || secdat_transaction_ensure_root(
+            transaction->transactions_root,
+            sizeof(transaction->transactions_root)
+        ) != 0) {
+        return 1;
+    }
+    transaction->lock_fd = secdat_command_transaction_lock_fd >= 0
+        ? -1
+        : secdat_transaction_open_lock(transaction->transactions_root);
+    if ((secdat_command_transaction_lock_fd < 0
+            && transaction->lock_fd < 0)
+        || secdat_recover_transactions_locked(
+            transaction->transactions_root
+        ) != 0
+        || secdat_generate_uuid_v4(
+            transaction->operation_id,
+            sizeof(transaction->operation_id)
+        ) != 0
+        || snprintf(
+            transaction->operation_dir,
+            sizeof(transaction->operation_dir),
+            "%s/%s",
+            transaction->transactions_root,
+            transaction->operation_id
+        ) >= (int)sizeof(transaction->operation_dir)) {
+        secdat_transaction_reset(transaction);
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_transaction_prepare(struct secdat_transaction *transaction)
+{
+    char blob_path[PATH_MAX];
+    size_t index;
+
+    if (transaction->target_count == 0
+        || mkdir(transaction->operation_dir, 0700) != 0
+        || secdat_fsync_directory(transaction->transactions_root) != 0
+        || secdat_transaction_write_manifest(transaction) != 0) {
+        fprintf(stderr, _("failed to stage transaction\n"));
+        return 1;
+    }
+    for (index = 0; index < transaction->target_count; index += 1) {
+        struct secdat_transaction_target *target = &transaction->targets[index];
+
+        if (target->before_exists
+            && (secdat_transaction_blob_path(
+                    transaction,
+                    index,
+                    0,
+                    blob_path,
+                    sizeof(blob_path)
+                ) != 0
+                || secdat_atomic_write_file(
+                    blob_path,
+                    target->before_data,
+                    target->before_length
+                ) != 0)) {
+            return 1;
+        }
+        if (target->after_exists
+            && (secdat_transaction_blob_path(
+                    transaction,
+                    index,
+                    1,
+                    blob_path,
+                    sizeof(blob_path)
+                ) != 0
+                || secdat_atomic_write_file(
+                    blob_path,
+                    target->after_data,
+                    target->after_length
+                ) != 0)) {
+            return 1;
+        }
+    }
+    if (secdat_fsync_directory(transaction->operation_dir) != 0) {
+        return 1;
+    }
+    transaction->state = SECDAT_TRANSACTION_PREPARED;
+    if (secdat_transaction_write_manifest(transaction) != 0
+        || secdat_fsync_directory(transaction->transactions_root) != 0) {
+        return 1;
+    }
+    secdat_transaction_fault_inject("prepared");
+    return 0;
+}
+
+static int secdat_transaction_commit(struct secdat_transaction *transaction)
+{
+    char fault_boundary[64];
+    size_t index;
+    size_t applied_count = 0;
+    int result = 1;
+
+    if (secdat_transaction_prepare(transaction) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < transaction->target_count; index += 1) {
+        int matches_before = 0;
+
+        if (secdat_transaction_target_matches(
+                &transaction->targets[index],
+                0,
+                &matches_before
+            ) != 0
+            || !matches_before) {
+            fprintf(
+                stderr,
+                _("transaction changed since plan: %s\n"),
+                transaction->operation_id
+            );
+            goto cleanup;
+        }
+    }
+    transaction->state = SECDAT_TRANSACTION_COMMITTING;
+    if (secdat_transaction_write_manifest(transaction) != 0) {
+        goto cleanup;
+    }
+    secdat_transaction_fault_inject("committing");
+    for (index = 0; index < transaction->target_count; index += 1) {
+        if (transaction->targets[index].before_exists
+                == transaction->targets[index].after_exists
+            && (!transaction->targets[index].before_exists
+                || strcmp(
+                    transaction->targets[index].before_digest,
+                    transaction->targets[index].after_digest
+                ) == 0)) {
+            continue;
+        }
+        if (secdat_transaction_apply_target(
+                &transaction->targets[index]
+            ) != 0) {
+            goto cleanup;
+        }
+        applied_count += 1;
+        snprintf(
+            fault_boundary,
+            sizeof(fault_boundary),
+            "target-%zu",
+            applied_count
+        );
+        secdat_transaction_fault_inject(fault_boundary);
+    }
+    transaction->state = SECDAT_TRANSACTION_COMMITTED;
+    if (secdat_transaction_write_manifest(transaction) != 0) {
+        goto cleanup;
+    }
+    secdat_transaction_fault_inject("committed");
+    if (secdat_transaction_cleanup(transaction) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    if (result != 0
+        && transaction->state < SECDAT_TRANSACTION_COMMITTING
+        && transaction->operation_dir[0] != '\0') {
+        (void)secdat_transaction_cleanup(transaction);
+    }
+    return result;
+}
+
 static int secdat_read_v2_mask_record(
     const char *path,
     const char *file_target_entry_id,
@@ -13580,6 +15777,7 @@ static int secdat_decrypt_v2_mask_last_known_key(
     size_t derivation_input_length = 0;
     size_t encrypted_length = 0;
     size_t ciphertext_length = 0;
+    unsigned char predecessor_present;
     int written_length = 0;
     int final_length = 0;
     int status = 1;
@@ -13627,6 +15825,7 @@ static int secdat_decrypt_v2_mask_last_known_key(
     nonce = encrypted;
     ciphertext = encrypted + SECDAT_NONCE_LEN;
     tag = ciphertext + ciphertext_length;
+    predecessor_present = record->has_predecessor_entry_id ? 1 : 0;
     plaintext = malloc(ciphertext_length + 1);
     if (plaintext == NULL) {
         fprintf(stderr, _("out of memory\n"));
@@ -13658,6 +15857,28 @@ static int secdat_decrypt_v2_mask_last_known_key(
             (const unsigned char *)record->target_entry_id,
             (int)strlen(record->target_entry_id) + 1
         ) != 1
+        || EVP_DecryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            (const unsigned char *)record->target_secret_id,
+            (int)strlen(record->target_secret_id) + 1
+        ) != 1
+        || EVP_DecryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            &predecessor_present,
+            1
+        ) != 1
+        || (record->has_predecessor_entry_id
+            && EVP_DecryptUpdate(
+                context,
+                NULL,
+                &written_length,
+                (const unsigned char *)record->predecessor_entry_id,
+                (int)strlen(record->predecessor_entry_id) + 1
+            ) != 1)
         || EVP_DecryptUpdate(
             context,
             NULL,
@@ -13714,6 +15935,410 @@ cleanup:
     free(plaintext);
     if (context != NULL) {
         EVP_CIPHER_CTX_free(context);
+    }
+    return status;
+}
+
+static int secdat_encrypt_v2_mask_last_known_key(
+    const char *mask_domain_id,
+    const struct secdat_v2_mask_record *record,
+    const char *key,
+    char **encrypted_hex
+)
+{
+    static const unsigned char key_context[] = "secdat:v2-mask-last-known-key:v1\0";
+    EVP_CIPHER_CTX *context = NULL;
+    struct secdat_domain_chain chain = {0};
+    unsigned char master_derived_key[32];
+    unsigned char mask_key[EVP_MAX_MD_SIZE];
+    unsigned int mask_key_length = 0;
+    unsigned char *derivation_input = NULL;
+    unsigned char *encrypted = NULL;
+    unsigned char *nonce;
+    unsigned char *ciphertext;
+    unsigned char *tag;
+    size_t derivation_input_length = 0;
+    size_t key_length = strlen(key);
+    size_t encrypted_length = SECDAT_NONCE_LEN + key_length + SECDAT_TAG_LEN;
+    unsigned char predecessor_present;
+    int written_length = 0;
+    int final_length = 0;
+    int status = 1;
+
+    *encrypted_hex = NULL;
+    if (record->key_visibility != SECDAT_KEY_VISIBILITY_UNLOCKED
+        || key_length == 0
+        || secdat_domain_chain_from_id(mask_domain_id, &chain) != 0
+        || secdat_derive_key(&chain, master_derived_key, NULL) != 0) {
+        goto cleanup;
+    }
+    derivation_input_length = sizeof(key_context) - 1 + strlen(mask_domain_id);
+    derivation_input = malloc(derivation_input_length);
+    encrypted = malloc(encrypted_length);
+    if (derivation_input == NULL || encrypted == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    memcpy(derivation_input, key_context, sizeof(key_context) - 1);
+    memcpy(
+        derivation_input + sizeof(key_context) - 1,
+        mask_domain_id,
+        strlen(mask_domain_id)
+    );
+    nonce = encrypted;
+    ciphertext = encrypted + SECDAT_NONCE_LEN;
+    tag = ciphertext + key_length;
+    predecessor_present = record->has_predecessor_entry_id ? 1 : 0;
+    if (HMAC(
+            EVP_sha256(),
+            master_derived_key,
+            sizeof(master_derived_key),
+            derivation_input,
+            derivation_input_length,
+            mask_key,
+            &mask_key_length
+        ) == NULL
+        || mask_key_length != 32
+        || RAND_bytes(nonce, SECDAT_NONCE_LEN) != 1) {
+        goto cleanup;
+    }
+    context = EVP_CIPHER_CTX_new();
+    if (context == NULL
+        || EVP_EncryptInit_ex(context, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1
+        || EVP_CIPHER_CTX_ctrl(
+            context,
+            EVP_CTRL_GCM_SET_IVLEN,
+            SECDAT_NONCE_LEN,
+            NULL
+        ) != 1
+        || EVP_EncryptInit_ex(context, NULL, NULL, mask_key, nonce) != 1
+        || EVP_EncryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            (const unsigned char *)secdat_v2_mask_magic,
+            (int)strlen(secdat_v2_mask_magic)
+        ) != 1
+        || EVP_EncryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            (const unsigned char *)record->mask_chain_id,
+            (int)strlen(record->mask_chain_id) + 1
+        ) != 1
+        || EVP_EncryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            (const unsigned char *)record->target_entry_id,
+            (int)strlen(record->target_entry_id) + 1
+        ) != 1
+        || EVP_EncryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            (const unsigned char *)record->target_secret_id,
+            (int)strlen(record->target_secret_id) + 1
+        ) != 1
+        || EVP_EncryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            &predecessor_present,
+            1
+        ) != 1
+        || (record->has_predecessor_entry_id
+            && EVP_EncryptUpdate(
+                context,
+                NULL,
+                &written_length,
+                (const unsigned char *)record->predecessor_entry_id,
+                (int)strlen(record->predecessor_entry_id) + 1
+            ) != 1)
+        || EVP_EncryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            (const unsigned char *)record->last_known_target_domain,
+            (int)strlen(record->last_known_target_domain) + 1
+        ) != 1
+        || EVP_EncryptUpdate(
+            context,
+            NULL,
+            &written_length,
+            (const unsigned char *)record->last_known_target_store,
+            (int)strlen(record->last_known_target_store)
+        ) != 1
+        || EVP_EncryptUpdate(
+            context,
+            ciphertext,
+            &written_length,
+            (const unsigned char *)key,
+            (int)key_length
+        ) != 1
+        || EVP_EncryptFinal_ex(
+            context,
+            ciphertext + written_length,
+            &final_length
+        ) != 1
+        || written_length + final_length != (int)key_length
+        || EVP_CIPHER_CTX_ctrl(
+            context,
+            EVP_CTRL_GCM_GET_TAG,
+            SECDAT_TAG_LEN,
+            tag
+        ) != 1
+        || secdat_hex_encode_bytes(
+            encrypted,
+            encrypted_length,
+            encrypted_hex
+        ) != 0) {
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    secdat_domain_chain_free(&chain);
+    secdat_secure_clear(master_derived_key, sizeof(master_derived_key));
+    secdat_secure_clear(mask_key, sizeof(mask_key));
+    secdat_secure_clear(derivation_input, derivation_input_length);
+    free(derivation_input);
+    secdat_secure_clear(encrypted, encrypted_length);
+    free(encrypted);
+    if (context != NULL) {
+        EVP_CIPHER_CTX_free(context);
+    }
+    return status;
+}
+
+static int secdat_encode_v2_mask_record(
+    const char *mask_domain_id,
+    const struct secdat_v2_mask_record *record,
+    const char *key,
+    unsigned char **payload,
+    size_t *payload_length
+)
+{
+    char *escaped_domain = NULL;
+    char *escaped_store = NULL;
+    char *escaped_key = NULL;
+    char *encrypted_key = NULL;
+    char predecessor_line[128] = "";
+    size_t capacity = SECDAT_V2_TEXT_FILE_MAX;
+    int written;
+    int status = 1;
+
+    *payload = NULL;
+    *payload_length = 0;
+    if (!secdat_uuid_is_valid(record->mask_chain_id)
+        || !secdat_uuid_is_valid(record->target_entry_id)
+        || !secdat_uuid_is_valid(record->target_secret_id)
+        || (record->has_predecessor_entry_id
+            && !secdat_uuid_is_valid(record->predecessor_entry_id))
+        || !secdat_domain_id_is_valid(record->last_known_target_domain)
+        || record->last_known_target_store[0] == '\0'
+        || !secdat_is_valid_env_name(key)
+        || secdat_escape_component(
+            record->last_known_target_domain,
+            &escaped_domain
+        ) != 0
+        || secdat_escape_component(
+            record->last_known_target_store,
+            &escaped_store
+        ) != 0) {
+        goto cleanup;
+    }
+    if (record->key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS) {
+        if (secdat_escape_component(key, &escaped_key) != 0) {
+            goto cleanup;
+        }
+    } else if (record->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+        if (secdat_encrypt_v2_mask_last_known_key(
+                mask_domain_id,
+                record,
+                key,
+                &encrypted_key
+            ) != 0) {
+            goto cleanup;
+        }
+    } else {
+        goto cleanup;
+    }
+    if (record->has_predecessor_entry_id
+        && snprintf(
+            predecessor_line,
+            sizeof(predecessor_line),
+            "predecessor_entry_id=%s\n",
+            record->predecessor_entry_id
+        ) >= (int)sizeof(predecessor_line)) {
+        goto cleanup;
+    }
+    *payload = malloc(capacity);
+    if (*payload == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    written = snprintf(
+        (char *)*payload,
+        capacity,
+        "%s\n"
+        "version=1\n"
+        "mask_chain_id=%s\n"
+        "target_entry_id=%s\n"
+        "target_secret_id=%s\n"
+        "%s"
+        "last_known_target_domain=%s\n"
+        "last_known_target_store=%s\n"
+        "key_visibility=%s\n"
+        "%s%s%s",
+        secdat_v2_mask_magic,
+        record->mask_chain_id,
+        record->target_entry_id,
+        record->target_secret_id,
+        predecessor_line,
+        escaped_domain,
+        escaped_store,
+        record->key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS
+            ? "always"
+            : "unlocked",
+        record->key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS
+            ? "last_known_key="
+            : "key_encryption=aes-256-gcm-mask-name-v1\nencrypted_last_known_key=",
+        record->key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS
+            ? escaped_key
+            : encrypted_key,
+        "\n"
+    );
+    if (written < 0 || (size_t)written >= capacity) {
+        goto cleanup;
+    }
+    *payload_length = (size_t)written;
+    status = 0;
+
+cleanup:
+    free(escaped_domain);
+    free(escaped_store);
+    free(escaped_key);
+    if (encrypted_key != NULL) {
+        secdat_secure_clear(encrypted_key, strlen(encrypted_key));
+    }
+    free(encrypted_key);
+    if (status != 0) {
+        secdat_secure_clear(*payload, capacity);
+        free(*payload);
+        *payload = NULL;
+        *payload_length = 0;
+    }
+    return status;
+}
+
+static int secdat_encode_v2_compat_tombstone(
+    const char *target_entry_id,
+    unsigned char *payload,
+    size_t payload_size,
+    size_t *payload_length
+)
+{
+    int written;
+
+    *payload_length = 0;
+    if (!secdat_uuid_is_valid(target_entry_id)) {
+        return 1;
+    }
+    written = snprintf(
+        (char *)payload,
+        payload_size,
+        "%s\nversion=1\ntarget_entry_id=%s\n",
+        secdat_v2_compat_tombstone_magic,
+        target_entry_id
+    );
+    if (written < 0 || (size_t)written >= payload_size) {
+        return 1;
+    }
+    *payload_length = (size_t)written;
+    return 0;
+}
+
+static int secdat_read_v2_compat_tombstone(
+    const char *path,
+    int *is_compatibility,
+    char target_entry_id[64],
+    unsigned char **payload,
+    size_t *payload_length
+)
+{
+    static const char version_line[] = "\nversion=1\ntarget_entry_id=";
+    struct stat file_status;
+    size_t prefix_length;
+    int status = 1;
+
+    *is_compatibility = 0;
+    target_entry_id[0] = '\0';
+    *payload = NULL;
+    *payload_length = 0;
+    if (lstat(path, &file_status) != 0) {
+        if (errno == ENOENT) {
+            return 0;
+        }
+        return 1;
+    }
+    if (!S_ISREG(file_status.st_mode)
+        || secdat_read_file(path, payload, payload_length) != 0) {
+        fprintf(stderr, _("invalid tombstone file: %s\n"), path);
+        return 1;
+    }
+    prefix_length = strlen(secdat_v2_compat_tombstone_magic)
+        + strlen(version_line);
+    if (*payload_length == 0) {
+        return 0;
+    }
+    if (*payload_length != prefix_length + 36 + 1
+        || memcmp(
+            *payload,
+            secdat_v2_compat_tombstone_magic,
+            strlen(secdat_v2_compat_tombstone_magic)
+        ) != 0
+        || memcmp(
+            *payload + strlen(secdat_v2_compat_tombstone_magic),
+            version_line,
+            strlen(version_line)
+        ) != 0
+        || (*payload)[*payload_length - 1] != '\n') {
+        /*
+         * Empty and pre-marker tombstones are legacy barriers. A payload
+         * claiming this marker is malformed state and must not be downgraded.
+         */
+        if (*payload_length >= strlen(secdat_v2_compat_tombstone_magic)
+            && memcmp(
+                *payload,
+                secdat_v2_compat_tombstone_magic,
+                strlen(secdat_v2_compat_tombstone_magic)
+            ) == 0) {
+            fprintf(stderr, _("invalid v2 compatibility tombstone\n"));
+            goto cleanup;
+        }
+        status = 0;
+        goto cleanup;
+    }
+    memcpy(target_entry_id, *payload + prefix_length, 36);
+    target_entry_id[36] = '\0';
+    if (!secdat_uuid_is_valid(target_entry_id)) {
+        fprintf(stderr, _("invalid v2 compatibility tombstone\n"));
+        goto cleanup;
+    }
+    if ((file_status.st_mode & 077) != 0) {
+        fprintf(stderr, _("invalid v2 compatibility tombstone\n"));
+        goto cleanup;
+    }
+    *is_compatibility = 1;
+    status = 0;
+
+cleanup:
+    if (status != 0) {
+        secdat_secure_clear(*payload, *payload_length);
+        free(*payload);
+        *payload = NULL;
+        *payload_length = 0;
     }
     return status;
 }
@@ -14177,6 +16802,76 @@ static int secdat_collect_legacy_mask_views(
         qsort(tombstones.items, tombstones.count, sizeof(*tombstones.items), secdat_compare_strings);
     }
     for (index = 0; index < tombstones.count; index += 1) {
+        char tombstone_path[PATH_MAX];
+        char canonical_path[PATH_MAX];
+        char compatibility_target[64];
+        unsigned char *payload = NULL;
+        size_t payload_length = 0;
+        int is_compatibility = 0;
+
+        if (secdat_build_tombstone_path(
+                chain->ids[0],
+                store_name,
+                tombstones.items[index],
+                tombstone_path,
+                sizeof(tombstone_path)
+            ) != 0
+            || secdat_read_v2_compat_tombstone(
+                tombstone_path,
+                &is_compatibility,
+                compatibility_target,
+                &payload,
+                &payload_length
+            ) != 0) {
+            goto cleanup;
+        }
+        secdat_secure_clear(payload, payload_length);
+        free(payload);
+        if (is_compatibility) {
+            size_t canonical_index;
+            int matching_canonical = 0;
+
+            if (secdat_build_v2_mask_path(
+                    chain->ids[0],
+                    store_name,
+                    compatibility_target,
+                    canonical_path,
+                    sizeof(canonical_path)
+                ) != 0) {
+                goto cleanup;
+            }
+            if (secdat_file_exists(canonical_path)) {
+                for (canonical_index = 0;
+                     canonical_index < views->count;
+                     canonical_index += 1) {
+                    const struct secdat_mask_view *canonical =
+                        &views->items[canonical_index];
+
+                    if (canonical->record_kind
+                            == SECDAT_MASK_RECORD_CANONICAL
+                        && strcmp(
+                            canonical->target_entry_id,
+                            compatibility_target
+                        ) == 0
+                        && strcmp(
+                            canonical->key,
+                            tombstones.items[index]
+                        ) == 0) {
+                        matching_canonical = 1;
+                        break;
+                    }
+                }
+                if (!matching_canonical) {
+                    fprintf(
+                        stderr,
+                        _("compatibility tombstone does not match its canonical mask: %s\n"),
+                        tombstones.items[index]
+                    );
+                    goto cleanup;
+                }
+                continue;
+            }
+        }
         if (secdat_classify_legacy_mask(chain, store_name, tombstones.items[index], views) != 0) {
             goto cleanup;
         }
@@ -14196,10 +16891,58 @@ static int secdat_collect_mask_views(
     struct secdat_mask_view_list *views
 )
 {
+    size_t read_index;
+    size_t write_index = 0;
+
     if (secdat_collect_canonical_mask_views(chain, store_name, views) != 0
         || secdat_collect_legacy_mask_views(chain, store_name, views) != 0) {
         return 1;
     }
+    /*
+     * A v2 canonical mask is dual-written with a v1 name tombstone while
+     * rollback remains supported. In the v2 view that tombstone is a
+     * compatibility image of the canonical policy, not a second logical
+     * barrier. Keep standalone legacy tombstones visible, but collapse any
+     * tombstone whose authorized name is represented canonically.
+     */
+    views->visible_unknown_state_count = 0;
+    for (read_index = 0; read_index < views->count; read_index += 1) {
+        struct secdat_mask_view *view = &views->items[read_index];
+        size_t canonical_index;
+        int compatibility_tombstone = 0;
+
+        if (view->record_kind == SECDAT_MASK_RECORD_LEGACY) {
+            for (canonical_index = 0;
+                 canonical_index < views->count;
+                 canonical_index += 1) {
+                const struct secdat_mask_view *canonical =
+                    &views->items[canonical_index];
+
+                if (view->resolution == SECDAT_MASK_RESOLUTION_BOUND
+                    && canonical->record_kind
+                        == SECDAT_MASK_RECORD_CANONICAL
+                    && strcmp(canonical->key, view->key) == 0
+                    && strcmp(
+                        canonical->target_entry_id,
+                        view->target_entry_id
+                    ) == 0) {
+                    compatibility_tombstone = 1;
+                    break;
+                }
+            }
+        }
+        if (compatibility_tombstone) {
+            continue;
+        }
+        if (write_index != read_index) {
+            views->items[write_index] = *view;
+        }
+        if (view->state_unknown) {
+            views->visible_unknown_state_count += 1;
+        }
+        write_index += 1;
+    }
+    views->count = write_index;
     if (views->count > 1) {
         qsort(views->items, views->count, sizeof(*views->items), secdat_compare_mask_views);
     }
@@ -15193,7 +17936,6 @@ static int secdat_fsck_v1_store(
     char tombstones_dir[PATH_MAX];
     char entry_path[PATH_MAX];
     char metadata_path[PATH_MAX];
-    char tombstone_path[PATH_MAX];
     struct secdat_key_list entries = {0};
     struct secdat_key_list metadata = {0};
     struct secdat_key_list tombstones = {0};
@@ -18942,6 +21684,698 @@ overlay_cleanup_error:
     return 1;
 }
 
+static void secdat_mask_write_plan_reset(struct secdat_mask_write_plan *plan)
+{
+    secdat_secure_clear(plan->record_payload, plan->record_payload_length);
+    free(plan->record_payload);
+    secdat_secure_clear(
+        plan->tombstone_before_data,
+        plan->tombstone_before_length
+    );
+    free(plan->tombstone_before_data);
+    secdat_secure_clear(
+        plan->target_entry_before_data,
+        plan->target_entry_before_length
+    );
+    free(plan->target_entry_before_data);
+    memset(plan, 0, sizeof(*plan));
+}
+
+static int secdat_prepare_canonical_mask_write_plan(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    int rebind,
+    struct secdat_mask_write_plan *plan
+)
+{
+    struct secdat_domain_chain parent_chain;
+    struct secdat_effective_entry target = {0};
+    struct secdat_v2_mask_record existing_record;
+    struct secdat_v2_mask_record orphan_record;
+    struct secdat_mask_view_list canonical_views = {0};
+    struct secdat_mask_view_list legacy_view = {0};
+    char mask_path[PATH_MAX];
+    char tombstone_path[PATH_MAX];
+    char compatibility_target_entry_id[64] = "";
+    char legacy_target_entry_path[PATH_MAX];
+    char target_entry_path[PATH_MAX];
+    char existing_key[PATH_MAX];
+    char orphan_target_entry_id[64] = "";
+    char orphan_chain_id[64] = "";
+    const char *target_domain_id = NULL;
+    size_t index;
+    size_t orphan_count = 0;
+    size_t orphan_tail_count = 0;
+    int target_mask_exists = 0;
+    int tombstone_is_compatibility = 0;
+    int target_entry_exists = 0;
+    int status = 1;
+
+    memset(plan, 0, sizeof(*plan));
+    memset(&orphan_record, 0, sizeof(orphan_record));
+    if (chain->count <= 1
+        || secdat_copy_string(plan->key, sizeof(plan->key), key) != 0
+        || secdat_copy_string(
+            plan->mask_domain_id,
+            sizeof(plan->mask_domain_id),
+            chain->ids[0]
+        ) != 0
+        || secdat_copy_string(
+            plan->store_name,
+            sizeof(plan->store_name),
+            secdat_effective_store_name(store_name)
+        ) != 0) {
+        fprintf(stderr, _("key has no inherited mask target: %s\n"), key);
+        goto cleanup;
+    }
+    plan->rebind = rebind;
+    parent_chain.ids = chain->ids + 1;
+    parent_chain.count = chain->count - 1;
+
+    if (rebind) {
+        if (secdat_collect_canonical_mask_views(
+                chain,
+                store_name,
+                &canonical_views
+            ) != 0) {
+            goto cleanup;
+        }
+        for (index = 0; index < canonical_views.count; index += 1) {
+            if (canonical_views.items[index].state != SECDAT_MASK_STATE_ORPHANED
+                || strcmp(canonical_views.items[index].key, key) != 0) {
+                continue;
+            }
+            if (orphan_chain_id[0] == '\0') {
+                orphan_count = 1;
+                if (secdat_copy_string(
+                        orphan_chain_id,
+                        sizeof(orphan_chain_id),
+                        canonical_views.items[index].mask_chain_id
+                    ) != 0) {
+                    goto cleanup;
+                }
+            } else if (strcmp(
+                    orphan_chain_id,
+                    canonical_views.items[index].mask_chain_id
+                ) != 0) {
+                orphan_count = 2;
+                break;
+            }
+        }
+        if (orphan_count == 1) {
+            for (index = 0; index < canonical_views.count; index += 1) {
+                size_t other_index;
+                int is_predecessor = 0;
+
+                if (canonical_views.items[index].state
+                        != SECDAT_MASK_STATE_ORPHANED
+                    || strcmp(canonical_views.items[index].key, key) != 0
+                    || strcmp(
+                        canonical_views.items[index].mask_chain_id,
+                        orphan_chain_id
+                    ) != 0) {
+                    continue;
+                }
+                for (other_index = 0;
+                     other_index < canonical_views.count;
+                     other_index += 1) {
+                    struct secdat_v2_mask_record candidate_record;
+                    char candidate_path[PATH_MAX];
+
+                    if (canonical_views.items[other_index].state
+                            != SECDAT_MASK_STATE_ORPHANED
+                        || strcmp(
+                            canonical_views.items[other_index].key,
+                            key
+                        ) != 0
+                        || strcmp(
+                            canonical_views.items[other_index].mask_chain_id,
+                            orphan_chain_id
+                        ) != 0) {
+                        continue;
+                    }
+                    if (secdat_build_v2_mask_path(
+                            chain->ids[0],
+                            store_name,
+                            canonical_views.items[other_index].target_entry_id,
+                            candidate_path,
+                            sizeof(candidate_path)
+                        ) != 0
+                        || secdat_read_v2_mask_record(
+                            candidate_path,
+                            canonical_views.items[other_index].target_entry_id,
+                            &candidate_record
+                        ) != 0) {
+                        goto cleanup;
+                    }
+                    if (candidate_record.has_predecessor_entry_id
+                        && strcmp(
+                            candidate_record.predecessor_entry_id,
+                            canonical_views.items[index].target_entry_id
+                        ) == 0) {
+                        is_predecessor = 1;
+                        break;
+                    }
+                }
+                if (is_predecessor) {
+                    continue;
+                }
+                orphan_tail_count += 1;
+                if (secdat_copy_string(
+                        orphan_target_entry_id,
+                        sizeof(orphan_target_entry_id),
+                        canonical_views.items[index].target_entry_id
+                    ) != 0) {
+                    goto cleanup;
+                }
+            }
+            if (orphan_tail_count != 1) {
+                fprintf(
+                    stderr,
+                    _("invalid orphan mask chain; inspect fsck --format v2 --dangling: %s\n"),
+                    key
+                );
+                goto cleanup;
+            }
+        }
+        if (orphan_count > 1) {
+            fprintf(
+                stderr,
+                _("multiple orphan mask chains match key; inspect list --all-masks --long: %s\n"),
+                key
+            );
+            goto cleanup;
+        }
+        if (orphan_count == 1) {
+            if (secdat_build_v2_mask_path(
+                    chain->ids[0],
+                    store_name,
+                    orphan_target_entry_id,
+                    mask_path,
+                    sizeof(mask_path)
+                ) != 0
+                || secdat_read_v2_mask_record(
+                    mask_path,
+                    orphan_target_entry_id,
+                    &orphan_record
+                ) != 0) {
+                goto cleanup;
+            }
+        } else {
+            if (secdat_build_tombstone_path(
+                    chain->ids[0],
+                    store_name,
+                    key,
+                    tombstone_path,
+                    sizeof(tombstone_path)
+                ) != 0
+                || !secdat_file_exists(tombstone_path)) {
+                fprintf(stderr, _("key has no mask barrier to rebind: %s\n"), key);
+                goto cleanup;
+            }
+        }
+        if (secdat_classify_legacy_mask(
+                chain,
+                store_name,
+                key,
+                &legacy_view
+            ) != 0
+            || legacy_view.count != 1
+            || legacy_view.items[0].resolution
+                != SECDAT_MASK_RESOLUTION_BOUND
+            || secdat_resolve_effective_entry(
+                &parent_chain,
+                store_name,
+                key,
+                0,
+                &target
+            ) != 0
+            || !target.from_v2
+            || strcmp(
+                legacy_view.items[0].target_entry_id,
+                target.entry_id
+            ) != 0) {
+            fprintf(
+                stderr,
+                _("mask rebind found no unique inherited v2 target; inspect domain ls --ancestors and run id KEY in each ancestor, then resolve duplicate or inaccessible candidates without unmasking: %s\n"),
+                key
+            );
+            goto cleanup;
+        }
+        target_domain_id = parent_chain.ids[target.resolved_index];
+    } else {
+        if (secdat_resolve_effective_entry(
+                &parent_chain,
+                store_name,
+                key,
+                0,
+                &target
+            ) != 0) {
+            fprintf(stderr, _("key not found: %s\n"), key);
+            secdat_print_key_suggestions(chain, store_name, key);
+            goto cleanup;
+        }
+        if (!target.from_v2) {
+            fprintf(
+                stderr,
+                _("canonical mask requires an inherited v2 entry: %s\n"),
+                key
+            );
+            goto cleanup;
+        }
+        target_domain_id = parent_chain.ids[target.resolved_index];
+    }
+    if (secdat_copy_string(
+            plan->target_domain_id,
+            sizeof(plan->target_domain_id),
+            target_domain_id
+        ) != 0
+        || secdat_build_v2_mask_path(
+            chain->ids[0],
+            store_name,
+            target.entry_id,
+            mask_path,
+            sizeof(mask_path)
+        ) != 0
+        || secdat_build_tombstone_path(
+            chain->ids[0],
+            store_name,
+            key,
+            tombstone_path,
+            sizeof(tombstone_path)
+        ) != 0
+        || secdat_build_v2_domain_entry_path(
+            target_domain_id,
+            store_name,
+            target.entry_id,
+            target_entry_path,
+            sizeof(target_entry_path)
+        ) != 0
+        || secdat_transaction_read_target(
+            target_entry_path,
+            &plan->target_entry_before_data,
+            &plan->target_entry_before_length,
+            &target_entry_exists
+        ) != 0
+        || !target_entry_exists) {
+        goto cleanup;
+    }
+    target_mask_exists = secdat_file_exists(mask_path);
+
+    if (!rebind) {
+        if (secdat_collect_canonical_mask_views(
+                chain,
+                store_name,
+                &canonical_views
+            ) != 0) {
+            goto cleanup;
+        }
+        for (index = 0; index < canonical_views.count; index += 1) {
+            if (canonical_views.items[index].state == SECDAT_MASK_STATE_ORPHANED
+                && strcmp(canonical_views.items[index].key, key) == 0) {
+                fprintf(
+                    stderr,
+                    _("orphan mask barrier requires mask --rebind: %s\n"),
+                    key
+                );
+                goto cleanup;
+            }
+        }
+    }
+
+    if (target_mask_exists) {
+        if (secdat_read_v2_mask_record(
+                mask_path,
+                target.entry_id,
+                &existing_record
+            ) != 0
+            || strcmp(existing_record.target_secret_id, target.secret_id) != 0
+            || strcmp(
+                existing_record.last_known_target_domain,
+                target_domain_id
+            ) != 0
+            || strcmp(
+                existing_record.last_known_target_store,
+                secdat_effective_store_name(store_name)
+            ) != 0
+            || existing_record.key_visibility != target.key_visibility) {
+            fprintf(stderr, _("conflicting canonical mask target: %s\n"), key);
+            goto cleanup;
+        }
+        if (existing_record.key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS) {
+            if (!existing_record.has_last_known_key
+                || strcmp(existing_record.last_known_key, key) != 0) {
+                fprintf(stderr, _("conflicting canonical mask name: %s\n"), key);
+                goto cleanup;
+            }
+        } else if (secdat_decrypt_v2_mask_last_known_key(
+                chain->ids[0],
+                &existing_record,
+                existing_key,
+                sizeof(existing_key)
+            ) != 0
+            || strcmp(existing_key, key) != 0) {
+            fprintf(stderr, _("conflicting canonical mask name: %s\n"), key);
+            goto cleanup;
+        }
+        if (rebind
+            && orphan_count == 1
+            && strcmp(
+                existing_record.mask_chain_id,
+                orphan_record.mask_chain_id
+            ) != 0) {
+            fprintf(
+                stderr,
+                _("target is already masked by another chain; inspect list --all-masks --long and choose a chain with unmask --dry-run --mask-chain: %s\n"),
+                key
+            );
+            goto cleanup;
+        }
+        plan->record = existing_record;
+    } else {
+        if (secdat_copy_string(
+                plan->record.target_entry_id,
+                sizeof(plan->record.target_entry_id),
+                target.entry_id
+            ) != 0
+            || secdat_copy_string(
+                plan->record.target_secret_id,
+                sizeof(plan->record.target_secret_id),
+                target.secret_id
+            ) != 0
+            || secdat_copy_string(
+                plan->record.last_known_target_domain,
+                sizeof(plan->record.last_known_target_domain),
+                target_domain_id
+            ) != 0
+            || secdat_copy_string(
+                plan->record.last_known_target_store,
+                sizeof(plan->record.last_known_target_store),
+                secdat_effective_store_name(store_name)
+            ) != 0) {
+            goto cleanup;
+        }
+        plan->record.key_visibility = target.key_visibility;
+        if (rebind && orphan_count == 1) {
+            if (secdat_copy_string(
+                    plan->record.mask_chain_id,
+                    sizeof(plan->record.mask_chain_id),
+                    orphan_record.mask_chain_id
+                ) != 0
+                || secdat_copy_string(
+                    plan->record.predecessor_entry_id,
+                    sizeof(plan->record.predecessor_entry_id),
+                    orphan_record.target_entry_id
+                ) != 0) {
+                goto cleanup;
+            }
+            plan->record.has_predecessor_entry_id = 1;
+            plan->retains_predecessor = 1;
+        } else if (secdat_generate_uuid_v4(
+                plan->record.mask_chain_id,
+                sizeof(plan->record.mask_chain_id)
+            ) != 0) {
+            goto cleanup;
+        }
+        if (secdat_encode_v2_mask_record(
+                chain->ids[0],
+                &plan->record,
+                key,
+                &plan->record_payload,
+                &plan->record_payload_length
+            ) != 0) {
+            goto cleanup;
+        }
+        plan->write_mask = 1;
+    }
+    plan->tombstone_before_exists = secdat_file_exists(tombstone_path);
+    if (plan->tombstone_before_exists
+        && secdat_read_v2_compat_tombstone(
+            tombstone_path,
+            &tombstone_is_compatibility,
+            compatibility_target_entry_id,
+            &plan->tombstone_before_data,
+            &plan->tombstone_before_length
+        ) != 0) {
+        goto cleanup;
+    }
+    if (plan->record.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+        if (secdat_build_entry_path(
+                target_domain_id,
+                store_name,
+                key,
+                legacy_target_entry_path,
+                sizeof(legacy_target_entry_path)
+            ) != 0) {
+            goto cleanup;
+        }
+        if (secdat_file_exists(legacy_target_entry_path)
+            || plan->tombstone_before_exists) {
+            fprintf(
+                stderr,
+                _("hidden-name mask cannot be projected to v1 rollback state without exposing its name: %s\n"),
+                key
+            );
+            goto cleanup;
+        }
+        plan->write_tombstone = 0;
+        plan->no_op = !plan->write_mask;
+        status = 0;
+        goto cleanup;
+    }
+    if (!rebind
+        && plan->tombstone_before_exists
+        && !tombstone_is_compatibility) {
+        if (secdat_classify_legacy_mask(
+                chain,
+                store_name,
+                key,
+                &legacy_view
+            ) != 0
+            || legacy_view.count != 1
+            || legacy_view.items[0].resolution
+                != SECDAT_MASK_RESOLUTION_BOUND
+            || strcmp(
+                legacy_view.items[0].target_entry_id,
+                target.entry_id
+            ) != 0) {
+            fprintf(
+                stderr,
+                _("ambiguous legacy mask blocks this write; inspect list --all-masks --long and use mask --rebind after exactly one inherited v2 target remains: %s\n"),
+                key
+            );
+            goto cleanup;
+        }
+    }
+    if (tombstone_is_compatibility) {
+        int matching_canonical = 0;
+
+        for (index = 0; index < canonical_views.count; index += 1) {
+            if (canonical_views.items[index].record_kind
+                    == SECDAT_MASK_RECORD_CANONICAL
+                && strcmp(
+                    canonical_views.items[index].target_entry_id,
+                    compatibility_target_entry_id
+                ) == 0
+                && strcmp(canonical_views.items[index].key, key) == 0) {
+                matching_canonical = 1;
+                break;
+            }
+        }
+        if (!matching_canonical) {
+            fprintf(
+                stderr,
+                _("compatibility tombstone does not match its canonical mask: %s\n"),
+                key
+            );
+            goto cleanup;
+        }
+    }
+    if (secdat_encode_v2_compat_tombstone(
+            tombstone_is_compatibility
+                ? compatibility_target_entry_id
+                : plan->record.target_entry_id,
+            plan->tombstone_payload,
+            sizeof(plan->tombstone_payload),
+            &plan->tombstone_payload_length
+        ) != 0) {
+        goto cleanup;
+    }
+    plan->write_tombstone = !plan->tombstone_before_exists
+        || plan->tombstone_before_length != plan->tombstone_payload_length
+        || CRYPTO_memcmp(
+            plan->tombstone_before_data,
+            plan->tombstone_payload,
+            plan->tombstone_payload_length
+        ) != 0;
+    plan->no_op = !plan->write_mask && !plan->write_tombstone;
+    status = 0;
+
+cleanup:
+    secdat_effective_entry_reset(&target);
+    secdat_mask_view_list_free(&canonical_views);
+    secdat_mask_view_list_free(&legacy_view);
+    if (status != 0) {
+        secdat_mask_write_plan_reset(plan);
+    }
+    return status;
+}
+
+static int secdat_print_mask_write_plan(
+    const struct secdat_mask_write_plan *plan,
+    int dry_run,
+    int committed,
+    int json
+)
+{
+    const char *operation = plan->rebind ? "rebind" : "mask";
+
+    if (json) {
+        json_t *root = json_pack(
+            "{s:s,s:s,s:b,s:b,s:b,s:s,s:s,s:s,s:s,s:s,s:s,s:b,s:b,s:b,s:s?}",
+            "plan_schema_version",
+            "secdat.mask-operation-plan.v1",
+            "operation",
+            operation,
+            "ok",
+            1,
+            "dry_run",
+            dry_run,
+            "committed",
+            committed,
+            "domain_id",
+            plan->mask_domain_id,
+            "store",
+            plan->store_name,
+            "key",
+            plan->key,
+            "mask_chain_id",
+            plan->record.mask_chain_id,
+            "target_entry_id",
+            plan->record.target_entry_id,
+            "target_secret_id",
+            plan->record.target_secret_id,
+            "write_mask",
+            plan->write_mask,
+            "write_legacy_tombstone",
+            plan->write_tombstone,
+            "no_op",
+            plan->no_op,
+            "predecessor_entry_id",
+            plan->record.has_predecessor_entry_id
+                ? plan->record.predecessor_entry_id
+                : NULL
+        );
+
+        if (root == NULL || json_dumpf(root, stdout, JSON_COMPACT | JSON_SORT_KEYS) != 0) {
+            fprintf(stderr, _("failed to encode mask operation plan\n"));
+            json_decref(root);
+            return 1;
+        } else {
+            fputc('\n', stdout);
+        }
+        json_decref(root);
+        return 0;
+    }
+    if (!dry_run) {
+        return 0;
+    }
+    puts("plan_schema_version=secdat.mask-operation-plan.v1");
+    printf("operation=%s\n", operation);
+    puts("ok=yes");
+    puts("dry_run=yes");
+    printf("domain_id=%s\n", plan->mask_domain_id);
+    printf("store=%s\n", plan->store_name);
+    printf("key=%s\n", plan->key);
+    printf("mask_chain_id=%s\n", plan->record.mask_chain_id);
+    printf("target_entry_id=%s\n", plan->record.target_entry_id);
+    printf("target_secret_id=%s\n", plan->record.target_secret_id);
+    printf("write_mask=%s\n", plan->write_mask ? "yes" : "no");
+    printf(
+        "write_legacy_tombstone=%s\n",
+        plan->write_tombstone ? "yes" : "no"
+    );
+    printf("no_op=%s\n", plan->no_op ? "yes" : "no");
+    printf(
+        "predecessor_entry_id=%s\n",
+        plan->record.has_predecessor_entry_id
+            ? plan->record.predecessor_entry_id
+            : "-"
+    );
+    return 0;
+}
+
+static int secdat_commit_mask_write_plan(
+    const struct secdat_mask_write_plan *plan,
+    struct secdat_transaction *transaction
+)
+{
+    char masks_dir[PATH_MAX];
+
+    if (plan->no_op) {
+        return 0;
+    }
+    if (secdat_ensure_store_dirs(plan->mask_domain_id, plan->store_name) != 0
+        || secdat_v2_masks_dir(
+            plan->mask_domain_id,
+            plan->store_name,
+            masks_dir,
+            sizeof(masks_dir)
+        ) != 0
+        || secdat_ensure_directory(masks_dir, 0700) != 0) {
+        return 1;
+    }
+    if (secdat_transaction_append_target(
+            transaction,
+            SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY,
+            plan->target_domain_id,
+            plan->store_name,
+            plan->record.target_entry_id,
+            plan->target_entry_before_data,
+            plan->target_entry_before_length,
+            1,
+            plan->target_entry_before_data,
+            plan->target_entry_before_length,
+            1
+        ) != 0) {
+        return 1;
+    }
+    if (plan->write_mask
+        && secdat_transaction_append_target(
+            transaction,
+            SECDAT_TRANSACTION_ARTIFACT_MASK,
+            plan->mask_domain_id,
+            plan->store_name,
+            plan->record.target_entry_id,
+            NULL,
+            0,
+            0,
+            plan->record_payload,
+            plan->record_payload_length,
+            1
+        ) != 0) {
+        return 1;
+    }
+    if (plan->write_tombstone
+        && secdat_transaction_append_target(
+            transaction,
+            SECDAT_TRANSACTION_ARTIFACT_TOMBSTONE,
+            plan->mask_domain_id,
+            plan->store_name,
+            plan->key,
+            plan->tombstone_before_data,
+            plan->tombstone_before_length,
+            plan->tombstone_before_exists,
+            plan->tombstone_payload,
+            plan->tombstone_payload_length,
+            1
+        ) != 0) {
+        return 1;
+    }
+    return secdat_transaction_commit(transaction);
+}
+
 static int secdat_mask_key_in_chain(const struct secdat_domain_chain *chain, const char *store_name, const char *key)
 {
     char current_domain_id[PATH_MAX];
@@ -19040,6 +22474,786 @@ overlay_cleanup_error:
     secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
     free(overlay.plaintext);
     return 1;
+}
+
+static void secdat_unmask_plan_reset(struct secdat_unmask_plan *plan)
+{
+    size_t index;
+
+    for (index = 0; index < plan->record_count; index += 1) {
+        secdat_secure_clear(
+            plan->records[index].before_data,
+            plan->records[index].before_length
+        );
+        free(plan->records[index].before_data);
+    }
+    for (index = 0; index < plan->tombstone_count; index += 1) {
+        secdat_secure_clear(
+            plan->tombstones[index].before_data,
+            plan->tombstones[index].before_length
+        );
+        free(plan->tombstones[index].before_data);
+    }
+    free(plan->records);
+    free(plan->tombstones);
+    secdat_key_list_free(&plan->affected_keys);
+    memset(plan, 0, sizeof(*plan));
+}
+
+static int secdat_unmask_plan_contains_target(
+    const struct secdat_unmask_plan *plan,
+    const char *target_entry_id
+)
+{
+    size_t index;
+
+    for (index = 0; index < plan->record_count; index += 1) {
+        if (strcmp(
+                plan->records[index].target_entry_id,
+                target_entry_id
+            ) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_prepare_v2_unmask_plan(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    const char *requested_chain_id,
+    enum secdat_mask_warning_policy warning_policy,
+    struct secdat_unmask_plan *plan
+)
+{
+    struct secdat_mask_view_list views = {0};
+    struct secdat_key_list matching_chains = {0};
+    struct secdat_key_list remaining_chains = {0};
+    struct secdat_domain_chain local_chain;
+    struct secdat_effective_entry local_entry = {0};
+    const char *selected_chain_id = NULL;
+    size_t selected_record_count = 0;
+    size_t matching_legacy_count = 0;
+    size_t index;
+    size_t record_index = 0;
+    int parent_visible;
+    int status = 1;
+
+    memset(plan, 0, sizeof(*plan));
+    plan->warning_requested = warning_policy;
+    plan->warning_effective = warning_policy != SECDAT_MASK_WARNINGS_OFF;
+    if (chain->count == 0
+        || secdat_copy_string(
+            plan->requested_key,
+            sizeof(plan->requested_key),
+            key
+        ) != 0
+        || secdat_copy_string(
+            plan->mask_domain_id,
+            sizeof(plan->mask_domain_id),
+            chain->ids[0]
+        ) != 0
+        || secdat_copy_string(
+            plan->store_name,
+            sizeof(plan->store_name),
+            secdat_effective_store_name(store_name)
+        ) != 0
+        || secdat_collect_mask_views(chain, store_name, &views) != 0) {
+        goto cleanup;
+    }
+    if (views.redacted_count > 0 || views.visible_unknown_state_count > 0) {
+        fprintf(
+            stderr,
+            _("cannot unmask while matching mask state is locked\n")
+        );
+        goto cleanup;
+    }
+
+    for (index = 0; index < views.count; index += 1) {
+        const struct secdat_mask_view *view = &views.items[index];
+
+        if (strcmp(view->key, key) != 0) {
+            continue;
+        }
+        if (view->record_kind == SECDAT_MASK_RECORD_LEGACY) {
+            matching_legacy_count += 1;
+            if (view->resolution == SECDAT_MASK_RESOLUTION_AMBIGUOUS) {
+                fprintf(
+                    stderr,
+                    _("ambiguous legacy mask requires mask --rebind before unmask: %s\n"),
+                    key
+                );
+                goto cleanup;
+            }
+            continue;
+        }
+        if (!secdat_key_list_contains(
+                &matching_chains,
+                view->mask_chain_id
+            )
+            && secdat_key_list_append(
+                &matching_chains,
+                view->mask_chain_id
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+
+    if (requested_chain_id != NULL) {
+        for (index = 0; index < views.count; index += 1) {
+            const struct secdat_mask_view *view = &views.items[index];
+
+            if (view->record_kind == SECDAT_MASK_RECORD_CANONICAL
+                && strcmp(view->mask_chain_id, requested_chain_id) == 0
+                && strcmp(view->key, key) == 0) {
+                selected_chain_id = requested_chain_id;
+                break;
+            }
+        }
+        if (selected_chain_id == NULL) {
+            fprintf(
+                stderr,
+                _("mask chain does not protect requested key: %s\n"),
+                key
+            );
+            goto cleanup;
+        }
+    } else if (matching_chains.count > 1) {
+        fprintf(
+            stderr,
+            _("multiple mask chains match key; use list --all-masks --long and --mask-chain: %s\n"),
+            key
+        );
+        goto cleanup;
+    } else if (matching_chains.count == 1) {
+        selected_chain_id = matching_chains.items[0];
+    } else if (matching_legacy_count == 1) {
+        char tombstone_path[PATH_MAX];
+        char compatibility_target[64];
+        int is_compatibility = 0;
+        int exists = 0;
+
+        plan->legacy_only = 1;
+        if (secdat_key_list_append(&plan->affected_keys, key) != 0
+            || secdat_build_tombstone_path(
+                chain->ids[0],
+                store_name,
+                key,
+                tombstone_path,
+                sizeof(tombstone_path)
+            ) != 0) {
+            goto cleanup;
+        }
+        plan->tombstones = calloc(1, sizeof(*plan->tombstones));
+        if (plan->tombstones == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            goto cleanup;
+        }
+        plan->tombstone_count = 1;
+        if (secdat_transaction_read_target(
+                tombstone_path,
+                &plan->tombstones[0].before_data,
+                &plan->tombstones[0].before_length,
+                &exists
+            ) != 0
+            || !exists
+            || secdat_copy_string(
+                plan->tombstones[0].key,
+                sizeof(plan->tombstones[0].key),
+                key
+            ) != 0) {
+            goto cleanup;
+        }
+        plan->tombstones[0].before_exists = 1;
+        /*
+         * The logical view identified this as a standalone legacy barrier.
+         * Parsing again catches a marker changed after that classification.
+         */
+        {
+            unsigned char *marker_payload = NULL;
+            size_t marker_length = 0;
+
+            if (secdat_read_v2_compat_tombstone(
+                    tombstone_path,
+                    &is_compatibility,
+                    compatibility_target,
+                    &marker_payload,
+                    &marker_length
+                ) != 0) {
+                goto cleanup;
+            }
+            secdat_secure_clear(marker_payload, marker_length);
+            free(marker_payload);
+        }
+        if (is_compatibility) {
+            fprintf(stderr, _("mask state changed since plan\n"));
+            goto cleanup;
+        }
+        plan->remaining_mask_chain_count = 0;
+        plan->remaining_legacy_barrier_count = 0;
+        goto determine_result;
+    } else {
+        fprintf(stderr, _("key is not masked in current domain: %s\n"), key);
+        goto cleanup;
+    }
+
+    if (secdat_copy_string(
+            plan->mask_chain_id,
+            sizeof(plan->mask_chain_id),
+            selected_chain_id
+        ) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < views.count; index += 1) {
+        const struct secdat_mask_view *view = &views.items[index];
+
+        if (view->record_kind != SECDAT_MASK_RECORD_CANONICAL
+            || strcmp(view->mask_chain_id, selected_chain_id) != 0) {
+            continue;
+        }
+        selected_record_count += 1;
+        if (!secdat_key_list_contains(&plan->affected_keys, view->key)
+            && secdat_key_list_append(
+                &plan->affected_keys,
+                view->key
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    if (selected_record_count == 0) {
+        goto cleanup;
+    }
+    if (requested_chain_id == NULL && plan->affected_keys.count != 1) {
+        fprintf(
+            stderr,
+            _("mask chain protects multiple key names; inspect with unmask --dry-run --mask-chain: %s\n"),
+            key
+        );
+        goto cleanup;
+    }
+    plan->records = calloc(selected_record_count, sizeof(*plan->records));
+    if (plan->records == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    plan->record_count = selected_record_count;
+    for (index = 0; index < views.count; index += 1) {
+        const struct secdat_mask_view *view = &views.items[index];
+        struct secdat_unmask_record_plan *record;
+        char mask_path[PATH_MAX];
+        int exists = 0;
+
+        if (view->record_kind != SECDAT_MASK_RECORD_CANONICAL
+            || strcmp(view->mask_chain_id, selected_chain_id) != 0) {
+            continue;
+        }
+        record = &plan->records[record_index];
+        if (secdat_copy_string(
+                record->target_entry_id,
+                sizeof(record->target_entry_id),
+                view->target_entry_id
+            ) != 0
+            || secdat_copy_string(
+                record->key,
+                sizeof(record->key),
+                view->key
+            ) != 0
+            || secdat_build_v2_mask_path(
+                chain->ids[0],
+                store_name,
+                record->target_entry_id,
+                mask_path,
+                sizeof(mask_path)
+            ) != 0
+            || secdat_transaction_read_target(
+                mask_path,
+                &record->before_data,
+                &record->before_length,
+                &exists
+            ) != 0
+            || !exists) {
+            goto cleanup;
+        }
+        record_index += 1;
+    }
+
+    plan->tombstones = calloc(
+        plan->affected_keys.count,
+        sizeof(*plan->tombstones)
+    );
+    if (plan->tombstones == NULL && plan->affected_keys.count > 0) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    for (index = 0; index < plan->affected_keys.count; index += 1) {
+        const char *affected_key = plan->affected_keys.items[index];
+        const struct secdat_mask_view *remaining_visible = NULL;
+        struct secdat_unmask_tombstone_plan *tombstone;
+        char tombstone_path[PATH_MAX];
+        char compatibility_target[64];
+        unsigned char *before_data = NULL;
+        size_t before_length = 0;
+        int is_compatibility = 0;
+        int tombstone_exists = 0;
+        size_t view_index;
+
+        for (view_index = 0; view_index < views.count; view_index += 1) {
+            const struct secdat_mask_view *view = &views.items[view_index];
+
+            if (view->record_kind == SECDAT_MASK_RECORD_CANONICAL
+                && strcmp(view->key, affected_key) == 0
+                && strcmp(view->mask_chain_id, selected_chain_id) != 0) {
+                struct secdat_v2_mask_record remaining_record;
+                char remaining_path[PATH_MAX];
+
+                if (secdat_build_v2_mask_path(
+                        chain->ids[0],
+                        store_name,
+                        view->target_entry_id,
+                        remaining_path,
+                        sizeof(remaining_path)
+                    ) != 0
+                    || secdat_read_v2_mask_record(
+                        remaining_path,
+                        view->target_entry_id,
+                        &remaining_record
+                    ) != 0) {
+                    goto cleanup;
+                }
+                if (remaining_record.key_visibility
+                        == SECDAT_KEY_VISIBILITY_ALWAYS) {
+                    remaining_visible = view;
+                    break;
+                }
+            }
+        }
+        if (secdat_build_tombstone_path(
+                chain->ids[0],
+                store_name,
+                affected_key,
+                tombstone_path,
+                sizeof(tombstone_path)
+            ) != 0
+            || secdat_transaction_read_target(
+                tombstone_path,
+                &before_data,
+                &before_length,
+                &tombstone_exists
+            ) != 0) {
+            goto cleanup;
+        }
+        if (!tombstone_exists && remaining_visible == NULL) {
+            continue;
+        }
+        if (tombstone_exists) {
+            unsigned char *marker_payload = NULL;
+            size_t marker_length = 0;
+
+            if (secdat_read_v2_compat_tombstone(
+                    tombstone_path,
+                    &is_compatibility,
+                    compatibility_target,
+                    &marker_payload,
+                    &marker_length
+                ) != 0) {
+                secdat_secure_clear(before_data, before_length);
+                free(before_data);
+                goto cleanup;
+            }
+            secdat_secure_clear(marker_payload, marker_length);
+            free(marker_payload);
+        }
+        if (tombstone_exists && !is_compatibility) {
+            int logical_legacy = 0;
+
+            for (view_index = 0; view_index < views.count; view_index += 1) {
+                if (views.items[view_index].record_kind
+                        == SECDAT_MASK_RECORD_LEGACY
+                    && strcmp(
+                        views.items[view_index].key,
+                        affected_key
+                    ) == 0) {
+                    logical_legacy = 1;
+                    break;
+                }
+            }
+            if (logical_legacy) {
+                secdat_secure_clear(before_data, before_length);
+                free(before_data);
+                continue;
+            }
+        } else if (tombstone_exists
+            && !secdat_unmask_plan_contains_target(
+                       plan,
+                       compatibility_target
+                   )) {
+            secdat_secure_clear(before_data, before_length);
+            free(before_data);
+            continue;
+        }
+
+        tombstone = &plan->tombstones[plan->tombstone_count];
+        if (secdat_copy_string(
+                tombstone->key,
+                sizeof(tombstone->key),
+                affected_key
+            ) != 0) {
+            secdat_secure_clear(before_data, before_length);
+            free(before_data);
+            goto cleanup;
+        }
+        tombstone->before_data = before_data;
+        tombstone->before_length = before_length;
+        tombstone->before_exists = tombstone_exists;
+        plan->tombstone_count += 1;
+        if (remaining_visible != NULL) {
+            tombstone->after_exists = 1;
+            if (secdat_encode_v2_compat_tombstone(
+                    remaining_visible->target_entry_id,
+                    tombstone->after_data,
+                    sizeof(tombstone->after_data),
+                    &tombstone->after_length
+                ) != 0) {
+                goto cleanup;
+            }
+        }
+    }
+
+    for (index = 0; index < views.count; index += 1) {
+        const struct secdat_mask_view *view = &views.items[index];
+
+        if (strcmp(view->key, key) != 0) {
+            continue;
+        }
+        if (view->record_kind == SECDAT_MASK_RECORD_LEGACY) {
+            plan->remaining_legacy_barrier_count += 1;
+        } else if (strcmp(view->mask_chain_id, selected_chain_id) != 0
+            && !secdat_key_list_contains(
+                &remaining_chains,
+                view->mask_chain_id
+            )
+            && secdat_key_list_append(
+                &remaining_chains,
+                view->mask_chain_id
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    plan->remaining_mask_chain_count = remaining_chains.count;
+
+determine_result:
+    local_chain.ids = chain->ids;
+    local_chain.count = 1;
+    plan->local_override_present =
+        secdat_resolve_effective_entry(
+            &local_chain,
+            store_name,
+            key,
+            0,
+            &local_entry
+        ) == 0;
+    if (plan->local_override_present) {
+        if (secdat_copy_string(
+                plan->resulting_effective_state,
+                sizeof(plan->resulting_effective_state),
+                "local"
+            ) != 0) {
+            goto cleanup;
+        }
+    } else if (plan->remaining_mask_chain_count > 0
+        || plan->remaining_legacy_barrier_count > 0) {
+        if (secdat_copy_string(
+                plan->resulting_effective_state,
+                sizeof(plan->resulting_effective_state),
+                "masked"
+            ) != 0) {
+            goto cleanup;
+        }
+    } else {
+        parent_visible = secdat_parent_has_visible_key(chain, store_name, key);
+        if (parent_visible < 0
+            || secdat_copy_string(
+                plan->resulting_effective_state,
+                sizeof(plan->resulting_effective_state),
+                parent_visible ? "inherited" : "absent"
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    status = 0;
+
+cleanup:
+    secdat_effective_entry_reset(&local_entry);
+    secdat_mask_view_list_free(&views);
+    secdat_key_list_free(&matching_chains);
+    secdat_key_list_free(&remaining_chains);
+    if (status != 0) {
+        secdat_unmask_plan_reset(plan);
+    }
+    return status;
+}
+
+static int secdat_print_unmask_plan(
+    const struct secdat_unmask_plan *plan,
+    int dry_run,
+    int committed,
+    int json
+)
+{
+    size_t index;
+
+    if (json) {
+        json_t *root = json_object();
+        json_t *affected = json_array();
+
+        if (root == NULL || affected == NULL) {
+            json_decref(affected);
+            json_decref(root);
+            fprintf(stderr, _("failed to encode mask operation plan\n"));
+            return 1;
+        }
+        for (index = 0; index < plan->affected_keys.count; index += 1) {
+            json_t *row = json_object();
+            size_t record_index;
+            size_t key_record_count = 0;
+
+            for (record_index = 0;
+                 record_index < plan->record_count;
+                 record_index += 1) {
+                if (strcmp(
+                        plan->records[record_index].key,
+                        plan->affected_keys.items[index]
+                    ) == 0) {
+                    key_record_count += 1;
+                }
+            }
+            if (plan->legacy_only) {
+                key_record_count = 1;
+            }
+            if (row == NULL
+                || json_object_set_new(
+                    row,
+                    "key",
+                    json_string(plan->affected_keys.items[index])
+                ) != 0
+                || json_object_set_new(
+                    row,
+                    "record_count",
+                    json_integer((json_int_t)key_record_count)
+                ) != 0) {
+                json_decref(row);
+                json_decref(affected);
+                json_decref(root);
+                fprintf(stderr, _("failed to encode mask operation plan\n"));
+                return 1;
+            }
+            if (json_array_append(affected, row) != 0) {
+                json_decref(row);
+                json_decref(affected);
+                json_decref(root);
+                fprintf(stderr, _("failed to encode mask operation plan\n"));
+                return 1;
+            }
+            json_decref(row);
+        }
+        if (json_object_set_new(
+                root,
+                "plan_schema_version",
+                json_string("secdat.mask-operation-plan.v1")
+            ) != 0
+            || json_object_set_new(
+                root,
+                "operation",
+                json_string("unmask")
+            ) != 0
+            || json_object_set_new(root, "ok", json_true()) != 0
+            || json_object_set_new(
+                root,
+                "dry_run",
+                json_boolean(dry_run)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "committed",
+                json_boolean(committed)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "domain_id",
+                json_string(plan->mask_domain_id)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "store",
+                json_string(plan->store_name)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "key",
+                json_string(plan->requested_key)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "mask_chain_id",
+                plan->legacy_only
+                    ? json_null()
+                    : json_string(plan->mask_chain_id)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "record_count",
+                json_integer(
+                    (json_int_t)(plan->legacy_only
+                        ? 1
+                        : plan->record_count)
+                )
+            ) != 0
+            || json_object_set(
+                root,
+                "affected_key_slots",
+                affected
+            ) != 0
+            || json_object_set_new(
+                root,
+                "remaining_mask_chain_count",
+                json_integer(
+                    (json_int_t)plan->remaining_mask_chain_count
+                )
+            ) != 0
+            || json_object_set_new(
+                root,
+                "remaining_legacy_barrier_count",
+                json_integer(
+                    (json_int_t)plan->remaining_legacy_barrier_count
+                )
+            ) != 0
+            || json_object_set_new(
+                root,
+                "resulting_effective_state",
+                json_string(plan->resulting_effective_state)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "mask_warnings_requested",
+                json_string(
+                    secdat_mask_warning_policy_name(
+                        plan->warning_requested
+                    )
+                )
+            ) != 0
+            || json_object_set_new(
+                root,
+                "mask_warnings_effective",
+                json_boolean(plan->warning_effective)
+            ) != 0) {
+            json_decref(affected);
+            json_decref(root);
+            fprintf(stderr, _("failed to encode mask operation plan\n"));
+            return 1;
+        }
+        json_decref(affected);
+        if (json_dumpf(root, stdout, JSON_COMPACT | JSON_SORT_KEYS) != 0) {
+            json_decref(root);
+            fprintf(stderr, _("failed to encode mask operation plan\n"));
+            return 1;
+        }
+        fputc('\n', stdout);
+        json_decref(root);
+        return 0;
+    }
+    if (!dry_run) {
+        return 0;
+    }
+    puts("plan_schema_version=secdat.mask-operation-plan.v1");
+    puts("operation=unmask");
+    puts("ok=yes");
+    puts("dry_run=yes");
+    printf("domain_id=%s\n", plan->mask_domain_id);
+    printf("store=%s\n", plan->store_name);
+    printf("key=%s\n", plan->requested_key);
+    printf(
+        "mask_chain_id=%s\n",
+        plan->legacy_only ? "-" : plan->mask_chain_id
+    );
+    printf(
+        "record_count=%zu\n",
+        plan->legacy_only ? (size_t)1 : plan->record_count
+    );
+    for (index = 0; index < plan->affected_keys.count; index += 1) {
+        printf("affected_key=%s\n", plan->affected_keys.items[index]);
+    }
+    printf(
+        "remaining_mask_chain_count=%zu\n",
+        plan->remaining_mask_chain_count
+    );
+    printf(
+        "remaining_legacy_barrier_count=%zu\n",
+        plan->remaining_legacy_barrier_count
+    );
+    printf(
+        "resulting_effective_state=%s\n",
+        plan->resulting_effective_state
+    );
+    printf(
+        "mask_warnings_requested=%s\n",
+        secdat_mask_warning_policy_name(plan->warning_requested)
+    );
+    printf(
+        "mask_warnings_effective=%s\n",
+        plan->warning_effective ? "on" : "off"
+    );
+    return 0;
+}
+
+static int secdat_commit_v2_unmask_plan(
+    const struct secdat_unmask_plan *plan,
+    struct secdat_transaction *transaction
+)
+{
+    size_t index;
+
+    for (index = 0; index < plan->record_count; index += 1) {
+        const struct secdat_unmask_record_plan *record =
+            &plan->records[index];
+
+        if (secdat_transaction_append_target(
+                transaction,
+                SECDAT_TRANSACTION_ARTIFACT_MASK,
+                plan->mask_domain_id,
+                plan->store_name,
+                record->target_entry_id,
+                record->before_data,
+                record->before_length,
+                1,
+                NULL,
+                0,
+                0
+            ) != 0) {
+            return 1;
+        }
+    }
+    for (index = 0; index < plan->tombstone_count; index += 1) {
+        const struct secdat_unmask_tombstone_plan *tombstone =
+            &plan->tombstones[index];
+
+        if (secdat_transaction_append_target(
+                transaction,
+                SECDAT_TRANSACTION_ARTIFACT_TOMBSTONE,
+                plan->mask_domain_id,
+                plan->store_name,
+                tombstone->key,
+                tombstone->before_data,
+                tombstone->before_length,
+                tombstone->before_exists,
+                tombstone->after_data,
+                tombstone->after_length,
+                tombstone->after_exists
+            ) != 0) {
+            return 1;
+        }
+    }
+    return secdat_transaction_commit(transaction);
 }
 
 static int secdat_unmask_key_in_chain(const struct secdat_domain_chain *chain, const char *store_name, const char *key)
@@ -19815,50 +24029,369 @@ static int secdat_command_mv(const struct secdat_cli *cli)
     return status;
 }
 
+static int secdat_parse_mask_command_options(
+    const struct secdat_cli *cli,
+    const char *command_name,
+    int allow_rebind,
+    int allow_chain,
+    int allow_warnings,
+    struct secdat_mask_command_options *options
+)
+{
+    static const struct option long_options[] = {
+        {"rebind", no_argument, NULL, 1000},
+        {"dry-run", no_argument, NULL, 1001},
+        {"json", no_argument, NULL, 1002},
+        {"mask-chain", required_argument, NULL, 1003},
+        {"mask-warnings", required_argument, NULL, 1004},
+        {"warn-mask", no_argument, NULL, 1005},
+        {"no-warn-mask", no_argument, NULL, 1006},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+
+    memset(options, 0, sizeof(*options));
+    secdat_prepare_option_argv(cli, command_name, &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":", long_options, NULL)) != -1) {
+        switch (option) {
+        case 1000:
+            if (!allow_rebind) {
+                goto invalid;
+            }
+            options->rebind = 1;
+            break;
+        case 1001:
+            options->dry_run = 1;
+            break;
+        case 1002:
+            options->json = 1;
+            break;
+        case 1003:
+            if (!allow_chain
+                || options->mask_chain_id != NULL
+                || !secdat_uuid_is_valid(optarg)) {
+                goto invalid;
+            }
+            options->mask_chain_id = optarg;
+            break;
+        case 1004: {
+            int requested;
+
+            if (!allow_warnings) {
+                goto invalid;
+            }
+            if (strcmp(optarg, "default") == 0) {
+                requested = SECDAT_MASK_WARNINGS_DEFAULT;
+            } else if (strcmp(optarg, "on") == 0) {
+                requested = SECDAT_MASK_WARNINGS_ON;
+            } else if (strcmp(optarg, "off") == 0) {
+                requested = SECDAT_MASK_WARNINGS_OFF;
+            } else {
+                goto invalid;
+            }
+            if (options->mask_warnings_configured
+                && options->mask_warnings != requested) {
+                goto invalid;
+            }
+            options->mask_warnings = requested;
+            options->mask_warnings_configured = 1;
+            break;
+        }
+        case 1005:
+        case 1006: {
+            int requested = option == 1005
+                ? SECDAT_MASK_WARNINGS_ON
+                : SECDAT_MASK_WARNINGS_OFF;
+
+            if (!allow_warnings
+                || (options->mask_warnings_configured
+                    && options->mask_warnings != requested)) {
+                goto invalid;
+            }
+            options->mask_warnings = requested;
+            options->mask_warnings_configured = 1;
+            break;
+        }
+        case '?':
+        case ':':
+        default:
+            goto invalid;
+        }
+    }
+    if (optind + 1 != argc) {
+        goto invalid;
+    }
+    options->keyref = argv[optind];
+    return 0;
+
+invalid:
+    fprintf(stderr, _("invalid arguments for %s\n"), command_name);
+    secdat_cli_print_try_help(cli, command_name);
+    return 2;
+}
+
 static int secdat_command_mask(const struct secdat_cli *cli)
 {
+    struct secdat_mask_command_options options;
     struct secdat_key_reference reference;
     struct secdat_domain_chain chain = {0};
-    int status;
+    struct secdat_domain_chain parent_chain;
+    struct secdat_effective_entry parent_entry = {0};
+    struct secdat_mask_write_plan plan;
+    struct secdat_transaction transaction;
+    enum secdat_store_format format;
+    int parse_status;
+    int status = 1;
 
-    if (cli->argc != 1) {
-        fprintf(stderr, _("invalid arguments for mask\n"));
-        secdat_cli_print_try_help(cli, "mask");
-        return 2;
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
+    parse_status = secdat_parse_mask_command_options(
+        cli,
+        "mask",
+        1,
+        0,
+        0,
+        &options
+    );
+    if (parse_status != 0) {
+        return parse_status;
     }
-
-    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
+    if (secdat_parse_key_reference(
+            options.keyref,
+            secdat_cli_domain_base(cli),
+            cli->store,
+            &reference
+        ) != 0) {
         return 1;
     }
-
     if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
         return 1;
     }
-    status = secdat_mask_key_in_chain(&chain, reference.store_value, reference.key);
+    if (chain.count == 0
+        || secdat_read_store_format(
+            chain.ids[0],
+            reference.store_value,
+            &format
+        ) != 0) {
+        goto cleanup;
+    }
+    if (format == SECDAT_STORE_FORMAT_INVALID) {
+        fprintf(stderr, _("invalid store format marker\n"));
+        goto cleanup;
+    }
+    if (secdat_active_overlay_enabled(&chain)
+        || format != SECDAT_STORE_FORMAT_V2) {
+        if (options.rebind || options.dry_run || options.json) {
+            fprintf(
+                stderr,
+                _("mask planning and rebind require a persisted v2 store\n")
+            );
+            goto cleanup;
+        }
+        status = secdat_mask_key_in_chain(
+            &chain,
+            reference.store_value,
+            reference.key
+        );
+        goto cleanup;
+    }
+    parent_chain.ids = chain.ids + 1;
+    parent_chain.count = chain.count > 0 ? chain.count - 1 : 0;
+    if (!options.rebind
+        && secdat_resolve_effective_entry(
+            &parent_chain,
+            reference.store_value,
+            reference.key,
+            0,
+            &parent_entry
+        ) == 0
+        && !parent_entry.from_v2) {
+        if (options.dry_run || options.json) {
+            fprintf(
+                stderr,
+                _("canonical mask planning requires an inherited v2 entry\n")
+            );
+            goto cleanup;
+        }
+        status = secdat_mask_key_in_chain(
+            &chain,
+            reference.store_value,
+            reference.key
+        );
+        goto cleanup;
+    }
+    if (!options.dry_run
+        && (secdat_require_mutable_session_chain(&chain, "mask") != 0
+            || secdat_transaction_begin(
+                &transaction,
+                options.rebind ? "mask-rebind" : "mask",
+                chain.ids[0],
+                reference.store_value
+            ) != 0)) {
+        goto cleanup;
+    }
+    if (secdat_prepare_canonical_mask_write_plan(
+            &chain,
+            reference.store_value,
+            reference.key,
+            options.rebind,
+            &plan
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!options.dry_run && secdat_test_synchronize_mask_plan() != 0) {
+        secdat_mask_write_plan_reset(&plan);
+        goto cleanup;
+    }
+    if (options.dry_run) {
+        status = secdat_print_mask_write_plan(
+            &plan,
+            1,
+            0,
+            options.json
+        );
+    } else {
+        status = secdat_commit_mask_write_plan(&plan, &transaction);
+        if (status == 0 && options.json) {
+            status = secdat_print_mask_write_plan(&plan, 0, 1, 1);
+        }
+    }
+    secdat_mask_write_plan_reset(&plan);
+
+cleanup:
+    secdat_transaction_reset(&transaction);
+    secdat_effective_entry_reset(&parent_entry);
     secdat_domain_chain_free(&chain);
     return status;
 }
 
 static int secdat_command_unmask(const struct secdat_cli *cli)
 {
+    struct secdat_mask_command_options options;
     struct secdat_key_reference reference;
     struct secdat_domain_chain chain = {0};
-    int status;
+    struct secdat_unmask_plan plan;
+    struct secdat_transaction transaction;
+    enum secdat_store_format format;
+    int parse_status;
+    int status = 1;
 
-    if (cli->argc != 1) {
-        fprintf(stderr, _("invalid arguments for unmask\n"));
-        secdat_cli_print_try_help(cli, "unmask");
-        return 2;
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
+    parse_status = secdat_parse_mask_command_options(
+        cli,
+        "unmask",
+        0,
+        1,
+        1,
+        &options
+    );
+    if (parse_status != 0) {
+        return parse_status;
     }
 
-    if (secdat_parse_key_reference(cli->argv[0], secdat_cli_domain_base(cli), cli->store, &reference) != 0) {
+    if (secdat_parse_key_reference(
+            options.keyref,
+            secdat_cli_domain_base(cli),
+            cli->store,
+            &reference
+        ) != 0) {
         return 1;
     }
-
     if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
         return 1;
     }
-    status = secdat_unmask_key_in_chain(&chain, reference.store_value, reference.key);
+    if (chain.count == 0
+        || secdat_read_store_format(
+            chain.ids[0],
+            reference.store_value,
+            &format
+        ) != 0) {
+        goto cleanup;
+    }
+    if (format == SECDAT_STORE_FORMAT_INVALID) {
+        fprintf(stderr, _("invalid store format marker\n"));
+        goto cleanup;
+    }
+    if (secdat_active_overlay_enabled(&chain)
+        || format != SECDAT_STORE_FORMAT_V2) {
+        if (options.mask_chain_id != NULL
+            || options.dry_run
+            || options.json
+            || options.mask_warnings_configured) {
+            fprintf(
+                stderr,
+                _("unmask planning requires a persisted v2 store\n")
+            );
+            goto cleanup;
+        }
+        status = secdat_unmask_key_in_chain(
+            &chain,
+            reference.store_value,
+            reference.key
+        );
+        goto cleanup;
+    }
+    if (!options.dry_run
+        && secdat_require_mutable_session_chain(&chain, "unmask") != 0) {
+        goto cleanup;
+    }
+    if (secdat_require_writable_domain_chain(&chain) != 0
+        || (!options.dry_run
+            && secdat_transaction_begin(
+                &transaction,
+                "unmask",
+                chain.ids[0],
+                reference.store_value
+            ) != 0)
+        || secdat_prepare_v2_unmask_plan(
+            &chain,
+            reference.store_value,
+            reference.key,
+            options.mask_chain_id,
+            (enum secdat_mask_warning_policy)options.mask_warnings,
+            &plan
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!options.dry_run && secdat_test_synchronize_mask_plan() != 0) {
+        secdat_unmask_plan_reset(&plan);
+        goto cleanup;
+    }
+    if (options.dry_run) {
+        status = secdat_print_unmask_plan(&plan, 1, 0, options.json);
+    } else {
+        status = secdat_commit_v2_unmask_plan(&plan, &transaction);
+        if (status == 0 && options.json) {
+            status = secdat_print_unmask_plan(&plan, 0, 1, 1);
+        }
+        if (status == 0 && plan.warning_effective) {
+            size_t remaining = plan.remaining_mask_chain_count
+                + plan.remaining_legacy_barrier_count;
+
+            if (remaining > 0) {
+                fprintf(
+                    stderr,
+                    _("warning: unmask: removed mask chain; %s remains masked by %zu other chain or barrier\n"),
+                    reference.key,
+                    remaining
+                );
+            } else if (plan.local_override_present) {
+                fprintf(
+                    stderr,
+                    _("warning: unmask: %s remains local; removing it later may expose the inherited value\n"),
+                    reference.key
+                );
+            }
+        }
+    }
+    secdat_unmask_plan_reset(&plan);
+
+cleanup:
+    secdat_transaction_reset(&transaction);
     secdat_domain_chain_free(&chain);
     return status;
 }
@@ -21426,18 +25959,9 @@ cleanup:
     return status;
 }
 
-int secdat_run_command(const struct secdat_cli *cli)
+static int secdat_dispatch_command(const struct secdat_cli *cli)
 {
-    char exact_domain_root[PATH_MAX];
     int status;
-
-    if (cli->dir != NULL && cli->domain != NULL) {
-        fprintf(stderr, _("cannot combine --dir and --domain\n"));
-        return 2;
-    }
-    if (cli->domain != NULL && secdat_domain_validate_root(cli->domain, exact_domain_root, sizeof(exact_domain_root)) != 0) {
-        return 1;
-    }
 
     switch (cli->command) {
     case SECDAT_COMMAND_LS:
@@ -21546,6 +26070,86 @@ int secdat_run_command(const struct secdat_cli *cli)
         status = 1;
         return status;
     }
+}
+
+static int secdat_command_requires_transaction_lock(
+    enum secdat_command_type command
+)
+{
+    switch (command) {
+    case SECDAT_COMMAND_ATTR:
+    case SECDAT_COMMAND_META_SET:
+    case SECDAT_COMMAND_META_UNSET:
+    case SECDAT_COMMAND_META_MARK_LEAKED:
+    case SECDAT_COMMAND_RELATION_SET:
+    case SECDAT_COMMAND_RELATION_SUGGEST_REFRESH:
+    case SECDAT_COMMAND_RELATION_RM:
+    case SECDAT_COMMAND_FSCK:
+    case SECDAT_COMMAND_GC:
+    case SECDAT_COMMAND_MASK:
+    case SECDAT_COMMAND_UNMASK:
+    case SECDAT_COMMAND_SET:
+    case SECDAT_COMMAND_RM:
+    case SECDAT_COMMAND_MV:
+    case SECDAT_COMMAND_CP:
+    case SECDAT_COMMAND_LN:
+    case SECDAT_COMMAND_SAVE:
+    case SECDAT_COMMAND_LOAD:
+    case SECDAT_COMMAND_STORE_CREATE:
+    case SECDAT_COMMAND_STORE_DELETE:
+    case SECDAT_COMMAND_STORE_MIGRATE:
+    case SECDAT_COMMAND_STORE_FINALIZE_MIGRATION:
+    case SECDAT_COMMAND_DOMAIN_CREATE:
+    case SECDAT_COMMAND_DOMAIN_DELETE:
+    case SECDAT_COMMAND_DOMAIN_MOVE:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+int secdat_run_command(const struct secdat_cli *cli)
+{
+    char exact_domain_root[PATH_MAX];
+    char transactions_root[PATH_MAX];
+    int status;
+
+    if (cli->dir != NULL && cli->domain != NULL) {
+        fprintf(stderr, _("cannot combine --dir and --domain\n"));
+        return 2;
+    }
+    if (cli->domain != NULL
+        && secdat_domain_validate_root(
+            cli->domain,
+            exact_domain_root,
+            sizeof(exact_domain_root)
+        ) != 0) {
+        return 1;
+    }
+    if (secdat_recover_transactions() != 0) {
+        fprintf(stderr, _("failed to recover pending transactions\n"));
+        return 1;
+    }
+    if (!secdat_command_requires_transaction_lock(cli->command)) {
+        return secdat_dispatch_command(cli);
+    }
+    if (secdat_transaction_ensure_root(
+            transactions_root,
+            sizeof(transactions_root)
+        ) != 0) {
+        return 1;
+    }
+    secdat_command_transaction_lock_fd = secdat_transaction_open_lock(
+        transactions_root
+    );
+    if (secdat_command_transaction_lock_fd < 0) {
+        return 1;
+    }
+    status = secdat_dispatch_command(cli);
+    (void)flock(secdat_command_transaction_lock_fd, LOCK_UN);
+    close(secdat_command_transaction_lock_fd);
+    secdat_command_transaction_lock_fd = -1;
+    return status;
 }
 
 int secdat_exec_port_collect_visible_keys(

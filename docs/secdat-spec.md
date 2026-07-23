@@ -59,8 +59,8 @@ secdat [--dir DIR] [--store STORE] gc [--orphaned] [--dangling] [--dry-run] [--f
 secdat [--dir DIR] [--store STORE] exists KEYREF
 secdat [--dir DIR] [--store STORE] id KEYREF
 
-secdat [--dir DIR] [--store STORE] mask KEYREF
-secdat [--dir DIR] [--store STORE] unmask KEYREF
+secdat [--dir DIR] [--store STORE] mask [--rebind] [--dry-run] [--json] KEYREF
+secdat [--dir DIR] [--store STORE] unmask [--dry-run] [--json] [--mask-chain UUID] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] KEYREF
 
 secdat [--dir DIR] [--store STORE] get KEYREF
 secdat [--dir DIR] [--store STORE] get KEYREF --stdout
@@ -282,18 +282,38 @@ names use escaped `last_known_key`. Hidden names use
 `encrypted_last_known_key=HEX`; the payload is nonce, ciphertext, and GCM tag.
 Its record key is HMAC-SHA256 of the master-derived key over
 `"secdat:v2-mask-last-known-key:v1\0" || current_mask_domain_id`, and its AAD
-binds the record magic, chain ID, target entry ID, target domain, and target
-store. Unknown, duplicate, missing, malformed, or filename-mismatched fields
+binds the record magic, chain ID, target entry ID, target secret ID,
+predecessor presence/value, target domain, and target store. Unknown,
+duplicate, missing, malformed, or filename-mismatched fields
 make the canonical record corrupt and fail inspection rather than falling back
 to legacy semantics.
 
 #### FR-3b Tombstone Operations
 
-- `secdat mask KEYREF` creates a local tombstone in the resolved current domain to hide one inherited key
-- `mask` is an error when the key already exists locally in the current domain
-- `mask` is an error when the key is not inherited and visible from a parent domain
-- `secdat unmask KEYREF` removes one local tombstone from the resolved current domain
-- `unmask` is an error when no local tombstone exists for that key
+- in a persisted v2 store, `secdat mask KEYREF` creates a canonical mask for the nearest inherited v2 `entry_id` and, when the name is publicly representable, a v1 rollback-compatible name tombstone in one recoverable transaction
+- a hidden-name target is canonical-only and keeps its last-known name encrypted; if a retained v1 fallback or existing name tombstone would require exposing the hidden name, planning fails without mutation
+- a nearer local entry and an inherited-entry mask may coexist; the canonical mask is then dormant and remains effective if the local entry is later removed
+- repeated `mask` for the same target is a no-op that retains the existing `mask_chain_id`
+- `mask --rebind KEYREF` requires one current inherited v2 target and atomically extends an orphan chain or converts a standalone legacy barrier without exposing the target between operations
+- normal `mask` refuses an ambiguous legacy or orphan barrier; it directs the user to inspect `list --all-masks --long` and to rebind only after exactly one inherited v2 target remains
+- `mask` and `mask --rebind` accept `--dry-run` and `--json`; dry-run and committed JSON use `secdat.mask-operation-plan.v1`
+- `secdat unmask KEYREF` removes the one logical canonical mask chain controlling the requested authorized name, together with rollback compatibility state that is no longer required
+- name-only `unmask` refuses competing chains and a chain containing records for more than one authorized key name
+- `unmask --mask-chain UUID KEYREF` may remove the whole multi-name chain only when that chain also protects the requested key; dry-run/JSON lists every affected key slot
+- a standalone bound legacy tombstone may still be removed by name; an ambiguous legacy barrier remains fail-closed until duplicate or inaccessible inherited candidates are resolved and `mask --rebind` can select exactly one target
+- unmask JSON reports record count, affected key slots, remaining canonical-chain and legacy-barrier counts, and the resulting effective state
+- when a local override remains after unmask, the default post-commit warning explains the deferred exposure risk; `--mask-warnings=default|on|off`, `--warn-mask`, and `--no-warn-mask` affect only warnings
+- v1 stores and volatile overlays retain their legacy single-name tombstone behavior and do not accept v2 plan/rebind/chain options
+
+Canonical mask and compatibility-tombstone updates use
+`$XDG_DATA_HOME/secdat/transactions/`. Each 0700 operation directory is named
+by UUID and contains a `SECDATTXN1` version-1 manifest plus 0600 before/after
+blobs. A global advisory lock serializes commit and recovery. States are
+`staging`, `prepared`, `committing`, and `committed`: startup discards validated
+staging/prepared operations, rolls committing operations forward, verifies
+committed after-images, and then removes the journal. Target paths are rebuilt
+from validated domain/store/artifact identifiers, and before-image digests are
+revalidated so changed-since-plan state fails before live mutation.
 
 #### FR-4 Key Removal
 
@@ -802,22 +822,26 @@ secdat [--dir DIR] [--store STORE] exists KEYREF
 ### 4.2b `mask`
 
 ```text
-secdat [--dir DIR] [--store STORE] mask KEYREF
+secdat [--dir DIR] [--store STORE] mask [--rebind] [--dry-run] [--json] KEYREF
 ```
 
-- creates a local tombstone in the current domain
-- hides one inherited key from the effective visible view
-- fails when the key already exists locally
+- creates a canonical inherited-entry mask and, for a publicly named target, a rollback compatibility tombstone atomically in a persisted v2 store
+- keeps hidden-name targets canonical-only and rejects an unsafe v1 rollback projection
+- permits a local override to coexist, producing a dormant mask
+- `--rebind` atomically repairs a legacy or orphan barrier
+- `--dry-run` and `--json` expose the same immutable operation plan used by commit
 
 ### 4.2c `unmask`
 
 ```text
-secdat [--dir DIR] [--store STORE] unmask KEYREF
+secdat [--dir DIR] [--store STORE] unmask [--dry-run] [--json] [--mask-chain UUID] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] KEYREF
 ```
 
-- removes one local tombstone from the current domain
-- restores inherited visibility when a parent still provides the key
-- fails when no local tombstone exists
+- atomically removes one logical mask chain and unneeded rollback tombstones
+- refuses ambiguous name-only removal; `--mask-chain` must also match the requested authorized name
+- lists all affected names before explicit multi-name chain removal
+- reports remaining barriers and resulting effective state in JSON
+- warning controls change only post-commit warnings
 
 ### 4.3 `get`
 
@@ -1031,14 +1055,19 @@ Design rationale:
 - use an AEAD format so authentication data is bound to the ciphertext payload
 - keep plaintext key names out of the encrypted entry file body
 
-A tombstone may be an empty file, but a tiny structured format is preferable for forward compatibility.
+A legacy tombstone may be empty. A v2-created rollback compatibility tombstone
+uses the following text marker; v1 resolution continues to depend only on the
+filename/existence:
 
 ```text
-struct tombstone_file {
-  char magic[8];      // "SECTOMB\0"
-  uint8_t version;    // 1
-}
+SECDATMASKCOMPAT1
+version=1
+target_entry_id=UUID
 ```
+
+The target field lets a v2 reader distinguish compatibility state from an
+independent legacy barrier without decrypting a hidden key name. It is not a
+replacement for the canonical `.mask` record.
 
 ### 5.4 Cryptography Design
 

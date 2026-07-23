@@ -290,11 +290,45 @@ rows without deleting files. Actual removal prints
 .B removed-*
 rows. The command removes v2 domain-entry files, orphaned secret-object files, standalone object value sidecars, and sidecars paired with removed secret objects, but does not touch legacy v1 key/value fallback files.
 .TP
-.B mask KEYREF
-Create a local tombstone to hide one inherited key in the current domain.
+.B mask [\-\-rebind] [\-\-dry-run] [\-\-json] KEYREF
+In a persisted v2 store, create a canonical mask for the nearest inherited
+entry UUID and, for a publicly named target, a v1 rollback-compatible name
+tombstone in one recoverable transaction. Hidden-name targets remain
+canonical-only; an unsafe v1 rollback projection is rejected before mutation.
+A local override may coexist, leaving the mask dormant.
+Repeated masking of the same target retains the existing chain and is a no-op.
+.B --rebind
+atomically repairs a standalone legacy or orphan barrier against the current
+unique inherited target.
+.B --dry-run
+and
+.B --json
+report the same
+.B secdat.mask-operation-plan.v1
+plan used by commit.
 .TP
-.B unmask KEYREF
-Remove one local tombstone from the current domain.
+.B unmask [\-\-dry-run] [\-\-json] [\-\-mask-chain UUID] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] KEYREF
+Atomically remove the one logical mask chain controlling the requested
+authorized name. Name-only removal refuses competing chains and a chain that
+protects multiple names.
+.B --mask-chain
+permits explicit whole-chain removal only when the chain also protects the
+requested key; dry-run and JSON list every affected authorized key slot.
+JSON also reports remaining chain/barrier counts and the resulting effective
+state.
+Deferred-exposure warnings are on by default when a local override remains.
+.BR --mask-warnings ,
+.BR --warn-mask ,
+and
+.B --no-warn-mask
+change warnings only, never state, success, or exit status.
+
+Canonical mask and compatibility-tombstone changes use UUID-named journals
+under
+.BR $XDG_DATA_HOME/secdat/transactions .
+Startup discards validated pre-commit journals or rolls committing journals
+forward before normal command resolution, so later command views observe an
+all-before or all-after result.
 .TP
 .B exists KEYREF
 Check whether one resolved key is visible from the current domain view. This command is intended for shell-friendly branching and does not print secret values.
