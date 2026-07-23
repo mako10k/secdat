@@ -66,7 +66,7 @@
 #define SECDAT_METADATA_TEXT_FILE_MAX 32768
 #define SECDAT_V2_OBJECT_KEY_LEN 32
 #define SECDAT_KEY_SUGGESTION_LIMIT 5
-#define SECDAT_TRANSACTION_MAX_TARGETS 256
+#define SECDAT_TRANSACTION_MAX_TARGETS 4096
 #define SECDAT_SHA256_HEX_LENGTH 64
 
 static const unsigned char secdat_entry_magic[8] = {'S', 'E', 'C', 'D', 'A', 'T', '1', '\0'};
@@ -427,6 +427,7 @@ enum secdat_transaction_artifact_kind {
     SECDAT_TRANSACTION_ARTIFACT_MASK = 0,
     SECDAT_TRANSACTION_ARTIFACT_TOMBSTONE,
     SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY,
+    SECDAT_TRANSACTION_ARTIFACT_STATE_FILE,
 };
 
 struct secdat_transaction_target {
@@ -486,6 +487,83 @@ enum secdat_mask_warning_policy {
     SECDAT_MASK_WARNINGS_ON,
     SECDAT_MASK_WARNINGS_OFF,
 };
+
+enum secdat_mutation_mask_action {
+    SECDAT_MUTATION_MASK_PRESERVE = 0,
+    SECDAT_MUTATION_MASK_REJECT,
+};
+
+enum secdat_mutation_slot_operation {
+    SECDAT_MUTATION_SLOT_WRITE = 0,
+    SECDAT_MUTATION_SLOT_REMOVE,
+    SECDAT_MUTATION_SLOT_LINK,
+};
+
+enum secdat_mutation_impact_event {
+    SECDAT_MUTATION_IMPACT_DIRECT_HIT = 0,
+    SECDAT_MUTATION_IMPACT_BECAME_DORMANT,
+    SECDAT_MUTATION_IMPACT_REACTIVATED,
+    SECDAT_MUTATION_IMPACT_ORPHANED,
+    SECDAT_MUTATION_IMPACT_SOURCE_MASK_CREATED,
+    SECDAT_MUTATION_IMPACT_LEGACY_AMBIGUOUS,
+    SECDAT_MUTATION_IMPACT_EVENT_COUNT,
+};
+
+struct secdat_mutation_policy_options {
+    enum secdat_mutation_mask_action action;
+    enum secdat_mask_warning_policy warnings;
+    int action_configured;
+    int warnings_configured;
+    int warnings_effective;
+    int dry_run;
+    int json;
+};
+
+struct secdat_mutation_slot {
+    char domain_id[PATH_MAX];
+    char store_name[PATH_MAX];
+    char key[PATH_MAX];
+    enum secdat_mutation_slot_operation operation;
+};
+
+struct secdat_mutation_slot_list {
+    struct secdat_mutation_slot *items;
+    size_t count;
+    size_t capacity;
+};
+
+struct secdat_mutation_impact_row {
+    char domain_id[PATH_MAX];
+    char store_name[PATH_MAX];
+    char key[PATH_MAX];
+    char target_entry_id[64];
+    char mask_chain_id[64];
+    enum secdat_mutation_impact_event event;
+    enum secdat_mask_state state_before;
+    enum secdat_mask_state state_after;
+    int has_state_before;
+    int has_state_after;
+};
+
+struct secdat_mutation_plan {
+    struct secdat_mutation_policy_options policy;
+    struct secdat_mutation_slot_list slots;
+    struct secdat_mutation_impact_row *rows;
+    size_t row_count;
+    size_t row_capacity;
+    size_t impact_counts[SECDAT_MUTATION_IMPACT_EVENT_COUNT];
+    size_t changed_file_count;
+    char operation[32];
+    int rejected;
+};
+
+struct secdat_mutation_stage_context {
+    struct secdat_mutation_slot_list slots;
+    int active;
+    int saw_overlay;
+};
+
+static struct secdat_mutation_stage_context secdat_mutation_stage;
 
 static const char *secdat_mask_warning_policy_name(
     enum secdat_mask_warning_policy policy
@@ -845,6 +923,9 @@ static int secdat_update_v2_secret_refcount(
 static int secdat_atomic_write_file(const char *path, const unsigned char *data, size_t length);
 static int secdat_remove_if_exists(const char *path);
 static int secdat_recover_transactions(void);
+static int secdat_mutation_cleanup_abandoned_stages(
+    const char *transactions_root
+);
 static int secdat_test_signal_transaction_lock_attempt(unsigned char signal);
 static int secdat_parse_i64(const char *value, time_t *result);
 static int secdat_session_agent_connect_chain_details(const struct secdat_domain_chain *chain, size_t *matched_index, size_t *blocked_index);
@@ -13425,6 +13506,10 @@ static const char *secdat_mask_state_name(enum secdat_mask_state state)
 
 static void secdat_mask_view_list_free(struct secdat_mask_view_list *list)
 {
+    secdat_secure_clear(
+        list->items,
+        list->capacity * sizeof(*list->items)
+    );
     free(list->items);
     memset(list, 0, sizeof(*list));
 }
@@ -13541,6 +13626,8 @@ static const char *secdat_transaction_artifact_kind_name(
         return "tombstone";
     case SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY:
         return "domain-entry";
+    case SECDAT_TRANSACTION_ARTIFACT_STATE_FILE:
+        return "state-file";
     default:
         return NULL;
     }
@@ -13557,10 +13644,25 @@ static int secdat_transaction_parse_artifact_kind(
         *kind = SECDAT_TRANSACTION_ARTIFACT_TOMBSTONE;
     } else if (strcmp(value, "domain-entry") == 0) {
         *kind = SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY;
+    } else if (strcmp(value, "state-file") == 0) {
+        *kind = SECDAT_TRANSACTION_ARTIFACT_STATE_FILE;
     } else {
         return 1;
     }
     return 0;
+}
+
+static int secdat_transaction_command_is_valid(const char *value)
+{
+    return strcmp(value, "mask") == 0
+        || strcmp(value, "unmask") == 0
+        || strcmp(value, "mask-rebind") == 0
+        || strcmp(value, "set") == 0
+        || strcmp(value, "cp") == 0
+        || strcmp(value, "ln") == 0
+        || strcmp(value, "rm") == 0
+        || strcmp(value, "load") == 0
+        || strcmp(value, "mv") == 0;
 }
 
 static int secdat_sha256_hex(
@@ -13737,6 +13839,49 @@ static void secdat_transaction_reset(struct secdat_transaction *transaction)
     transaction->lock_fd = -1;
 }
 
+static int secdat_transaction_state_file_name_is_valid(const char *name)
+{
+    const char *cursor;
+    const char *component;
+
+    if (name == NULL
+        || strncmp(name, "domains/", strlen("domains/")) != 0
+        || name[0] == '/'
+        || name[strlen(name) - 1] == '/'
+        || strlen(name) >= PATH_MAX) {
+        return 0;
+    }
+    component = name;
+    for (cursor = name; ; cursor += 1) {
+        unsigned char byte = (unsigned char)*cursor;
+
+        if (byte == '/' || byte == '\0') {
+            size_t length = (size_t)(cursor - component);
+
+            if (length == 0
+                || (length == 1 && component[0] == '.')
+                || (length == 2
+                    && component[0] == '.'
+                    && component[1] == '.')) {
+                return 0;
+            }
+            if (byte == '\0') {
+                break;
+            }
+            component = cursor + 1;
+            continue;
+        }
+        if (!(isalnum(byte)
+                || byte == '.'
+                || byte == '_'
+                || byte == '-'
+                || byte == '%')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int secdat_transaction_target_path(
     enum secdat_transaction_artifact_kind kind,
     const char *domain_id,
@@ -13773,6 +13918,16 @@ static int secdat_transaction_target_path(
             path,
             path_size
         );
+    case SECDAT_TRANSACTION_ARTIFACT_STATE_FILE: {
+        char state_dir[PATH_MAX];
+
+        if (!secdat_transaction_state_file_name_is_valid(name)
+            || secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
+            return 1;
+        }
+        return snprintf(path, path_size, "%s/%s", state_dir, name)
+            >= (int)path_size;
+    }
     default:
         return 1;
     }
@@ -13830,6 +13985,130 @@ static int secdat_transaction_open_child_directory(
         return -1;
     }
     return descriptor;
+}
+
+static int secdat_transaction_cleanup_target_temporaries(int descriptor)
+{
+    DIR *directory = fdopendir(dup(descriptor));
+    struct dirent *entry;
+    int removed = 0;
+
+    if (directory == NULL) {
+        return 1;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        struct stat temporary_status;
+
+        if (strncmp(entry->d_name, ".tmp.", 5) != 0
+            || !secdat_uuid_is_valid(entry->d_name + 5)) {
+            continue;
+        }
+        if (fstatat(
+                descriptor,
+                entry->d_name,
+                &temporary_status,
+                AT_SYMLINK_NOFOLLOW
+            ) != 0
+            || !S_ISREG(temporary_status.st_mode)
+            || (temporary_status.st_mode & 077) != 0
+            || unlinkat(descriptor, entry->d_name, 0) != 0) {
+            closedir(directory);
+            return 1;
+        }
+        removed = 1;
+    }
+    if (closedir(directory) != 0
+        || (removed && fsync(descriptor) != 0)) {
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_transaction_open_state_file_parent(
+    const struct secdat_transaction_target *target,
+    char *basename,
+    size_t basename_size,
+    int create_missing,
+    int *parent_missing
+)
+{
+    char state_dir[PATH_MAX];
+    char relative[PATH_MAX];
+    char *separator;
+    char *component;
+    char *saveptr = NULL;
+    int descriptor = -1;
+    int next_descriptor = -1;
+
+    *parent_missing = 0;
+    if (target->kind != SECDAT_TRANSACTION_ARTIFACT_STATE_FILE
+        || !secdat_transaction_state_file_name_is_valid(target->name)
+        || secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || secdat_copy_string(relative, sizeof(relative), target->name) != 0) {
+        goto error;
+    }
+    separator = strrchr(relative, '/');
+    if (separator == NULL
+        || secdat_copy_string(
+            basename,
+            basename_size,
+            separator + 1
+        ) != 0) {
+        goto error;
+    }
+    *separator = '\0';
+    descriptor = open(
+        state_dir,
+        O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+    );
+    if (descriptor < 0) {
+        goto error;
+    }
+    component = strtok_r(relative, "/", &saveptr);
+    while (component != NULL) {
+        next_descriptor = secdat_transaction_open_child_directory(
+            descriptor,
+            component
+        );
+        if (next_descriptor < 0
+            && errno == ENOENT
+            && create_missing) {
+            if (mkdirat(descriptor, component, 0700) != 0
+                || fsync(descriptor) != 0) {
+                goto error;
+            }
+            next_descriptor = secdat_transaction_open_child_directory(
+                descriptor,
+                component
+            );
+        }
+        if (next_descriptor < 0) {
+            if (errno == ENOENT && !create_missing) {
+                *parent_missing = 1;
+                close(descriptor);
+                return -1;
+            }
+            goto error;
+        }
+        close(descriptor);
+        descriptor = next_descriptor;
+        next_descriptor = -1;
+        component = strtok_r(NULL, "/", &saveptr);
+    }
+    if (secdat_transaction_cleanup_target_temporaries(descriptor) != 0) {
+        goto error;
+    }
+    return descriptor;
+
+error:
+    if (next_descriptor >= 0) {
+        close(next_descriptor);
+    }
+    if (descriptor >= 0) {
+        close(descriptor);
+    }
+    fprintf(stderr, _("invalid transaction target directory\n"));
+    return -1;
 }
 
 static int secdat_transaction_open_target_parent(
@@ -13909,45 +14188,10 @@ static int secdat_transaction_open_target_parent(
             goto cleanup;
         }
     }
-    {
-        DIR *directory = fdopendir(dup(descriptor));
-        struct dirent *entry;
-        int removed = 0;
-
-        if (directory == NULL) {
-            close(descriptor);
-            descriptor = -1;
-            goto cleanup;
-        }
-        while ((entry = readdir(directory)) != NULL) {
-            struct stat temporary_status;
-
-            if (strncmp(entry->d_name, ".tmp.", 5) != 0
-                || !secdat_uuid_is_valid(entry->d_name + 5)) {
-                continue;
-            }
-            if (fstatat(
-                    descriptor,
-                    entry->d_name,
-                    &temporary_status,
-                    AT_SYMLINK_NOFOLLOW
-                ) != 0
-                || !S_ISREG(temporary_status.st_mode)
-                || (temporary_status.st_mode & 077) != 0
-                || unlinkat(descriptor, entry->d_name, 0) != 0) {
-                closedir(directory);
-                close(descriptor);
-                descriptor = -1;
-                goto cleanup;
-            }
-            removed = 1;
-        }
-        if (closedir(directory) != 0
-            || (removed && fsync(descriptor) != 0)) {
-            close(descriptor);
-            descriptor = -1;
-            goto cleanup;
-        }
+    if (secdat_transaction_cleanup_target_temporaries(descriptor) != 0) {
+        close(descriptor);
+        descriptor = -1;
+        goto cleanup;
     }
 
 cleanup:
@@ -13970,6 +14214,7 @@ static int secdat_transaction_read_live_target(
     struct stat status;
     int parent_fd = -1;
     int descriptor = -1;
+    int parent_missing = 0;
     unsigned char *buffer = NULL;
     size_t offset = 0;
     int result = 1;
@@ -13977,12 +14222,25 @@ static int secdat_transaction_read_live_target(
     *data = NULL;
     *length = 0;
     *exists = 0;
-    parent_fd = secdat_transaction_open_target_parent(
-        target,
-        basename,
-        sizeof(basename)
-    );
+    if (target->kind == SECDAT_TRANSACTION_ARTIFACT_STATE_FILE) {
+        parent_fd = secdat_transaction_open_state_file_parent(
+            target,
+            basename,
+            sizeof(basename),
+            0,
+            &parent_missing
+        );
+    } else {
+        parent_fd = secdat_transaction_open_target_parent(
+            target,
+            basename,
+            sizeof(basename)
+        );
+    }
     if (parent_fd < 0) {
+        if (parent_missing) {
+            result = 0;
+        }
         goto cleanup;
     }
     descriptor = openat(
@@ -14608,9 +14866,9 @@ static int secdat_transaction_load(
     }
     value = json_object_get(root, "command");
     if (!secdat_json_is_canonical_string(value)
-        || (strcmp(json_string_value(value), "mask") != 0
-            && strcmp(json_string_value(value), "unmask") != 0
-            && strcmp(json_string_value(value), "mask-rebind") != 0)
+        || !secdat_transaction_command_is_valid(
+            json_string_value(value)
+        )
         || secdat_copy_string(
             transaction->command,
             sizeof(transaction->command),
@@ -15001,14 +15259,25 @@ static int secdat_transaction_apply_target(
     char temporary_id[64];
     int parent_fd = -1;
     int descriptor = -1;
+    int parent_missing = 0;
     size_t offset = 0;
     int result = 1;
 
-    parent_fd = secdat_transaction_open_target_parent(
-        target,
-        basename,
-        sizeof(basename)
-    );
+    if (target->kind == SECDAT_TRANSACTION_ARTIFACT_STATE_FILE) {
+        parent_fd = secdat_transaction_open_state_file_parent(
+            target,
+            basename,
+            sizeof(basename),
+            1,
+            &parent_missing
+        );
+    } else {
+        parent_fd = secdat_transaction_open_target_parent(
+            target,
+            basename,
+            sizeof(basename)
+        );
+    }
     if (parent_fd < 0) {
         goto cleanup;
     }
@@ -15356,6 +15625,11 @@ static int secdat_recover_transactions(void)
         return 1;
     }
     result = secdat_recover_transactions_locked(transactions_root);
+    if (result == 0) {
+        result = secdat_mutation_cleanup_abandoned_stages(
+            transactions_root
+        );
+    }
     (void)flock(lock_fd, LOCK_UN);
     close(lock_fd);
     return result;
@@ -15548,6 +15822,676 @@ cleanup:
         && transaction->operation_dir[0] != '\0') {
         (void)secdat_transaction_cleanup(transaction);
     }
+    return result;
+}
+
+static void secdat_mutation_slot_list_free(
+    struct secdat_mutation_slot_list *list
+)
+{
+    secdat_secure_clear(
+        list->items,
+        list->capacity * sizeof(*list->items)
+    );
+    free(list->items);
+    memset(list, 0, sizeof(*list));
+}
+
+static int secdat_mutation_slot_list_append(
+    struct secdat_mutation_slot_list *list,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    enum secdat_mutation_slot_operation operation
+)
+{
+    struct secdat_mutation_slot *resized;
+    size_t index;
+
+    for (index = 0; index < list->count; index += 1) {
+        if (strcmp(list->items[index].domain_id, domain_id) == 0
+            && strcmp(
+                list->items[index].store_name,
+                secdat_effective_store_name(store_name)
+            ) == 0
+            && strcmp(list->items[index].key, key) == 0) {
+            if (operation == SECDAT_MUTATION_SLOT_REMOVE) {
+                list->items[index].operation = operation;
+            }
+            return 0;
+        }
+    }
+    if (list->count == list->capacity) {
+        size_t next_capacity = list->capacity == 0
+            ? 8
+            : list->capacity * 2;
+
+        resized = realloc(
+            list->items,
+            next_capacity * sizeof(*resized)
+        );
+        if (resized == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        list->items = resized;
+        list->capacity = next_capacity;
+    }
+    memset(&list->items[list->count], 0, sizeof(list->items[list->count]));
+    list->items[list->count].operation = operation;
+    if (secdat_copy_string(
+            list->items[list->count].domain_id,
+            sizeof(list->items[list->count].domain_id),
+            domain_id
+        ) != 0
+        || secdat_copy_string(
+            list->items[list->count].store_name,
+            sizeof(list->items[list->count].store_name),
+            secdat_effective_store_name(store_name)
+        ) != 0
+        || secdat_copy_string(
+            list->items[list->count].key,
+            sizeof(list->items[list->count].key),
+            key
+        ) != 0) {
+        return 1;
+    }
+    list->count += 1;
+    return 0;
+}
+
+static int secdat_mutation_stage_record_slot(
+    const struct secdat_domain_chain *chain,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    enum secdat_mutation_slot_operation operation
+)
+{
+    const char *effective_domain_id = domain_id;
+
+    if (!secdat_mutation_stage.active) {
+        return 0;
+    }
+    if ((effective_domain_id == NULL || effective_domain_id[0] == '\0')
+        && chain != NULL
+        && chain->count > 0) {
+        effective_domain_id = chain->ids[0];
+    }
+    if (effective_domain_id == NULL
+        || !secdat_domain_id_is_valid(effective_domain_id)
+        || !secdat_is_valid_env_name(key)) {
+        return 1;
+    }
+    return secdat_mutation_slot_list_append(
+        &secdat_mutation_stage.slots,
+        effective_domain_id,
+        store_name,
+        key,
+        operation
+    );
+}
+
+static int secdat_mutation_copy_regular_file(
+    const char *source,
+    const char *destination
+)
+{
+    struct stat status;
+    unsigned char buffer[32768];
+    int source_fd = -1;
+    int destination_fd = -1;
+    int result = 1;
+
+    source_fd = open(source, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (source_fd < 0
+        || fstat(source_fd, &status) != 0
+        || !S_ISREG(status.st_mode)
+        || (status.st_mode & 022) != 0) {
+        goto cleanup;
+    }
+    destination_fd = open(
+        destination,
+        O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+        0600
+    );
+    if (destination_fd < 0) {
+        goto cleanup;
+    }
+    for (;;) {
+        ssize_t count = read(source_fd, buffer, sizeof(buffer));
+        size_t offset = 0;
+
+        if (count < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            goto cleanup;
+        }
+        if (count == 0) {
+            break;
+        }
+        while (offset < (size_t)count) {
+            ssize_t written = write(
+                destination_fd,
+                buffer + offset,
+                (size_t)count - offset
+            );
+
+            if (written < 0 && errno == EINTR) {
+                continue;
+            }
+            if (written <= 0) {
+                goto cleanup;
+            }
+            offset += (size_t)written;
+        }
+    }
+    if (fsync(destination_fd) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    if (destination_fd >= 0) {
+        close(destination_fd);
+    }
+    if (source_fd >= 0) {
+        close(source_fd);
+    }
+    if (result != 0) {
+        fprintf(stderr, _("failed to stage mutation state\n"));
+    }
+    return result;
+}
+
+static int secdat_mutation_clone_tree(
+    const char *source,
+    const char *destination,
+    int root
+)
+{
+    struct stat status;
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int result = 1;
+
+    if (lstat(source, &status) != 0
+        || !S_ISDIR(status.st_mode)
+        || (status.st_mode & 022) != 0
+        || mkdir(destination, 0700) != 0) {
+        goto cleanup;
+    }
+    directory = opendir(source);
+    if (directory == NULL) {
+        goto cleanup;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        char source_path[PATH_MAX];
+        char destination_path[PATH_MAX];
+        struct stat child_status;
+
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0
+            || (root && strcmp(entry->d_name, "transactions") == 0)) {
+            continue;
+        }
+        if (snprintf(
+                source_path,
+                sizeof(source_path),
+                "%s/%s",
+                source,
+                entry->d_name
+            ) >= (int)sizeof(source_path)
+            || snprintf(
+                destination_path,
+                sizeof(destination_path),
+                "%s/%s",
+                destination,
+                entry->d_name
+            ) >= (int)sizeof(destination_path)
+            || lstat(source_path, &child_status) != 0) {
+            goto cleanup;
+        }
+        if (S_ISDIR(child_status.st_mode)) {
+            if (secdat_mutation_clone_tree(
+                    source_path,
+                    destination_path,
+                    0
+                ) != 0) {
+                goto cleanup;
+            }
+        } else if (S_ISREG(child_status.st_mode)) {
+            if (secdat_mutation_copy_regular_file(
+                    source_path,
+                    destination_path
+                ) != 0) {
+                goto cleanup;
+            }
+        } else {
+            fprintf(stderr, _("invalid mutation state file\n"));
+            goto cleanup;
+        }
+    }
+    if (closedir(directory) != 0
+        || secdat_fsync_directory(destination) != 0) {
+        directory = NULL;
+        goto cleanup;
+    }
+    directory = NULL;
+    result = 0;
+
+cleanup:
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    if (result != 0) {
+        fprintf(stderr, _("failed to stage mutation state\n"));
+    }
+    return result;
+}
+
+static int secdat_mutation_remove_tree(const char *path)
+{
+    struct stat status;
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int result = 1;
+
+    if (lstat(path, &status) != 0) {
+        return errno == ENOENT ? 0 : 1;
+    }
+    if (S_ISREG(status.st_mode)) {
+        return unlink(path) == 0 ? 0 : 1;
+    }
+    if (!S_ISDIR(status.st_mode) || (status.st_mode & 022) != 0) {
+        return 1;
+    }
+    directory = opendir(path);
+    if (directory == NULL) {
+        return 1;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        char child[PATH_MAX];
+
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (snprintf(
+                child,
+                sizeof(child),
+                "%s/%s",
+                path,
+                entry->d_name
+            ) >= (int)sizeof(child)
+            || secdat_mutation_remove_tree(child) != 0) {
+            goto cleanup;
+        }
+    }
+    if (closedir(directory) != 0 || rmdir(path) != 0) {
+        directory = NULL;
+        goto cleanup;
+    }
+    directory = NULL;
+    result = 0;
+
+cleanup:
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    return result;
+}
+
+static int secdat_mutation_cleanup_abandoned_stages(
+    const char *transactions_root
+)
+{
+    char state_root[PATH_MAX];
+    char data_home[PATH_MAX];
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int removed = 0;
+    int result = 1;
+
+    if (secdat_copy_string(
+            state_root,
+            sizeof(state_root),
+            transactions_root
+        ) != 0) {
+        return 1;
+    }
+    secdat_parent_path(state_root);
+    if (secdat_copy_string(data_home, sizeof(data_home), state_root) != 0) {
+        return 1;
+    }
+    secdat_parent_path(data_home);
+    directory = opendir(data_home);
+    if (directory == NULL) {
+        return 1;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        const char prefix[] = ".secdat-stage.";
+        char path[PATH_MAX];
+        struct stat status;
+
+        if (strncmp(entry->d_name, prefix, sizeof(prefix) - 1) != 0) {
+            continue;
+        }
+        if (!secdat_uuid_is_valid(
+                entry->d_name + sizeof(prefix) - 1
+            )
+            || snprintf(
+                path,
+                sizeof(path),
+                "%s/%s",
+                data_home,
+                entry->d_name
+            ) >= (int)sizeof(path)
+            || lstat(path, &status) != 0
+            || !S_ISDIR(status.st_mode)
+            || (status.st_mode & 077) != 0
+            || secdat_mutation_remove_tree(path) != 0) {
+            fprintf(stderr, _("invalid abandoned mutation stage\n"));
+            goto cleanup;
+        }
+        removed = 1;
+    }
+    if (closedir(directory) != 0
+        || (removed && secdat_fsync_directory(data_home) != 0)) {
+        directory = NULL;
+        goto cleanup;
+    }
+    directory = NULL;
+    result = 0;
+
+cleanup:
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    return result;
+}
+
+static int secdat_mutation_create_stage(
+    const char *source_state,
+    char *stage_data_home,
+    size_t stage_data_home_size,
+    char *stage_state,
+    size_t stage_state_size
+)
+{
+    char data_home[PATH_MAX];
+    char stage_id[64];
+    int stage_directory_created = 0;
+    int status = 1;
+
+    stage_data_home[0] = '\0';
+    stage_state[0] = '\0';
+    if (secdat_copy_string(data_home, sizeof(data_home), source_state) != 0) {
+        return 1;
+    }
+    secdat_parent_path(data_home);
+    if (secdat_generate_uuid_v4(stage_id, sizeof(stage_id)) != 0
+        || snprintf(
+            stage_data_home,
+            stage_data_home_size,
+            "%s/.secdat-stage.%s",
+            data_home,
+            stage_id
+        ) >= (int)stage_data_home_size
+        || snprintf(
+            stage_state,
+            stage_state_size,
+            "%s/secdat",
+            stage_data_home
+        ) >= (int)stage_state_size
+        || mkdir(stage_data_home, 0700) != 0) {
+        goto cleanup;
+    }
+    stage_directory_created = 1;
+    if (secdat_mutation_clone_tree(
+            source_state,
+            stage_state,
+            1
+        ) != 0
+        || secdat_fsync_directory(data_home) != 0) {
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    if (status != 0 && stage_directory_created) {
+        (void)secdat_mutation_remove_tree(stage_data_home);
+        (void)secdat_fsync_directory(data_home);
+    }
+    return status;
+}
+
+static int secdat_mutation_remove_stage(const char *stage_data_home)
+{
+    return secdat_mutation_remove_tree(stage_data_home) != 0
+        || secdat_fsync_parent_directory(stage_data_home) != 0;
+}
+
+static int secdat_mutation_collect_state_files(
+    const char *root,
+    const char *relative,
+    struct secdat_key_list *files
+)
+{
+    char path[PATH_MAX];
+    struct stat status;
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int result = 1;
+
+    if (relative[0] == '\0') {
+        if (secdat_copy_string(path, sizeof(path), root) != 0) {
+            return 1;
+        }
+    } else if (snprintf(path, sizeof(path), "%s/%s", root, relative)
+        >= (int)sizeof(path)) {
+        return 1;
+    }
+    if (lstat(path, &status) != 0) {
+        return errno == ENOENT ? 0 : 1;
+    }
+    if (S_ISREG(status.st_mode)) {
+        if (!secdat_transaction_state_file_name_is_valid(relative)) {
+            return 1;
+        }
+        return secdat_key_list_append(files, relative);
+    }
+    if (!S_ISDIR(status.st_mode) || (status.st_mode & 022) != 0) {
+        return 1;
+    }
+    directory = opendir(path);
+    if (directory == NULL) {
+        return 1;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        char child_relative[PATH_MAX];
+
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (relative[0] == '\0') {
+            if (secdat_copy_string(
+                    child_relative,
+                    sizeof(child_relative),
+                    entry->d_name
+                ) != 0) {
+                goto cleanup;
+            }
+        } else if (snprintf(
+                child_relative,
+                sizeof(child_relative),
+                "%s/%s",
+                relative,
+                entry->d_name
+            ) >= (int)sizeof(child_relative)) {
+            goto cleanup;
+        }
+        if (secdat_mutation_collect_state_files(
+                root,
+                child_relative,
+                files
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    if (closedir(directory) != 0) {
+        directory = NULL;
+        goto cleanup;
+    }
+    directory = NULL;
+    result = 0;
+
+cleanup:
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    return result;
+}
+
+static int secdat_mutation_read_snapshot_file(
+    const char *state_root,
+    const char *relative,
+    unsigned char **data,
+    size_t *length,
+    int *exists
+)
+{
+    char path[PATH_MAX];
+
+    if (!secdat_transaction_state_file_name_is_valid(relative)
+        || snprintf(path, sizeof(path), "%s/%s", state_root, relative)
+            >= (int)sizeof(path)) {
+        return 1;
+    }
+    return secdat_transaction_read_target(path, data, length, exists);
+}
+
+static int secdat_mutation_append_state_diff(
+    struct secdat_transaction *transaction,
+    const char *source_state,
+    const char *stage_state,
+    size_t *changed_file_count
+)
+{
+    struct secdat_key_list source_files = {0};
+    struct secdat_key_list stage_files = {0};
+    struct secdat_key_list all_files = {0};
+    size_t index;
+    int result = 1;
+
+    *changed_file_count = 0;
+    if (secdat_mutation_collect_state_files(
+            source_state,
+            "domains",
+            &source_files
+        ) != 0
+        || secdat_mutation_collect_state_files(
+            stage_state,
+            "domains",
+            &stage_files
+        ) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < source_files.count; index += 1) {
+        if (secdat_key_list_append(&all_files, source_files.items[index]) != 0) {
+            goto cleanup;
+        }
+    }
+    for (index = 0; index < stage_files.count; index += 1) {
+        if (!secdat_key_list_contains(&all_files, stage_files.items[index])
+            && secdat_key_list_append(
+                &all_files,
+                stage_files.items[index]
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    if (all_files.count > 1) {
+        qsort(
+            all_files.items,
+            all_files.count,
+            sizeof(*all_files.items),
+            secdat_compare_strings
+        );
+    }
+    for (index = 0; index < all_files.count; index += 1) {
+        unsigned char *before_data = NULL;
+        unsigned char *after_data = NULL;
+        size_t before_length = 0;
+        size_t after_length = 0;
+        int before_exists = 0;
+        int after_exists = 0;
+        int changed;
+
+        if (secdat_mutation_read_snapshot_file(
+                source_state,
+                all_files.items[index],
+                &before_data,
+                &before_length,
+                &before_exists
+            ) != 0
+            || secdat_mutation_read_snapshot_file(
+                stage_state,
+                all_files.items[index],
+                &after_data,
+                &after_length,
+                &after_exists
+            ) != 0) {
+            secdat_secure_clear(before_data, before_length);
+            free(before_data);
+            secdat_secure_clear(after_data, after_length);
+            free(after_data);
+            goto cleanup;
+        }
+        changed = before_exists != after_exists
+            || (before_exists
+                && (before_length != after_length
+                    || CRYPTO_memcmp(
+                        before_data,
+                        after_data,
+                        before_length
+                    ) != 0));
+        if (changed
+            && secdat_transaction_append_target(
+                transaction,
+                SECDAT_TRANSACTION_ARTIFACT_STATE_FILE,
+                transaction->owner_domain_id,
+                transaction->owner_store_name,
+                all_files.items[index],
+                before_data,
+                before_length,
+                before_exists,
+                after_data,
+                after_length,
+                after_exists
+            ) != 0) {
+            secdat_secure_clear(before_data, before_length);
+            free(before_data);
+            secdat_secure_clear(after_data, after_length);
+            free(after_data);
+            goto cleanup;
+        }
+        if (changed) {
+            *changed_file_count += 1;
+        }
+        secdat_secure_clear(before_data, before_length);
+        free(before_data);
+        secdat_secure_clear(after_data, after_length);
+        free(after_data);
+    }
+    result = 0;
+
+cleanup:
+    secdat_key_list_free(&source_files);
+    secdat_key_list_free(&stage_files);
+    secdat_key_list_free(&all_files);
     return result;
 }
 
@@ -20943,6 +21887,24 @@ static int secdat_store_plaintext_attrs_for_chain(
     const struct secdat_secret_attrs *attrs
 )
 {
+    if (secdat_mutation_stage.active
+        && secdat_active_overlay_enabled(chain)) {
+        secdat_mutation_stage.saw_overlay = 1;
+        fprintf(
+            stderr,
+            _("mutation planning is not supported in a volatile session overlay\n")
+        );
+        return 1;
+    }
+    if (secdat_mutation_stage_record_slot(
+            chain,
+            domain_id,
+            store_name,
+            key,
+            SECDAT_MUTATION_SLOT_WRITE
+        ) != 0) {
+        return 1;
+    }
     if (secdat_active_overlay_enabled(chain)) {
         if (attrs != NULL && !secdat_secret_attrs_are_default(attrs, unsafe_store)) {
             fprintf(stderr, _("secret attributes are not supported in a volatile session overlay\n"));
@@ -21566,6 +22528,26 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
         return 1;
     } else {
         strcpy(current_domain_id, chain->ids[0]);
+    }
+
+    if (secdat_mutation_stage_record_slot(
+            chain,
+            current_domain_id,
+            store_name,
+            key,
+            SECDAT_MUTATION_SLOT_REMOVE
+        ) != 0) {
+        return 1;
+    }
+
+    if (secdat_mutation_stage.active
+        && secdat_active_overlay_enabled(chain)) {
+        secdat_mutation_stage.saw_overlay = 1;
+        fprintf(
+            stderr,
+            _("mutation planning is not supported in a volatile session overlay\n")
+        );
+        return 1;
     }
 
     if (secdat_active_overlay_enabled(chain)) {
@@ -23770,6 +24752,15 @@ static int secdat_command_ln(const struct secdat_cli *cli)
         }
     }
 
+    if (secdat_mutation_stage_record_slot(
+            &destination_chain,
+            destination_domain_id,
+            destination_reference.store_value,
+            destination_reference.key,
+            SECDAT_MUTATION_SLOT_LINK
+        ) != 0) {
+        goto cleanup;
+    }
     status = secdat_link_v2_key(
         &source_chain,
         destination_domain_id,
@@ -26072,6 +27063,1214 @@ static int secdat_dispatch_command(const struct secdat_cli *cli)
     }
 }
 
+static int secdat_command_uses_mutation_plan(
+    enum secdat_command_type command
+)
+{
+    switch (command) {
+    case SECDAT_COMMAND_SET:
+    case SECDAT_COMMAND_CP:
+    case SECDAT_COMMAND_LN:
+    case SECDAT_COMMAND_RM:
+    case SECDAT_COMMAND_LOAD:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int secdat_mutation_set_action(
+    struct secdat_mutation_policy_options *policy,
+    const char *value
+)
+{
+    enum secdat_mutation_mask_action action;
+
+    if (strcmp(value, "preserve") == 0) {
+        action = SECDAT_MUTATION_MASK_PRESERVE;
+    } else if (strcmp(value, "reject") == 0) {
+        action = SECDAT_MUTATION_MASK_REJECT;
+    } else {
+        fprintf(stderr, _("invalid mask action: %s\n"), value);
+        return 2;
+    }
+    if (policy->action_configured && policy->action != action) {
+        fprintf(stderr, _("conflicting mask action options\n"));
+        return 2;
+    }
+    policy->action = action;
+    policy->action_configured = 1;
+    return 0;
+}
+
+static int secdat_mutation_set_warning_policy(
+    struct secdat_mutation_policy_options *policy,
+    enum secdat_mask_warning_policy warnings
+)
+{
+    if (policy->warnings_configured && policy->warnings != warnings) {
+        fprintf(stderr, _("conflicting mask warning options\n"));
+        return 2;
+    }
+    policy->warnings = warnings;
+    policy->warnings_configured = 1;
+    return 0;
+}
+
+static int secdat_mutation_option_consumes_next(
+    enum secdat_command_type command,
+    const char *argument
+)
+{
+    if (command != SECDAT_COMMAND_SET) {
+        return 0;
+    }
+    return strcmp(argument, "-v") == 0
+        || strcmp(argument, "--value") == 0
+        || strcmp(argument, "-e") == 0
+        || strcmp(argument, "--env") == 0
+        || strcmp(argument, "--key-visibility") == 0
+        || strcmp(argument, "--value-access") == 0
+        || strcmp(argument, "--bulk-select") == 0
+        || strcmp(argument, "--inject-bulk") == 0
+        || strcmp(argument, "--sandbox-inject") == 0
+        || strcmp(argument, "--inject") == 0;
+}
+
+static int secdat_parse_mutation_policy_options(
+    const struct secdat_cli *cli,
+    struct secdat_cli *filtered,
+    struct secdat_mutation_policy_options *policy,
+    char ***allocated_argv
+)
+{
+    char **arguments;
+    int input_index;
+    int output_count = 0;
+    int positional_only = 0;
+    int consume_next = 0;
+    int status;
+
+    memset(policy, 0, sizeof(*policy));
+    policy->action = SECDAT_MUTATION_MASK_PRESERVE;
+    policy->warnings = SECDAT_MASK_WARNINGS_DEFAULT;
+    arguments = calloc((size_t)cli->argc + 1, sizeof(*arguments));
+    if (arguments == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    for (input_index = 0; input_index < cli->argc; input_index += 1) {
+        const char *argument = cli->argv[input_index];
+        const char *value = NULL;
+
+        if (consume_next) {
+            arguments[output_count++] = cli->argv[input_index];
+            consume_next = 0;
+            continue;
+        }
+        if (positional_only) {
+            arguments[output_count++] = cli->argv[input_index];
+            continue;
+        }
+        if (strcmp(argument, "--") == 0) {
+            positional_only = 1;
+            arguments[output_count++] = cli->argv[input_index];
+            continue;
+        }
+        if (strncmp(argument, "--mask-action=", 14) == 0) {
+            value = argument + 14;
+            status = secdat_mutation_set_action(policy, value);
+            if (status != 0) {
+                free(arguments);
+                return status;
+            }
+            continue;
+        }
+        if (strcmp(argument, "--mask-action") == 0) {
+            if (input_index + 1 >= cli->argc) {
+                fprintf(stderr, _("missing value for --mask-action\n"));
+                free(arguments);
+                return 2;
+            }
+            value = cli->argv[++input_index];
+            status = secdat_mutation_set_action(policy, value);
+            if (status != 0) {
+                free(arguments);
+                return status;
+            }
+            continue;
+        }
+        if (strncmp(argument, "--mask-warnings=", 16) == 0) {
+            value = argument + 16;
+            if (strcmp(value, "default") == 0) {
+                status = secdat_mutation_set_warning_policy(
+                    policy,
+                    SECDAT_MASK_WARNINGS_DEFAULT
+                );
+            } else if (strcmp(value, "on") == 0) {
+                status = secdat_mutation_set_warning_policy(
+                    policy,
+                    SECDAT_MASK_WARNINGS_ON
+                );
+            } else if (strcmp(value, "off") == 0) {
+                status = secdat_mutation_set_warning_policy(
+                    policy,
+                    SECDAT_MASK_WARNINGS_OFF
+                );
+            } else {
+                fprintf(stderr, _("invalid mask warning policy: %s\n"), value);
+                status = 2;
+            }
+            if (status != 0) {
+                free(arguments);
+                return status;
+            }
+            continue;
+        }
+        if (strcmp(argument, "--mask-warnings") == 0) {
+            if (input_index + 1 >= cli->argc) {
+                fprintf(stderr, _("missing value for --mask-warnings\n"));
+                free(arguments);
+                return 2;
+            }
+            value = cli->argv[++input_index];
+            if (strcmp(value, "default") == 0) {
+                status = secdat_mutation_set_warning_policy(
+                    policy,
+                    SECDAT_MASK_WARNINGS_DEFAULT
+                );
+            } else if (strcmp(value, "on") == 0) {
+                status = secdat_mutation_set_warning_policy(
+                    policy,
+                    SECDAT_MASK_WARNINGS_ON
+                );
+            } else if (strcmp(value, "off") == 0) {
+                status = secdat_mutation_set_warning_policy(
+                    policy,
+                    SECDAT_MASK_WARNINGS_OFF
+                );
+            } else {
+                fprintf(stderr, _("invalid mask warning policy: %s\n"), value);
+                status = 2;
+            }
+            if (status != 0) {
+                free(arguments);
+                return status;
+            }
+            continue;
+        }
+        if (strcmp(argument, "--warn-mask") == 0) {
+            status = secdat_mutation_set_warning_policy(
+                policy,
+                SECDAT_MASK_WARNINGS_ON
+            );
+            if (status != 0) {
+                free(arguments);
+                return status;
+            }
+            continue;
+        }
+        if (strcmp(argument, "--no-warn-mask") == 0) {
+            status = secdat_mutation_set_warning_policy(
+                policy,
+                SECDAT_MASK_WARNINGS_OFF
+            );
+            if (status != 0) {
+                free(arguments);
+                return status;
+            }
+            continue;
+        }
+        if (strcmp(argument, "--dry-run") == 0) {
+            policy->dry_run = 1;
+            continue;
+        }
+        if (strcmp(argument, "--json") == 0) {
+            policy->json = 1;
+            continue;
+        }
+        arguments[output_count++] = cli->argv[input_index];
+        consume_next = secdat_mutation_option_consumes_next(
+            cli->command,
+            argument
+        );
+    }
+    *filtered = *cli;
+    filtered->argc = output_count;
+    filtered->argv = arguments;
+    policy->warnings_effective =
+        policy->warnings == SECDAT_MASK_WARNINGS_ON
+        || (policy->warnings == SECDAT_MASK_WARNINGS_DEFAULT
+            && policy->action == SECDAT_MUTATION_MASK_PRESERVE);
+    *allocated_argv = arguments;
+    return 0;
+}
+
+static int secdat_mutation_policy_was_requested(
+    const struct secdat_mutation_policy_options *policy
+)
+{
+    return policy->action_configured
+        || policy->warnings_configured
+        || policy->dry_run
+        || policy->json;
+}
+
+static const char *secdat_mutation_action_name(
+    enum secdat_mutation_mask_action action
+)
+{
+    return action == SECDAT_MUTATION_MASK_REJECT
+        ? "reject"
+        : "preserve";
+}
+
+static const char *secdat_mutation_impact_event_name(
+    enum secdat_mutation_impact_event event
+)
+{
+    switch (event) {
+    case SECDAT_MUTATION_IMPACT_DIRECT_HIT:
+        return "direct-hit";
+    case SECDAT_MUTATION_IMPACT_BECAME_DORMANT:
+        return "became-dormant";
+    case SECDAT_MUTATION_IMPACT_REACTIVATED:
+        return "reactivated";
+    case SECDAT_MUTATION_IMPACT_ORPHANED:
+        return "orphaned";
+    case SECDAT_MUTATION_IMPACT_SOURCE_MASK_CREATED:
+        return "source-mask-created";
+    case SECDAT_MUTATION_IMPACT_LEGACY_AMBIGUOUS:
+        return "legacy-ambiguous";
+    default:
+        return "unknown";
+    }
+}
+
+static void secdat_mutation_plan_reset(struct secdat_mutation_plan *plan)
+{
+    secdat_mutation_slot_list_free(&plan->slots);
+    secdat_secure_clear(
+        plan->rows,
+        plan->row_capacity * sizeof(*plan->rows)
+    );
+    free(plan->rows);
+    memset(plan, 0, sizeof(*plan));
+}
+
+static int secdat_mutation_plan_append_row(
+    struct secdat_mutation_plan *plan,
+    const struct secdat_mutation_slot *slot,
+    const struct secdat_mask_view *view,
+    enum secdat_mutation_impact_event event,
+    const struct secdat_mask_view *after
+)
+{
+    struct secdat_mutation_impact_row *resized;
+    struct secdat_mutation_impact_row *row;
+    const struct secdat_mask_view *identity_view =
+        view != NULL ? view : after;
+
+    if (plan->row_count == plan->row_capacity) {
+        size_t next_capacity = plan->row_capacity == 0
+            ? 8
+            : plan->row_capacity * 2;
+
+        resized = realloc(
+            plan->rows,
+            next_capacity * sizeof(*resized)
+        );
+        if (resized == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        plan->rows = resized;
+        plan->row_capacity = next_capacity;
+    }
+    row = &plan->rows[plan->row_count];
+    memset(row, 0, sizeof(*row));
+    row->event = event;
+    if (secdat_copy_string(
+            row->domain_id,
+            sizeof(row->domain_id),
+            slot->domain_id
+        ) != 0
+        || secdat_copy_string(
+            row->store_name,
+            sizeof(row->store_name),
+            slot->store_name
+        ) != 0
+        || secdat_copy_string(
+            row->key,
+            sizeof(row->key),
+            slot->key
+        ) != 0
+        || (identity_view != NULL
+            && (secdat_copy_string(
+                    row->target_entry_id,
+                    sizeof(row->target_entry_id),
+                    identity_view->target_entry_id
+                ) != 0
+                || secdat_copy_string(
+                    row->mask_chain_id,
+                    sizeof(row->mask_chain_id),
+                    identity_view->mask_chain_id
+                ) != 0))) {
+        return 1;
+    }
+    if (view != NULL && !view->state_unknown) {
+        row->state_before = view->state;
+        row->has_state_before = 1;
+    }
+    if (after != NULL && !after->state_unknown) {
+        row->state_after = after->state;
+        row->has_state_after = 1;
+    }
+    plan->impact_counts[event] += 1;
+    plan->row_count += 1;
+    return 0;
+}
+
+static int secdat_mutation_views_match(
+    const struct secdat_mask_view *before,
+    const struct secdat_mask_view *after
+)
+{
+    if (before->record_kind != after->record_kind) {
+        return 0;
+    }
+    if (before->record_kind == SECDAT_MASK_RECORD_CANONICAL) {
+        return strcmp(
+                before->target_entry_id,
+                after->target_entry_id
+            ) == 0
+            && strcmp(
+                before->mask_chain_id,
+                after->mask_chain_id
+            ) == 0;
+    }
+    return strcmp(before->key, after->key) == 0;
+}
+
+static int secdat_mutation_reconcile_mask_slot(
+    const struct secdat_mutation_slot *slot,
+    const struct secdat_mask_view_list *before,
+    const unsigned char *original_tombstone,
+    size_t original_tombstone_length,
+    int original_tombstone_exists,
+    const char *preferred_target_entry_id
+)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_mask_view_list canonical = {0};
+    char selected_target[64] = "";
+    char tombstone_path[PATH_MAX];
+    unsigned char payload[128];
+    size_t payload_length = 0;
+    size_t index;
+    int restore_legacy = 0;
+    int status = 1;
+
+    if (secdat_domain_chain_from_id(slot->domain_id, &chain) != 0
+        || secdat_collect_canonical_mask_views(
+            &chain,
+            slot->store_name,
+            &canonical
+        ) != 0
+        || secdat_build_tombstone_path(
+            slot->domain_id,
+            slot->store_name,
+            slot->key,
+            tombstone_path,
+            sizeof(tombstone_path)
+        ) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < before->count; index += 1) {
+        if (before->items[index].record_kind == SECDAT_MASK_RECORD_LEGACY
+            && strcmp(before->items[index].key, slot->key) == 0) {
+            restore_legacy = 1;
+            break;
+        }
+    }
+    for (index = 0; index < canonical.count; index += 1) {
+        const struct secdat_mask_view *view = &canonical.items[index];
+        struct secdat_v2_mask_record record;
+        char mask_path[PATH_MAX];
+
+        if (strcmp(view->key, slot->key) != 0
+            || secdat_build_v2_mask_path(
+                slot->domain_id,
+                slot->store_name,
+                view->target_entry_id,
+                mask_path,
+                sizeof(mask_path)
+            ) != 0
+            || secdat_read_v2_mask_record(
+                mask_path,
+                view->target_entry_id,
+                &record
+            ) != 0) {
+            if (strcmp(view->key, slot->key) == 0) {
+                goto cleanup;
+            }
+            continue;
+        }
+        if (record.key_visibility != SECDAT_KEY_VISIBILITY_ALWAYS) {
+            continue;
+        }
+        if (preferred_target_entry_id[0] != '\0'
+            && strcmp(
+                preferred_target_entry_id,
+                view->target_entry_id
+            ) == 0) {
+            if (secdat_copy_string(
+                    selected_target,
+                    sizeof(selected_target),
+                    view->target_entry_id
+                ) != 0) {
+                goto cleanup;
+            }
+            break;
+        }
+        if (selected_target[0] == '\0'
+            || strcmp(view->target_entry_id, selected_target) < 0) {
+            if (secdat_copy_string(
+                    selected_target,
+                    sizeof(selected_target),
+                    view->target_entry_id
+                ) != 0) {
+                goto cleanup;
+            }
+        }
+    }
+    if (selected_target[0] != '\0') {
+        if (secdat_encode_v2_compat_tombstone(
+                selected_target,
+                payload,
+                sizeof(payload),
+                &payload_length
+            ) != 0
+            || secdat_atomic_write_file(
+                tombstone_path,
+                payload,
+                payload_length
+            ) != 0) {
+            goto cleanup;
+        }
+    } else if (restore_legacy && original_tombstone_exists) {
+        if (secdat_atomic_write_file(
+                tombstone_path,
+                original_tombstone,
+                original_tombstone_length
+            ) != 0) {
+            goto cleanup;
+        }
+    } else if (slot->operation == SECDAT_MUTATION_SLOT_REMOVE
+        && secdat_file_exists(tombstone_path)) {
+        /* rm of an inherited key intentionally creates this source mask. */
+    } else if (secdat_remove_if_exists(tombstone_path) != 0) {
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    secdat_mask_view_list_free(&canonical);
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
+static int secdat_mutation_collect_slot_impacts(
+    struct secdat_mutation_plan *plan,
+    const struct secdat_mutation_slot *slot,
+    const char *source_data_home,
+    int source_data_home_was_set,
+    const char *stage_data_home,
+    int *hard_error
+)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_mask_view_list before = {0};
+    struct secdat_mask_view_list after = {0};
+    char tombstone_path[PATH_MAX];
+    char compatibility_target[64];
+    unsigned char *tombstone_payload = NULL;
+    size_t tombstone_payload_length = 0;
+    size_t direct_hit_count = 0;
+    size_t before_index;
+    size_t after_index;
+    int tombstone_is_compatibility = 0;
+    int tombstone_exists = 0;
+    int slot_hard_error = 0;
+    int status = 1;
+
+    if (source_data_home_was_set) {
+        if (setenv("XDG_DATA_HOME", source_data_home, 1) != 0) {
+            goto cleanup;
+        }
+    } else if (unsetenv("XDG_DATA_HOME") != 0) {
+        goto cleanup;
+    }
+    if (secdat_domain_chain_from_id(slot->domain_id, &chain) != 0
+        || secdat_analyze_mask_impacts(
+            &chain,
+            slot->store_name,
+            slot->key,
+            1,
+            &before,
+            &direct_hit_count
+        ) != 0
+        || secdat_build_tombstone_path(
+            slot->domain_id,
+            slot->store_name,
+            slot->key,
+            tombstone_path,
+            sizeof(tombstone_path)
+        ) != 0
+        || secdat_read_v2_compat_tombstone(
+            tombstone_path,
+            &tombstone_is_compatibility,
+            compatibility_target,
+            &tombstone_payload,
+            &tombstone_payload_length
+        ) != 0) {
+        goto cleanup;
+    }
+    tombstone_exists = secdat_file_exists(tombstone_path);
+    for (before_index = 0; before_index < before.count; before_index += 1) {
+        const struct secdat_mask_view *view = &before.items[before_index];
+
+        if (strcmp(view->key, slot->key) != 0) {
+            continue;
+        }
+        if (view->record_kind == SECDAT_MASK_RECORD_LEGACY
+            && view->resolution == SECDAT_MASK_RESOLUTION_AMBIGUOUS) {
+            if (secdat_mutation_plan_append_row(
+                    plan,
+                    slot,
+                    view,
+                    SECDAT_MUTATION_IMPACT_LEGACY_AMBIGUOUS,
+                    NULL
+                ) != 0) {
+                goto cleanup;
+            }
+            slot_hard_error = 1;
+        }
+    }
+    if (slot_hard_error) {
+        *hard_error = 1;
+        status = 0;
+        goto cleanup;
+    }
+    secdat_domain_chain_free(&chain);
+    if (setenv("XDG_DATA_HOME", stage_data_home, 1) != 0
+        || secdat_mutation_reconcile_mask_slot(
+            slot,
+            &before,
+            tombstone_payload,
+            tombstone_payload_length,
+            tombstone_exists,
+            tombstone_is_compatibility ? compatibility_target : ""
+        ) != 0
+        || secdat_domain_chain_from_id(slot->domain_id, &chain) != 0
+        || secdat_analyze_mask_impacts(
+            &chain,
+            slot->store_name,
+            slot->key,
+            1,
+            &after,
+            NULL
+        ) != 0) {
+        goto cleanup;
+    }
+    for (before_index = 0; before_index < before.count; before_index += 1) {
+        const struct secdat_mask_view *before_view =
+            &before.items[before_index];
+        const struct secdat_mask_view *after_view = NULL;
+
+        if (strcmp(before_view->key, slot->key) != 0) {
+            continue;
+        }
+        for (after_index = 0; after_index < after.count; after_index += 1) {
+            if (secdat_mutation_views_match(
+                    before_view,
+                    &after.items[after_index]
+                )) {
+                after_view = &after.items[after_index];
+                break;
+            }
+        }
+        if (secdat_mutation_plan_append_row(
+                plan,
+                slot,
+                before_view,
+                SECDAT_MUTATION_IMPACT_DIRECT_HIT,
+                after_view
+            ) != 0) {
+            goto cleanup;
+        }
+        if (after_view == NULL) {
+            fprintf(stderr, _("mutation failed to preserve a mask\n"));
+            goto cleanup;
+        }
+        if (before_view->state != after_view->state) {
+            enum secdat_mutation_impact_event event;
+
+            if (after_view->state == SECDAT_MASK_STATE_ORPHANED) {
+                event = SECDAT_MUTATION_IMPACT_ORPHANED;
+            } else if (before_view->state == SECDAT_MASK_STATE_ACTIVE
+                && after_view->state == SECDAT_MASK_STATE_DORMANT) {
+                event = SECDAT_MUTATION_IMPACT_BECAME_DORMANT;
+            } else if (before_view->state == SECDAT_MASK_STATE_DORMANT
+                && after_view->state == SECDAT_MASK_STATE_ACTIVE) {
+                event = SECDAT_MUTATION_IMPACT_REACTIVATED;
+            } else {
+                continue;
+            }
+            if (secdat_mutation_plan_append_row(
+                    plan,
+                    slot,
+                    before_view,
+                    event,
+                    after_view
+                ) != 0) {
+                goto cleanup;
+            }
+        }
+    }
+    for (after_index = 0; after_index < after.count; after_index += 1) {
+        const struct secdat_mask_view *after_view = &after.items[after_index];
+        int found_before = 0;
+
+        if (strcmp(after_view->key, slot->key) != 0) {
+            continue;
+        }
+        for (before_index = 0; before_index < before.count; before_index += 1) {
+            if (secdat_mutation_views_match(
+                    &before.items[before_index],
+                    after_view
+                )) {
+                found_before = 1;
+                break;
+            }
+        }
+        if (!found_before
+            && secdat_mutation_plan_append_row(
+                plan,
+                slot,
+                NULL,
+                SECDAT_MUTATION_IMPACT_SOURCE_MASK_CREATED,
+                after_view
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    status = 0;
+
+cleanup:
+    if (source_data_home_was_set) {
+        (void)setenv("XDG_DATA_HOME", source_data_home, 1);
+    } else {
+        (void)unsetenv("XDG_DATA_HOME");
+    }
+    secdat_secure_clear(
+        tombstone_payload,
+        tombstone_payload_length
+    );
+    free(tombstone_payload);
+    secdat_mask_view_list_free(&before);
+    secdat_mask_view_list_free(&after);
+    secdat_domain_chain_free(&chain);
+    (void)direct_hit_count;
+    return status;
+}
+
+static int secdat_print_mutation_plan(
+    const struct secdat_mutation_plan *plan,
+    int committed
+)
+{
+    size_t index;
+
+    if (plan->policy.json) {
+        json_t *root = json_object();
+        json_t *counts = json_object();
+        json_t *rows = json_array();
+
+        if (root == NULL || counts == NULL || rows == NULL) {
+            json_decref(root);
+            json_decref(counts);
+            json_decref(rows);
+            fprintf(stderr, _("failed to encode mutation plan\n"));
+            return 1;
+        }
+        for (index = 0; index < SECDAT_MUTATION_IMPACT_EVENT_COUNT;
+             index += 1) {
+            if (json_object_set_new(
+                    counts,
+                    secdat_mutation_impact_event_name(
+                        (enum secdat_mutation_impact_event)index
+                    ),
+                    json_integer(
+                        (json_int_t)plan->impact_counts[index]
+                    )
+                ) != 0) {
+                goto json_error;
+            }
+        }
+        for (index = 0; index < plan->row_count; index += 1) {
+            const struct secdat_mutation_impact_row *row =
+                &plan->rows[index];
+            json_t *item = json_object();
+
+            if (item == NULL
+                || json_object_set_new(
+                    item,
+                    "domain_id",
+                    json_string(row->domain_id)
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "store",
+                    json_string(row->store_name)
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "key",
+                    json_string(row->key)
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "event",
+                    json_string(
+                        secdat_mutation_impact_event_name(row->event)
+                    )
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "state_before",
+                    row->has_state_before
+                        ? json_string(
+                            secdat_mask_state_name(row->state_before)
+                        )
+                        : json_null()
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "state_after",
+                    row->has_state_after
+                        ? json_string(
+                            secdat_mask_state_name(row->state_after)
+                        )
+                        : json_null()
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "target_entry_id",
+                    row->target_entry_id[0] == '\0'
+                        ? json_null()
+                        : json_string(row->target_entry_id)
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "mask_chain_id",
+                    row->mask_chain_id[0] == '\0'
+                        ? json_null()
+                        : json_string(row->mask_chain_id)
+                ) != 0
+                || json_array_append(rows, item) != 0) {
+                json_decref(item);
+                goto json_error;
+            }
+            json_decref(item);
+        }
+        if (json_object_set_new(
+                root,
+                "plan_schema_version",
+                json_string("secdat.mutation-plan.v1")
+            ) != 0
+            || json_object_set_new(
+                root,
+                "operation",
+                json_string(plan->operation)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "ok",
+                json_boolean(!plan->rejected)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "dry_run",
+                json_boolean(plan->policy.dry_run)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "committed",
+                json_boolean(committed)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "mask_action",
+                json_string(
+                    secdat_mutation_action_name(plan->policy.action)
+                )
+            ) != 0
+            || json_object_set_new(
+                root,
+                "mask_warnings_requested",
+                json_string(
+                    secdat_mask_warning_policy_name(
+                        plan->policy.warnings
+                    )
+                )
+            ) != 0
+            || json_object_set_new(
+                root,
+                "mask_warnings_effective",
+                json_boolean(plan->policy.warnings_effective)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "changed_file_count",
+                json_integer((json_int_t)plan->changed_file_count)
+            ) != 0
+            || json_object_set(root, "mask_impact_counts", counts) != 0
+            || json_object_set(root, "mask_impact_rows", rows) != 0
+            || json_dumpf(root, stdout, JSON_COMPACT | JSON_SORT_KEYS)
+                != 0) {
+            goto json_error;
+        }
+        fputc('\n', stdout);
+        json_decref(counts);
+        json_decref(rows);
+        json_decref(root);
+        return 0;
+
+json_error:
+        json_decref(counts);
+        json_decref(rows);
+        json_decref(root);
+        fprintf(stderr, _("failed to encode mutation plan\n"));
+        return 1;
+    }
+    if (!plan->policy.dry_run && !plan->rejected) {
+        return 0;
+    }
+    puts("plan_schema_version=secdat.mutation-plan.v1");
+    printf("operation=%s\n", plan->operation);
+    printf("ok=%s\n", plan->rejected ? "no" : "yes");
+    printf("dry_run=%s\n", plan->policy.dry_run ? "yes" : "no");
+    printf(
+        "mask_action=%s\n",
+        secdat_mutation_action_name(plan->policy.action)
+    );
+    printf(
+        "mask_warnings_requested=%s\n",
+        secdat_mask_warning_policy_name(plan->policy.warnings)
+    );
+    printf(
+        "mask_warnings_effective=%s\n",
+        plan->policy.warnings_effective ? "yes" : "no"
+    );
+    printf("changed_file_count=%zu\n", plan->changed_file_count);
+    for (index = 0; index < SECDAT_MUTATION_IMPACT_EVENT_COUNT;
+         index += 1) {
+        printf(
+            "mask_impact_%s=%zu\n",
+            secdat_mutation_impact_event_name(
+                (enum secdat_mutation_impact_event)index
+            ),
+            plan->impact_counts[index]
+        );
+    }
+    for (index = 0; index < plan->row_count; index += 1) {
+        const struct secdat_mutation_impact_row *row =
+            &plan->rows[index];
+
+        printf(
+            "mask_impact_row=%s:%s:%s:%s:%s:%s\n",
+            row->domain_id,
+            row->store_name,
+            row->key,
+            secdat_mutation_impact_event_name(row->event),
+            row->has_state_before
+                ? secdat_mask_state_name(row->state_before)
+                : "-",
+            row->has_state_after
+                ? secdat_mask_state_name(row->state_after)
+                : "-"
+        );
+    }
+    return 0;
+}
+
+static void secdat_mutation_emit_warning(
+    const struct secdat_mutation_plan *plan
+)
+{
+    int wrote_fact = 0;
+
+    if (!plan->policy.warnings_effective || plan->row_count == 0) {
+        return;
+    }
+    fprintf(stderr, _("warning: %s: "), plan->operation);
+#define SECDAT_MUTATION_WARNING_FACT(event, format) \
+    do { \
+        size_t count = plan->impact_counts[(event)]; \
+        if (count > 0) { \
+            if (wrote_fact) { \
+                fputs("; ", stderr); \
+            } \
+            fprintf(stderr, (format), count); \
+            wrote_fact = 1; \
+        } \
+    } while (0)
+    SECDAT_MUTATION_WARNING_FACT(
+        SECDAT_MUTATION_IMPACT_DIRECT_HIT,
+        _("%zu directly affected masked key slot(s)")
+    );
+    SECDAT_MUTATION_WARNING_FACT(
+        SECDAT_MUTATION_IMPACT_BECAME_DORMANT,
+        _("%zu mask(s) became dormant")
+    );
+    SECDAT_MUTATION_WARNING_FACT(
+        SECDAT_MUTATION_IMPACT_REACTIVATED,
+        _("%zu dormant mask(s) reactivated")
+    );
+    SECDAT_MUTATION_WARNING_FACT(
+        SECDAT_MUTATION_IMPACT_ORPHANED,
+        _("%zu mask(s) became orphaned")
+    );
+    SECDAT_MUTATION_WARNING_FACT(
+        SECDAT_MUTATION_IMPACT_SOURCE_MASK_CREATED,
+        _("%zu source mask(s) created")
+    );
+#undef SECDAT_MUTATION_WARNING_FACT
+    fputs(
+        _("; inspect with 'secdat --dir DIR list --all-masks --long'\n"),
+        stderr
+    );
+}
+
+static int secdat_run_planned_mutation(const struct secdat_cli *cli)
+{
+    struct secdat_cli filtered;
+    struct secdat_mutation_plan plan;
+    struct secdat_domain_chain owner_chain = {0};
+    struct secdat_transaction transaction;
+    char **filtered_argv = NULL;
+    char source_state[PATH_MAX];
+    char stage_data_home[PATH_MAX] = "";
+    char stage_state[PATH_MAX] = "";
+    char *source_data_home = NULL;
+    const char *configured_data_home;
+    int source_data_home_was_set = 0;
+    int stage_created = 0;
+    int inner_status;
+    int hard_error = 0;
+    int committed = 0;
+    int status = 1;
+    enum secdat_store_format owner_format;
+    size_t index;
+
+    memset(&plan, 0, sizeof(plan));
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
+    status = secdat_parse_mutation_policy_options(
+        cli,
+        &filtered,
+        &plan.policy,
+        &filtered_argv
+    );
+    if (status != 0) {
+        return status;
+    }
+    status = 1;
+    if (secdat_copy_string(
+            plan.operation,
+            sizeof(plan.operation),
+            secdat_cli_command_name(cli->command)
+        ) != 0
+        || secdat_domain_resolve_chain(
+            secdat_cli_domain_base(cli),
+            &owner_chain
+        ) != 0) {
+        goto cleanup;
+    }
+    if (secdat_active_overlay_enabled(&owner_chain)) {
+        if (!secdat_mutation_policy_was_requested(&plan.policy)) {
+            status = secdat_dispatch_command(cli);
+        } else {
+            fprintf(
+                stderr,
+                _("mutation planning is not supported in a volatile session overlay\n")
+            );
+            status = 1;
+        }
+        goto cleanup;
+    }
+    if (owner_chain.count == 0) {
+        if (!secdat_mutation_policy_was_requested(&plan.policy)) {
+            status = secdat_dispatch_command(cli);
+        } else {
+            fprintf(
+                stderr,
+                _("mutation planning requires a registered current domain\n")
+            );
+        }
+        goto cleanup;
+    }
+    if (secdat_read_store_format(
+            owner_chain.ids[0],
+            cli->store,
+            &owner_format
+        ) != 0) {
+        goto cleanup;
+    }
+    if (owner_format != SECDAT_STORE_FORMAT_V2) {
+        if (!secdat_mutation_policy_was_requested(&plan.policy)) {
+            status = secdat_dispatch_command(cli);
+        } else {
+            fprintf(
+                stderr,
+                _("mask mutation planning requires store format v2\n")
+            );
+        }
+        goto cleanup;
+    }
+    if (secdat_state_dir(source_state, sizeof(source_state)) != 0
+        || secdat_transaction_begin(
+            &transaction,
+            plan.operation,
+            owner_chain.ids[0],
+            cli->store
+        ) != 0
+        || secdat_mutation_create_stage(
+            source_state,
+            stage_data_home,
+            sizeof(stage_data_home),
+            stage_state,
+            sizeof(stage_state)
+        ) != 0) {
+        goto cleanup;
+    }
+    stage_created = 1;
+    configured_data_home = getenv("XDG_DATA_HOME");
+    source_data_home_was_set = configured_data_home != NULL;
+    if (source_data_home_was_set) {
+        source_data_home = strdup(configured_data_home);
+        if (source_data_home == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            goto cleanup;
+        }
+    }
+    if (setenv("XDG_DATA_HOME", stage_data_home, 1) != 0) {
+        goto cleanup;
+    }
+    secdat_mutation_slot_list_free(&secdat_mutation_stage.slots);
+    secdat_mutation_stage.active = 1;
+    secdat_mutation_stage.saw_overlay = 0;
+    inner_status = secdat_dispatch_command(&filtered);
+    secdat_mutation_stage.active = 0;
+    plan.slots = secdat_mutation_stage.slots;
+    memset(&secdat_mutation_stage.slots, 0, sizeof(secdat_mutation_stage.slots));
+    if (source_data_home_was_set) {
+        (void)setenv("XDG_DATA_HOME", source_data_home, 1);
+    } else {
+        (void)unsetenv("XDG_DATA_HOME");
+    }
+    if (inner_status != 0) {
+        if (secdat_mutation_stage.saw_overlay
+            && !secdat_mutation_policy_was_requested(&plan.policy)) {
+            status = secdat_dispatch_command(cli);
+        } else {
+            status = inner_status;
+        }
+        goto cleanup;
+    }
+    for (index = 0; index < plan.slots.count; index += 1) {
+        if (secdat_mutation_collect_slot_impacts(
+                &plan,
+                &plan.slots.items[index],
+                source_data_home,
+                source_data_home_was_set,
+                stage_data_home,
+                &hard_error
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    if (source_data_home_was_set) {
+        if (setenv("XDG_DATA_HOME", source_data_home, 1) != 0) {
+            goto cleanup;
+        }
+    } else if (unsetenv("XDG_DATA_HOME") != 0) {
+        goto cleanup;
+    }
+    if (secdat_mutation_append_state_diff(
+            &transaction,
+            source_state,
+            stage_state,
+            &plan.changed_file_count
+        ) != 0) {
+        goto cleanup;
+    }
+    plan.rejected = hard_error
+        || (plan.policy.action == SECDAT_MUTATION_MASK_REJECT
+            && plan.row_count > 0);
+    if (stage_created) {
+        if (secdat_mutation_remove_stage(stage_data_home) != 0) {
+            goto cleanup;
+        }
+        stage_created = 0;
+    }
+    if (plan.rejected || plan.policy.dry_run) {
+        if (secdat_print_mutation_plan(&plan, 0) != 0) {
+            goto cleanup;
+        }
+        if (plan.rejected && !plan.policy.json) {
+            fputs(
+                hard_error
+                    ? _("ambiguous legacy mask blocks this mutation\n")
+                    : _("mask interaction rejected before mutation\n"),
+                stderr
+            );
+        }
+        status = plan.rejected ? 1 : 0;
+        goto cleanup;
+    }
+    if (transaction.target_count > 0
+        && secdat_transaction_commit(&transaction) != 0) {
+        goto cleanup;
+    }
+    committed = 1;
+    if (secdat_print_mutation_plan(&plan, committed) != 0) {
+        goto cleanup;
+    }
+    secdat_mutation_emit_warning(&plan);
+    status = 0;
+
+cleanup:
+    secdat_mutation_stage.active = 0;
+    if (source_data_home_was_set) {
+        if (source_data_home != NULL) {
+            (void)setenv("XDG_DATA_HOME", source_data_home, 1);
+        }
+    } else {
+        (void)unsetenv("XDG_DATA_HOME");
+    }
+    if (stage_created) {
+        (void)secdat_mutation_remove_stage(stage_data_home);
+    }
+    free(source_data_home);
+    free(filtered_argv);
+    secdat_domain_chain_free(&owner_chain);
+    secdat_transaction_reset(&transaction);
+    secdat_mutation_plan_reset(&plan);
+    return status;
+}
+
 static int secdat_command_requires_transaction_lock(
     enum secdat_command_type command
 )
@@ -26145,7 +28344,9 @@ int secdat_run_command(const struct secdat_cli *cli)
     if (secdat_command_transaction_lock_fd < 0) {
         return 1;
     }
-    status = secdat_dispatch_command(cli);
+    status = secdat_command_uses_mutation_plan(cli->command)
+        ? secdat_run_planned_mutation(cli)
+        : secdat_dispatch_command(cli);
     (void)flock(secdat_command_transaction_lock_fd, LOCK_UN);
     close(secdat_command_transaction_lock_fd);
     secdat_command_transaction_lock_fd = -1;

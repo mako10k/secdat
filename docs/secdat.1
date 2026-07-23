@@ -329,6 +329,35 @@ under
 Startup discards validated pre-commit journals or rolls committing journals
 forward before normal command resolution, so later command views observe an
 all-before or all-after result.
+
+Persisted v2
+.BR set ,
+.BR cp ,
+.BR ln ,
+.BR rm ,
+and
+.B load
+use one common recoverable mutation plan.
+.B \-\-mask-action=preserve
+is the default and keeps canonical masks while reporting direct hits and
+active/dormant transitions.
+.B \-\-mask-action=reject
+fails before live mutation on any planned mask interaction.
+.BR \-\-mask-warnings=default|on|off ,
+.BR \-\-warn-mask ,
+and
+.B \-\-no-warn-mask
+change only the aggregate post-commit warning; preserve defaults to warnings
+on and reject defaults to warnings off.
+.B \-\-dry-run
+and
+.B \-\-json
+expose the same
+.B secdat.mutation-plan.v1
+used for commit. Multi-key set and load plan and commit the whole batch.
+Locked hidden mask names and ambiguous legacy masks fail closed even when
+warnings are off. These mutation-planning options require a persisted v2
+store; v1 commands retain their compatible behavior until migration.
 .TP
 .B exists KEYREF
 Check whether one resolved key is visible from the current domain view. This command is intended for shell-friendly branching and does not print secret values.
@@ -342,7 +371,7 @@ and
 .B unlock
 follow-up commands for that domain.
 .TP
-.B set KEYREF [\-u|\-\-unsafe|\-\-public-value|\-\-secret-value] [\-\-key-visibility always|unlocked] [\-\-value-access unlocked|always] [\-\-bulk-select exclude|named|include] [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
+.B set [\-\-mask-action=preserve|reject] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] [\-\-dry-run] [\-\-json] KEYREF [\-u|\-\-unsafe|\-\-public-value|\-\-secret-value] [\-\-key-visibility always|unlocked] [\-\-value-access unlocked|always] [\-\-bulk-select exclude|named|include] [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
 Store or update one key in the resolved current domain. Use
 .B --unsafe
 or
@@ -351,7 +380,7 @@ to write a plaintext entry that remains readable while locked. Use
 .B --bulk-select
 to set the bulk_select policy for bulk-gated selection.
 .TP
-.B rm [\-f|\-\-ignore-missing] KEYREF
+.B rm [\-f|\-\-ignore-missing] [\-\-mask-action=preserve|reject] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] [\-\-dry-run] [\-\-json] KEYREF
 Remove one key locally or create a tombstone for an inherited key. With
 .B --ignore-missing,
 an absent key is treated as a successful no-op.
@@ -359,10 +388,10 @@ an absent key is treated as a successful no-op.
 .B mv SRC_KEYREF DST_KEYREF
 Rename or relocate one key between resolved locations.
 .TP
-.B cp SRC_KEYREF DST_KEYREF
+.B cp [\-\-mask-action=preserve|reject] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] [\-\-dry-run] [\-\-json] SRC_KEYREF DST_KEYREF
 Copy one key into another resolved location.
 .TP
-.B ln [\-\-replace] [\-\-skip-same-value-check] SRC_KEYREF|@UUID DST_KEYREF
+.B ln [\-\-replace] [\-\-skip-same-value-check] [\-\-mask-action=preserve|reject] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] [\-\-dry-run] [\-\-json] SRC_KEYREF|@UUID DST_KEYREF
 Link another key to the same v2 secret object. Source and destination may use explicit KEYREF domain/store qualifiers, including different v2 domains or stores. Updating the value through either key updates the shared object.
 Direct source-object links such as
 .B ln @UUID DST_KEYREF
@@ -445,7 +474,7 @@ option limits output to keys whose effective bulk_select policy allows bulk-gate
 .B save FILE
 Write the current visible secrets into a passphrase-protected bundle.
 .TP
-.B load FILE
+.B load [\-\-mask-action=preserve|reject] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] [\-\-dry-run] [\-\-json] FILE
 Load a passphrase-protected bundle into the current domain/store context.
 .TP
 .B [\-d DIR|\-\-dir DIR] unlock [\-t TTL|\-\-duration TTL] [\-\-until TIME] [\-i|\-\-inherit] [\-v|\-\-volatile|\-r|\-\-readonly] [\-d|\-\-descendants] [\-y|\-\-yes] [\-\-askpass PATH] [\-\-gui]

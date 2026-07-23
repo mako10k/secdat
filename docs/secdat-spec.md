@@ -68,18 +68,18 @@ secdat [--dir DIR] [--store STORE] get KEYREF [--stdout|-o]
 secdat [--dir DIR] [--store STORE] get KEYREF [--shellescaped|-e]
 secdat [--dir DIR] [--store STORE] get [-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [--stdout|-o|--shellescaped|-e]
 
-secdat [--dir DIR] [--store STORE] set KEYREF
-secdat [--dir DIR] [--store STORE] set KEYREF VALUE
+secdat [--dir DIR] [--store STORE] set [--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] KEYREF
+secdat [--dir DIR] [--store STORE] set [MASK_MUTATION_OPTIONS] KEYREF VALUE
 secdat [--dir DIR] [--store STORE] set KEYREF [-u|--unsafe] VALUE
 secdat [--dir DIR] [--store STORE] set KEYREF [--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include] VALUE
 secdat [--dir DIR] [--store STORE] set KEYREF [--stdin|-i]
 secdat [--dir DIR] [--store STORE] set KEYREF [--env|-e] ENVNAME
 secdat [--dir DIR] [--store STORE] set KEYREF [--value|-v] VALUE
 
-secdat [--dir DIR] [--store STORE] rm [-f|--ignore-missing] KEYREF
+secdat [--dir DIR] [--store STORE] rm [-f|--ignore-missing] [MASK_MUTATION_OPTIONS] KEYREF
 secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
-secdat [--dir DIR] [--store STORE] cp SRC_KEYREF DST_KEYREF
-secdat [--dir DIR] [--store STORE] ln [--replace] [--skip-same-value-check] SRC_KEYREF|@UUID DST_KEYREF
+secdat [--dir DIR] [--store STORE] cp [MASK_MUTATION_OPTIONS] SRC_KEYREF DST_KEYREF
+secdat [--dir DIR] [--store STORE] ln [--replace] [--skip-same-value-check] [MASK_MUTATION_OPTIONS] SRC_KEYREF|@UUID DST_KEYREF
 
 secdat [--dir DIR] [--store STORE] exec [--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--bulk-gate]... [--command-resolution MODE] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]
 
@@ -107,7 +107,7 @@ secdat [--dir DIR] domain ls [-l|--long] [-a|--inherited] [-A|--ancestors] [-R|-
 secdat [--dir DIR|--domain DIR] domain status [--quiet|--json]
 
 secdat [--dir DIR] [--store STORE] save FILE
-secdat [--dir DIR] [--store STORE] load FILE
+secdat [--dir DIR] [--store STORE] load [MASK_MUTATION_OPTIONS] FILE
 secdat [--dir DIR] [--store STORE] export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--bulk-gate]
 ```
 
@@ -587,6 +587,7 @@ revalidated so changed-since-plan state fails before live mutation.
 - the saved bundle format is a PBKDF2 + AES-256-GCM encrypted binary payload containing key/value entries from the current visible view only
 - `save` refuses to overwrite an existing bundle file
 - `load` overwrites matching keys in the current domain/store and leaves keys not mentioned by the bundle untouched
+- in a persisted v2 store, `load` preflights and commits all bundle entries as one mutation plan; a later import failure or mask-action rejection leaves the live store unchanged
 
 #### FR-8 Store Selection
 
@@ -843,6 +844,27 @@ secdat [--dir DIR] [--store STORE] unmask [--dry-run] [--json] [--mask-chain UUI
 - reports remaining barriers and resulting effective state in JSON
 - warning controls change only post-commit warnings
 
+### 4.2d Common v2 mutation plan
+
+`MASK_MUTATION_OPTIONS` means:
+
+```text
+[--mask-action=preserve|reject]
+[--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask]
+[--dry-run] [--json]
+```
+
+- persisted v2 `set`, `cp`, `ln`, `rm`, and `load` use one common read-only mask-impact analysis and one recoverable state transaction
+- `preserve` is the default action; it keeps canonical masks, permits active/dormant transitions, and reports a `direct-hit` even when a dormant mask remains dormant
+- `reject` fails before live mutation on any direct hit, transition, orphaning, or source-mask creation
+- warning policy is orthogonal to action: preserve defaults to warnings on, reject defaults to warnings off, and explicit `on`/`off` never changes state, success, exit status, or JSON rows
+- warnings are emitted only after a successful commit; dry-run and rejected/failed operations do not claim that a transition occurred
+- `--dry-run` and `--json` expose `secdat.mutation-plan.v1`, including normalized impact counts and authorized rows with domain/store/key, event, states, mask chain, and target entry identity
+- multi-assignment `set` and `load` execute their entire existing command against a protected state snapshot, preflight the aggregate result, and commit all changed files together
+- a later batch error, locked hidden mask name, ambiguous legacy mask, or `reject` outcome leaves all live entries unchanged
+- warning suppression cannot suppress locked/incomplete analysis, legacy ambiguity, invalid options, or rejection
+- these planning options require a persisted v2 store; v1 commands retain their compatible mutation behavior until migration
+
 ### 4.3 `get`
 
 ```text
@@ -864,6 +886,7 @@ secdat [--dir DIR] [--store STORE] set KEY --env ENVNAME
 secdat [--dir DIR] [--store STORE] set KEY --value VALUE
 ```
 
+- every persisted v2 form also accepts `MASK_MUTATION_OPTIONS`; multi-key assignment has one aggregate plan and transaction
 - these modes are mutually exclusive
 - `set KEY` means `--stdin`
 - `set KEY VALUE` means `--value VALUE`
@@ -875,7 +898,7 @@ secdat [--dir DIR] [--store STORE] set KEY --value VALUE
 ### 4.5 `rm`
 
 ```text
-secdat [--dir DIR] [--store STORE] rm [--ignore-missing] KEY
+secdat [--dir DIR] [--store STORE] rm [--ignore-missing] [MASK_MUTATION_OPTIONS] KEY
 ```
 
 - `--ignore-missing` converts a missing-key case into a successful no-op
@@ -889,7 +912,7 @@ secdat [--dir DIR] [--store STORE] mv SRC_KEY DST_KEY
 ### 4.7 `cp`
 
 ```text
-secdat [--dir DIR] [--store STORE] cp SRC_KEY DST_KEY
+secdat [--dir DIR] [--store STORE] cp [MASK_MUTATION_OPTIONS] SRC_KEY DST_KEY
 ```
 
 ### 4.8 `exec`
@@ -1392,8 +1415,8 @@ The object ID is an address, not authority. Commands that accept a `secret_id` m
 Store v2 defines these command surfaces:
 
 ```text
-secdat ln [--replace] [--skip-same-value-check] SRC_KEYREF DST_KEYREF
-secdat ln @UUID DST_KEYREF
+secdat ln [--replace] [--skip-same-value-check] [MASK_MUTATION_OPTIONS] SRC_KEYREF DST_KEYREF
+secdat ln [MASK_MUTATION_OPTIONS] @UUID DST_KEYREF
 secdat id KEYREF
 secdat secret status UUID
 secdat fsck [--orphaned] [--dangling] [--refcount] [--repair]
@@ -1403,6 +1426,7 @@ secdat gc [--orphaned] [--dangling] [--dry-run]
 Current and planned semantics:
 
 - `ln SRC_KEYREF DST_KEYREF` creates a new domain entry pointing to the source secret object; cross-domain links unwrap the object data key through the authorized source entry and rewrap it into the destination domain entry
+- destination masks are preserved and observed through the common v2 mutation plan
 - if the destination key already exists, `ln` fails unless `--replace` is supplied; replacement is limited to same-name source/destination key references, confirms equal current values by default, and requires `--skip-same-value-check` to replace a different value
 - cross-domain `ln` is enabled for normal source/destination KEYREFs when both sides resolve through v2 stores; cross-domain refcount checks count all registered v2 domain entries that point at the object domain/store/UUID tuple
 - `ln @UUID DST_KEYREF` is a direct source-object link and is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry; `@UUID` is a source operand, not a destination

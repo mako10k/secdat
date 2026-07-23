@@ -944,7 +944,9 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
             || strcmp(previous, "--key-visibility") == 0
             || strcmp(previous, "--value-access") == 0
             || strcmp(previous, "--bulk-select") == 0
-            || strcmp(previous, "--inject") == 0) {
+            || strcmp(previous, "--inject") == 0
+            || strcmp(previous, "--mask-action") == 0
+            || strcmp(previous, "--mask-warnings") == 0) {
             return "none";
         }
     } else if (strcmp(command, "attr") == 0) {
@@ -974,6 +976,14 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
         }
     } else if (strcmp(command, "unmask") == 0) {
         if (strcmp(previous, "--mask-chain") == 0
+            || strcmp(previous, "--mask-warnings") == 0) {
+            return "none";
+        }
+    } else if (strcmp(command, "cp") == 0
+        || strcmp(command, "ln") == 0
+        || strcmp(command, "rm") == 0
+        || strcmp(command, "load") == 0) {
+        if (strcmp(previous, "--mask-action") == 0
             || strcmp(previous, "--mask-warnings") == 0) {
             return "none";
         }
@@ -1171,13 +1181,27 @@ int secdat_cli_complete(int argc, char **argv)
     };
     static const char *const set_options[] = {
         "--unsafe", "-u", "--public-value", "--secret-value", "--stdin", "-i", "--env", "-e", "--value", "-v",
-        "--key-visibility", "--value-access", "--bulk-select", "--help", "-h", NULL,
+        "--key-visibility", "--value-access", "--bulk-select",
+        "--mask-action", "--mask-warnings", "--warn-mask", "--no-warn-mask",
+        "--dry-run", "--json", "--help", "-h", NULL,
     };
     static const char *const rm_options[] = {
-        "--ignore-missing", "-f", "--help", "-h", NULL,
+        "--ignore-missing", "-f", "--mask-action", "--mask-warnings",
+        "--warn-mask", "--no-warn-mask", "--dry-run", "--json",
+        "--help", "-h", NULL,
+    };
+    static const char *const cp_options[] = {
+        "--mask-action", "--mask-warnings", "--warn-mask", "--no-warn-mask",
+        "--dry-run", "--json", "--help", "-h", NULL,
     };
     static const char *const ln_options[] = {
-        "--replace", "--skip-same-value-check", "--help", "-h", NULL,
+        "--replace", "--skip-same-value-check", "--mask-action",
+        "--mask-warnings", "--warn-mask", "--no-warn-mask",
+        "--dry-run", "--json", "--help", "-h", NULL,
+    };
+    static const char *const load_options[] = {
+        "--mask-action", "--mask-warnings", "--warn-mask", "--no-warn-mask",
+        "--dry-run", "--json", "--help", "-h", NULL,
     };
     static const char *const exec_options[] = {
         "--inject", "--inject-file", "--bulk-gate", "--command-resolution", "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
@@ -1302,8 +1326,12 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, set_options);
     } else if (strcmp(command, "rm") == 0) {
         secdat_cli_completion_print_candidates(current, rm_options);
+    } else if (strcmp(command, "cp") == 0) {
+        secdat_cli_completion_print_candidates(current, cp_options);
     } else if (strcmp(command, "ln") == 0) {
         secdat_cli_completion_print_candidates(current, ln_options);
+    } else if (strcmp(command, "load") == 0) {
+        secdat_cli_completion_print_candidates(current, load_options);
     } else if (strcmp(command, "exec") == 0) {
         secdat_cli_completion_print_candidates(current, exec_options);
     } else if (strcmp(command, "export") == 0) {
@@ -1504,19 +1532,19 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "get", "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [-o|--stdout|-e|--shellescaped]");
         break;
     case SECDAT_COMMAND_SET:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "KEYREF [-u|--unsafe|--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "[--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] KEYREF [-u|--unsafe|--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
         break;
     case SECDAT_COMMAND_RM:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "rm", "[-f|--ignore-missing] KEYREF");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "rm", "[-f|--ignore-missing] [--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] KEYREF");
         break;
     case SECDAT_COMMAND_MV:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mv", "SRC_KEYREF DST_KEYREF");
         break;
     case SECDAT_COMMAND_CP:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "cp", "SRC_KEYREF DST_KEYREF");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "cp", "[--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] SRC_KEYREF DST_KEYREF");
         break;
     case SECDAT_COMMAND_LN:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "[--replace] [--skip-same-value-check] SRC_KEYREF|@UUID DST_KEYREF");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "ln", "[--replace] [--skip-same-value-check] [--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] SRC_KEYREF|@UUID DST_KEYREF");
         break;
     case SECDAT_COMMAND_EXEC:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "exec", "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--bulk-gate] [--command-resolution MODE] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]");
@@ -1528,7 +1556,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "save", "FILE");
         break;
     case SECDAT_COMMAND_LOAD:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "load", "FILE");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "load", "[--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] FILE");
         break;
     case SECDAT_COMMAND_UNLOCK:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH] [--gui]");
@@ -1860,10 +1888,16 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "set") == 0) {
         secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
+        secdat_cli_print_detail_line(_("  v2 writes default to --mask-action=preserve; reject fails before any direct hit or mask state transition\n"));
+        secdat_cli_print_detail_line(_("  mask warnings default to on for preserve and off for reject; warning controls never change behavior or exit status\n"));
+        secdat_cli_print_detail_line(_("  --dry-run and --json expose the same secdat.mutation-plan.v1 used for one key or the whole assignment batch\n"));
         return;
     }
     if (target != NULL && strcmp(target, "rm") == 0) {
         secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success\n"));
+        secdat_cli_print_detail_line(_("  v2 rm preserves canonical masks and reports reactivation or source-mask creation through the common mutation plan\n"));
+        secdat_cli_print_detail_line(_("  --mask-action=reject blocks those interactions; warning controls affect only successful post-commit warnings\n"));
+        secdat_cli_print_detail_line(_("  --dry-run and --json expose secdat.mutation-plan.v1 without changing persisted state\n"));
         return;
     }
     if (target != NULL && strcmp(target, "mv") == 0) {
@@ -1871,13 +1905,15 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "cp") == 0) {
-        secdat_cli_print_detail_line(_("  cp: copy one key into another resolved location\n"));
+        secdat_cli_print_detail_line(_("  cp: copy one key to a new independently identified destination while preserving destination masks in v2 stores\n"));
+        secdat_cli_print_detail_line(_("  --mask-action=preserve is the default; reject, warning controls, dry-run, and JSON use the common mutation plan\n"));
         return;
     }
     if (target != NULL && strcmp(target, "ln") == 0) {
         secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object, including cross-domain v2 links and authorized @UUID sources\n"));
         secdat_cli_print_detail_line(_("  value writes through either linked key affect the shared object; domain-entry attributes remain per link\n"));
         secdat_cli_print_detail_line(_("  --replace allows replacing an existing same-name destination key; by default it first confirms both values are equal, and --skip-same-value-check bypasses that confirmation\n"));
+        secdat_cli_print_detail_line(_("  destination masks are preserved; reject, warning controls, dry-run, and JSON use the common mutation plan\n"));
         return;
     }
     if (target != NULL && strcmp(target, "exec") == 0) {
@@ -1898,7 +1934,9 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "load") == 0) {
-        secdat_cli_print_detail_line(_("  load: import a passphrase-protected bundle into the current domain view\n"));
+        secdat_cli_print_detail_line(_("  load: import a passphrase-protected bundle through one v2 mutation plan and one recoverable transaction\n"));
+        secdat_cli_print_detail_line(_("  --mask-action=reject blocks any batch mask interaction; warning controls never change the batch result\n"));
+        secdat_cli_print_detail_line(_("  --dry-run and --json report the whole batch without committing any entry\n"));
         return;
     }
     if (target != NULL && strcmp(target, "unlock") == 0) {

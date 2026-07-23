@@ -246,6 +246,25 @@ local entry later may expose inheritance. `--mask-warnings=default|on|off`,
 `--warn-mask`, and `--no-warn-mask` control only this warning; they do not
 change the plan, persisted state, success, or exit status.
 
+Persisted v2 `set`, `cp`, `ln`, `rm`, and `load` writes use the same
+recoverable mutation plan. `--mask-action=preserve` is the default: it keeps
+canonical masks when a destination is written, permits active masks to become
+dormant and dormant masks to reactivate, and reports direct hits even when a
+mask was already dormant. `--mask-action=reject` fails before live mutation
+when any such interaction is planned. `--mask-warnings=default|on|off`,
+`--warn-mask`, and `--no-warn-mask` are orthogonal: they affect only the
+aggregate warning emitted after a successful commit. The preserve default is
+warning-on; reject defaults to warning-off because it reports the impact as an
+error.
+
+`--dry-run` and `--json` expose the same `secdat.mutation-plan.v1` used for
+commit. Multi-assignment `set` and `load` preflight and commit the whole batch:
+a later invalid entry, a reject result, or a planning failure leaves every
+live entry unchanged. Locked hidden mask names and ambiguous legacy masks are
+hard preconditions and cannot be bypassed by turning warnings off. These
+planning options require a persisted v2 store; v1 commands retain their
+existing behavior until migration.
+
 For current-domain state inspection, `list` can show active, dormant, or
 orphaned masks and local overrides:
 
