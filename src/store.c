@@ -967,7 +967,18 @@ static int secdat_session_agent_status_details(
     size_t *blocked_index
 );
 static int secdat_session_agent_set(const char *domain_id, const char *master_key, enum secdat_session_access_mode access_mode, time_t duration_seconds);
+static int secdat_session_agent_set_for_chain(
+    const struct secdat_domain_chain *chain,
+    const char *master_key,
+    enum secdat_session_access_mode access_mode,
+    time_t duration_seconds
+);
 static int secdat_session_agent_clear(const char *domain_id);
+static int secdat_session_agent_purge_chain_ephemeral_domain(
+    const struct secdat_domain_chain *chain,
+    const char *replacement_master_key,
+    int inherited_only
+);
 static time_t secdat_session_idle_seconds(void);
 static time_t secdat_session_effective_duration(const struct secdat_session_record *record);
 static void secdat_session_record_reset(struct secdat_session_record *record);
@@ -1271,6 +1282,29 @@ static void secdat_overlay_list_remove(
     }
     list->count -= 1;
     memset(&list->items[list->count], 0, sizeof(list->items[list->count]));
+}
+
+static void secdat_overlay_list_purge_ephemeral_domain(
+    struct secdat_overlay_list *list,
+    const char *domain_id
+)
+{
+    size_t index = list->count;
+
+    while (index > 0) {
+        const struct secdat_overlay_item *item = &list->items[index - 1];
+
+        if (item->save_policy == SECDAT_OVERLAY_SAVE_NEVER
+            && strcmp(item->domain_id, domain_id) == 0) {
+            secdat_overlay_list_remove(
+                list,
+                item->domain_id,
+                item->store_name,
+                item->key
+            );
+        }
+        index -= 1;
+    }
 }
 
 static const struct secdat_overlay_item *secdat_overlay_list_lookup(
@@ -2800,16 +2834,18 @@ static int secdat_unlock_descendant_sessions(
     time_t duration_seconds
 )
 {
-    char domain_id[PATH_MAX];
+    struct secdat_domain_chain chain = {0};
     size_t index;
 
     for (index = 0; index < targets->count; index += 1) {
-        if (secdat_domain_resolve_current(targets->roots[index], domain_id, sizeof(domain_id)) != 0) {
+        if (secdat_domain_resolve_chain(targets->roots[index], &chain) != 0) {
             return 1;
         }
-        if (secdat_session_agent_set(domain_id, master_key, access_mode, duration_seconds) != 0) {
+        if (secdat_session_agent_set_for_chain(&chain, master_key, access_mode, duration_seconds) != 0) {
+            secdat_domain_chain_free(&chain);
             return 1;
         }
+        secdat_domain_chain_free(&chain);
     }
 
     return 0;
@@ -5079,6 +5115,32 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         return 0;
     }
 
+    if (strcmp(command, "EPPURGEDOMAIN") == 0 || strcmp(command, "EPPURGEREPLACE") == 0) {
+        int replacement = strcmp(command, "EPPURGEREPLACE") == 0;
+
+        if (secdat_read_line(stream, line_domain, sizeof(line_domain)) != 0
+            || (replacement && secdat_read_line(stream, payload, sizeof(payload)) != 0)
+            || secdat_unescape_component(line_domain, &domain_id) != 0) {
+            free(domain_id);
+            if (replacement) {
+                secdat_secure_clear(payload, sizeof(payload));
+            }
+            fclose(stream);
+            return 1;
+        }
+        if (!replacement || strcmp(record->master_key, payload) != 0) {
+            secdat_overlay_list_purge_ephemeral_domain(&record->overlay, domain_id);
+        }
+        free(domain_id);
+        if (replacement) {
+            secdat_secure_clear(payload, sizeof(payload));
+        }
+        fprintf(stream, "OK\n");
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
     if (strcmp(command, "OVLOOKUP") == 0 || strcmp(command, "EPLOOKUP") == 0) {
         int ephemeral_only = strcmp(command, "EPLOOKUP") == 0;
 
@@ -6220,6 +6282,94 @@ static int secdat_session_agent_set(const char *domain_id, const char *master_ke
     }
     fclose(stream);
     return strncmp(response, "OK ", 3) == 0 ? 0 : 1;
+}
+
+static int secdat_session_agent_purge_ephemeral_domain_request(
+    int fd,
+    const char *domain_id,
+    const char *replacement_master_key
+)
+{
+    FILE *stream;
+    char response[64];
+    char *encoded_domain = NULL;
+    int status = 1;
+
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+    if (secdat_escape_component(domain_id, &encoded_domain) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    if (replacement_master_key == NULL) {
+        fprintf(stream, "EPPURGEDOMAIN\n%s\n", encoded_domain);
+    } else {
+        fprintf(stream, "EPPURGEREPLACE\n%s\n%s\n", encoded_domain, replacement_master_key);
+    }
+    free(encoded_domain);
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) == 0) {
+        if (strcmp(response, "OK") == 0 || strcmp(response, "ERR invalid") == 0) {
+            status = 0;
+        }
+    }
+    fclose(stream);
+    return status;
+}
+
+static int secdat_session_agent_purge_chain_ephemeral_domain(
+    const struct secdat_domain_chain *chain,
+    const char *replacement_master_key,
+    int inherited_only
+)
+{
+    size_t index = inherited_only ? 1 : 0;
+    int fd;
+
+    for (; index < chain->count; index += 1) {
+        fd = secdat_session_agent_connect_domain(chain->ids[index], 0);
+        if (fd >= 0
+            && secdat_session_agent_purge_ephemeral_domain_request(
+                fd,
+                secdat_session_scope_id(chain),
+                replacement_master_key
+            ) != 0) {
+            return 1;
+        }
+    }
+    if (chain->count == 0 && inherited_only) {
+        return 0;
+    }
+    fd = secdat_session_agent_connect_domain(SECDAT_USER_GLOBAL_SCOPE_ID, 0);
+    if (fd < 0) {
+        return 0;
+    }
+    return secdat_session_agent_purge_ephemeral_domain_request(
+        fd,
+        secdat_session_scope_id(chain),
+        replacement_master_key
+    );
+}
+
+static int secdat_session_agent_set_for_chain(
+    const struct secdat_domain_chain *chain,
+    const char *master_key,
+    enum secdat_session_access_mode access_mode,
+    time_t duration_seconds
+)
+{
+    if (secdat_session_agent_purge_chain_ephemeral_domain(chain, master_key, 1) != 0) {
+        return 1;
+    }
+    return secdat_session_agent_set(
+        secdat_session_scope_id(chain),
+        master_key,
+        access_mode,
+        duration_seconds
+    );
 }
 
 static int secdat_session_agent_status_scope(const char *domain_id, struct secdat_session_record *record)
@@ -9566,7 +9716,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
                 access_mode = active_record.volatile_mode ? SECDAT_SESSION_ACCESS_VOLATILE
                     : (active_record.readonly_mode ? SECDAT_SESSION_ACCESS_READONLY : SECDAT_SESSION_ACCESS_PERSISTENT);
             }
-            if (secdat_session_agent_set(secdat_session_scope_id(&current_chain), secret_record.master_key, access_mode, session_duration) != 0) {
+            if (secdat_session_agent_set_for_chain(&current_chain, secret_record.master_key, access_mode, session_duration) != 0) {
                 secdat_session_record_reset(&secret_record);
                 secdat_domain_root_list_free(&descendant_targets);
                 secdat_domain_chain_free(&current_chain);
@@ -9623,11 +9773,11 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
     }
 
     if (session_master_key != NULL && session_master_key[0] != '\0') {
-        if (secdat_session_agent_set(
-                secdat_session_scope_id(&current_chain),
+        if (secdat_session_agent_set_for_chain(
+                &current_chain,
                 session_master_key,
-            access_mode,
-            session_duration
+                access_mode,
+                session_duration
             ) != 0) {
             if (session_master_key == secret) {
                 secdat_secure_clear(secret, strlen(secret));
@@ -9686,7 +9836,7 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
                 secdat_domain_chain_free(&current_chain);
                 return 1;
             }
-            if (secdat_session_agent_set(secdat_session_scope_id(&current_chain), secret, SECDAT_SESSION_ACCESS_VOLATILE, session_duration) != 0) {
+            if (secdat_session_agent_set_for_chain(&current_chain, secret, SECDAT_SESSION_ACCESS_VOLATILE, session_duration) != 0) {
                 secdat_secure_clear(secret, strlen(secret));
                 secdat_domain_root_list_free(&descendant_targets);
                 secdat_domain_chain_free(&current_chain);
@@ -9723,8 +9873,8 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
         return 1;
     }
     secdat_secure_clear(passphrase, strlen(passphrase));
-    if (secdat_session_agent_set(
-            secdat_session_scope_id(&current_chain),
+    if (secdat_session_agent_set_for_chain(
+            &current_chain,
             secret,
             access_mode,
             session_duration
@@ -9790,6 +9940,10 @@ static int secdat_command_lock(const struct secdat_cli *cli)
     }
     if ((getenv("SECDAT_MASTER_KEY") == NULL || getenv("SECDAT_MASTER_KEY")[0] == '\0')
         && secdat_session_agent_status(&chain, &record) != 0) {
+        if (secdat_session_agent_purge_chain_ephemeral_domain(&chain, NULL, 0) != 0) {
+            secdat_domain_chain_free(&chain);
+            return 1;
+        }
         secdat_domain_chain_free(&chain);
         puts(_("already locked"));
         return 0;
@@ -9802,6 +9956,10 @@ static int secdat_command_lock(const struct secdat_cli *cli)
         return 1;
     }
 
+    if (secdat_session_agent_purge_chain_ephemeral_domain(&chain, NULL, 0) != 0) {
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
     if (secdat_session_agent_clear_current_scope(&chain) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;

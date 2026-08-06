@@ -2130,6 +2130,108 @@ assert_contains(stderr, f"resolved domain: {mismatch_parent}\n", "mismatch ances
 assert_contains(stderr, f"inspect current domain: secdat --dir {mismatch_parent} domain status\n", "mismatch ancestor read status guidance")
 assert_contains(stderr, f"unlock current domain: secdat --dir {mismatch_parent} unlock\n", "mismatch ancestor read unlock guidance")
 
+lifecycle_root = isolated_root / "ephemeral-lifecycle-root"
+lifecycle_child = lifecycle_root / "child"
+lifecycle_sibling = lifecycle_root / "sibling"
+for path in [lifecycle_root, lifecycle_child, lifecycle_sibling]:
+    path.mkdir(parents=True, exist_ok=True)
+
+lifecycle_env = {"SECDAT_MASTER_KEY": "ephemeral-lifecycle-owner-key"}
+for path in [lifecycle_root, lifecycle_child, lifecycle_sibling]:
+    rc, stdout, stderr = run(scoped(["domain", "create"], path), lifecycle_env)
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"ephemeral lifecycle domain create failed for {path}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["unlock", "--volatile"], lifecycle_root), lifecycle_env)
+if rc != 0 or "volatile session unlocked from environment\n" not in stdout or f"resolved domain: {lifecycle_root}\n" not in stderr:
+    fail(f"ephemeral lifecycle owner unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+for path, key, value in [
+    (lifecycle_root, "LIFECYCLE_ROOT_KEEP", "root-ephemeral"),
+    (lifecycle_child, "LIFECYCLE_CHILD_LOCK", "child-lock-ephemeral"),
+    (lifecycle_sibling, "LIFECYCLE_SIBLING_KEEP", "sibling-ephemeral"),
+]:
+    rc, stdout, stderr = run(scoped(["set", "--ephemeral", key, "--value", value], path))
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"ephemeral lifecycle seed failed for {path}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock"], lifecycle_child))
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"inherited-agent child lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["unlock", "--inherit"], lifecycle_child))
+if rc != 0 or stdout != "local lock removed; resulting state: unlocked\n" or stderr != f"resolved domain: {lifecycle_child}\n":
+    fail(f"child unlock --inherit after lifecycle purge failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["exists", "LIFECYCLE_CHILD_LOCK"], lifecycle_child))
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"child ephemeral reappeared after lock and inheritance restore: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for path, key, value in [
+    (lifecycle_root, "LIFECYCLE_ROOT_KEEP", "root-ephemeral"),
+    (lifecycle_sibling, "LIFECYCLE_SIBLING_KEEP", "sibling-ephemeral"),
+]:
+    rc, stdout, stderr = run(scoped(["get", key, "-o"], path))
+    if rc != 0 or stdout != value or stderr != "":
+        fail(f"child lock cleared unrelated ephemeral key {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped([
+    "set", "--ephemeral", "LIFECYCLE_CHILD_SAME_MASTER",
+    "--value", "child-same-master-ephemeral",
+], lifecycle_child))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-master child ephemeral seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["unlock", "--duration", "PT2M"], lifecycle_child))
+if rc != 0 or "volatile session refreshed\n" not in stdout or f"resolved domain: {lifecycle_child}\n" not in stderr:
+    fail(f"same-master child-local session setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["lock"], lifecycle_child))
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"same-master child-local lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["unlock", "--inherit"], lifecycle_child))
+if rc != 0 or stdout != "local lock removed; resulting state: unlocked\n" or stderr != f"resolved domain: {lifecycle_child}\n":
+    fail(f"same-master child inheritance restore failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["exists", "LIFECYCLE_CHILD_SAME_MASTER"], lifecycle_child))
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"ancestor-owned same-master child ephemeral reappeared after lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped([
+    "set", "--ephemeral", "LIFECYCLE_CHILD_REPLACE",
+    "--value", "child-replacement-ephemeral",
+], lifecycle_child))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"child replacement ephemeral seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["unlock", "--duration", "PT2M"], lifecycle_child),
+    {"SECDAT_MASTER_KEY": "different-child-session-key"},
+)
+if rc != 0 or "session unlocked from environment\n" not in stdout or f"resolved domain: {lifecycle_child}\n" not in stderr:
+    fail(f"different-key child session replacement failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["exists", "LIFECYCLE_CHILD_REPLACE"], lifecycle_child))
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"replaced child session retained ancestor-owned ephemeral key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["lock"], lifecycle_child))
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"different-key child session lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["unlock", "--inherit"], lifecycle_child))
+if rc != 0 or stdout != "local lock removed; resulting state: unlocked\n" or stderr != f"resolved domain: {lifecycle_child}\n":
+    fail(f"child inheritance restore after replacement failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["exists", "LIFECYCLE_CHILD_REPLACE"], lifecycle_child))
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"different-key replacement ephemeral reappeared after inheritance restore: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["unlock", "--duration", "PT2M"], lifecycle_root))
+if rc != 0 or "volatile session refreshed\n" not in stdout or f"resolved domain: {lifecycle_root}\n" not in stderr:
+    fail(f"same-master lifecycle owner refresh failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for path, key, value in [
+    (lifecycle_root, "LIFECYCLE_ROOT_KEEP", "root-ephemeral"),
+    (lifecycle_sibling, "LIFECYCLE_SIBLING_KEEP", "sibling-ephemeral"),
+]:
+    rc, stdout, stderr = run(scoped(["get", key, "-o"], path))
+    if rc != 0 or stdout != value or stderr != "":
+        fail(f"same-master owner refresh lost ephemeral key {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    rc, stdout, stderr = run(scoped(["rm", "--ephemeral", key], path))
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"ephemeral lifecycle cleanup failed for {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["lock"], lifecycle_root))
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"ephemeral lifecycle owner lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 default_runtime = isolated_root / "runtime-default"
 default_data = isolated_root / "data-default"
 default_scope = isolated_root / "default-scope"

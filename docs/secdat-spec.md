@@ -536,7 +536,9 @@ revalidated so changed-since-plan state fails before live mutation.
 - ephemeral secrets force `key_visibility=unlocked` and `value_access=unlocked`; `bulk_select` defaults to `exclude` and may be explicitly set to `named` or `include`
 - normal get/list/exec/export, SDK, and FUSE read paths resolve ephemeral secrets before same-domain persisted tombstones and persisted same-name entries, including when the calling process also has `SECDAT_MASTER_KEY`
 - effective enumeration records each overlay, tombstone, or backing decision before walking lower-precedence backing and ancestor layers; a shadowed v2 hidden name is compared with the active session key instead of the unrelated process key, while every unshadowed hidden entry retains normal fail-closed authentication
-- refreshing the same session with the same master key preserves its ephemeral secrets; lock, expiry, or replacement with a different master key clears them
+- refreshing the owning session with the same master key preserves its ephemeral secrets
+- locking one domain purges that domain's ephemeral items from the effective agent that owns them before inheritance can be restored; it does not purge ancestor or sibling domain items from an inherited agent
+- replacing a domain's inherited session with a child-local session under a different master key performs the same domain-scoped purge; expiry or a different-key replacement of the owning agent clears the owning agent's remaining items
 - `rm --ephemeral KEYREF` removes only the current-domain ephemeral entry and reveals a persisted same-name entry; plain set/rm and SDK/FUSE writes must reject an ephemeral target
 - bundle save, `lock --save`, cp, mv, ln, mask, unmask, and attribute mutation must not serialize or transform ephemeral secrets; operations that are ambiguous must fail before persisted state changes
 - persisted and ephemeral mutations are serialized by the mutation lock; mask-planning options (`--dry-run`, `--json`, and mask policy/warning options) are rejected with `--ephemeral` because an agent-only mutation has no persisted mask plan
