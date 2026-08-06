@@ -58,6 +58,7 @@ task T175_LIST_ATTRS M_ENUM_CORRECT -> M_CORE_FIXES:
   title "Preserve ephemeral attributes in current-domain list filters"
   description "Carry authoritative overlay attributes through current-domain list and bulk-gate filtering. Add exclude, named, and include-mode parity tests for ls and list."
   duration 0.5d
+  status done
   priority 85
   requires:
     CODEX 1
@@ -205,6 +206,13 @@ task_outcome OUTCOME_T176_20260806:
   status conformant
   reason "Domain-scoped owner-chain purge, replacement isolation, same-master preservation, focused session regression, and full make check passed"
 
+task_outcome OUTCOME_T175_20260806:
+  model 1
+  task T175_LIST_ATTRS
+  against_basis sha256:1bda8fc92b27f521309cd1f72e687dfe5e0d6b847774d3f32cfe18c3da11b7ee
+  status conformant
+  reason "Used authoritative overlay attributes for current-domain list filtering; exclude, named, include, volatile default, ls, and list regressions pass."
+
 work_event START_T177_20260806:
   model 1
   task T177_FUSE_ATOMIC
@@ -245,3 +253,16 @@ work_event FINISH_T176_20260806:
   task T176_LIFECYCLE
   kind finish
   occurred_at 2026-08-06T15:01:25+09:00
+
+work_event START_T175_20260806:
+  model 1
+  task T175_LIST_ATTRS
+  kind start
+  occurred_at 2026-08-06T15:02:02+09:00
+  planned_value 0.5d
+
+work_event FINISH_T175_20260806:
+  model 1
+  task T175_LIST_ATTRS
+  kind finish
+  occurred_at 2026-08-06T15:09:16+09:00

@@ -505,6 +505,9 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run(scoped(["get", "VOLATILE_ONLY_KEY", "-o"]))
 if rc != 0 or stdout != "volatile-value" or stderr != "":
     fail(f"volatile get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["list", "--bulk-gate"]))
+if rc != 0 or "VOLATILE_ONLY_KEY\n" in stdout or stderr != "":
+    fail(f"volatile overlay default bulk filter changed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["set", "--ephemeral", "VOLATILE_ONLY_KEY", "--value", "must-not-replace"]))
 if rc == 0 or "key has a volatile session change and cannot be replaced by an ephemeral secret" not in stderr:
@@ -1805,6 +1808,34 @@ rc, stdout, stderr = run(scoped([
 ], root_domain))
 if rc != 0 or json.loads(stdout) != {"EPHEMERAL_BULK": "bulk-ephemeral-value"}:
     fail(f"bulk-gated ephemeral exec injection failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+ephemeral_filter_modes = [
+    ("EPHEMERAL_FILTER_EXCLUDE", "exclude"),
+    ("EPHEMERAL_FILTER_NAMED", "named"),
+    ("EPHEMERAL_FILTER_INCLUDE", "include"),
+]
+for key, bulk_select in ephemeral_filter_modes:
+    rc, stdout, stderr = run(scoped([
+        "set", "--ephemeral", key,
+        "--bulk-select", bulk_select,
+        "--value", f"{bulk_select}-ephemeral-value",
+    ], root_domain))
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"ephemeral {bulk_select} filter seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["ls", "--bulk-gate", "--pattern", "EPHEMERAL_FILTER_*"], root_domain))
+if rc != 0 or stdout != "EPHEMERAL_FILTER_INCLUDE\n" or stderr != "":
+    fail(f"ls ephemeral bulk-select matrix mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["list", "--bulk-gate"], root_domain))
+listed_filter_keys = {
+    line for line in stdout.splitlines()
+    if line.startswith("EPHEMERAL_FILTER_")
+}
+if rc != 0 or listed_filter_keys != {"EPHEMERAL_FILTER_INCLUDE"} or stderr != "":
+    fail(f"list ephemeral bulk-select matrix mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for key, _ in ephemeral_filter_modes:
+    rc, stdout, stderr = run(scoped(["rm", "--ephemeral", key], root_domain))
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"ephemeral filter cleanup failed for {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 for args, expected in [
     (["set", "SESSION_KEY", "--value", "must-not-persist"], "use set --ephemeral"),

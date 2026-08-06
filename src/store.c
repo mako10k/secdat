@@ -11251,7 +11251,7 @@ static int secdat_collect_list_keys(
             }
             if (overlay.found && !overlay.tombstone) {
                 entry_is_unsafe = overlay.unsafe_store;
-                secdat_secret_attrs_default(entry_is_unsafe, &attrs);
+                attrs = overlay.attrs;
                 secdat_secure_clear(overlay.plaintext, overlay.plaintext_length);
                 free(overlay.plaintext);
                 overlay.plaintext = NULL;
