@@ -48,11 +48,11 @@ For explicit non-interactive unlock flows, set `SECDAT_MASTER_KEY_PASSPHRASE` be
 
 Packaging notes:
 
-- C consumers can use `pkg-config --cflags --libs libsecdat` after `make install`.
+- C consumers of a shared installation use `pkg-config --cflags --libs libsecdat` after `make install`. Static-only consumers use `pkg-config --static --cflags --libs libsecdat` so the private dependency closure is included.
 - Python can build a wheel or local editable install from `bindings/python/` via `python -m build` or `pip install -e .`, but runtime still needs an installed `libsecdat` shared library. Set `SECDAT_SDK_LIBRARY` when the loader cannot resolve it.
 - Rust uses `pkg-config` during build to find an installed `libsecdat`. Ensure `PKG_CONFIG_PATH` includes the target prefix when `libsecdat` is not installed in a default system path.
 - Node uses `pkg-config` during `npm install` or `npm run build` to find the installed header and linker flags for `libsecdat`.
-- Go uses the module path declared in `bindings/go/go.mod` and resolves compiler and linker flags through `pkg-config --cflags --libs libsecdat`.
+- Go uses the module path declared in `bindings/go/go.mod` and resolves compiler and linker flags through `pkg-config`. Its `secdat_static` build tag selects the static-only contract described in the Go README.
 
 During local development, point your runtime loader at the build-tree shared library if you have not run `make install` yet:
 

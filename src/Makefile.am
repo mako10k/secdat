@@ -29,7 +29,8 @@ secdat-build-id.h: force-secdat-build-id
 include_HEADERS = secdat-sdk.h
 
 lib_LTLIBRARIES = libsecdat.la
-libsecdat_la_LDFLAGS = -version-info 0:0:0
+libsecdat_la_LDFLAGS = -version-info 1:0:1
+EXTRA_libsecdat_la_DEPENDENCIES = Makefile
 libsecdat_la_LIBADD = $(OPENSSL_LIBS) $(JANSSON_LIBS)
 libsecdat_la_SOURCES = \
 	cli.c \

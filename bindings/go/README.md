@@ -134,4 +134,20 @@ For local development, ensure `LD_LIBRARY_PATH` includes the build-tree `src/.li
 
 For installed-library builds, export `PKG_CONFIG_PATH` when `libsecdat.pc` lives outside the default search path.
 
+The default build links the shared `libsecdat` contract:
+
+```sh
+PKG_CONFIG_PATH=/path/to/prefix/lib/pkgconfig go build ./...
+```
+
+For an installation built with `--disable-shared --enable-static`, opt in to
+the static pkg-config closure with the `secdat_static` build tag:
+
+```sh
+PKG_CONFIG_PATH=/path/to/prefix/lib/pkgconfig go build -tags secdat_static ./...
+```
+
+This tag selects static `libsecdat.a` dependency resolution; it does not promise
+a fully static executable including every system library.
+
 The module path is `github.com/mako10k/secdat/bindings/go`. Keep repository tags compatible with that submodule path before documenting a `go get` release flow.
