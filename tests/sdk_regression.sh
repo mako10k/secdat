@@ -74,6 +74,7 @@ run_secdat --dir "$root_domain" --store team relation set sdk-long-refresh \
 run_secdat --dir "$orphaned_child_domain" set ORPHANED_SDK_KEY --value orphaned-sdk-value
 rmdir "$orphaned_child_domain"
 run_secdat --dir "$root_domain" --store team set SDK_EPHEMERAL_RACE --value persisted-race-value
+run_secdat --dir "$root_domain" --store team set SDK_PERSISTENT_SOURCE --value sdk-persistent-source-value
 run_secdat --dir "$root_domain" --store team set SDK_MASKED_EPHEMERAL --value persisted-masked-value
 run_secdat --dir "$child_domain" --store team mask SDK_MASKED_EPHEMERAL
 run_secdat --dir "$root_domain" store migrate enumeration --to-format v2
@@ -91,6 +92,7 @@ if ! grep -q "resolved domain: $root_domain" "$ephemeral_unlock_stderr"; then
     fail "SDK ephemeral test unlock did not report its domain"
 fi
 run_secdat --dir "$root_domain" --store team set --ephemeral SDK_EPHEMERAL --value sdk-ephemeral-value
+run_secdat --dir "$root_domain" --store team set --ephemeral SDK_EPHEMERAL_DEST --value sdk-ephemeral-destination-value
 run_secdat --dir "$root_domain" --store team set --ephemeral SDK_EPHEMERAL_RACE --value ephemeral-race-value
 run_secdat --dir "$child_domain" --store team set --ephemeral SDK_MASKED_EPHEMERAL \
     --bulk-select include \
@@ -110,6 +112,41 @@ static void fail(const char *message)
     exit(1);
 }
 
+enum refusal_operation {
+    REFUSAL_RM,
+    REFUSAL_MV,
+    REFUSAL_CP,
+    REFUSAL_MASK,
+    REFUSAL_UNMASK
+};
+
+struct refusal_case {
+    const char *label;
+    enum refusal_operation operation;
+    const char *source;
+    const char *destination;
+};
+
+static int run_refusal_case(
+    const struct secdat_sdk_options *options,
+    const struct refusal_case *test_case
+)
+{
+    switch (test_case->operation) {
+        case REFUSAL_RM:
+            return secdat_sdk_rm(options, test_case->source, 0);
+        case REFUSAL_MV:
+            return secdat_sdk_mv(options, test_case->source, test_case->destination);
+        case REFUSAL_CP:
+            return secdat_sdk_cp(options, test_case->source, test_case->destination);
+        case REFUSAL_MASK:
+            return secdat_sdk_mask(options, test_case->source);
+        case REFUSAL_UNMASK:
+            return secdat_sdk_unmask(options, test_case->source);
+    }
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     struct secdat_sdk_options options = {0};
@@ -119,6 +156,15 @@ int main(int argc, char **argv)
     size_t value_length = 0;
     int unsafe_store = 0;
     size_t index;
+    const struct refusal_case refusal_cases[] = {
+        {"rm source", REFUSAL_RM, "SDK_EPHEMERAL", NULL},
+        {"mv source", REFUSAL_MV, "SDK_EPHEMERAL", "SDK_MV_FROM_EPHEMERAL"},
+        {"mv destination", REFUSAL_MV, "SDK_PERSISTENT_SOURCE", "SDK_EPHEMERAL_DEST"},
+        {"cp source", REFUSAL_CP, "SDK_EPHEMERAL", "SDK_CP_FROM_EPHEMERAL"},
+        {"cp destination", REFUSAL_CP, "SDK_PERSISTENT_SOURCE", "SDK_EPHEMERAL_DEST"},
+        {"mask source", REFUSAL_MASK, "SDK_EPHEMERAL", NULL},
+        {"unmask source", REFUSAL_UNMASK, "SDK_EPHEMERAL", NULL},
+    };
 
     if (argc != 2) {
         fail("expected root domain path");
@@ -179,11 +225,30 @@ int main(int argc, char **argv)
         ) == 0) {
         fail("SDK atomic resize unexpectedly updated an ephemeral key");
     }
+    for (index = 0; index < sizeof(refusal_cases) / sizeof(refusal_cases[0]); index += 1) {
+        if (run_refusal_case(&options, &refusal_cases[index]) == 0) {
+            fail(refusal_cases[index].label);
+        }
+    }
     if (secdat_sdk_get(&options, "SDK_EPHEMERAL", &value, &value_length, &unsafe_store) != 0
         || value_length != strlen("sdk-ephemeral-value")
         || memcmp(value, "sdk-ephemeral-value", value_length) != 0
         || unsafe_store) {
         fail("rejected SDK atomic update changed the ephemeral value");
+    }
+    secdat_sdk_free(value);
+    if (secdat_sdk_get(&options, "SDK_EPHEMERAL_DEST", &value, &value_length, &unsafe_store) != 0
+        || value_length != strlen("sdk-ephemeral-destination-value")
+        || memcmp(value, "sdk-ephemeral-destination-value", value_length) != 0
+        || unsafe_store) {
+        fail("rejected SDK destination mutation changed the ephemeral value");
+    }
+    secdat_sdk_free(value);
+    if (secdat_sdk_get(&options, "SDK_PERSISTENT_SOURCE", &value, &value_length, &unsafe_store) != 0
+        || value_length != strlen("sdk-persistent-source-value")
+        || memcmp(value, "sdk-persistent-source-value", value_length) != 0
+        || unsafe_store) {
+        fail("rejected SDK destination move changed the persisted source");
     }
     secdat_sdk_free(value);
     return 0;
@@ -562,6 +627,7 @@ for sdk_lock_key in SDK_LOCK_SERIALIZED_A SDK_LOCK_SERIALIZED_B; do
     fi
 done
 run_secdat --dir "$root_domain" --store team rm --ephemeral SDK_EPHEMERAL
+run_secdat --dir "$root_domain" --store team rm --ephemeral SDK_EPHEMERAL_DEST
 run_secdat --dir "$child_domain" --store team rm --ephemeral SDK_MASKED_EPHEMERAL
 run_secdat --dir "$child_domain" --store team unmask SDK_MASKED_EPHEMERAL
 run_secdat --dir "$root_domain" --store enumeration rm --ephemeral SDK_HIDDEN_EPHEMERAL

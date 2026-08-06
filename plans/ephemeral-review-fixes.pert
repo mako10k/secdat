@@ -106,6 +106,7 @@ task T179_MATRIX M_CORE_FIXES -> M_COVERAGE:
   title "Complete the per-key ephemeral regression matrix"
   description "Close the remaining CLI, SDK, FUSE, lifecycle, binary-value, old-agent compatibility, enumeration, and attribute-filter symmetry gaps. Map every matrix cell to a named automated test."
   duration 2d
+  status done
   priority 70
   requires:
     CODEX 1
@@ -221,6 +222,13 @@ task_outcome OUTCOME_T178_20260806:
   status conformant
   reason "Restored top-level set unsafe and rm ignore-missing meanings alongside ephemeral guidance; independent wrap-insensitive markers, Japanese catalog checks, focused session regression, and full make check pass."
 
+task_outcome OUTCOME_T179_20260806:
+  model 1
+  task T179_MATRIX
+  against_basis sha256:b83ad60cbadb4313e1d40c36658a670a82ff51730d606faa3952070677f7a52d
+  status conformant
+  reason "Named matrix covers CLI and SDK source/destination refusals, live FUSE plus SDK fallback, lifecycle preservation and clearing, NUL payloads, and EPLOOKUP/EPLIST compatibility; focused regressions, full make check, and distribution inclusion pass."
+
 work_event START_T177_20260806:
   model 1
   task T177_FUSE_ATOMIC
@@ -287,3 +295,16 @@ work_event FINISH_T178_20260806:
   task T178_HELP
   kind finish
   occurred_at 2026-08-06T15:17:14+09:00
+
+work_event START_T179_20260806:
+  model 1
+  task T179_MATRIX
+  kind start
+  occurred_at 2026-08-06T15:20:09+09:00
+  planned_value 2d
+
+work_event FINISH_T179_20260806:
+  model 1
+  task T179_MATRIX
+  kind finish
+  occurred_at 2026-08-06T15:35:55+09:00

@@ -509,6 +509,12 @@ if live_mount_available:
     rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "FUSE_EPHEMERAL", "-o"])
     if rc != 0 or stdout != "fuse-ephemeral-value" or stderr != "":
         fail(f"rejected FUSE mutations changed the ephemeral value: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+else:
+    # The mounted write/truncate paths delegate to the SDK atomic write and
+    # resize APIs. tests/sdk_regression.sh exercises both refusal paths on
+    # every make check, providing a deterministic lower-layer fallback when
+    # this environment cannot create a live FUSE mount.
+    pass
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "rm", "--ephemeral", "FUSE_EPHEMERAL"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"ephemeral FUSE cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

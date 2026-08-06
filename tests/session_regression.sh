@@ -1634,6 +1634,30 @@ rc, stdout, stderr = run(scoped(["get", "SESSION_KEY", "-o"], root_domain))
 if rc != 0 or stdout != "ephemeral-value" or stderr != "":
     fail(f"ephemeral shadow get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run(scoped(["set", "--ephemeral", "SESSION_KEY", "--value", "replacement-ephemeral-value"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"existing ephemeral replacement failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["get", "SESSION_KEY", "-o"], root_domain))
+if rc != 0 or stdout != "replacement-ephemeral-value" or stderr != "":
+    fail(f"ephemeral replacement value mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["set", "--ephemeral", "SESSION_KEY", "--value", "ephemeral-value"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"ephemeral replacement restore failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["rm", "--ephemeral", "--ignore-missing", "MISSING_EPHEMERAL_KEY"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"missing ephemeral ignore-missing failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["set", "--ephemeral", "EPHEMERAL_CLIENT_EXIT", "--value", "survives-client-exit"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"client-exit ephemeral seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["get", "EPHEMERAL_CLIENT_EXIT", "-o"], root_domain))
+if rc != 0 or stdout != "survives-client-exit" or stderr != "":
+    fail(f"ephemeral value did not survive setter process exit: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["rm", "--ephemeral", "EPHEMERAL_CLIENT_EXIT"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"client-exit ephemeral cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run(
     scoped(["get", "SESSION_KEY", "-o"], root_domain),
     {"SECDAT_MASTER_KEY": "unrelated-process-override"},
@@ -1759,6 +1783,25 @@ rc, stdout, stderr = run(scoped([
 ], v2_enumeration_domain))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"v2 hidden ephemeral shadow failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped([
+    "set", "V2_LINK_SOURCE",
+    "--value", "v2-link-source",
+], v2_enumeration_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"v2 ephemeral link source seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped([
+    "set", "--ephemeral", "V2_EPHEMERAL_LINK_TARGET",
+    "--value", "v2-ephemeral-link-target",
+], v2_enumeration_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"v2 ephemeral link target seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for args, expected in [
+    (["ln", v2_ephemeral_key, "V2_LINK_FROM_EPHEMERAL"], f"ln is not supported for an ephemeral secret: {v2_ephemeral_key}"),
+    (["ln", "V2_LINK_SOURCE", "V2_EPHEMERAL_LINK_TARGET"], "ln is not supported for an ephemeral secret: V2_EPHEMERAL_LINK_TARGET"),
+]:
+    rc, stdout, stderr = run(scoped(args, v2_enumeration_domain))
+    if rc == 0 or expected not in stderr:
+        fail(f"v2 ephemeral link refusal mismatch: args={args!r} rc={rc} stdout={stdout!r} stderr={stderr!r}")
 wrong_v2_key_env = {"SECDAT_MASTER_KEY": "unrelated-v2-process-key"}
 rc, stdout, stderr = run(scoped(["get", v2_ephemeral_key, "-o"], v2_enumeration_domain), wrong_v2_key_env)
 if rc != 0 or stdout != "v2-ephemeral" or stderr != "":
@@ -1769,6 +1812,9 @@ if rc != 0 or stdout != f"{v2_ephemeral_key}\n" or stderr != "":
 rc, stdout, stderr = run(scoped(["rm", "--ephemeral", v2_ephemeral_key], v2_enumeration_domain))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"v2 hidden ephemeral cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["rm", "--ephemeral", "V2_EPHEMERAL_LINK_TARGET"], v2_enumeration_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"v2 ephemeral link target cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run(scoped(["ls", "--pattern", v2_ephemeral_key], v2_enumeration_domain), wrong_v2_key_env)
 if rc == 0 or stdout != "" or "failed to authenticate encrypted value" not in stderr:
     fail(f"unshadowed v2 hidden key did not fail closed with wrong process key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -1789,6 +1835,20 @@ if rc != 0 or stdout != large_ephemeral_value or stderr != "":
 rc, stdout, stderr = run(scoped(["rm", "--ephemeral", "EPHEMERAL_LARGE"], root_domain))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"large ephemeral cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+binary_ephemeral_value = "binary-prefix\x00binary-suffix\x00"
+rc, stdout, stderr = run(
+    scoped(["set", "--ephemeral", "EPHEMERAL_BINARY", "--stdin"], root_domain),
+    input_text=binary_ephemeral_value,
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"binary ephemeral set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["get", "EPHEMERAL_BINARY", "-o"], root_domain))
+if rc != 0 or stdout != binary_ephemeral_value or stderr != "":
+    fail(f"binary ephemeral round trip failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["rm", "--ephemeral", "EPHEMERAL_BINARY"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"binary ephemeral cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["set", "--ephemeral", "EPHEMERAL_BULK", "--bulk-select", "include", "--value", "bulk-ephemeral-value"], root_domain))
 if rc != 0 or stdout != "" or stderr != "":
@@ -1846,21 +1906,42 @@ for key, _ in ephemeral_filter_modes:
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"ephemeral filter cleanup failed for {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run(scoped([
+    "set", "--ephemeral", "EPHEMERAL_DESTINATION",
+    "--value", "ephemeral-destination-value",
+], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"ephemeral refusal destination seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 for args, expected in [
     (["set", "SESSION_KEY", "--value", "must-not-persist"], "use set --ephemeral"),
     (["rm", "SESSION_KEY"], "use rm --ephemeral"),
     (["cp", "SESSION_KEY", "EPHEMERAL_COPY"], "cp is not supported for an ephemeral secret"),
+    (["cp", "UNSAFE_VISIBLE_KEY", "EPHEMERAL_DESTINATION"], "destination key already exists: EPHEMERAL_DESTINATION"),
     (["mv", "SESSION_KEY", "EPHEMERAL_MOVE"], "mv is not supported for an ephemeral secret"),
+    (["mv", "UNSAFE_VISIBLE_KEY", "EPHEMERAL_DESTINATION"], "destination key already exists: EPHEMERAL_DESTINATION"),
     (["mask", "SESSION_KEY"], "mask is not supported for an ephemeral secret"),
     (["unmask", "SESSION_KEY"], "unmask is not supported for an ephemeral secret"),
     (["attr", "SESSION_KEY", "--bulk-select", "include"], "secret attributes cannot be changed for an ephemeral secret"),
     (["meta", "set", "SESSION_KEY", "label", "must-not-persist"], "key metadata cannot be changed for an ephemeral secret"),
+    (["meta", "unset", "SESSION_KEY", "label"], "key metadata cannot be changed for an ephemeral secret"),
+    (["meta", "mark-leaked", "SESSION_KEY"], "key metadata cannot be changed for an ephemeral secret"),
     (["relation", "set", "ephemeral-relation", "--member", "token=SESSION_KEY", "--member", "public=UNSAFE_VISIBLE_KEY"], "relation member cannot reference an ephemeral secret"),
     (["save", str(isolated_root / "ephemeral.bundle")], "save is not supported while an ephemeral secret is visible"),
 ]:
     rc, stdout, stderr = run(scoped(args, root_domain))
     if rc == 0 or expected not in stderr:
         fail(f"ambiguous ephemeral operation should fail: args={args!r} rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["get", "EPHEMERAL_DESTINATION", "-o"], root_domain))
+if rc != 0 or stdout != "ephemeral-destination-value" or stderr != "":
+    fail(f"refused destination mutation changed ephemeral value: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["get", "UNSAFE_VISIBLE_KEY", "-o"], root_domain))
+if rc != 0 or stdout != "visible-while-locked" or stderr != "":
+    fail(f"refused destination move changed persisted source: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["rm", "--ephemeral", "EPHEMERAL_DESTINATION"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"ephemeral refusal destination cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 for args in [
     ["set", "--ephemeral", "--dry-run", "EPHEMERAL_PLAN", "--value", "blocked"],
@@ -2038,9 +2119,17 @@ try:
         scoped(["get", "OLD_AGENT_PERSISTED", "-o"], compat_domain),
         compat_env,
     )
+    list_rc, list_stdout, list_stderr = run(
+        scoped(["ls", "--pattern", "OLD_AGENT_PERSISTED"], compat_domain),
+        compat_env,
+    )
     compat_overlay_response[0] = b"ERR internal\n"
     internal_rc, internal_stdout, internal_stderr = run(
         scoped(["get", "OLD_AGENT_PERSISTED", "-o"], compat_domain),
+        compat_env,
+    )
+    internal_list_rc, internal_list_stdout, internal_list_stderr = run(
+        scoped(["ls", "--pattern", "OLD_AGENT_PERSISTED"], compat_domain),
         compat_env,
     )
 finally:
@@ -2052,10 +2141,19 @@ if rc != 0 or stdout != "old-agent-value" or stderr != "":
     fail(f"old-agent EPLOOKUP compatibility failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if "EPLOOKUP" not in compat_commands:
     fail(f"old-agent compatibility test did not receive EPLOOKUP: {compat_commands!r}")
+if list_rc != 0 or list_stdout != "OLD_AGENT_PERSISTED\n" or list_stderr != "":
+    fail(f"old-agent EPLIST compatibility failed: rc={list_rc} stdout={list_stdout!r} stderr={list_stderr!r}")
+if "EPLIST" not in compat_commands:
+    fail(f"old-agent compatibility test did not receive EPLIST: {compat_commands!r}")
 if internal_rc == 0 or internal_stdout != "":
     fail(
         "unexpected EPLOOKUP errors must fail closed: "
         f"rc={internal_rc} stdout={internal_stdout!r} stderr={internal_stderr!r}"
+    )
+if internal_list_rc == 0 or internal_list_stdout != "":
+    fail(
+        "unexpected EPLIST errors must fail closed: "
+        f"rc={internal_list_rc} stdout={internal_list_stdout!r} stderr={internal_list_stderr!r}"
     )
 
 rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY": "session-test-key", "SECDAT_SESSION_IDLE_SECONDS": "5"})
@@ -2265,9 +2363,19 @@ for path, key, value in [
     rc, stdout, stderr = run(scoped(["get", key, "-o"], path))
     if rc != 0 or stdout != value or stderr != "":
         fail(f"same-master owner refresh lost ephemeral key {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-    rc, stdout, stderr = run(scoped(["rm", "--ephemeral", key], path))
-    if rc != 0 or stdout != "" or stderr != "":
-        fail(f"ephemeral lifecycle cleanup failed for {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["unlock", "--duration", "PT2M"], lifecycle_root),
+    {"SECDAT_MASTER_KEY": "different-lifecycle-owner-key"},
+)
+if rc != 0 or "session unlocked from environment\n" not in stdout or f"resolved domain: {lifecycle_root}\n" not in stderr:
+    fail(f"different-master lifecycle owner replacement failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for path, key in [
+    (lifecycle_root, "LIFECYCLE_ROOT_KEEP"),
+    (lifecycle_sibling, "LIFECYCLE_SIBLING_KEEP"),
+]:
+    rc, stdout, stderr = run(scoped(["exists", key], path))
+    if rc != 1 or stdout != "" or stderr != "":
+        fail(f"different-master owner replacement retained ephemeral key {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run(scoped(["lock"], lifecycle_root))
 if rc != 0 or stdout != "session locked\n" or stderr != "":
     fail(f"ephemeral lifecycle owner lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
