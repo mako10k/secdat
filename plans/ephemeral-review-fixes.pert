@@ -130,6 +130,7 @@ task T_CLOSE M_ACCEPTED -> M_CLOSED:
   title "Prepare final commit and verified issue closeout"
   description "After acceptance, create the review-approved non-WIP commit and prepare evidence-backed comments for readback and closeout of issues 174 through 179 and parent 170. Closing issues and pushing remain explicit external-action gates."
   duration 0.25d
+  status done
   priority 10
   requires:
     CODEX 1
@@ -237,6 +238,13 @@ task_outcome OUTCOME_T_ACCEPT_20260806:
   status conformant
   reason "Clean Wall/Wextra/Werror build including FUSE, focused inject and session regressions, full make check, diff checks, and final consistency/symmetry/coverage review pass with no unresolved high- or medium-severity finding."
 
+task_outcome OUTCOME_T_CLOSE_20260806:
+  model 1
+  task T_CLOSE
+  against_basis sha256:6e1c6aba18ec408e905a10176acea20df7eb69197e18c43459f5769dc5f06b38
+  status conformant
+  reason "Nine local commits are review-approved; implementation and failure issues have evidence comments verified by readback; target issues remain open and no push or close was performed because those external actions are separate authorization gates."
+
 work_event START_T177_20260806:
   model 1
   task T177_FUSE_ATOMIC
@@ -329,3 +337,16 @@ work_event FINISH_T_ACCEPT_20260806:
   task T_ACCEPT
   kind finish
   occurred_at 2026-08-06T15:48:41+09:00
+
+work_event START_T_CLOSE_20260806:
+  model 1
+  task T_CLOSE
+  kind start
+  occurred_at 2026-08-06T15:50:33+09:00
+  planned_value 0.25d
+
+work_event FINISH_T_CLOSE_20260806:
+  model 1
+  task T_CLOSE
+  kind finish
+  occurred_at 2026-08-06T15:50:46+09:00
