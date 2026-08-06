@@ -1,3 +1,7 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE 1
+#endif
+
 #include "store.h"
 
 #include "secdat-sdk.h"
@@ -20,7 +24,9 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
+#include <poll.h>
 #include <regex.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,6 +74,25 @@
 #define SECDAT_KEY_SUGGESTION_LIMIT 5
 #define SECDAT_TRANSACTION_MAX_TARGETS 4096
 #define SECDAT_SHA256_HEX_LENGTH 64
+#define SECDAT_AGENT_PROTOCOL_VERSION 1
+#define SECDAT_AGENT_CAP_OVERLAY_V1 (UINT64_C(1) << 0)
+#define SECDAT_AGENT_CAP_EPHEMERAL_V1 (UINT64_C(1) << 1)
+#define SECDAT_AGENT_CAP_HANDOVER_V1 (UINT64_C(1) << 2)
+#ifdef SO_PEERCRED
+#define SECDAT_AGENT_CAP_HANDOVER_SUPPORTED SECDAT_AGENT_CAP_HANDOVER_V1
+#else
+#define SECDAT_AGENT_CAP_HANDOVER_SUPPORTED UINT64_C(0)
+#endif
+#define SECDAT_AGENT_CAPABILITIES (SECDAT_AGENT_CAP_OVERLAY_V1 \
+    | SECDAT_AGENT_CAP_EPHEMERAL_V1 \
+    | SECDAT_AGENT_CAP_HANDOVER_SUPPORTED)
+#define SECDAT_AGENT_HANDOVER_VERSION 1
+#define SECDAT_AGENT_HANDOVER_HEADER_LEN 40
+#define SECDAT_AGENT_HANDOVER_ITEM_HEADER_LEN 44
+#define SECDAT_AGENT_HANDOVER_DIGEST_LEN 32
+#define SECDAT_AGENT_HANDOVER_MAX_BYTES (64U * 1024U * 1024U)
+#define SECDAT_AGENT_HANDOVER_MAX_ITEMS 65536U
+#define SECDAT_AGENT_HANDOVER_TIMEOUT_MILLISECONDS 5000
 
 static const unsigned char secdat_entry_magic[8] = {'S', 'E', 'C', 'D', 'A', 'T', '1', '\0'};
 static const unsigned char secdat_v2_value_magic[8] = {'S', 'E', 'C', 'D', 'V', 'A', 'L', '2'};
@@ -83,8 +108,16 @@ static const char secdat_v2_secret_object_magic[] = "SECDATSECOBJ1";
 static const char secdat_v2_mask_magic[] = "SECDATMASK1";
 static const char secdat_v2_compat_tombstone_magic[] = "SECDATMASKCOMPAT1";
 static const char secdat_transaction_magic[] = "SECDATTXN1";
+static const unsigned char secdat_handover_magic[8] = {'S', 'E', 'C', 'D', 'H', 'N', 'D', '1'};
+static const unsigned char secdat_handover_fd_magic[8] = {'S', 'E', 'C', 'D', 'H', 'F', 'D', '1'};
+static const unsigned char secdat_handover_commit[8] = {'C', 'O', 'M', 'M', 'I', 'T', '1', '\0'};
+static const unsigned char secdat_handover_abort[8] = {'A', 'B', 'O', 'R', 'T', '1', '\0'};
+static const unsigned char secdat_handover_ready[8] = {'R', 'E', 'A', 'D', 'Y', '1', '\0', '\0'};
+static const unsigned char secdat_handover_activate[8] = {'A', 'C', 'T', 'I', 'V', 'A', 'T', 'E'};
+static const unsigned char secdat_handover_active[8] = {'A', 'C', 'T', 'I', 'V', 'E', '1', '\0'};
 static _Thread_local int secdat_command_transaction_lock_fd = -1;
 static _Thread_local pid_t secdat_command_transaction_lock_pid = 0;
+static _Thread_local int secdat_test_force_agent_handover_consumed = 0;
 
 struct secdat_key_list {
     char **items;
@@ -675,6 +708,12 @@ struct secdat_overlay_list {
     size_t capacity;
 };
 
+struct secdat_byte_buffer {
+    unsigned char *data;
+    size_t length;
+    size_t capacity;
+};
+
 struct secdat_effective_entry {
     int found;
     int tombstone;
@@ -734,6 +773,11 @@ struct secdat_session_record {
     time_t duration_seconds;
     int volatile_mode;
     int readonly_mode;
+    int agent_protocol_advertised;
+    int agent_protocol_error;
+    int agent_protocol_version;
+    int agent_capabilities_valid;
+    uint64_t agent_capabilities;
     struct secdat_overlay_list overlay;
 };
 
@@ -755,6 +799,18 @@ struct secdat_secret_bundle {
 
 static void secdat_write_be32(unsigned char *buffer, uint32_t value);
 static uint32_t secdat_read_be32(const unsigned char *buffer);
+static void secdat_write_be64(unsigned char *buffer, uint64_t value);
+static uint64_t secdat_read_be64(const unsigned char *buffer);
+static int secdat_session_record_serialize_handover(
+    const struct secdat_session_record *record,
+    unsigned char **data,
+    size_t *length
+);
+static int secdat_session_record_parse_handover(
+    const unsigned char *data,
+    size_t length,
+    struct secdat_session_record *record
+);
 static int secdat_collect_visible_keys(
     const struct secdat_domain_chain *chain,
     const char *store_name,
@@ -973,6 +1029,7 @@ static int secdat_session_agent_set_for_chain(
     enum secdat_session_access_mode access_mode,
     time_t duration_seconds
 );
+static int secdat_session_agent_handover(const char *domain_id);
 static int secdat_session_agent_clear(const char *domain_id);
 static int secdat_session_agent_purge_chain_ephemeral_domain(
     const struct secdat_domain_chain *chain,
@@ -2429,6 +2486,10 @@ static int secdat_wait_for_on_demand_unlock(
             secdat_session_record_reset(&record);
             return 0;
         }
+        if (record.agent_protocol_error) {
+            secdat_session_record_reset(&record);
+            return 1;
+        }
         secdat_session_record_reset(&record);
 
         if (options->timeout_configured && time(NULL) - started_at >= options->timeout_seconds) {
@@ -2483,6 +2544,10 @@ static int secdat_wait_for_unlock(
         if (secdat_session_agent_status(chain, &record) == 0) {
             secdat_session_record_reset(&record);
             return 0;
+        }
+        if (record.agent_protocol_error) {
+            secdat_session_record_reset(&record);
+            return 1;
         }
         secdat_session_record_reset(&record);
 
@@ -4341,6 +4406,36 @@ cleanup:
     return status;
 }
 
+static int secdat_test_rehash_handover_snapshot(
+    unsigned char *data,
+    size_t length
+)
+{
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_length = 0;
+    size_t payload_length;
+    int status = 1;
+
+    if (data == NULL || length <= SECDAT_AGENT_HANDOVER_DIGEST_LEN) {
+        return 1;
+    }
+    payload_length = length - SECDAT_AGENT_HANDOVER_DIGEST_LEN;
+    if (EVP_Digest(
+            data,
+            payload_length,
+            digest,
+            &digest_length,
+            EVP_sha256(),
+            NULL
+        ) == 1
+        && digest_length == SECDAT_AGENT_HANDOVER_DIGEST_LEN) {
+        memcpy(data + payload_length, digest, digest_length);
+        status = 0;
+    }
+    secdat_secure_clear(digest, sizeof(digest));
+    return status;
+}
+
 static int secdat_read_secret_attrs(
     const char *domain_id,
     const char *store_name,
@@ -4815,6 +4910,11 @@ static void secdat_session_record_reset(struct secdat_session_record *record)
     record->duration_seconds = 0;
     record->volatile_mode = 0;
     record->readonly_mode = 0;
+    record->agent_protocol_advertised = 0;
+    record->agent_protocol_error = 0;
+    record->agent_protocol_version = 0;
+    record->agent_capabilities_valid = 0;
+    record->agent_capabilities = 0;
     secdat_overlay_list_clear(&record->overlay);
 }
 
@@ -4900,6 +5000,382 @@ static void secdat_session_record_expire_if_needed(struct secdat_session_record 
     }
 }
 
+static void secdat_byte_buffer_clear(struct secdat_byte_buffer *buffer)
+{
+    if (buffer->data != NULL) {
+        secdat_secure_clear(buffer->data, buffer->capacity);
+    }
+    free(buffer->data);
+    memset(buffer, 0, sizeof(*buffer));
+}
+
+static int secdat_byte_buffer_append(
+    struct secdat_byte_buffer *buffer,
+    const void *data,
+    size_t length
+)
+{
+    size_t required;
+    size_t capacity;
+    unsigned char *resized;
+
+    if (length > SECDAT_AGENT_HANDOVER_MAX_BYTES
+        || buffer->length > SECDAT_AGENT_HANDOVER_MAX_BYTES - length) {
+        return 1;
+    }
+    required = buffer->length + length;
+    if (required > buffer->capacity) {
+        capacity = buffer->capacity == 0 ? 1024 : buffer->capacity;
+        while (capacity < required) {
+            if (capacity > SECDAT_AGENT_HANDOVER_MAX_BYTES / 2) {
+                capacity = SECDAT_AGENT_HANDOVER_MAX_BYTES;
+                break;
+            }
+            capacity *= 2;
+        }
+        resized = realloc(buffer->data, capacity);
+        if (resized == NULL) {
+            return 1;
+        }
+        buffer->data = resized;
+        buffer->capacity = capacity;
+    }
+    if (length > 0) {
+        memcpy(buffer->data + buffer->length, data, length);
+    }
+    buffer->length = required;
+    return 0;
+}
+
+static int secdat_byte_buffer_append_u32(struct secdat_byte_buffer *buffer, uint32_t value)
+{
+    unsigned char encoded[4];
+
+    secdat_write_be32(encoded, value);
+    return secdat_byte_buffer_append(buffer, encoded, sizeof(encoded));
+}
+
+static int secdat_byte_buffer_append_u64(struct secdat_byte_buffer *buffer, uint64_t value)
+{
+    unsigned char encoded[8];
+
+    secdat_write_be64(encoded, value);
+    return secdat_byte_buffer_append(buffer, encoded, sizeof(encoded));
+}
+
+static int secdat_handover_read(
+    const unsigned char *data,
+    size_t payload_length,
+    size_t *offset,
+    size_t length,
+    const unsigned char **value
+)
+{
+    if (*offset > payload_length || length > payload_length - *offset) {
+        return 1;
+    }
+    *value = data + *offset;
+    *offset += length;
+    return 0;
+}
+
+static int secdat_handover_duplicate_text(
+    const unsigned char *data,
+    size_t length,
+    int allow_empty,
+    char **value
+)
+{
+    char *copy;
+
+    *value = NULL;
+    if ((!allow_empty && length == 0)
+        || length > PATH_MAX * 3U
+        || memchr(data, '\0', length) != NULL) {
+        return 1;
+    }
+    copy = malloc(length + 1);
+    if (copy == NULL) {
+        return 1;
+    }
+    memcpy(copy, data, length);
+    copy[length] = '\0';
+    *value = copy;
+    return 0;
+}
+
+static int secdat_session_record_serialize_handover(
+    const struct secdat_session_record *record,
+    unsigned char **data,
+    size_t *length
+)
+{
+    struct secdat_byte_buffer buffer = {0};
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_length = 0;
+    uint32_t mode;
+    size_t master_key_length;
+    size_t index;
+    int status = 1;
+
+    *data = NULL;
+    *length = 0;
+    if (record->master_key[0] == '\0'
+        || record->expires_at <= 0
+        || record->duration_seconds <= 0
+        || record->overlay.count > SECDAT_AGENT_HANDOVER_MAX_ITEMS) {
+        return 1;
+    }
+    mode = record->volatile_mode ? 1U : (record->readonly_mode ? 2U : 0U);
+    master_key_length = strlen(record->master_key);
+    if (master_key_length == 0 || master_key_length >= sizeof(record->master_key)
+        || secdat_byte_buffer_append(&buffer, secdat_handover_magic, sizeof(secdat_handover_magic)) != 0
+        || secdat_byte_buffer_append_u32(&buffer, SECDAT_AGENT_HANDOVER_VERSION) != 0
+        || secdat_byte_buffer_append_u32(&buffer, mode) != 0
+        || secdat_byte_buffer_append_u64(&buffer, (uint64_t)record->expires_at) != 0
+        || secdat_byte_buffer_append_u64(&buffer, (uint64_t)record->duration_seconds) != 0
+        || secdat_byte_buffer_append_u32(&buffer, (uint32_t)master_key_length) != 0
+        || secdat_byte_buffer_append_u32(&buffer, (uint32_t)record->overlay.count) != 0
+        || secdat_byte_buffer_append(&buffer, record->master_key, master_key_length) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < record->overlay.count; index += 1) {
+        const struct secdat_overlay_item *item = &record->overlay.items[index];
+        size_t domain_length;
+        size_t store_length;
+        size_t key_length;
+
+        if (item->domain_id == NULL || item->store_name == NULL || item->key == NULL) {
+            goto cleanup;
+        }
+        domain_length = strlen(item->domain_id);
+        store_length = strlen(item->store_name);
+        key_length = strlen(item->key);
+        if (domain_length == 0 || key_length == 0
+            || domain_length > UINT32_MAX || store_length > UINT32_MAX || key_length > UINT32_MAX
+            || item->plaintext_length > UINT64_MAX
+            || secdat_byte_buffer_append_u32(&buffer, (uint32_t)item->kind) != 0
+            || secdat_byte_buffer_append_u32(&buffer, (uint32_t)item->save_policy) != 0
+            || secdat_byte_buffer_append_u32(&buffer, item->unsafe_store != 0) != 0
+            || secdat_byte_buffer_append_u32(&buffer, (uint32_t)item->attrs.key_visibility) != 0
+            || secdat_byte_buffer_append_u32(&buffer, (uint32_t)item->attrs.value_access) != 0
+            || secdat_byte_buffer_append_u32(&buffer, (uint32_t)item->attrs.bulk_select) != 0
+            || secdat_byte_buffer_append_u32(&buffer, (uint32_t)domain_length) != 0
+            || secdat_byte_buffer_append_u32(&buffer, (uint32_t)store_length) != 0
+            || secdat_byte_buffer_append_u32(&buffer, (uint32_t)key_length) != 0
+            || secdat_byte_buffer_append_u64(&buffer, (uint64_t)item->plaintext_length) != 0
+            || secdat_byte_buffer_append(&buffer, item->domain_id, domain_length) != 0
+            || secdat_byte_buffer_append(&buffer, item->store_name, store_length) != 0
+            || secdat_byte_buffer_append(&buffer, item->key, key_length) != 0
+            || secdat_byte_buffer_append(&buffer, item->plaintext, item->plaintext_length) != 0) {
+            goto cleanup;
+        }
+    }
+    if (EVP_Digest(
+            buffer.data,
+            buffer.length,
+            digest,
+            &digest_length,
+            EVP_sha256(),
+            NULL
+        ) != 1
+        || digest_length != SECDAT_AGENT_HANDOVER_DIGEST_LEN
+        || secdat_byte_buffer_append(&buffer, digest, digest_length) != 0) {
+        goto cleanup;
+    }
+    *data = buffer.data;
+    *length = buffer.length;
+    buffer.data = NULL;
+    buffer.length = 0;
+    buffer.capacity = 0;
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(digest, sizeof(digest));
+    secdat_byte_buffer_clear(&buffer);
+    return status;
+}
+
+static int secdat_session_record_parse_handover(
+    const unsigned char *data,
+    size_t length,
+    struct secdat_session_record *record
+)
+{
+    struct secdat_session_record parsed = {0};
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_length = 0;
+    const unsigned char *field;
+    const unsigned char *master_key;
+    size_t payload_length;
+    size_t offset = 0;
+    uint32_t mode;
+    uint32_t master_key_length;
+    uint32_t item_count;
+    uint32_t index;
+    int status = 1;
+
+    memset(record, 0, sizeof(*record));
+    if (data == NULL
+        || length < SECDAT_AGENT_HANDOVER_HEADER_LEN + SECDAT_AGENT_HANDOVER_DIGEST_LEN
+        || length > SECDAT_AGENT_HANDOVER_MAX_BYTES) {
+        return 1;
+    }
+    payload_length = length - SECDAT_AGENT_HANDOVER_DIGEST_LEN;
+    if (EVP_Digest(data, payload_length, digest, &digest_length, EVP_sha256(), NULL) != 1
+        || digest_length != SECDAT_AGENT_HANDOVER_DIGEST_LEN
+        || CRYPTO_memcmp(digest, data + payload_length, digest_length) != 0) {
+        goto cleanup;
+    }
+    if (secdat_handover_read(data, payload_length, &offset, 8, &field) != 0
+        || memcmp(field, secdat_handover_magic, sizeof(secdat_handover_magic)) != 0
+        || secdat_handover_read(data, payload_length, &offset, 4, &field) != 0
+        || secdat_read_be32(field) != SECDAT_AGENT_HANDOVER_VERSION
+        || secdat_handover_read(data, payload_length, &offset, 4, &field) != 0) {
+        goto cleanup;
+    }
+    mode = secdat_read_be32(field);
+    if (mode > 2
+        || secdat_handover_read(data, payload_length, &offset, 8, &field) != 0) {
+        goto cleanup;
+    }
+    parsed.expires_at = (time_t)secdat_read_be64(field);
+    if (parsed.expires_at <= 0
+        || secdat_handover_read(data, payload_length, &offset, 8, &field) != 0) {
+        goto cleanup;
+    }
+    parsed.duration_seconds = (time_t)secdat_read_be64(field);
+    if (parsed.duration_seconds <= 0
+        || secdat_handover_read(data, payload_length, &offset, 4, &field) != 0) {
+        goto cleanup;
+    }
+    master_key_length = secdat_read_be32(field);
+    if (master_key_length == 0 || master_key_length >= sizeof(parsed.master_key)
+        || secdat_handover_read(data, payload_length, &offset, 4, &field) != 0) {
+        goto cleanup;
+    }
+    item_count = secdat_read_be32(field);
+    if (item_count > SECDAT_AGENT_HANDOVER_MAX_ITEMS
+        || secdat_handover_read(data, payload_length, &offset, master_key_length, &master_key) != 0
+        || memchr(master_key, '\0', master_key_length) != NULL) {
+        goto cleanup;
+    }
+    memcpy(parsed.master_key, master_key, master_key_length);
+    parsed.master_key[master_key_length] = '\0';
+    parsed.volatile_mode = mode == 1;
+    parsed.readonly_mode = mode == 2;
+    if (item_count > (payload_length - offset)
+            / SECDAT_AGENT_HANDOVER_ITEM_HEADER_LEN) {
+        goto cleanup;
+    }
+
+    for (index = 0; index < item_count; index += 1) {
+        struct secdat_overlay_item item = {0};
+        uint32_t kind;
+        uint32_t save_policy;
+        uint32_t unsafe_store;
+        uint32_t key_visibility;
+        uint32_t value_access;
+        uint32_t bulk_select;
+        uint32_t domain_length;
+        uint32_t store_length;
+        uint32_t key_length;
+        uint64_t plaintext_length;
+        const unsigned char *domain_data;
+        const unsigned char *store_data;
+        const unsigned char *key_data;
+        const unsigned char *plaintext_data;
+
+        if (secdat_handover_read(data, payload_length, &offset, 4, &field) != 0) {
+            goto cleanup;
+        }
+        kind = secdat_read_be32(field);
+        if (secdat_handover_read(data, payload_length, &offset, 4, &field) != 0) {
+            goto cleanup;
+        }
+        save_policy = secdat_read_be32(field);
+        if (secdat_handover_read(data, payload_length, &offset, 4, &field) != 0) {
+            goto cleanup;
+        }
+        unsafe_store = secdat_read_be32(field);
+        if (secdat_handover_read(data, payload_length, &offset, 4, &field) != 0) {
+            goto cleanup;
+        }
+        key_visibility = secdat_read_be32(field);
+        if (secdat_handover_read(data, payload_length, &offset, 4, &field) != 0) {
+            goto cleanup;
+        }
+        value_access = secdat_read_be32(field);
+        if (secdat_handover_read(data, payload_length, &offset, 4, &field) != 0) {
+            goto cleanup;
+        }
+        bulk_select = secdat_read_be32(field);
+        if (secdat_handover_read(data, payload_length, &offset, 4, &field) != 0) {
+            goto cleanup;
+        }
+        domain_length = secdat_read_be32(field);
+        if (secdat_handover_read(data, payload_length, &offset, 4, &field) != 0) {
+            goto cleanup;
+        }
+        store_length = secdat_read_be32(field);
+        if (secdat_handover_read(data, payload_length, &offset, 4, &field) != 0) {
+            goto cleanup;
+        }
+        key_length = secdat_read_be32(field);
+        if (secdat_handover_read(data, payload_length, &offset, 8, &field) != 0) {
+            goto cleanup;
+        }
+        plaintext_length = secdat_read_be64(field);
+        if ((kind != SECDAT_OVERLAY_ITEM_ENTRY && kind != SECDAT_OVERLAY_ITEM_TOMBSTONE)
+            || save_policy > SECDAT_OVERLAY_SAVE_NEVER
+            || unsafe_store > 1
+            || key_visibility > SECDAT_KEY_VISIBILITY_UNLOCKED
+            || value_access > SECDAT_VALUE_ACCESS_ALWAYS
+            || bulk_select > SECDAT_BULK_SELECT_INCLUDE
+            || plaintext_length > SIZE_MAX
+            || (kind == SECDAT_OVERLAY_ITEM_TOMBSTONE && plaintext_length != 0)
+            || secdat_handover_read(data, payload_length, &offset, domain_length, &domain_data) != 0
+            || secdat_handover_read(data, payload_length, &offset, store_length, &store_data) != 0
+            || secdat_handover_read(data, payload_length, &offset, key_length, &key_data) != 0
+            || secdat_handover_read(data, payload_length, &offset, (size_t)plaintext_length, &plaintext_data) != 0
+            || secdat_handover_duplicate_text(domain_data, domain_length, 0, &item.domain_id) != 0
+            || secdat_handover_duplicate_text(store_data, store_length, 1, &item.store_name) != 0
+            || secdat_handover_duplicate_text(key_data, key_length, 0, &item.key) != 0) {
+            secdat_overlay_item_free(&item);
+            goto cleanup;
+        }
+        if (secdat_overlay_list_find(&parsed.overlay, item.domain_id, item.store_name, item.key) >= 0
+            || secdat_duplicate_bytes(
+                    plaintext_data,
+                    (size_t)plaintext_length,
+                    &item.plaintext
+                ) != 0
+            || secdat_overlay_list_ensure_capacity(&parsed.overlay) != 0) {
+            secdat_overlay_item_free(&item);
+            goto cleanup;
+        }
+        item.plaintext_length = (size_t)plaintext_length;
+        item.kind = (enum secdat_overlay_item_kind)kind;
+        item.save_policy = (enum secdat_overlay_save_policy)save_policy;
+        item.unsafe_store = unsafe_store != 0;
+        item.attrs.key_visibility = (enum secdat_key_visibility)key_visibility;
+        item.attrs.value_access = (enum secdat_value_access)value_access;
+        item.attrs.bulk_select = (enum secdat_bulk_select)bulk_select;
+        parsed.overlay.items[parsed.overlay.count++] = item;
+    }
+    if (offset != payload_length) {
+        goto cleanup;
+    }
+    *record = parsed;
+    memset(&parsed, 0, sizeof(parsed));
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(digest, sizeof(digest));
+    secdat_session_record_reset(&parsed);
+    return status;
+}
+
 static int secdat_read_line(FILE *stream, char *buffer, size_t size)
 {
     if (fgets(buffer, (int)size, stream) == NULL) {
@@ -4929,7 +5405,311 @@ static int secdat_read_allocated_line(FILE *stream, char **buffer)
     return 0;
 }
 
-static int secdat_session_agent_handle_client(int client_fd, struct secdat_session_record *record, int *should_exit)
+static int64_t secdat_handover_deadline(void)
+{
+    struct timespec now;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        return -1;
+    }
+    return (int64_t)now.tv_sec * 1000
+        + now.tv_nsec / 1000000
+        + SECDAT_AGENT_HANDOVER_TIMEOUT_MILLISECONDS;
+}
+
+static int secdat_fd_wait_until(int fd, short events, int64_t deadline)
+{
+    struct pollfd descriptor;
+
+    descriptor.fd = fd;
+    descriptor.events = events;
+    descriptor.revents = 0;
+    for (;;) {
+        struct timespec now;
+        int64_t remaining;
+        int wait_result;
+
+        if (deadline < 0 || clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+            return 1;
+        }
+        remaining = deadline
+            - ((int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000);
+        if (remaining <= 0) {
+            return 1;
+        }
+        wait_result = poll(
+            &descriptor,
+            1,
+            remaining > INT_MAX ? INT_MAX : (int)remaining
+        );
+        if (wait_result > 0) {
+            return 0;
+        }
+        if (wait_result == 0 || errno != EINTR) {
+            return 1;
+        }
+    }
+}
+
+static int secdat_fd_write_all_until(
+    int fd,
+    const void *data,
+    size_t length,
+    int64_t deadline
+)
+{
+    const unsigned char *cursor = data;
+
+    while (length > 0) {
+        if (secdat_fd_wait_until(fd, POLLOUT, deadline) != 0) {
+            return 1;
+        }
+        ssize_t written = send(fd, cursor, length, MSG_NOSIGNAL);
+
+        if (written < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return 1;
+        }
+        if (written == 0) {
+            return 1;
+        }
+        cursor += (size_t)written;
+        length -= (size_t)written;
+    }
+    return 0;
+}
+
+static int secdat_fd_read_all_until(
+    int fd,
+    void *data,
+    size_t length,
+    int64_t deadline
+)
+{
+    unsigned char *cursor = data;
+
+    while (length > 0) {
+        if (secdat_fd_wait_until(fd, POLLIN, deadline) != 0) {
+            return 1;
+        }
+        ssize_t received = recv(fd, cursor, length, 0);
+
+        if (received < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return 1;
+        }
+        if (received == 0) {
+            return 1;
+        }
+        cursor += (size_t)received;
+        length -= (size_t)received;
+    }
+    return 0;
+}
+
+static int secdat_send_fd_message_until(
+    int socket_fd,
+    const unsigned char *message,
+    size_t message_length,
+    int passed_fd,
+    int64_t deadline
+)
+{
+    struct msghdr header = {0};
+    struct iovec vector;
+    unsigned char control[CMSG_SPACE(sizeof(int))];
+    struct cmsghdr *control_header;
+
+    memset(control, 0, sizeof(control));
+    vector.iov_base = (void *)message;
+    vector.iov_len = message_length;
+    header.msg_iov = &vector;
+    header.msg_iovlen = 1;
+    if (passed_fd >= 0) {
+        header.msg_control = control;
+        header.msg_controllen = sizeof(control);
+        control_header = CMSG_FIRSTHDR(&header);
+        control_header->cmsg_level = SOL_SOCKET;
+        control_header->cmsg_type = SCM_RIGHTS;
+        control_header->cmsg_len = CMSG_LEN(sizeof(int));
+        memcpy(CMSG_DATA(control_header), &passed_fd, sizeof(passed_fd));
+    }
+    for (;;) {
+        ssize_t sent;
+
+        if (secdat_fd_wait_until(socket_fd, POLLOUT, deadline) != 0) {
+            return 1;
+        }
+        sent = sendmsg(socket_fd, &header, MSG_NOSIGNAL);
+        if (sent < 0 && errno == EINTR) {
+            continue;
+        }
+        if (sent <= 0) {
+            return 1;
+        }
+        if ((size_t)sent == message_length) {
+            return 0;
+        }
+        return secdat_fd_write_all_until(
+            socket_fd,
+            message + (size_t)sent,
+            message_length - (size_t)sent,
+            deadline
+        );
+    }
+}
+
+static int secdat_receive_fd_message_until(
+    int socket_fd,
+    unsigned char *message,
+    size_t message_length,
+    int *passed_fd,
+    int64_t deadline
+)
+{
+    struct msghdr header = {0};
+    struct iovec vector;
+    unsigned char control[CMSG_SPACE(sizeof(int))];
+    struct cmsghdr *control_header;
+    ssize_t received;
+
+    *passed_fd = -1;
+    memset(control, 0, sizeof(control));
+    vector.iov_base = message;
+    vector.iov_len = message_length;
+    header.msg_iov = &vector;
+    header.msg_iovlen = 1;
+    header.msg_control = control;
+    header.msg_controllen = sizeof(control);
+    for (;;) {
+        if (secdat_fd_wait_until(socket_fd, POLLIN, deadline) != 0) {
+            return 1;
+        }
+        received = recvmsg(socket_fd, &header, 0);
+        if (received < 0 && errno == EINTR) {
+            continue;
+        }
+        break;
+    }
+    if (received <= 0) {
+        return 1;
+    }
+    for (control_header = CMSG_FIRSTHDR(&header);
+         control_header != NULL;
+         control_header = CMSG_NXTHDR(&header, control_header)) {
+        if (control_header->cmsg_level == SOL_SOCKET
+            && control_header->cmsg_type == SCM_RIGHTS
+            && control_header->cmsg_len >= CMSG_LEN(sizeof(int))) {
+            size_t descriptor_count = (control_header->cmsg_len - CMSG_LEN(0))
+                / sizeof(int);
+            size_t index;
+
+            for (index = 0; index < descriptor_count; index += 1) {
+                int received_fd;
+
+                memcpy(
+                    &received_fd,
+                    (const unsigned char *)CMSG_DATA(control_header)
+                        + index * sizeof(received_fd),
+                    sizeof(received_fd)
+                );
+                if (*passed_fd < 0) {
+                    *passed_fd = received_fd;
+                } else {
+                    close(received_fd);
+                }
+            }
+        }
+    }
+    if ((header.msg_flags & (MSG_CTRUNC | MSG_TRUNC)) != 0) {
+        if (*passed_fd >= 0) {
+            close(*passed_fd);
+            *passed_fd = -1;
+        }
+        return 1;
+    }
+    if ((size_t)received < message_length
+        && secdat_fd_read_all_until(
+                socket_fd,
+                message + (size_t)received,
+                message_length - (size_t)received,
+                deadline
+            ) != 0) {
+        if (*passed_fd >= 0) {
+            close(*passed_fd);
+            *passed_fd = -1;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_socket_peer_is_same_user(int fd)
+{
+#ifdef SO_PEERCRED
+    struct ucred credential;
+    socklen_t credential_length = sizeof(credential);
+
+    if (getsockopt(
+            fd,
+            SOL_SOCKET,
+            SO_PEERCRED,
+            &credential,
+            &credential_length
+        ) != 0
+        || credential_length != sizeof(credential)
+        || credential.uid != geteuid()) {
+        return 0;
+    }
+#else
+    (void)fd;
+    return 0;
+#endif
+    return 1;
+}
+
+static int secdat_listener_matches_path(int fd, const char *socket_path)
+{
+    struct sockaddr_un address;
+    socklen_t address_length = sizeof(address);
+    socklen_t accepting_length;
+    int accepting = 0;
+
+    memset(&address, 0, sizeof(address));
+    accepting_length = sizeof(accepting);
+    if (getsockopt(
+            fd,
+            SOL_SOCKET,
+            SO_ACCEPTCONN,
+            &accepting,
+            &accepting_length
+        ) != 0
+        || accepting_length != sizeof(accepting)
+        || !accepting
+        || getsockname(fd, (struct sockaddr *)&address, &address_length) != 0
+        || address.sun_family != AF_UNIX
+        || address_length <= offsetof(struct sockaddr_un, sun_path)
+        || strncmp(
+                address.sun_path,
+                socket_path,
+                sizeof(address.sun_path)
+            ) != 0) {
+        return 0;
+    }
+    return 1;
+}
+
+static int secdat_session_agent_handle_client(
+    int client_fd,
+    int server_fd,
+    struct secdat_session_record *record,
+    int *should_exit,
+    int *preserve_socket
+)
 {
     FILE *stream;
     char command[64];
@@ -4952,6 +5732,7 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
     size_t index;
 
     *should_exit = 0;
+    *preserve_socket = 0;
     secdat_session_record_expire_if_needed(record);
 
     stream = fdopen(client_fd, "r+");
@@ -4971,13 +5752,162 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         } else {
             fprintf(
                 stream,
-                "OK %lld %s %lld\n",
+                "OK %lld %s %lld proto=%d\n",
                 (long long)record->expires_at,
                 record->volatile_mode ? "volatile" : (record->readonly_mode ? "readonly" : "persistent"),
-                (long long)secdat_session_effective_duration(record)
+                (long long)secdat_session_effective_duration(record),
+                SECDAT_AGENT_PROTOCOL_VERSION
             );
         }
         fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "CAPS") == 0) {
+        fprintf(
+            stream,
+            "OK %d %llu pid=%lld\n",
+            SECDAT_AGENT_PROTOCOL_VERSION,
+            (unsigned long long)SECDAT_AGENT_CAPABILITIES,
+            (long long)getpid()
+        );
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "HANDOVER") == 0) {
+        unsigned char response_header[16];
+        unsigned char control_message[8];
+        unsigned char candidate_message[8];
+        unsigned char *snapshot = NULL;
+        size_t snapshot_length = 0;
+        int activation_fd = -1;
+        int64_t deadline;
+
+        memcpy(response_header, secdat_handover_fd_magic, sizeof(secdat_handover_fd_magic));
+        if (!secdat_socket_peer_is_same_user(client_fd)
+            || record->master_key[0] == '\0'
+            || secdat_session_record_serialize_handover(
+                    record,
+                    &snapshot,
+                    &snapshot_length
+                ) != 0) {
+            secdat_write_be64(response_header + 8, 0);
+            (void)secdat_send_fd_message_until(
+                client_fd,
+                response_header,
+                sizeof(response_header),
+                -1,
+                secdat_handover_deadline()
+            );
+            fclose(stream);
+            return 0;
+        }
+        secdat_write_be64(response_header + 8, (uint64_t)snapshot_length);
+        deadline = secdat_handover_deadline();
+        if (secdat_send_fd_message_until(
+                client_fd,
+                response_header,
+                sizeof(response_header),
+                server_fd,
+                deadline
+            ) != 0
+            || secdat_fd_write_all_until(
+                    client_fd,
+                    snapshot,
+                    snapshot_length,
+                    deadline
+                ) != 0) {
+            secdat_secure_clear(snapshot, snapshot_length);
+            free(snapshot);
+            fclose(stream);
+            return 0;
+        }
+        secdat_secure_clear(snapshot, snapshot_length);
+        free(snapshot);
+        deadline = secdat_handover_deadline();
+        if (secdat_receive_fd_message_until(
+                client_fd,
+                control_message,
+                sizeof(control_message),
+                &activation_fd,
+                deadline
+            ) != 0) {
+            fclose(stream);
+            return 0;
+        }
+        if (memcmp(control_message, secdat_handover_abort, sizeof(control_message)) == 0) {
+            if (activation_fd >= 0) {
+                close(activation_fd);
+            }
+            (void)secdat_fd_write_all_until(
+                client_fd,
+                "OK abort\n",
+                9,
+                secdat_handover_deadline()
+            );
+            fclose(stream);
+            return 0;
+        }
+        if (memcmp(control_message, secdat_handover_commit, sizeof(control_message)) != 0
+            || activation_fd < 0) {
+            if (activation_fd >= 0) {
+                close(activation_fd);
+            }
+            (void)secdat_fd_write_all_until(
+                client_fd,
+                "ERR commit\n",
+                11,
+                secdat_handover_deadline()
+            );
+            fclose(stream);
+            return 0;
+        }
+        deadline = secdat_handover_deadline();
+        if (secdat_fd_write_all_until(
+                activation_fd,
+                secdat_handover_activate,
+                sizeof(secdat_handover_activate),
+                deadline
+            ) != 0
+            || secdat_fd_read_all_until(
+                    activation_fd,
+                    candidate_message,
+                    sizeof(candidate_message),
+                    deadline
+                ) != 0
+            || memcmp(
+                    candidate_message,
+                    secdat_handover_active,
+                    sizeof(candidate_message)
+                ) != 0) {
+            (void)secdat_fd_write_all_until(
+                activation_fd,
+                secdat_handover_abort,
+                sizeof(secdat_handover_abort),
+                secdat_handover_deadline()
+            );
+            close(activation_fd);
+            (void)secdat_fd_write_all_until(
+                client_fd,
+                "ERR candidate\n",
+                14,
+                secdat_handover_deadline()
+            );
+            fclose(stream);
+            return 0;
+        }
+        close(activation_fd);
+        *should_exit = 1;
+        *preserve_socket = 1;
+        (void)secdat_fd_write_all_until(
+            client_fd,
+            "OK commit\n",
+            10,
+            secdat_handover_deadline()
+        );
         fclose(stream);
         return 0;
     }
@@ -5506,15 +6436,56 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
     return 0;
 }
 
+static int secdat_run_session_agent_loop(
+    int server_fd,
+    const char *socket_path,
+    struct secdat_session_record *initial_record
+)
+{
+    int client_fd;
+    int should_exit;
+    int preserve_request;
+    int preserve_socket = 0;
+    struct secdat_session_record record = *initial_record;
+
+    memset(initial_record, 0, sizeof(*initial_record));
+    for (;;) {
+        client_fd = accept(server_fd, NULL, NULL);
+        if (client_fd < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if (secdat_session_agent_handle_client(
+                client_fd,
+                server_fd,
+                &record,
+                &should_exit,
+                &preserve_request
+            ) != 0) {
+            close(client_fd);
+        }
+        if (should_exit) {
+            preserve_socket = preserve_request;
+            break;
+        }
+    }
+
+    secdat_session_record_reset(&record);
+    close(server_fd);
+    if (!preserve_socket) {
+        unlink(socket_path);
+    }
+    return 0;
+}
+
 static int secdat_run_session_agent(const char *socket_path)
 {
     int server_fd;
-    int client_fd;
-    int should_exit;
     struct sockaddr_un address;
-    struct secdat_session_record record;
+    struct secdat_session_record record = {0};
 
-    memset(&record, 0, sizeof(record));
     server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (server_fd < 0) {
         return 1;
@@ -5541,27 +6512,7 @@ static int secdat_run_session_agent(const char *socket_path)
         fprintf(stderr, _("failed to listen on session agent socket\n"));
         return 1;
     }
-
-    for (;;) {
-        client_fd = accept(server_fd, NULL, NULL);
-        if (client_fd < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            break;
-        }
-        if (secdat_session_agent_handle_client(client_fd, &record, &should_exit) != 0) {
-            close(client_fd);
-        }
-        if (should_exit) {
-            break;
-        }
-    }
-
-    secdat_session_record_reset(&record);
-    close(server_fd);
-    unlink(socket_path);
-    return 0;
+    return secdat_run_session_agent_loop(server_fd, socket_path, &record);
 }
 
 static int secdat_spawn_session_agent(const char *domain_id)
@@ -6062,9 +7013,361 @@ static int secdat_session_agent_connect_chain_details(const struct secdat_domain
     return secdat_session_agent_connect_chain_details_with_options(chain, matched_index, blocked_index, NULL);
 }
 
+static int secdat_run_handover_successor(
+    int server_fd,
+    const char *socket_path,
+    struct secdat_session_record *record,
+    int activation_fd
+)
+{
+    unsigned char message[8];
+    const char *reject_mode = getenv("SECDAT_TEST_HANDOVER_CANDIDATE_REJECT");
+    int64_t deadline;
+
+    if (reject_mode != NULL && strcmp(reject_mode, "before-ready") == 0) {
+        secdat_session_record_reset(record);
+        close(server_fd);
+        close(activation_fd);
+        return 1;
+    }
+    deadline = secdat_handover_deadline();
+    if (secdat_fd_write_all_until(
+            activation_fd,
+            secdat_handover_ready,
+            sizeof(secdat_handover_ready),
+            deadline
+        ) != 0) {
+        secdat_session_record_reset(record);
+        close(server_fd);
+        close(activation_fd);
+        return 1;
+    }
+    if (reject_mode != NULL && strcmp(reject_mode, "after-ready") == 0) {
+        secdat_session_record_reset(record);
+        close(server_fd);
+        close(activation_fd);
+        return 1;
+    }
+    if (reject_mode != NULL && strcmp(reject_mode, "stall-after-ready") == 0) {
+        unsigned char discard[16];
+
+        deadline = secdat_handover_deadline();
+        while (secdat_fd_wait_until(activation_fd, POLLIN, deadline) == 0) {
+            ssize_t received = recv(
+                activation_fd,
+                discard,
+                sizeof(discard),
+                MSG_DONTWAIT
+            );
+
+            if (received <= 0) {
+                break;
+            }
+        }
+        secdat_session_record_reset(record);
+        close(server_fd);
+        close(activation_fd);
+        return 1;
+    }
+    deadline = secdat_handover_deadline();
+    if (secdat_fd_read_all_until(
+            activation_fd,
+            message,
+            sizeof(message),
+            deadline
+        ) != 0
+        || memcmp(message, secdat_handover_activate, sizeof(message)) != 0
+        || secdat_fd_write_all_until(
+                activation_fd,
+                secdat_handover_active,
+                sizeof(secdat_handover_active),
+                deadline
+            ) != 0) {
+        secdat_session_record_reset(record);
+        close(server_fd);
+        close(activation_fd);
+        return 1;
+    }
+    close(activation_fd);
+    return secdat_run_session_agent_loop(server_fd, socket_path, record);
+}
+
+static void secdat_session_agent_abort_handover(
+    int control_fd,
+    int activation_fd,
+    pid_t successor_pid
+)
+{
+    int64_t deadline = secdat_handover_deadline();
+
+    if (activation_fd >= 0) {
+        (void)secdat_fd_write_all_until(
+            activation_fd,
+            secdat_handover_abort,
+            sizeof(secdat_handover_abort),
+            deadline
+        );
+        close(activation_fd);
+    }
+    if (control_fd >= 0) {
+        (void)secdat_send_fd_message_until(
+            control_fd,
+            secdat_handover_abort,
+            sizeof(secdat_handover_abort),
+            -1,
+            deadline
+        );
+    }
+    if (successor_pid > 0) {
+        int child_status;
+
+        while (waitpid(successor_pid, &child_status, 0) < 0 && errno == EINTR) {
+        }
+    }
+}
+
+static int secdat_session_agent_handover(const char *domain_id)
+{
+    unsigned char response_header[16];
+    unsigned char candidate_message[8];
+    unsigned char response[10];
+    unsigned char *snapshot = NULL;
+    size_t snapshot_length = 0;
+    size_t snapshot_parse_length = 0;
+    uint64_t encoded_snapshot_length;
+    struct secdat_session_record imported = {0};
+    char socket_path[PATH_MAX];
+    int control_fd = -1;
+    int server_fd = -1;
+    int activation[2] = {-1, -1};
+    pid_t successor_pid = -1;
+    int handover_started = 0;
+    int commit_sent = 0;
+    int status = 1;
+    int64_t deadline = secdat_handover_deadline();
+    const char *corruption_mode = getenv("SECDAT_TEST_HANDOVER_CORRUPT");
+
+    control_fd = secdat_session_agent_connect_domain(domain_id, 0);
+    if (control_fd < 0
+        || secdat_fd_write_all_until(control_fd, "HANDOVER\n", 9, deadline) != 0
+        || secdat_receive_fd_message_until(
+                control_fd,
+                response_header,
+                sizeof(response_header),
+                &server_fd,
+                deadline
+            ) != 0
+        || memcmp(
+                response_header,
+                secdat_handover_fd_magic,
+                sizeof(secdat_handover_fd_magic)
+            ) != 0) {
+        goto cleanup;
+    }
+    encoded_snapshot_length = secdat_read_be64(response_header + 8);
+    handover_started = 1;
+    if (encoded_snapshot_length > SIZE_MAX || server_fd < 0) {
+        goto cleanup;
+    }
+    snapshot_length = (size_t)encoded_snapshot_length;
+    if (snapshot_length
+            < SECDAT_AGENT_HANDOVER_HEADER_LEN + SECDAT_AGENT_HANDOVER_DIGEST_LEN
+        || snapshot_length > SECDAT_AGENT_HANDOVER_MAX_BYTES) {
+        goto cleanup;
+    }
+    snapshot = malloc(snapshot_length);
+    if (snapshot == NULL
+        || secdat_fd_read_all_until(
+                control_fd,
+                snapshot,
+                snapshot_length,
+                deadline
+            ) != 0) {
+        goto cleanup;
+    }
+    snapshot_parse_length = snapshot_length;
+    if (corruption_mode != NULL) {
+        if (strcmp(corruption_mode, "truncated") == 0) {
+            snapshot_parse_length -= 1;
+        } else if (strcmp(corruption_mode, "malformed-length") == 0) {
+            secdat_write_be32(snapshot + 32, UINT32_MAX);
+            if (secdat_test_rehash_handover_snapshot(
+                    snapshot,
+                    snapshot_length
+                ) != 0) {
+                goto cleanup;
+            }
+        } else if (strcmp(corruption_mode, "unsupported-version") == 0) {
+            secdat_write_be32(snapshot + 8, UINT32_MAX);
+            if (secdat_test_rehash_handover_snapshot(
+                    snapshot,
+                    snapshot_length
+                ) != 0) {
+                goto cleanup;
+            }
+        } else {
+            snapshot[0] ^= 0xff;
+        }
+    }
+    if (secdat_session_record_parse_handover(
+                snapshot,
+                snapshot_parse_length,
+                &imported
+            ) != 0
+        || imported.expires_at <= time(NULL)
+        || secdat_session_agent_path_for_domain(
+                domain_id,
+                socket_path,
+                sizeof(socket_path)
+            ) != 0
+        || !secdat_listener_matches_path(server_fd, socket_path)
+        || socketpair(AF_UNIX, SOCK_STREAM, 0, activation) != 0) {
+        goto cleanup;
+    }
+    successor_pid = fork();
+    if (successor_pid < 0) {
+        goto cleanup;
+    }
+    if (successor_pid == 0) {
+        int devnull;
+
+        close(activation[0]);
+        close(control_fd);
+        secdat_secure_clear(snapshot, snapshot_length);
+        free(snapshot);
+        snapshot = NULL;
+        (void)setsid();
+        devnull = open("/dev/null", O_RDWR);
+        if (devnull >= 0) {
+            dup2(devnull, STDIN_FILENO);
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            if (devnull > STDERR_FILENO) {
+                close(devnull);
+            }
+        }
+        _exit(secdat_run_handover_successor(
+            server_fd,
+            socket_path,
+            &imported,
+            activation[1]
+        ) == 0 ? 0 : 1);
+    }
+    close(activation[1]);
+    activation[1] = -1;
+    close(server_fd);
+    server_fd = -1;
+    secdat_session_record_reset(&imported);
+    secdat_secure_clear(snapshot, snapshot_length);
+    free(snapshot);
+    snapshot = NULL;
+    deadline = secdat_handover_deadline();
+    if (secdat_fd_read_all_until(
+            activation[0],
+            candidate_message,
+            sizeof(candidate_message),
+            deadline
+        ) != 0
+        || memcmp(
+                candidate_message,
+                secdat_handover_ready,
+                sizeof(candidate_message)
+            ) != 0
+        || secdat_send_fd_message_until(
+                control_fd,
+                secdat_handover_commit,
+                sizeof(secdat_handover_commit),
+                activation[0],
+                deadline
+            ) != 0) {
+        goto cleanup;
+    }
+    commit_sent = 1;
+    close(activation[0]);
+    activation[0] = -1;
+    deadline = secdat_handover_deadline();
+    if (secdat_fd_read_all_until(
+            control_fd,
+            response,
+            sizeof(response),
+            deadline
+        ) != 0
+        || memcmp(response, "OK commit\n", sizeof(response)) != 0) {
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    if (status != 0 && handover_started && !commit_sent) {
+        secdat_session_agent_abort_handover(
+            control_fd,
+            activation[0],
+            successor_pid
+        );
+        activation[0] = -1;
+    } else if (activation[0] >= 0) {
+        close(activation[0]);
+    }
+    if (activation[1] >= 0) {
+        close(activation[1]);
+    }
+    if (server_fd >= 0) {
+        close(server_fd);
+    }
+    if (control_fd >= 0) {
+        close(control_fd);
+    }
+    secdat_session_record_reset(&imported);
+    if (snapshot != NULL) {
+        secdat_secure_clear(snapshot, snapshot_length);
+    }
+    free(snapshot);
+    if (status != 0) {
+        fprintf(stderr, _("failed to hand over the active session agent safely\n"));
+    }
+    return status;
+}
+
 static int secdat_session_agent_status(const struct secdat_domain_chain *chain, struct secdat_session_record *record)
 {
     return secdat_session_agent_status_details(chain, record, NULL, NULL);
+}
+
+static int secdat_session_agent_query_capabilities(
+    const char *scope_id,
+    int advertised_protocol_version,
+    uint64_t *capabilities
+)
+{
+    FILE *stream;
+    int fd;
+    char response[96];
+    int protocol_version;
+    unsigned long long capability_value;
+
+    *capabilities = 0;
+    fd = secdat_session_agent_connect_domain(scope_id, 0);
+    if (fd < 0) {
+        return 1;
+    }
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+    fprintf(stream, "CAPS\n");
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fclose(stream);
+    if (sscanf(response, "OK %d %llu", &protocol_version, &capability_value) != 2
+        || protocol_version != advertised_protocol_version) {
+        return 1;
+    }
+    *capabilities = (uint64_t)capability_value;
+    return 0;
 }
 
 static int secdat_session_agent_status_details(
@@ -6080,11 +7383,25 @@ static int secdat_session_agent_status_details(
     char response[64];
     char expires_text[32];
     char mode[16];
+    char protocol_text[32];
+    char extra_text[2];
+    char *protocol_end = NULL;
+    long protocol_version;
+    int parsed_fields;
+    size_t resolved_matched_index = SIZE_MAX;
+    const char *scope_id;
 
     memset(record, 0, sizeof(*record));
-    fd = secdat_session_agent_connect_chain_details(chain, matched_index, blocked_index);
+    fd = secdat_session_agent_connect_chain_details(
+        chain,
+        &resolved_matched_index,
+        blocked_index
+    );
     if (fd < 0) {
         return 1;
+    }
+    if (matched_index != NULL) {
+        *matched_index = resolved_matched_index;
     }
 
     stream = fdopen(fd, "r+");
@@ -6106,10 +7423,26 @@ static int secdat_session_agent_status_details(
     }
     mode[0] = '\0';
     duration_text[0] = '\0';
-    if (sscanf(response, "OK %31s %15s %31s", expires_text, mode, duration_text) < 2) {
-        return 1;
-    }
-    if (secdat_parse_i64(expires_text, &record->expires_at) != 0) {
+    protocol_text[0] = '\0';
+    extra_text[0] = '\0';
+    parsed_fields = sscanf(
+        response,
+        "OK %31s %15s %31s %31s %1s",
+        expires_text,
+        mode,
+        duration_text,
+        protocol_text,
+        extra_text
+    );
+    if (parsed_fields < 2
+        || parsed_fields > 4
+        || secdat_parse_i64(expires_text, &record->expires_at) != 0
+        || record->expires_at <= 0
+        || (strcmp(mode, "persistent") != 0
+            && strcmp(mode, "volatile") != 0
+            && strcmp(mode, "readonly") != 0)) {
+        record->agent_protocol_error = 1;
+        fprintf(stderr, _("invalid response from the active session agent\n"));
         return 1;
     }
     record->duration_seconds = secdat_session_idle_seconds();
@@ -6118,8 +7451,62 @@ static int secdat_session_agent_status_details(
     } else if (strcmp(mode, "readonly") == 0) {
         record->readonly_mode = 1;
     }
-    if (duration_text[0] != '\0' && secdat_parse_i64(duration_text, &record->duration_seconds) != 0) {
+    if (duration_text[0] != '\0'
+        && (secdat_parse_i64(duration_text, &record->duration_seconds) != 0
+            || record->duration_seconds <= 0)) {
+        record->agent_protocol_error = 1;
+        fprintf(stderr, _("invalid response from the active session agent\n"));
         return 1;
+    }
+    scope_id = resolved_matched_index == chain->count
+        ? SECDAT_USER_GLOBAL_SCOPE_ID
+        : chain->ids[resolved_matched_index];
+    if (parsed_fields >= 4) {
+        record->agent_protocol_advertised = 1;
+        errno = 0;
+        if (strncmp(protocol_text, "proto=", 6) != 0) {
+            record->agent_protocol_error = 1;
+        } else {
+            protocol_version = strtol(protocol_text + 6, &protocol_end, 10);
+            if (errno != 0
+                || protocol_end == protocol_text + 6
+                || *protocol_end != '\0'
+                || protocol_version <= 0
+                || protocol_version > INT_MAX) {
+                record->agent_protocol_error = 1;
+            } else {
+                record->agent_protocol_version = (int)protocol_version;
+            }
+        }
+        if (record->agent_protocol_error) {
+            fprintf(stderr, _("invalid response from the active session agent\n"));
+            return 1;
+        }
+        if (secdat_session_agent_query_capabilities(
+                scope_id,
+                record->agent_protocol_version,
+                &record->agent_capabilities
+            ) != 0) {
+            record->agent_protocol_error = 1;
+            fprintf(stderr, _("failed to negotiate capabilities with the active session agent\n"));
+            return 1;
+        }
+        record->agent_capabilities_valid = 1;
+    }
+    if (record->agent_capabilities_valid
+        && (record->agent_capabilities & SECDAT_AGENT_CAP_HANDOVER_V1) != 0
+        && (record->agent_protocol_version < SECDAT_AGENT_PROTOCOL_VERSION
+            || (getenv("SECDAT_TEST_FORCE_AGENT_HANDOVER") != NULL
+                && !secdat_test_force_agent_handover_consumed))) {
+        secdat_test_force_agent_handover_consumed = 1;
+        if (secdat_session_agent_handover(scope_id) != 0) {
+            record->agent_protocol_error = 1;
+            return 1;
+        }
+        record->agent_protocol_advertised = 1;
+        record->agent_protocol_version = SECDAT_AGENT_PROTOCOL_VERSION;
+        record->agent_capabilities_valid = 1;
+        record->agent_capabilities = SECDAT_AGENT_CAPABILITIES;
     }
     return 0;
 }
@@ -6428,14 +7815,33 @@ static int secdat_session_agent_overlay_lookup(
     const char *store_name,
     const char *key,
     struct secdat_overlay_lookup_result *result,
-    int ephemeral_only
+    int ephemeral_only,
+    const struct secdat_session_record *record
 )
 {
     FILE *stream;
     char response[64];
     char *payload = NULL;
+    uint64_t required_capability = ephemeral_only
+        ? SECDAT_AGENT_CAP_EPHEMERAL_V1
+        : SECDAT_AGENT_CAP_OVERLAY_V1;
 
     memset(result, 0, sizeof(*result));
+    if (record->agent_protocol_advertised) {
+        if (!record->agent_capabilities_valid) {
+            close(fd);
+            fprintf(stderr, _("failed to negotiate capabilities with the active session agent\n"));
+            return 1;
+        }
+        if ((record->agent_capabilities & required_capability) == 0) {
+            close(fd);
+            if (record->volatile_mode) {
+                fprintf(stderr, _("the active session agent cannot expose its volatile overlay safely\n"));
+                return 1;
+            }
+            return 0;
+        }
+    }
     stream = fdopen(fd, "r+");
     if (stream == NULL) {
         close(fd);
@@ -6449,15 +7855,27 @@ static int secdat_session_agent_overlay_lookup(
     fflush(stream);
     if (secdat_read_line(stream, response, sizeof(response)) != 0) {
         fclose(stream);
-        return ephemeral_only ? 0 : 1;
+        if (!record->agent_protocol_advertised) {
+            if (!record->volatile_mode) {
+                return 0;
+            }
+            fprintf(stderr, _("legacy volatile session cannot be read safely by this secdat version\n"));
+            return 1;
+        }
+        fprintf(stderr, _("the active session agent did not complete the overlay protocol\n"));
+        return 1;
     }
     if (strcmp(response, "ERR missing") == 0) {
         fclose(stream);
         return 0;
     }
-    if (ephemeral_only && strcmp(response, "ERR invalid") == 0) {
+    if (!record->agent_protocol_advertised && strcmp(response, "ERR invalid") == 0) {
         fclose(stream);
-        return 0;
+        if (!record->volatile_mode) {
+            return 0;
+        }
+        fprintf(stderr, _("legacy volatile session cannot be read safely by this secdat version\n"));
+        return 1;
     }
     if (strcmp(response, "OK tomb") == 0) {
         result->found = 1;
@@ -6707,7 +8125,8 @@ static int secdat_session_agent_overlay_collect_keys(
     const char *store_name,
     struct secdat_key_list *entries,
     struct secdat_key_list *tombstones,
-    int ephemeral_only
+    int ephemeral_only,
+    const struct secdat_session_record *record
 )
 {
     FILE *stream;
@@ -6718,7 +8137,25 @@ static int secdat_session_agent_overlay_collect_keys(
     int unsafe_store;
     char *decoded_key = NULL;
     int status = 1;
+    uint64_t required_capability = ephemeral_only
+        ? SECDAT_AGENT_CAP_EPHEMERAL_V1
+        : SECDAT_AGENT_CAP_OVERLAY_V1;
 
+    if (record->agent_protocol_advertised) {
+        if (!record->agent_capabilities_valid) {
+            close(fd);
+            fprintf(stderr, _("failed to negotiate capabilities with the active session agent\n"));
+            return 1;
+        }
+        if ((record->agent_capabilities & required_capability) == 0) {
+            close(fd);
+            if (record->volatile_mode) {
+                fprintf(stderr, _("the active session agent cannot expose its volatile overlay safely\n"));
+                return 1;
+            }
+            return 0;
+        }
+    }
     stream = fdopen(fd, "r+");
     if (stream == NULL) {
         close(fd);
@@ -6732,15 +8169,27 @@ static int secdat_session_agent_overlay_collect_keys(
     fflush(stream);
     if (secdat_read_line(stream, response, sizeof(response)) != 0) {
         fclose(stream);
-        return ephemeral_only ? 0 : 1;
+        if (!record->agent_protocol_advertised) {
+            if (!record->volatile_mode) {
+                return 0;
+            }
+            fprintf(stderr, _("legacy volatile session cannot be read safely by this secdat version\n"));
+            return 1;
+        }
+        fprintf(stderr, _("the active session agent did not complete the overlay protocol\n"));
+        return 1;
     }
     if (strcmp(response, "OK 0") == 0) {
         fclose(stream);
         return 0;
     }
-    if (ephemeral_only && strcmp(response, "ERR invalid") == 0) {
+    if (!record->agent_protocol_advertised && strcmp(response, "ERR invalid") == 0) {
         fclose(stream);
-        return 0;
+        if (!record->volatile_mode) {
+            return 0;
+        }
+        fprintf(stderr, _("legacy volatile session cannot be read safely by this secdat version\n"));
+        return 1;
     }
     if (strcmp(response, "OK 1") != 0) {
         fclose(stream);
@@ -6911,7 +8360,7 @@ static int secdat_active_overlay_lookup(
     fd = secdat_session_agent_effective_fd(chain, &record, &matched_index);
     if (fd < 0) {
         memset(result, 0, sizeof(*result));
-        return 0;
+        return record.agent_protocol_error ? 1 : 0;
     }
     status = secdat_session_agent_overlay_lookup(
         fd,
@@ -6920,7 +8369,8 @@ static int secdat_active_overlay_lookup(
         key,
         result,
         getenv("SECDAT_MASTER_KEY") != NULL
-            && getenv("SECDAT_MASTER_KEY")[0] != '\0'
+            && getenv("SECDAT_MASTER_KEY")[0] != '\0',
+        &record
     );
     secdat_secure_clear(record.master_key, strlen(record.master_key));
     if (status == 0
@@ -6950,7 +8400,7 @@ static int secdat_active_overlay_collect_keys(
 
     fd = secdat_session_agent_effective_fd(chain, &record, &matched_index);
     if (fd < 0) {
-        return 0;
+        return record.agent_protocol_error ? 1 : 0;
     }
     status = secdat_session_agent_overlay_collect_keys(
         fd,
@@ -6959,7 +8409,8 @@ static int secdat_active_overlay_collect_keys(
         entries,
         tombstones,
         getenv("SECDAT_MASTER_KEY") != NULL
-            && getenv("SECDAT_MASTER_KEY")[0] != '\0'
+            && getenv("SECDAT_MASTER_KEY")[0] != '\0',
+        &record
     );
     secdat_secure_clear(record.master_key, strlen(record.master_key));
     return status;
@@ -7112,7 +8563,7 @@ static int secdat_active_overlay_enabled(const struct secdat_domain_chain *chain
 
     fd = secdat_session_agent_effective_overlay_fd(chain, &record, &matched_index);
     if (fd < 0) {
-        return 0;
+        return record.agent_protocol_error ? 1 : 0;
     }
     close(fd);
     secdat_secure_clear(record.master_key, strlen(record.master_key));
@@ -7127,7 +8578,7 @@ static int secdat_effective_session_is_readonly(const struct secdat_domain_chain
         return 0;
     }
     if (secdat_session_agent_status_details(chain, &record, NULL, NULL) != 0) {
-        return 0;
+        return record.agent_protocol_error ? 1 : 0;
     }
     secdat_secure_clear(record.master_key, strlen(record.master_key));
     return record.readonly_mode;
@@ -7735,6 +9186,8 @@ static int secdat_collect_domain_status_summary_for_chain(
             }
         }
         secdat_secure_clear(record.master_key, strlen(record.master_key));
+    } else if (record.agent_protocol_error) {
+        goto cleanup;
     } else if (summary->key_source != SECDAT_KEY_SOURCE_ENVIRONMENT) {
         if (blocked_index == 0) {
             summary->effective_source = SECDAT_EFFECTIVE_SOURCE_EXPLICIT_LOCK;
@@ -8585,6 +10038,11 @@ int secdat_sdk_wait_unlock(
         secdat_domain_chain_free(&chain);
         return 0;
     }
+    if (record.agent_protocol_error) {
+        secdat_session_record_reset(&record);
+        secdat_domain_chain_free(&chain);
+        return 1;
+    }
 
     memset(&wait_options, 0, sizeof(wait_options));
     wait_options.quiet = 1;
@@ -8925,6 +10383,18 @@ static uint32_t secdat_read_be32(const unsigned char *buffer)
         | ((uint32_t)buffer[1] << 16)
         | ((uint32_t)buffer[2] << 8)
         | (uint32_t)buffer[3];
+}
+
+static void secdat_write_be64(unsigned char *buffer, uint64_t value)
+{
+    secdat_write_be32(buffer, (uint32_t)(value >> 32));
+    secdat_write_be32(buffer + 4, (uint32_t)value);
+}
+
+static uint64_t secdat_read_be64(const unsigned char *buffer)
+{
+    return ((uint64_t)secdat_read_be32(buffer) << 32)
+        | secdat_read_be32(buffer + 4);
 }
 
 static int secdat_derive_key(
@@ -9341,10 +10811,12 @@ static int secdat_command_status_json(const struct secdat_cli *cli, int wrapped_
         if (secdat_domain_display_label(chain.count == 0 ? "" : chain.ids[0], resolved_domain, sizeof(resolved_domain)) != 0) {
             resolved_domain[0] = '\0';
         }
-        if (secdat_collect_domain_status_summary_for_chain(&chain, &summary) == 0) {
-            store_count = summary.store_count;
-            visible_key_count = summary.visible_key_count;
+        if (secdat_collect_domain_status_summary_for_chain(&chain, &summary) != 0) {
+            secdat_domain_chain_free(&chain);
+            return 1;
         }
+        store_count = summary.store_count;
+        visible_key_count = summary.visible_key_count;
     }
 
     if (!chain_resolved) {
@@ -9492,23 +10964,30 @@ static int secdat_command_status(const struct secdat_cli *cli)
         return 0;
     }
 
-    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) == 0 && secdat_session_agent_status(&chain, &record) == 0) {
-        if (!quiet) {
-            puts(_("unlocked"));
-            puts(_("source: session agent"));
-            if (record.volatile_mode) {
-                puts(_("overlay: volatile"));
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) == 0) {
+        if (secdat_session_agent_status(&chain, &record) == 0) {
+            if (!quiet) {
+                puts(_("unlocked"));
+                puts(_("source: session agent"));
+                if (record.volatile_mode) {
+                    puts(_("overlay: volatile"));
+                }
+                if (record.readonly_mode) {
+                    puts(_("access: readonly"));
+                }
+                secdat_format_remaining_duration(record.expires_at, remaining_text, sizeof(remaining_text));
+                printf(_("expires in: %s\n"), remaining_text);
+                puts(wrapped_present ? _("wrapped master key: present") : _("wrapped master key: absent"));
             }
-            if (record.readonly_mode) {
-                puts(_("access: readonly"));
-            }
-            secdat_format_remaining_duration(record.expires_at, remaining_text, sizeof(remaining_text));
-            printf(_("expires in: %s\n"), remaining_text);
-            puts(wrapped_present ? _("wrapped master key: present") : _("wrapped master key: absent"));
+            secdat_secure_clear(record.master_key, strlen(record.master_key));
+            secdat_domain_chain_free(&chain);
+            return 0;
         }
-        secdat_secure_clear(record.master_key, strlen(record.master_key));
-        secdat_domain_chain_free(&chain);
-        return 0;
+        if (record.agent_protocol_error) {
+            secdat_session_record_reset(&record);
+            secdat_domain_chain_free(&chain);
+            return 1;
+        }
     }
 
     secdat_domain_chain_free(&chain);
@@ -9550,6 +11029,11 @@ static int secdat_command_wait_unlock(const struct secdat_cli *cli)
         secdat_session_record_reset(&record);
         secdat_domain_chain_free(&chain);
         return 0;
+    }
+    if (record.agent_protocol_error) {
+        secdat_session_record_reset(&record);
+        secdat_domain_chain_free(&chain);
+        return 1;
     }
 
     parse_status = secdat_wait_for_unlock(&chain, &options);
@@ -9656,6 +11140,13 @@ static int secdat_command_unlock(const struct secdat_cli *cli)
             secdat_domain_root_list_free(&descendant_targets);
             secdat_domain_chain_free(&current_chain);
             return 0;
+        }
+        if (active_record.agent_protocol_error) {
+            secdat_session_record_reset(&secret_record);
+            secdat_session_record_reset(&active_record);
+            secdat_domain_root_list_free(&descendant_targets);
+            secdat_domain_chain_free(&current_chain);
+            return 1;
         }
         secdat_session_record_reset(&secret_record);
         secdat_session_record_reset(&active_record);
@@ -9855,15 +11346,21 @@ static int secdat_command_lock(const struct secdat_cli *cli)
         secdat_domain_chain_free(&chain);
         return parse_status;
     }
-    if ((getenv("SECDAT_MASTER_KEY") == NULL || getenv("SECDAT_MASTER_KEY")[0] == '\0')
-        && secdat_session_agent_status(&chain, &record) != 0) {
-        if (secdat_session_agent_purge_chain_ephemeral_domain(&chain, NULL, 0) != 0) {
+    if (getenv("SECDAT_MASTER_KEY") == NULL || getenv("SECDAT_MASTER_KEY")[0] == '\0') {
+        if (secdat_session_agent_status(&chain, &record) != 0) {
+            if (record.agent_protocol_error) {
+                secdat_session_record_reset(&record);
+                secdat_domain_chain_free(&chain);
+                return 1;
+            }
+            if (secdat_session_agent_purge_chain_ephemeral_domain(&chain, NULL, 0) != 0) {
+                secdat_domain_chain_free(&chain);
+                return 1;
+            }
             secdat_domain_chain_free(&chain);
-            return 1;
+            puts(_("already locked"));
+            return 0;
         }
-        secdat_domain_chain_free(&chain);
-        puts(_("already locked"));
-        return 0;
     }
     secdat_session_record_reset(&record);
     should_persist_lock = chain.count > 1;

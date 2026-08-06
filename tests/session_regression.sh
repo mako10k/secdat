@@ -20,6 +20,8 @@ python3 - "$bin_path" <<'PY'
 import os
 import pty
 import re
+import array
+import struct
 import shutil
 import socket
 import subprocess
@@ -103,6 +105,63 @@ def scoped(args, domain=root_domain):
 def socket_path_for(domain):
     digest = hashlib.sha256(str(domain).encode()).hexdigest()[:32]
     return Path(env["XDG_RUNTIME_DIR"]) / "secdat" / f"agent-{digest}.sock"
+
+def registered_domain_id(domain):
+    registry_path = (
+        Path(env["XDG_DATA_HOME"])
+        / "secdat"
+        / "domains"
+        / "registry"
+        / "by-root"
+        / quote(str(domain), safe="")
+    )
+    return registry_path.read_text().strip()
+
+def agent_caps(socket_path):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.connect(str(socket_path))
+        client.sendall(b"CAPS\n")
+        with client.makefile("rb") as stream:
+            response = stream.readline().decode().strip()
+    match = re.fullmatch(r"OK (\d+) (\d+) pid=(\d+)", response)
+    if match is None:
+        fail(f"invalid agent CAPS response: {response!r}")
+    return tuple(int(value) for value in match.groups())
+
+def begin_agent_handover(socket_path):
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        client.connect(str(socket_path))
+        client.sendall(b"HANDOVER\n")
+        fd_array = array.array("i")
+        header, ancillary, flags, _ = client.recvmsg(
+            16,
+            socket.CMSG_SPACE(fd_array.itemsize),
+            socket.MSG_WAITALL,
+        )
+        if len(header) != 16 or header[:8] != b"SECDHFD1" or flags != 0:
+            fail(f"invalid handover response header: {header!r} flags={flags}")
+        for level, kind, payload in ancillary:
+            if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
+                fd_array.frombytes(payload[: fd_array.itemsize])
+        if len(fd_array) != 1:
+            fail(f"handover did not transfer exactly one listener fd: {list(fd_array)!r}")
+        snapshot_length = struct.unpack(">Q", header[8:])[0]
+        snapshot = bytearray()
+        while len(snapshot) < snapshot_length:
+            chunk = client.recv(snapshot_length - len(snapshot))
+            if not chunk:
+                fail("handover snapshot was truncated")
+            snapshot.extend(chunk)
+        return client, fd_array[0]
+    except BaseException:
+        client.close()
+        raise
+
+def abandon_agent_handover(socket_path):
+    client, listener_fd = begin_agent_handover(socket_path)
+    os.close(listener_fd)
+    client.close()
 
 def fail(message):
     print(f"FAIL: {message}", file=sys.stderr)
@@ -2095,6 +2154,9 @@ compat_server.settimeout(0.1)
 compat_stop = threading.Event()
 compat_commands = []
 compat_overlay_response = [b"ERR invalid\n"]
+compat_status_mode = ["persistent"]
+compat_status_protocol = [""]
+compat_caps_response = [b"ERR invalid\n"]
 
 def serve_old_agent():
     while not compat_stop.is_set():
@@ -2107,7 +2169,15 @@ def serve_old_agent():
                 command = stream.readline().decode().rstrip("\r\n")
                 compat_commands.append(command)
                 if command == "STATUS":
-                    stream.write(f"OK {int(time.time()) + 300} persistent 300\n".encode())
+                    stream.write(
+                        f"OK {int(time.time()) + 300} {compat_status_mode[0]} 300{compat_status_protocol[0]}\n".encode()
+                    )
+                elif command == "CAPS":
+                    stream.write(compat_caps_response[0])
+                elif command == "GET":
+                    stream.write(
+                        f"OK {int(time.time()) + 300} 300\nold-agent-compat-key\n".encode()
+                    )
                 else:
                     stream.write(compat_overlay_response[0])
                 stream.flush()
@@ -2132,6 +2202,55 @@ try:
         scoped(["ls", "--pattern", "OLD_AGENT_PERSISTED"], compat_domain),
         compat_env,
     )
+    compat_overlay_response[0] = b""
+    eof_rc, eof_stdout, eof_stderr = run(
+        scoped(["ls", "--pattern", "OLD_AGENT_PERSISTED"], compat_domain),
+    )
+    legacy_exec_rc, legacy_exec_stdout, legacy_exec_stderr = run(
+        scoped([
+            "exec",
+            "--inject", "ambient:only=__NO_OLD_AGENT_AMBIENT__",
+            "--inject", "secret:only=OLD_AGENT_PERSISTED",
+            "--inject", "route:prefer=secret",
+            "python3", "-c", "import os; print(os.environ['OLD_AGENT_PERSISTED'])",
+        ], compat_domain),
+    )
+    legacy_caps_count = compat_commands.count("CAPS")
+    compat_status_mode[0] = "volatile"
+    volatile_rc, volatile_stdout, volatile_stderr = run(
+        scoped(["ls", "--pattern", "OLD_AGENT_PERSISTED"], compat_domain),
+    )
+    compat_status_mode[0] = "persistent"
+    compat_status_protocol[0] = " proto=1"
+    compat_caps_response[0] = b"OK 1 7\n"
+    capable_rc, capable_stdout, capable_stderr = run(
+        scoped(["ls", "--pattern", "OLD_AGENT_PERSISTED"], compat_domain),
+    )
+    capable_status_rc, capable_status_stdout, capable_status_stderr = run(
+        scoped(["status", "--json"], compat_domain),
+    )
+    compat_status_mode[0] = "volatile"
+    compat_caps_response[0] = b"OK 1 4\n"
+    missing_overlay_cap_rc, missing_overlay_cap_stdout, missing_overlay_cap_stderr = run(
+        scoped(["ls", "--pattern", "OLD_AGENT_PERSISTED"], compat_domain),
+    )
+    compat_status_mode[0] = "persistent"
+    compat_caps_response[0] = b""
+    negotiation_status_rc, negotiation_status_stdout, negotiation_status_stderr = run(
+        scoped(["status"], compat_domain),
+    )
+    negotiation_write_rc, negotiation_write_stdout, negotiation_write_stderr = run(
+        scoped(["set", "NEGOTIATION_MUST_NOT_PERSIST", "--value", "blocked"], compat_domain),
+    )
+    compat_status_mode[0] = "readonly"
+    readonly_negotiation_rc, readonly_negotiation_stdout, readonly_negotiation_stderr = run(
+        scoped(["set", "READONLY_NEGOTIATION_MUST_NOT_PERSIST", "--value", "blocked"], compat_domain),
+    )
+    compat_status_mode[0] = "persistent"
+    compat_status_protocol[0] = " proto=broken"
+    malformed_write_rc, malformed_write_stdout, malformed_write_stderr = run(
+        scoped(["set", "MALFORMED_MUST_NOT_PERSIST", "--value", "blocked"], compat_domain),
+    )
 finally:
     compat_stop.set()
     compat_thread.join(timeout=2)
@@ -2155,6 +2274,368 @@ if internal_list_rc == 0 or internal_list_stdout != "":
         "unexpected EPLIST errors must fail closed: "
         f"rc={internal_list_rc} stdout={internal_list_stdout!r} stderr={internal_list_stderr!r}"
     )
+if eof_rc != 0 or eof_stdout != "OLD_AGENT_PERSISTED\n" or eof_stderr != "":
+    fail(
+        "legacy persistent OVLIST EOF must fall back to the persisted store: "
+        f"rc={eof_rc} stdout={eof_stdout!r} stderr={eof_stderr!r}"
+    )
+if legacy_exec_rc != 0 or legacy_exec_stdout != "old-agent-value\n" or legacy_exec_stderr != "":
+    fail(
+        "legacy persistent agent must retain non-ephemeral exec fallback: "
+        f"rc={legacy_exec_rc} stdout={legacy_exec_stdout!r} stderr={legacy_exec_stderr!r}"
+    )
+if legacy_caps_count != 0:
+    fail(f"client sent CAPS before a protocol advertisement: commands={compat_commands!r}")
+if volatile_rc == 0 or volatile_stdout != "" or "legacy volatile session cannot be read safely" not in volatile_stderr:
+    fail(
+        "legacy volatile OVLIST EOF must fail closed: "
+        f"rc={volatile_rc} stdout={volatile_stdout!r} stderr={volatile_stderr!r}"
+    )
+if capable_rc == 0 or capable_stdout != "" or "did not complete the overlay protocol" not in capable_stderr:
+    fail(
+        "capability-advertised OVLIST EOF must fail closed: "
+        f"rc={capable_rc} stdout={capable_stdout!r} stderr={capable_stderr!r}"
+    )
+if (
+    capable_status_rc == 0
+    or capable_status_stdout != ""
+    or "did not complete the overlay protocol" not in capable_status_stderr
+):
+    fail(
+        "capability-advertised OVLIST EOF must not emit a partial status summary: "
+        f"rc={capable_status_rc} stdout={capable_status_stdout!r} "
+        f"stderr={capable_status_stderr!r}"
+    )
+if (
+    missing_overlay_cap_rc == 0
+    or missing_overlay_cap_stdout != ""
+    or "cannot expose its volatile overlay safely" not in missing_overlay_cap_stderr
+):
+    fail(
+        "volatile session missing the negotiated overlay capability must fail closed: "
+        f"rc={missing_overlay_cap_rc} stdout={missing_overlay_cap_stdout!r} "
+        f"stderr={missing_overlay_cap_stderr!r}"
+    )
+if (
+    negotiation_status_rc == 0
+    or negotiation_status_stdout != ""
+    or "failed to negotiate capabilities" not in negotiation_status_stderr
+):
+    fail(
+        "capability negotiation failure must fail status closed: "
+        f"rc={negotiation_status_rc} stdout={negotiation_status_stdout!r} "
+        f"stderr={negotiation_status_stderr!r}"
+    )
+if (
+    negotiation_write_rc == 0
+    or negotiation_write_stdout != ""
+    or "failed to negotiate capabilities" not in negotiation_write_stderr
+):
+    fail(
+        "capability negotiation failure must block persisted writes: "
+        f"rc={negotiation_write_rc} stdout={negotiation_write_stdout!r} "
+        f"stderr={negotiation_write_stderr!r}"
+    )
+if (
+    readonly_negotiation_rc == 0
+    or readonly_negotiation_stdout != ""
+    or "failed to negotiate capabilities" not in readonly_negotiation_stderr
+    or "current session is readonly" not in readonly_negotiation_stderr
+):
+    fail(
+        "capability negotiation failure must preserve the readonly write guard: "
+        f"rc={readonly_negotiation_rc} stdout={readonly_negotiation_stdout!r} "
+        f"stderr={readonly_negotiation_stderr!r}"
+    )
+if (
+    malformed_write_rc == 0
+    or malformed_write_stdout != ""
+    or "invalid response from the active session agent" not in malformed_write_stderr
+):
+    fail(
+        "malformed protocol advertisement must block persisted writes: "
+        f"rc={malformed_write_rc} stdout={malformed_write_stdout!r} "
+        f"stderr={malformed_write_stderr!r}"
+    )
+for key in (
+    "NEGOTIATION_MUST_NOT_PERSIST",
+    "READONLY_NEGOTIATION_MUST_NOT_PERSIST",
+    "MALFORMED_MUST_NOT_PERSIST",
+):
+    rc, stdout, stderr = run(scoped(["exists", key], compat_domain), compat_env)
+    if rc != 1 or stdout != "" or stderr != "":
+        fail(f"negotiation failure persisted {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+handover_domain = isolated_root / "agent-handover-domain"
+handover_child = handover_domain / "child-domain"
+handover_domain.mkdir()
+handover_child.mkdir()
+handover_env = {"SECDAT_MASTER_KEY": "agent-handover-master-key"}
+for domain in (handover_domain, handover_child):
+    rc, stdout, stderr = run(scoped(["domain", "create"], domain), handover_env)
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"handover domain create failed for {domain}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+handover_alt_store = "handover-alt"
+rc, stdout, stderr = run(
+    scoped(["store", "create", handover_alt_store], handover_domain),
+    handover_env,
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"handover alternate store create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["set", "HANDOVER_TOMBSTONE", "--unsafe", "--value", "persisted-before-handover"], handover_domain),
+    handover_env,
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"handover persisted seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["set", "HANDOVER_SHADOW", "--value", "persisted-under-handover"], handover_domain),
+    handover_env,
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"handover shadow seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["unlock", "--volatile", "--duration", "PT10M"], handover_domain),
+    handover_env,
+)
+if rc != 0 or "volatile session unlocked from environment" not in stdout:
+    fail(f"handover volatile unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for args in (
+    ["set", "HANDOVER_VOLATILE", "--value", "volatile-after-handover"],
+    ["rm", "HANDOVER_TOMBSTONE"],
+    ["set", "--ephemeral", "HANDOVER_EPHEMERAL", "--bulk-select", "include", "--value", "ephemeral-after-handover"],
+    ["set", "--ephemeral", "HANDOVER_SHADOW", "--value", "ephemeral-over-handover"],
+    ["set", "--ephemeral", "HANDOVER_EMPTY", "--bulk-select", "named", "--value", ""],
+):
+    rc, stdout, stderr = run(scoped(args, handover_domain))
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"handover state seed failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+handover_binary = "handover-prefix\x00handover-suffix\n"
+rc, stdout, stderr = run(
+    scoped(["set", "--ephemeral", "HANDOVER_BINARY", "--stdin"], handover_domain),
+    input_text=handover_binary,
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"handover binary seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+handover_large = "H" * 9000
+rc, stdout, stderr = run(
+    scoped(["set", "--ephemeral", "HANDOVER_LARGE", "--stdin"], handover_domain),
+    input_text=handover_large,
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"handover large seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["set", "--ephemeral", "HANDOVER_CHILD", "--bulk-select", "include", "--value", "child-after-handover"], handover_child),
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"handover inherited child seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(
+        ["--store", handover_alt_store, "set", "--ephemeral", "HANDOVER_ALT_STORE", "--value", "alternate-store-after-handover"],
+        handover_domain,
+    ),
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"handover alternate store seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+handover_socket = socket_path_for(registered_domain_id(handover_domain))
+protocol_before, capabilities_before, pid_before = agent_caps(handover_socket)
+if protocol_before != 1 or capabilities_before & 7 != 7:
+    fail(f"handover capabilities missing: protocol={protocol_before} caps={capabilities_before}")
+rc, stdout, stderr = run(scoped(["status", "--json"], handover_domain))
+if rc != 0 or stderr != "":
+    fail(f"handover status before transfer failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+expires_before = json.loads(stdout)["session_expires_at"]
+
+abandon_agent_handover(handover_socket)
+if agent_caps(handover_socket)[2] != pid_before:
+    fail("abandoned handover replaced the authoritative agent")
+rc, stdout, stderr = run(scoped(["get", "HANDOVER_EPHEMERAL", "-o"], handover_domain))
+if rc != 0 or stdout != "ephemeral-after-handover" or stderr != "":
+    fail(f"abandoned handover changed state: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+stalled_control, stalled_listener_fd = begin_agent_handover(handover_socket)
+stall_started = time.monotonic()
+queued_client = subprocess.Popen(
+    scoped(["get", "HANDOVER_EPHEMERAL", "-o"], handover_domain),
+    env=env,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True,
+)
+time.sleep(0.2)
+if queued_client.poll() is not None:
+    queued_stdout, queued_stderr = queued_client.communicate()
+    fail(
+        "client queued behind a stalled handover returned before rollback: "
+        f"rc={queued_client.returncode} stdout={queued_stdout!r} stderr={queued_stderr!r}"
+    )
+stalled_control.settimeout(8)
+if stalled_control.recv(1) != b"":
+    fail("stalled handover coordinator received an unexpected response")
+stall_elapsed = time.monotonic() - stall_started
+os.close(stalled_listener_fd)
+stalled_control.close()
+queued_stdout, queued_stderr = queued_client.communicate(timeout=3)
+if (
+    queued_client.returncode != 0
+    or queued_stdout != "ephemeral-after-handover"
+    or queued_stderr != ""
+    or stall_elapsed < 4
+    or stall_elapsed > 7.5
+):
+    fail(
+        "stalled handover did not roll back within its bounded phase: "
+        f"elapsed={stall_elapsed:.3f} rc={queued_client.returncode} "
+        f"stdout={queued_stdout!r} stderr={queued_stderr!r}"
+    )
+if agent_caps(handover_socket)[2] != pid_before:
+    fail("stalled handover coordinator replaced the authoritative agent")
+
+for fault_env in (
+    {"SECDAT_TEST_FORCE_AGENT_HANDOVER": "1", "SECDAT_TEST_HANDOVER_CORRUPT": "1"},
+    {"SECDAT_TEST_FORCE_AGENT_HANDOVER": "1", "SECDAT_TEST_HANDOVER_CORRUPT": "truncated"},
+    {"SECDAT_TEST_FORCE_AGENT_HANDOVER": "1", "SECDAT_TEST_HANDOVER_CORRUPT": "malformed-length"},
+    {"SECDAT_TEST_FORCE_AGENT_HANDOVER": "1", "SECDAT_TEST_HANDOVER_CORRUPT": "unsupported-version"},
+    {"SECDAT_TEST_FORCE_AGENT_HANDOVER": "1", "SECDAT_TEST_HANDOVER_CANDIDATE_REJECT": "before-ready"},
+    {"SECDAT_TEST_FORCE_AGENT_HANDOVER": "1", "SECDAT_TEST_HANDOVER_CANDIDATE_REJECT": "after-ready"},
+    {"SECDAT_TEST_FORCE_AGENT_HANDOVER": "1", "SECDAT_TEST_HANDOVER_CANDIDATE_REJECT": "stall-after-ready"},
+):
+    rc, stdout, stderr = run(scoped(["status", "--json"], handover_domain), fault_env)
+    if rc == 0 or stdout != "" or "failed to hand over the active session agent safely" not in stderr:
+        fail(f"handover fault did not fail closed for {fault_env}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    if agent_caps(handover_socket)[2] != pid_before:
+        fail(f"handover fault replaced the authoritative agent for {fault_env}")
+    rc, stdout, stderr = run(scoped(["get", "HANDOVER_EPHEMERAL", "-o"], handover_domain))
+    if rc != 0 or stdout != "ephemeral-after-handover" or stderr != "":
+        fail(f"handover fault changed state for {fault_env}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status", "--json"], handover_domain))
+if rc != 0 or stderr != "":
+    fail(f"handover status immediately before transfer failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+expires_before = json.loads(stdout)["session_expires_at"]
+rc, stdout, stderr = run(
+    scoped(["status", "--json"], handover_domain),
+    {"SECDAT_TEST_FORCE_AGENT_HANDOVER": "1"},
+)
+if rc != 0 or stderr != "":
+    fail(f"lossless agent handover failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+handover_status = json.loads(stdout)
+protocol_after, capabilities_after, pid_after = agent_caps(handover_socket)
+if pid_after == pid_before or protocol_after != protocol_before or capabilities_after != capabilities_before:
+    fail(
+        "handover did not activate one equivalent successor: "
+        f"before={(protocol_before, capabilities_before, pid_before)!r} "
+        f"after={(protocol_after, capabilities_after, pid_after)!r}"
+    )
+if handover_status["session_mode"] != "volatile" or handover_status["session_expires_at"] > expires_before:
+    fail(f"handover changed mode or extended expiry: before={expires_before} after={handover_status!r}")
+
+for domain, key, expected in (
+    (handover_domain, "HANDOVER_VOLATILE", "volatile-after-handover"),
+    (handover_domain, "HANDOVER_EPHEMERAL", "ephemeral-after-handover"),
+    (handover_domain, "HANDOVER_SHADOW", "ephemeral-over-handover"),
+    (handover_domain, "HANDOVER_EMPTY", ""),
+    (handover_domain, "HANDOVER_BINARY", handover_binary),
+    (handover_domain, "HANDOVER_LARGE", handover_large),
+    (handover_child, "HANDOVER_CHILD", "child-after-handover"),
+):
+    rc, stdout, stderr = run(scoped(["get", key, "-o"], domain))
+    if rc != 0 or stdout != expected or stderr != "":
+        fail(f"handover value mismatch for {domain} {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["--store", handover_alt_store, "get", "HANDOVER_ALT_STORE", "-o"], handover_domain),
+)
+if rc != 0 or stdout != "alternate-store-after-handover" or stderr != "":
+    fail(f"handover alternate store mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["exists", "HANDOVER_TOMBSTONE"], handover_domain))
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"handover lost volatile tombstone: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["attr", "HANDOVER_EPHEMERAL"], handover_domain))
+if rc != 0 or stdout != "key_visibility=unlocked\nvalue_access=unlocked\nbulk_select=include\n" or stderr != "":
+    fail(f"handover lost ephemeral attributes: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["lock", "--save"], handover_domain))
+if rc != 0 or stdout != "volatile session saved and locked\n" or stderr != "":
+    fail(f"handover lock --save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["get", "HANDOVER_VOLATILE", "-o"], handover_domain), handover_env)
+if rc != 0 or stdout != "volatile-after-handover" or stderr != "":
+    fail(f"handover volatile value was not saved: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["get", "HANDOVER_SHADOW", "-o"], handover_domain), handover_env)
+if rc != 0 or stdout != "persisted-under-handover" or stderr != "":
+    fail(f"handover changed persisted/ephemeral precedence: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for domain, key in (
+    (handover_domain, "HANDOVER_EPHEMERAL"),
+    (handover_domain, "HANDOVER_BINARY"),
+    (handover_child, "HANDOVER_CHILD"),
+):
+    rc, stdout, stderr = run(scoped(["exists", key], domain), handover_env)
+    if rc != 1 or stdout != "" or stderr != "":
+        fail(f"handover persisted ephemeral key {domain} {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["--store", handover_alt_store, "exists", "HANDOVER_ALT_STORE"], handover_domain),
+    handover_env,
+)
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"handover persisted alternate-store ephemeral key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+persistent_handover_env = {
+    "SECDAT_MASTER_KEY": "agent-handover-master-key",
+    "SECDAT_MASTER_KEY_PASSPHRASE": "agent-handover-passphrase",
+}
+rc, stdout, stderr = run(
+    scoped(["unlock", "--duration", "PT10M"], handover_domain),
+    persistent_handover_env,
+)
+if rc != 0 or "session unlocked" not in stdout:
+    fail(f"persistent handover unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["set", "--ephemeral", "HANDOVER_PERSISTENT_EPHEMERAL", "--value", "persistent-ephemeral"], handover_domain),
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"persistent handover ephemeral seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+persistent_pid_before = agent_caps(handover_socket)[2]
+rc, stdout, stderr = run(
+    scoped(["status", "--json"], handover_domain),
+    {"SECDAT_TEST_FORCE_AGENT_HANDOVER": "1"},
+)
+if rc != 0 or stderr != "":
+    fail(f"persistent session handover failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if json.loads(stdout)["session_mode"] != "persistent" or agent_caps(handover_socket)[2] == persistent_pid_before:
+    fail(f"persistent session handover changed mode or process did not change: {stdout!r}")
+rc, stdout, stderr = run(scoped(["get", "HANDOVER_PERSISTENT_EPHEMERAL", "-o"], handover_domain))
+if rc != 0 or stdout != "persistent-ephemeral" or stderr != "":
+    fail(f"persistent handover lost ephemeral value: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["lock"], handover_domain))
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"persistent handover lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(
+    scoped(["unlock", "--readonly", "--duration", "PT10M"], handover_domain),
+    persistent_handover_env,
+)
+if rc != 0 or "readonly session unlocked from environment" not in stdout:
+    fail(f"readonly handover unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+readonly_pid_before = agent_caps(handover_socket)[2]
+rc, stdout, stderr = run(
+    scoped(["status", "--json"], handover_domain),
+    {"SECDAT_TEST_FORCE_AGENT_HANDOVER": "1"},
+)
+if rc != 0 or stderr != "":
+    fail(f"readonly session handover failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if json.loads(stdout)["session_mode"] != "readonly" or agent_caps(handover_socket)[2] == readonly_pid_before:
+    fail(f"readonly session handover changed mode or process did not change: {stdout!r}")
+rc, stdout, stderr = run(scoped(["get", "HANDOVER_VOLATILE", "-o"], handover_domain))
+if rc != 0 or stdout != "volatile-after-handover" or stderr != "":
+    fail(f"readonly handover lost persisted access: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["set", "HANDOVER_READONLY_BLOCKED", "--value", "blocked"], handover_domain),
+)
+if rc == 0 or "current session is readonly" not in stderr:
+    fail(f"readonly handover lost write guard: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["lock"], handover_domain))
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"readonly handover lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY": "session-test-key", "SECDAT_SESSION_IDLE_SECONDS": "5"})
 if rc != 0 or "session unlocked from environment" not in stdout:
