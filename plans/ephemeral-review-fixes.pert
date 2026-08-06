@@ -1,0 +1,182 @@
+# Existing .pert plans should normally be maintained through perttool commands; direct DSL editing bypasses goal/DAG owner-confirmation checks.
+project SECDAT_EPHEMERAL_REVIEW_FIXES:
+  version 6
+  title "secdat per-key ephemeral review fixes"
+  description "Root-cause repair plan for WIP commit 7ce5faaf and GitHub issues 174 through 179. Issue closure, push, release, and activation remain separate authorization gates."
+  as_of 2026-08-06
+  duration_unit day
+  finish M_CLOSED
+  goal_owner user
+  goal_delegates [codex]
+  dag_owner user
+  dag_delegates [codex]
+  plan_assurance_model 1
+  plan_assurance_hash_model 1
+
+milestone M_FINDINGS:
+  title "Review findings recorded as issues"
+  state reached
+
+resource CODEX:
+  title "Codex implementation and review"
+  description "Single-agent implementation capacity; no parallel source edits"
+  capacity 1
+
+milestone M_ENUM_CORRECT:
+  title "Effective enumeration is overlay-correct"
+  description "All key enumeration paths use overlay precedence before backing-store visibility."
+
+milestone M_CORE_FIXES:
+  title "All core fixes complete"
+  description "Enumeration, list attributes, lifecycle purge, FUSE atomicity, and help discoverability are fixed."
+
+milestone M_COVERAGE:
+  title "Regression matrix complete"
+  description "Cross-surface per-key ephemeral regression coverage is complete."
+
+milestone M_ACCEPTED:
+  title "Implementation accepted"
+  description "Full verification and consistency, symmetry, and coverage review pass."
+
+milestone M_CLOSED:
+  title "Issue closeout prepared"
+  description "Verified closeout evidence is ready for issues 174 through 179 and parent 170."
+
+task T174_ENUMERATION M_FINDINGS -> M_ENUM_CORRECT:
+  title "Fix effective key enumeration overlay precedence"
+  description "Create one effective enumeration projection that applies ephemeral overlay entries and tombstones before backing-store visibility. Cover same-domain tombstones, v2 hidden persisted shadows, wrong process environments, downstream save rejection, SDK, exec, export, FUSE, and status consumers."
+  duration 2d
+  priority 90
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [enumeration, security, root-cause]
+  source "GitHub #174"
+
+task T175_LIST_ATTRS M_ENUM_CORRECT -> M_CORE_FIXES:
+  title "Preserve ephemeral attributes in current-domain list filters"
+  description "Carry authoritative overlay attributes through current-domain list and bulk-gate filtering. Add exclude, named, and include-mode parity tests for ls and list."
+  duration 0.5d
+  priority 85
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [enumeration, attributes, symmetry]
+  source "GitHub #175"
+
+task T176_LIFECYCLE M_FINDINGS -> M_CORE_FIXES:
+  title "Purge inherited-agent ephemeral entries on domain lock"
+  description "Purge the locked or replaced child domain from whichever inherited agent owns its ephemeral entries without affecting sibling domains. Prove lock, unlock --inherit, replacement, and sibling-isolation behavior."
+  duration 1.5d
+  priority 80
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [lifecycle, isolation, security]
+  source "GitHub #176"
+
+task T177_FUSE_ATOMIC M_FINDINGS -> M_CORE_FIXES:
+  title "Make FUSE ephemeral write rejection atomic"
+  description "Move ephemeral-state validation into the same authoritative update boundary as SDK/FUSE read-modify-write. Add a deterministic interleaving regression test and prove rejected writes leave persisted and ephemeral state unchanged."
+  duration 2.5d
+  priority 100
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [fuse, atomicity, security, root-cause]
+  source "GitHub #177"
+
+task T178_HELP M_FINDINGS -> M_CORE_FIXES:
+  title "Restore set and rm option discoverability"
+  description "Restore established unsafe and ignore option guidance while retaining ephemeral markers in top-level help. Add exact help-contract regression coverage."
+  duration 0.25d
+  priority 40
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [cli, help, compatibility]
+  source "GitHub #178"
+
+task T179_MATRIX M_CORE_FIXES -> M_COVERAGE:
+  title "Complete the per-key ephemeral regression matrix"
+  description "Close the remaining CLI, SDK, FUSE, lifecycle, binary-value, old-agent compatibility, enumeration, and attribute-filter symmetry gaps. Map every matrix cell to a named automated test."
+  duration 2d
+  priority 70
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [coverage, symmetry, compatibility]
+  source "GitHub #179"
+
+task T_ACCEPT M_COVERAGE -> M_ACCEPTED:
+  title "Run full acceptance and symmetry review"
+  description "Run make check, relevant warning-clean builds including FUSE where optional, git diff --check, and a fresh consistency, symmetry, and coverage review. Acceptance requires no unresolved high- or medium-severity finding."
+  duration 1d
+  priority 60
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [verification, review, acceptance]
+  source "GitHub #170"
+
+task T_CLOSE M_ACCEPTED -> M_CLOSED:
+  title "Prepare final commit and verified issue closeout"
+  description "After acceptance, create the review-approved non-WIP commit and prepare evidence-backed comments for readback and closeout of issues 174 through 179 and parent 170. Closing issues and pushing remain explicit external-action gates."
+  duration 0.25d
+  priority 10
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [commit, closeout, evidence]
+  source "GitHub #170, #174-#179"
+
+plan_seal T174_ENUMERATION:
+  accepted_contract sha256:25596d68a509513e30ff300205f0627188895dfbca8fc18ed31c62fde5b13c20
+  accepted_basis sha256:a4b09254c7281dfa29e200a49b0ca954fb0ac978f0dc6048815ea5095512e1ca
+  reason "Initial reviewed root-cause baseline for GitHub issues 174 through 179"
+
+plan_seal T175_LIST_ATTRS:
+  accepted_contract sha256:fbac6aea79412a279432032ddfa0abc245e7360de7797047e0ca114fb626cd9e
+  accepted_basis sha256:1bda8fc92b27f521309cd1f72e687dfe5e0d6b847774d3f32cfe18c3da11b7ee
+  accepted_inputs:
+    T174_ENUMERATION both sha256:a4b09254c7281dfa29e200a49b0ca954fb0ac978f0dc6048815ea5095512e1ca
+  reason "Initial reviewed root-cause baseline for GitHub issues 174 through 179"
+
+plan_seal T176_LIFECYCLE:
+  accepted_contract sha256:ff7b0d5115906612f2fdd79db3673f0c0488c24fd1d92cbd17abc352cf63c36d
+  accepted_basis sha256:b2be34057a65bbf4dc0ea62905f099753860f4a007556a4b7fd09443e69660bb
+  reason "Initial reviewed root-cause baseline for GitHub issues 174 through 179"
+
+plan_seal T177_FUSE_ATOMIC:
+  accepted_contract sha256:9ba50bf97920966060c3a6c2eaf066ffcec8d6dced3594f32e0b8a940361a600
+  accepted_basis sha256:838f0af3ece21e51df5fe345a07af3eb0f6840b5280f1eb3fb3e04e3a5307db7
+  reason "Initial reviewed root-cause baseline for GitHub issues 174 through 179"
+
+plan_seal T178_HELP:
+  accepted_contract sha256:5a5ad16b06052e64334de74196487eb3339e15d727e42cfc5d138092cd90c807
+  accepted_basis sha256:d7b55d17ca261286a5473daf6db0c9842817e73be1c88f761ee4bf376389f6bf
+  reason "Initial reviewed root-cause baseline for GitHub issues 174 through 179"
+
+plan_seal T179_MATRIX:
+  accepted_contract sha256:13e78036ee252f1072f77f5e38a745b17fbe76a1333a25b834d4c76e05fe2bc1
+  accepted_basis sha256:b83ad60cbadb4313e1d40c36658a670a82ff51730d606faa3952070677f7a52d
+  accepted_inputs:
+    T175_LIST_ATTRS both sha256:1bda8fc92b27f521309cd1f72e687dfe5e0d6b847774d3f32cfe18c3da11b7ee
+    T176_LIFECYCLE both sha256:b2be34057a65bbf4dc0ea62905f099753860f4a007556a4b7fd09443e69660bb
+    T177_FUSE_ATOMIC both sha256:838f0af3ece21e51df5fe345a07af3eb0f6840b5280f1eb3fb3e04e3a5307db7
+    T178_HELP both sha256:d7b55d17ca261286a5473daf6db0c9842817e73be1c88f761ee4bf376389f6bf
+  reason "Initial reviewed root-cause baseline for GitHub issues 174 through 179"
+
+plan_seal T_ACCEPT:
+  accepted_contract sha256:c2c85bede5f033ea83b1b6ff3eb26f7843706bb758f74c4c9b3adeab049949f9
+  accepted_basis sha256:00fc8762c22d60c0aa4e04859c078b22f9e594cca44d1b336beb3e3b94cf973f
+  accepted_inputs:
+    T179_MATRIX both sha256:b83ad60cbadb4313e1d40c36658a670a82ff51730d606faa3952070677f7a52d
+  reason "Initial reviewed root-cause baseline for GitHub issues 174 through 179"
+
+plan_seal T_CLOSE:
+  accepted_contract sha256:3364687d2ca34427cafe8354879a1bbb93364e6ecd103373c9a7d293e3eb24d0
+  accepted_basis sha256:6e1c6aba18ec408e905a10176acea20df7eb69197e18c43459f5769dc5f06b38
+  accepted_inputs:
+    T_ACCEPT both sha256:00fc8762c22d60c0aa4e04859c078b22f9e594cca44d1b336beb3e3b94cf973f
+  reason "Initial reviewed root-cause baseline for GitHub issues 174 through 179"
