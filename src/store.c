@@ -7615,10 +7615,12 @@ static int secdat_session_agent_purge_ephemeral_domain_request(
     }
     free(encoded_domain);
     fflush(stream);
-    if (secdat_read_line(stream, response, sizeof(response)) == 0) {
-        if (strcmp(response, "OK") == 0 || strcmp(response, "ERR invalid") == 0) {
-            status = 0;
-        }
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fprintf(stderr, _("failed to purge session-local ephemeral values from an active session agent\n"));
+    } else if (strcmp(response, "OK") == 0 || strcmp(response, "ERR invalid") == 0) {
+        status = 0;
+    } else {
+        fprintf(stderr, _("failed to purge session-local ephemeral values from an active session agent\n"));
     }
     fclose(stream);
     return status;
@@ -11353,7 +11355,7 @@ static int secdat_command_lock(const struct secdat_cli *cli)
                 secdat_domain_chain_free(&chain);
                 return 1;
             }
-            if (secdat_session_agent_purge_chain_ephemeral_domain(&chain, NULL, 0) != 0) {
+            if (secdat_session_agent_purge_chain_ephemeral_domain(&chain, NULL, 1) != 0) {
                 secdat_domain_chain_free(&chain);
                 return 1;
             }
@@ -11370,7 +11372,7 @@ static int secdat_command_lock(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_session_agent_purge_chain_ephemeral_domain(&chain, NULL, 0) != 0) {
+    if (secdat_session_agent_purge_chain_ephemeral_domain(&chain, NULL, 1) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;
     }

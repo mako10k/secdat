@@ -2,6 +2,7 @@
 #include "cli.h"
 
 #include "i18n.h"
+#include "secdat-build-id.h"
 #include "store.h"
 
 #include <limits.h>

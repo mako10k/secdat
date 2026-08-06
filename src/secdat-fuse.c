@@ -4,6 +4,7 @@
 
 #include "domain.h"
 #include "i18n.h"
+#include "secdat-build-id.h"
 #include "secdat-sdk.h"
 #include "store.h"
 

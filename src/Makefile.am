@@ -3,9 +3,28 @@ SECDAT_BUILD_ID = $(shell cd $(top_srcdir) >/dev/null 2>&1 && if command -v git 
 AM_CPPFLAGS = \
 	-DLOCALEDIR=\"$(localedir)\" \
 	-DPACKAGE_NAME=\"$(PACKAGE)\" \
-	-DSECDAT_BUILD_ID=\"$(SECDAT_BUILD_ID)\" \
 	$(OPENSSL_CFLAGS) \
 	$(JANSSON_CFLAGS)
+
+BUILT_SOURCES = secdat-build-id.h
+CLEANFILES = secdat-build-id.h secdat-build-id.h.tmp
+nodist_noinst_HEADERS = secdat-build-id.h
+
+.PHONY: force-secdat-build-id
+force-secdat-build-id:
+
+secdat-build-id.h: force-secdat-build-id
+	@build_id='$(SECDAT_BUILD_ID)'; \
+	{ \
+		printf '%s\n' '#ifndef SECDAT_BUILD_ID'; \
+		printf '#define SECDAT_BUILD_ID "%s"\n' "$$build_id"; \
+		printf '%s\n' '#endif'; \
+	} > secdat-build-id.h.tmp; \
+	if test -r secdat-build-id.h && cmp -s secdat-build-id.h.tmp secdat-build-id.h; then \
+		rm -f secdat-build-id.h.tmp; \
+	else \
+		mv -f secdat-build-id.h.tmp secdat-build-id.h; \
+	fi
 
 include_HEADERS = secdat-sdk.h
 
@@ -59,3 +78,4 @@ secdat_local_headers = \
 	store_exec_port.h
 
 main.o cli.lo domain.lo exec_inject.lo redaction.lo store.lo: $(secdat_local_headers)
+main.o secdat_fuse-secdat-fuse.o: secdat-build-id.h

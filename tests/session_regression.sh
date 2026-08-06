@@ -2125,10 +2125,15 @@ if rc == 0 or "per-key ephemeral secrets require an active secdat session agent"
 
 compat_domain = isolated_root / "ephemeral-old-agent-compat"
 compat_domain.mkdir()
+compat_child_domain = compat_domain / "child-domain"
+compat_child_domain.mkdir()
 compat_env = {"SECDAT_MASTER_KEY": "old-agent-compat-key"}
 rc, stdout, stderr = run(scoped(["domain", "create"], compat_domain), compat_env)
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"old-agent compatibility domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["domain", "create"], compat_child_domain), compat_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"old-agent compatibility child domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run(
     scoped(["set", "OLD_AGENT_PERSISTED", "--value", "old-agent-value"], compat_domain),
     compat_env,
@@ -2157,6 +2162,7 @@ compat_overlay_response = [b"ERR invalid\n"]
 compat_status_mode = ["persistent"]
 compat_status_protocol = [""]
 compat_caps_response = [b"ERR invalid\n"]
+compat_cleared = threading.Event()
 
 def serve_old_agent():
     while not compat_stop.is_set():
@@ -2178,6 +2184,9 @@ def serve_old_agent():
                     stream.write(
                         f"OK {int(time.time()) + 300} 300\nold-agent-compat-key\n".encode()
                     )
+                elif command == "CLEAR":
+                    stream.write(b"OK\n")
+                    compat_cleared.set()
                 else:
                     stream.write(compat_overlay_response[0])
                 stream.flush()
@@ -2251,6 +2260,21 @@ try:
     malformed_write_rc, malformed_write_stdout, malformed_write_stderr = run(
         scoped(["set", "MALFORMED_MUST_NOT_PERSIST", "--value", "blocked"], compat_domain),
     )
+    compat_status_protocol[0] = " proto=1"
+    compat_caps_response[0] = b"OK 1 7\n"
+    compat_overlay_response[0] = b""
+    inherited_purge_command_start = len(compat_commands)
+    inherited_purge_rc, inherited_purge_stdout, inherited_purge_stderr = run(
+        scoped(["lock"], compat_child_domain),
+    )
+    inherited_purge_commands = compat_commands[inherited_purge_command_start:]
+    compat_status_protocol[0] = ""
+    compat_overlay_response[0] = b""
+    legacy_lock_command_start = len(compat_commands)
+    legacy_lock_rc, legacy_lock_stdout, legacy_lock_stderr = run(
+        scoped(["lock"], compat_domain),
+    )
+    legacy_lock_commands = compat_commands[legacy_lock_command_start:]
 finally:
     compat_stop.set()
     compat_thread.join(timeout=2)
@@ -2286,6 +2310,27 @@ if legacy_exec_rc != 0 or legacy_exec_stdout != "old-agent-value\n" or legacy_ex
     )
 if legacy_caps_count != 0:
     fail(f"client sent CAPS before a protocol advertisement: commands={compat_commands!r}")
+if (
+    inherited_purge_rc == 0
+    or inherited_purge_stdout != ""
+    or "failed to purge session-local ephemeral values from an active session agent" not in inherited_purge_stderr
+):
+    fail(
+        "advertised ancestor purge EOF must fail with a diagnostic: "
+        f"rc={inherited_purge_rc} stdout={inherited_purge_stdout!r} "
+        f"stderr={inherited_purge_stderr!r}"
+    )
+if "EPPURGEDOMAIN" not in inherited_purge_commands or "CLEAR" in inherited_purge_commands:
+    fail(f"ancestor purge failure used an unsafe command sequence: {inherited_purge_commands!r}")
+if legacy_lock_rc != 0 or legacy_lock_stdout != "session locked\n" or legacy_lock_stderr != "":
+    fail(
+        "legacy persistent local agent lock must fall through to CLEAR: "
+        f"rc={legacy_lock_rc} stdout={legacy_lock_stdout!r} stderr={legacy_lock_stderr!r}"
+    )
+if not compat_cleared.is_set() or "CLEAR" not in legacy_lock_commands:
+    fail(f"legacy persistent local agent lock did not send CLEAR: {legacy_lock_commands!r}")
+if "EPPURGEDOMAIN" in legacy_lock_commands or "EPPURGEREPLACE" in legacy_lock_commands:
+    fail(f"legacy persistent local agent received a redundant purge: {legacy_lock_commands!r}")
 if volatile_rc == 0 or volatile_stdout != "" or "legacy volatile session cannot be read safely" not in volatile_stderr:
     fail(
         "legacy volatile OVLIST EOF must fail closed: "

@@ -36,6 +36,7 @@ src/Makefile
 src/Makefile.in
 src/secdat
 src/secdat-fuse
+src/secdat-build-id.h
 bindings/python/__pycache__/
 bindings/python/*.egg-info/
 bindings/node/node_modules/

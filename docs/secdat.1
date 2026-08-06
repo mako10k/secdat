@@ -45,7 +45,7 @@ Select the store namespace inside the resolved domain.
 Show global help, or combine with a command name for command-local help.
 .TP
 .B \-V, \-\-version
-Print the secdat version. When built from a Git worktree, also print a short build identifier and append \fB-dirty\fR when the worktree had uncommitted changes at build time.
+Print the secdat version. When built from a Git worktree, also print a short build identifier and append \fB-dirty\fR when the worktree had uncommitted changes at build time. Ordinary incremental builds refresh the identifier after HEAD or worktree-state changes without requiring a clean build.
 .SH HELP TOPICS
 .TP
 .B secdat help usecases
@@ -550,6 +550,7 @@ Remove the current domain's local lock when one is present, or clear the current
 Clear the current domain's local unlock. When the current domain is already locked, plain
 .B lock
 returns success without changing local state.
+The current domain's local agent is cleared directly with the baseline agent command; domain-selective ephemeral purge is sent only to inherited agents whose parent and sibling state must remain available.
 .TP
 .B [\-d DIR|\-\-dir DIR] status [\-q|\-\-quiet|\-\-json]
 Report whether secret material is available from the current domain scope. Use

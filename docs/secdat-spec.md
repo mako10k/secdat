@@ -145,6 +145,7 @@ To make the requested behavior implementable, the following are treated as norma
 - `gc` explicitly removes unreachable or dangling v2 graph files after review
 - `exec` injects matched keys into the child process environment
 - `secdat --help SUBCOMMAND` and `secdat SUBCOMMAND --help` are equivalent for command-local usage output
+- Git-worktree builds must refresh the CLI and FUSE build identifiers after HEAD or dirty-state transitions during an ordinary incremental build; builds without Git metadata omit the identifier
 - unique long-option abbreviations are accepted when they resolve unambiguously within the current command
 - required option values accept both `--option VALUE` and `--option=VALUE`
 - `--` stops command-local option parsing and leaves the remaining tokens untouched as operands
@@ -538,6 +539,7 @@ revalidated so changed-since-plan state fails before live mutation.
 - effective enumeration records each overlay, tombstone, or backing decision before walking lower-precedence backing and ancestor layers; a shadowed v2 hidden name is compared with the active session key instead of the unrelated process key, while every unshadowed hidden entry retains normal fail-closed authentication
 - refreshing the owning session with the same master key preserves its ephemeral secrets
 - locking one domain purges that domain's ephemeral items from the effective agent that owns them before inheritance can be restored; it does not purge ancestor or sibling domain items from an inherited agent
+- when the locked domain owns a local agent, `lock` clears that whole local agent with `CLEAR` and sends domain-selective ephemeral purge only to inherited agents; a purge protocol failure must be reported before local state is cleared
 - replacing a domain's inherited session with a child-local session under a different master key performs the same domain-scoped purge; expiry or a different-key replacement of the owning agent clears the owning agent's remaining items
 - `rm --ephemeral KEYREF` removes only the current-domain ephemeral entry and reveals a persisted same-name entry; plain set/rm and SDK/FUSE writes must reject an ephemeral target
 - bundle save, `lock --save`, cp, mv, ln, mask, unmask, and attribute mutation must not serialize or transform ephemeral secrets; operations that are ambiguous must fail before persisted state changes
