@@ -1657,6 +1657,113 @@ rc, stdout, stderr = run(scoped(["attr", "SESSION_KEY"], root_domain))
 if rc != 0 or stdout != "key_visibility=unlocked\nvalue_access=unlocked\nbulk_select=exclude\n" or stderr != "":
     fail(f"ephemeral attr read failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+masked_ephemeral_key = "EPHEMERAL_MASKED_INHERITED"
+rc, stdout, stderr = run(scoped(["set", masked_ephemeral_key, "--value", "inherited-persisted"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"inherited ephemeral precedence seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["unlock"], child_domain),
+    {"SECDAT_MASTER_KEY_PASSPHRASE": new_passphrase},
+)
+if rc != 0 or ("session unlocked\n" not in stdout and "session refreshed\n" not in stdout):
+    fail(f"child unlock for ephemeral precedence failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["mask", masked_ephemeral_key], child_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"persisted child tombstone seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped([
+    "set", "--ephemeral", masked_ephemeral_key,
+    "--bulk-select", "include",
+    "--value", "child-ephemeral",
+], child_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"same-name child ephemeral set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["get", masked_ephemeral_key, "-o"], child_domain))
+if rc != 0 or stdout != "child-ephemeral" or stderr != "":
+    fail(f"child tombstone ephemeral get mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["exists", masked_ephemeral_key], child_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"child tombstone ephemeral exists mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["ls", "--pattern", masked_ephemeral_key], child_domain))
+if rc != 0 or stdout != f"{masked_ephemeral_key}\n" or stderr != "":
+    fail(f"child tombstone ephemeral listing mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["ls", "--bulk-gate", "--pattern", masked_ephemeral_key], child_domain))
+if rc != 0 or stdout != f"{masked_ephemeral_key}\n" or stderr != "":
+    fail(f"child tombstone ephemeral bulk listing mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["export", "--bulk-gate", "--pattern", masked_ephemeral_key], child_domain))
+if (rc != 0 or stderr != ""
+    or f"get '{masked_ephemeral_key}' --shellescaped)" not in stdout
+    or "child-ephemeral" in stdout):
+    fail(f"child tombstone ephemeral bulk export mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped([
+    "exec", "--bulk-gate",
+    "--inject", "ambient:only=__NO_MASKED_EPHEMERAL_AMBIENT__",
+    "--inject", f"secret:only={masked_ephemeral_key}",
+    "--inject", "route:prefer=secret",
+    "python3", "-c", f"import os; print(os.environ['{masked_ephemeral_key}'])",
+], child_domain))
+if rc != 0 or stdout != "child-ephemeral\n" or stderr != "":
+    fail(f"child tombstone ephemeral bulk injection mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+masked_ephemeral_bundle = isolated_root / "masked-ephemeral.bundle"
+rc, stdout, stderr = run(scoped(["save", str(masked_ephemeral_bundle)], child_domain))
+if rc == 0 or "save is not supported while an ephemeral secret is visible" not in stderr:
+    fail(f"save did not reject tombstone-shadowing ephemeral key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if masked_ephemeral_bundle.exists():
+    fail("rejected tombstone-shadowing ephemeral save created a bundle")
+rc, stdout, stderr = run(scoped(["rm", "--ephemeral", masked_ephemeral_key], child_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"child tombstone ephemeral cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["unmask", masked_ephemeral_key], child_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"child tombstone cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["lock"], child_domain))
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"child precedence session cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+v2_enumeration_domain = isolated_root / "v2-enumeration-domain"
+v2_enumeration_domain.mkdir()
+rc, stdout, stderr = run(scoped(["domain", "create"], v2_enumeration_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"v2 enumeration domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["unlock"], v2_enumeration_domain),
+    {"SECDAT_MASTER_KEY_PASSPHRASE": new_passphrase},
+)
+if rc != 0 or "session unlocked\n" not in stdout:
+    fail(f"v2 enumeration unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["store", "migrate", "default", "--to-format", "v2"], v2_enumeration_domain))
+if rc != 0 or stderr != "":
+    fail(f"v2 enumeration migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+v2_ephemeral_key = "V2_HIDDEN_EPHEMERAL"
+rc, stdout, stderr = run(scoped([
+    "set", v2_ephemeral_key,
+    "--key-visibility", "unlocked",
+    "--value", "v2-persisted",
+], v2_enumeration_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"v2 hidden backing seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped([
+    "set", "--ephemeral", v2_ephemeral_key,
+    "--value", "v2-ephemeral",
+], v2_enumeration_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"v2 hidden ephemeral shadow failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+wrong_v2_key_env = {"SECDAT_MASTER_KEY": "unrelated-v2-process-key"}
+rc, stdout, stderr = run(scoped(["get", v2_ephemeral_key, "-o"], v2_enumeration_domain), wrong_v2_key_env)
+if rc != 0 or stdout != "v2-ephemeral" or stderr != "":
+    fail(f"v2 hidden ephemeral get with wrong process key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["ls", "--pattern", v2_ephemeral_key], v2_enumeration_domain), wrong_v2_key_env)
+if rc != 0 or stdout != f"{v2_ephemeral_key}\n" or stderr != "":
+    fail(f"v2 hidden ephemeral list with wrong process key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["rm", "--ephemeral", v2_ephemeral_key], v2_enumeration_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"v2 hidden ephemeral cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["ls", "--pattern", v2_ephemeral_key], v2_enumeration_domain), wrong_v2_key_env)
+if rc == 0 or stdout != "" or "failed to authenticate encrypted value" not in stderr:
+    fail(f"unshadowed v2 hidden key did not fail closed with wrong process key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["lock"], v2_enumeration_domain))
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"v2 enumeration session cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 large_ephemeral_value = "L" * 5000
 rc, stdout, stderr = run(
     scoped(["set", "--ephemeral", "EPHEMERAL_LARGE", "--stdin"], root_domain),

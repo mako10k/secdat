@@ -465,6 +465,8 @@ struct secdat_key_access_options {
     int allow_on_demand_unlock;
     int timeout_configured;
     time_t timeout_seconds;
+    const char *master_key_override;
+    int quiet_auth_failure;
 };
 
 struct secdat_get_options {
@@ -853,7 +855,12 @@ static int secdat_write_empty_file(const char *path);
 static int secdat_entry_uses_plaintext_storage(const char *path, int *unsafe_store);
 static int secdat_file_exists(const char *path);
 static int secdat_read_store_format(const char *domain_id, const char *store_name, enum secdat_store_format *format);
-static int secdat_collect_v2_visible_keys(const char *domain_id, const char *store_name, struct secdat_key_list *keys);
+static int secdat_collect_v2_visible_keys(
+    const char *domain_id,
+    const char *store_name,
+    const struct secdat_key_list *covered_keys,
+    struct secdat_key_list *keys
+);
 static int secdat_lookup_v2_domain_entry(
     const char *domain_id,
     const char *store_name,
@@ -8860,9 +8867,12 @@ static int secdat_derive_key(
 )
 {
     struct secdat_session_record record = {0};
-    const char *master_key = getenv("SECDAT_MASTER_KEY");
+    const char *master_key = access_options != NULL ? access_options->master_key_override : NULL;
     unsigned int key_length = 0;
 
+    if (master_key == NULL || master_key[0] == '\0') {
+        master_key = getenv("SECDAT_MASTER_KEY");
+    }
     if (master_key == NULL || master_key[0] == '\0') {
         if (secdat_session_agent_get(chain, &record) == 0) {
             master_key = record.master_key;
@@ -10117,7 +10127,9 @@ static int secdat_decrypt_value(
     }
 
     if (EVP_DecryptFinal_ex(context, buffer + written_length, &final_length) != 1) {
-        fprintf(stderr, _("failed to authenticate encrypted value\n"));
+        if (access_options == NULL || !access_options->quiet_auth_failure) {
+            fprintf(stderr, _("failed to authenticate encrypted value\n"));
+        }
         goto cleanup;
     }
 
@@ -10599,7 +10611,7 @@ static int secdat_collect_visible_keys(
 {
     char entries_dir[PATH_MAX];
     char tombstones_dir[PATH_MAX];
-    struct secdat_key_list hidden_keys = {0};
+    struct secdat_key_list decided_keys = {0};
     struct secdat_key_list domain_keys = {0};
     struct secdat_key_list overlay_entries = {0};
     struct secdat_key_list overlay_tombstones = {0};
@@ -10613,8 +10625,27 @@ static int secdat_collect_visible_keys(
         if (status != 0) {
             goto cleanup;
         }
+        for (key_index = 0; key_index < overlay_entries.count; key_index += 1) {
+            if (secdat_key_list_contains(&decided_keys, overlay_entries.items[key_index])) {
+                continue;
+            }
+            if ((include_patterns == NULL || include_patterns->count == 0
+                    || secdat_pattern_list_matches(include_patterns, overlay_entries.items[key_index]))
+                && (exclude_patterns == NULL || exclude_patterns->count == 0
+                    || !secdat_pattern_list_matches(exclude_patterns, overlay_entries.items[key_index]))
+                && secdat_key_list_append(visible_keys, overlay_entries.items[key_index]) != 0) {
+                status = 1;
+                goto cleanup;
+            }
+            if (secdat_key_list_append(&decided_keys, overlay_entries.items[key_index]) != 0) {
+                status = 1;
+                goto cleanup;
+            }
+        }
+        secdat_key_list_free(&overlay_entries);
+
         for (key_index = 0; key_index < overlay_tombstones.count; key_index += 1) {
-            if (secdat_key_list_append(&hidden_keys, overlay_tombstones.items[key_index]) != 0) {
+            if (secdat_key_list_append(&decided_keys, overlay_tombstones.items[key_index]) != 0) {
                 status = 1;
                 goto cleanup;
             }
@@ -10630,7 +10661,7 @@ static int secdat_collect_visible_keys(
             goto cleanup;
         }
         for (key_index = 0; key_index < domain_keys.count; key_index += 1) {
-            if (secdat_key_list_append(&hidden_keys, domain_keys.items[key_index]) != 0) {
+            if (secdat_key_list_append(&decided_keys, domain_keys.items[key_index]) != 0) {
                 status = 1;
                 goto cleanup;
             }
@@ -10646,7 +10677,12 @@ static int secdat_collect_visible_keys(
             goto cleanup;
         }
         if (format == SECDAT_STORE_FORMAT_V2) {
-            status = secdat_collect_v2_visible_keys(chain->ids[chain_index], store_name, &domain_keys);
+            status = secdat_collect_v2_visible_keys(
+                chain->ids[chain_index],
+                store_name,
+                &decided_keys,
+                &domain_keys
+            );
             if (status != 0) {
                 goto cleanup;
             }
@@ -10661,40 +10697,19 @@ static int secdat_collect_visible_keys(
             }
         }
 
-        for (key_index = 0; key_index < overlay_entries.count; key_index += 1) {
-            if (secdat_key_list_contains(&hidden_keys, overlay_entries.items[key_index])) {
+        for (key_index = 0; key_index < domain_keys.count; key_index += 1) {
+            if (secdat_key_list_contains(&decided_keys, domain_keys.items[key_index])) {
                 continue;
             }
-            if (secdat_key_list_contains(visible_keys, overlay_entries.items[key_index])) {
-                continue;
-            }
-            if (include_patterns != NULL && include_patterns->count > 0 && !secdat_pattern_list_matches(include_patterns, overlay_entries.items[key_index])) {
-                continue;
-            }
-            if (exclude_patterns != NULL && exclude_patterns->count > 0 && secdat_pattern_list_matches(exclude_patterns, overlay_entries.items[key_index])) {
-                continue;
-            }
-            if (secdat_key_list_append(visible_keys, overlay_entries.items[key_index]) != 0) {
+            if ((include_patterns == NULL || include_patterns->count == 0
+                    || secdat_pattern_list_matches(include_patterns, domain_keys.items[key_index]))
+                && (exclude_patterns == NULL || exclude_patterns->count == 0
+                    || !secdat_pattern_list_matches(exclude_patterns, domain_keys.items[key_index]))
+                && secdat_key_list_append(visible_keys, domain_keys.items[key_index]) != 0) {
                 status = 1;
                 goto cleanup;
             }
-        }
-        secdat_key_list_free(&overlay_entries);
-
-        for (key_index = 0; key_index < domain_keys.count; key_index += 1) {
-            if (secdat_key_list_contains(&hidden_keys, domain_keys.items[key_index])) {
-                continue;
-            }
-            if (secdat_key_list_contains(visible_keys, domain_keys.items[key_index])) {
-                continue;
-            }
-            if (include_patterns != NULL && include_patterns->count > 0 && !secdat_pattern_list_matches(include_patterns, domain_keys.items[key_index])) {
-                continue;
-            }
-            if (exclude_patterns != NULL && exclude_patterns->count > 0 && secdat_pattern_list_matches(exclude_patterns, domain_keys.items[key_index])) {
-                continue;
-            }
-            if (secdat_key_list_append(visible_keys, domain_keys.items[key_index]) != 0) {
+            if (secdat_key_list_append(&decided_keys, domain_keys.items[key_index]) != 0) {
                 status = 1;
                 goto cleanup;
             }
@@ -10707,7 +10722,7 @@ static int secdat_collect_visible_keys(
 
 cleanup:
     secdat_key_list_free(&domain_keys);
-    secdat_key_list_free(&hidden_keys);
+    secdat_key_list_free(&decided_keys);
     secdat_key_list_free(&overlay_entries);
     secdat_key_list_free(&overlay_tombstones);
     return status;
@@ -11050,7 +11065,7 @@ static int secdat_collect_list_keys(
         goto cleanup;
     }
     if (format == SECDAT_STORE_FORMAT_V2) {
-        if (secdat_collect_v2_visible_keys(chain->ids[0], store_name, &local_entries) != 0) {
+        if (secdat_collect_v2_visible_keys(chain->ids[0], store_name, NULL, &local_entries) != 0) {
             goto cleanup;
         }
     } else if (secdat_collect_directory_keys(entries_dir, ".sec", &local_entries) != 0) {
@@ -14076,7 +14091,11 @@ cleanup:
     return status;
 }
 
-static int secdat_v2_decrypt_domain_entry_key(const char *domain_id, struct secdat_v2_domain_entry_info *info)
+static int secdat_v2_decrypt_domain_entry_key_with_access(
+    const char *domain_id,
+    struct secdat_v2_domain_entry_info *info,
+    const struct secdat_key_access_options *access_options
+)
 {
     struct secdat_domain_chain chain = {0};
     unsigned char *encrypted = NULL;
@@ -14097,7 +14116,14 @@ static int secdat_v2_decrypt_domain_entry_key(const char *domain_id, struct secd
     if (secdat_domain_chain_from_id(domain_id, &chain) != 0) {
         goto cleanup;
     }
-    if (secdat_decrypt_value(&chain, encrypted, encrypted_length, &plaintext, &plaintext_length, NULL) != 0) {
+    if (secdat_decrypt_value(
+            &chain,
+            encrypted,
+            encrypted_length,
+            &plaintext,
+            &plaintext_length,
+            access_options
+        ) != 0) {
         goto cleanup;
     }
     if (plaintext_length == 0 || plaintext_length >= sizeof(info->key)
@@ -14121,6 +14147,43 @@ cleanup:
     secdat_secure_clear(encrypted, encrypted_length);
     free(encrypted);
     return status;
+}
+
+static int secdat_v2_decrypt_domain_entry_key(const char *domain_id, struct secdat_v2_domain_entry_info *info)
+{
+    return secdat_v2_decrypt_domain_entry_key_with_access(domain_id, info, NULL);
+}
+
+static int secdat_v2_domain_entry_key_is_covered_by_session(
+    const char *domain_id,
+    const struct secdat_v2_domain_entry_info *info,
+    const struct secdat_key_list *covered_keys
+)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_session_record record = {0};
+    struct secdat_key_access_options access_options = {0};
+    struct secdat_v2_domain_entry_info candidate = *info;
+    int covered = 0;
+
+    if (covered_keys == NULL || covered_keys->count == 0
+        || getenv("SECDAT_MASTER_KEY") == NULL || getenv("SECDAT_MASTER_KEY")[0] == '\0') {
+        return 0;
+    }
+    if (secdat_domain_chain_from_id(domain_id, &chain) != 0
+        || secdat_session_agent_get(&chain, &record) != 0) {
+        goto cleanup;
+    }
+    access_options.master_key_override = record.master_key;
+    access_options.quiet_auth_failure = 1;
+    if (secdat_v2_decrypt_domain_entry_key_with_access(domain_id, &candidate, &access_options) == 0) {
+        covered = secdat_key_list_contains(covered_keys, candidate.key);
+    }
+
+cleanup:
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    secdat_domain_chain_free(&chain);
+    return covered;
 }
 
 static int secdat_v2_domain_entry_key_matches(
@@ -14152,7 +14215,12 @@ static int secdat_v2_domain_entry_key_matches(
     return 0;
 }
 
-static int secdat_collect_v2_visible_keys(const char *domain_id, const char *store_name, struct secdat_key_list *keys)
+static int secdat_collect_v2_visible_keys(
+    const char *domain_id,
+    const char *store_name,
+    const struct secdat_key_list *covered_keys,
+    struct secdat_key_list *keys
+)
 {
     char domain_entries_dir[PATH_MAX];
     char entry_path[PATH_MAX];
@@ -14177,7 +14245,16 @@ static int secdat_collect_v2_visible_keys(const char *domain_id, const char *sto
             fprintf(stderr, _("invalid v2 domain entry: %s\n"), entry_ids.items[index]);
             goto cleanup;
         }
+        if (info.key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS
+            && info.has_key
+            && covered_keys != NULL
+            && secdat_key_list_contains(covered_keys, info.key)) {
+            continue;
+        }
         if (info.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+            if (secdat_v2_domain_entry_key_is_covered_by_session(domain_id, &info, covered_keys)) {
+                continue;
+            }
             if (!secdat_v2_domain_entry_key_access_available(domain_id)) {
                 continue;
             }
@@ -14186,7 +14263,8 @@ static int secdat_collect_v2_visible_keys(const char *domain_id, const char *sto
                 goto cleanup;
             }
         }
-        if (info.has_key) {
+        if (info.has_key
+            && (covered_keys == NULL || !secdat_key_list_contains(covered_keys, info.key))) {
             if (secdat_key_list_append(keys, info.key) != 0) {
                 goto cleanup;
             }

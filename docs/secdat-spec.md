@@ -534,7 +534,8 @@ revalidated so changed-since-plan state fails before live mutation.
 - reads, listing, export-like operations, and bundle save/load must prefer the active volatile overlay before consulting persisted store files
 - `set --ephemeral KEYREF` stores one secret only in the effective active session agent without enabling session-wide volatile mode; `SECDAT_MASTER_KEY` without an active agent is insufficient
 - ephemeral secrets force `key_visibility=unlocked` and `value_access=unlocked`; `bulk_select` defaults to `exclude` and may be explicitly set to `named` or `include`
-- normal get/list/exec/export, SDK, and FUSE read paths resolve ephemeral secrets before persisted same-name entries, including when the calling process also has `SECDAT_MASTER_KEY`
+- normal get/list/exec/export, SDK, and FUSE read paths resolve ephemeral secrets before same-domain persisted tombstones and persisted same-name entries, including when the calling process also has `SECDAT_MASTER_KEY`
+- effective enumeration records each overlay, tombstone, or backing decision before walking lower-precedence backing and ancestor layers; a shadowed v2 hidden name is compared with the active session key instead of the unrelated process key, while every unshadowed hidden entry retains normal fail-closed authentication
 - refreshing the same session with the same master key preserves its ephemeral secrets; lock, expiry, or replacement with a different master key clears them
 - `rm --ephemeral KEYREF` removes only the current-domain ephemeral entry and reveals a persisted same-name entry; plain set/rm and SDK/FUSE writes must reject an ephemeral target
 - bundle save, `lock --save`, cp, mv, ln, mask, unmask, and attribute mutation must not serialize or transform ephemeral secrets; operations that are ambiguous must fail before persisted state changes

@@ -46,6 +46,7 @@ task T174_ENUMERATION M_FINDINGS -> M_ENUM_CORRECT:
   title "Fix effective key enumeration overlay precedence"
   description "Create one effective enumeration projection that applies ephemeral overlay entries and tombstones before backing-store visibility. Cover same-domain tombstones, v2 hidden persisted shadows, wrong process environments, downstream save rejection, SDK, exec, export, FUSE, and status consumers."
   duration 2d
+  status done
   priority 90
   requires:
     CODEX 1
@@ -189,6 +190,13 @@ task_outcome OUTCOME_T177_20260806:
   status conformant
   reason "Full check and deterministic SDK and FUSE race regressions passed"
 
+task_outcome OUTCOME_T174_20260806:
+  model 1
+  task T174_ENUMERATION
+  against_basis sha256:a4b09254c7281dfa29e200a49b0ca954fb0ac978f0dc6048815ea5095512e1ca
+  status conformant
+  reason "Overlay-first enumeration, unshadowed v2 fail-closed checks, full make check, and CLI SDK FUSE regressions passed"
+
 work_event START_T177_20260806:
   model 1
   task T177_FUSE_ATOMIC
@@ -203,3 +211,16 @@ work_event FINISH_T177_20260806:
   occurred_at 2026-08-06T13:54:34+09:00
   active_time 0.36h
   effort 0.36ph
+
+work_event START_T174_20260806:
+  model 1
+  task T174_ENUMERATION
+  kind start
+  occurred_at 2026-08-06T13:59:16+09:00
+  planned_value 2d
+
+work_event FINISH_T174_20260806:
+  model 1
+  task T174_ENUMERATION
+  kind finish
+  occurred_at 2026-08-06T14:18:27+09:00

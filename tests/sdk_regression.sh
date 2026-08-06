@@ -50,6 +50,7 @@ run_secdat --dir "$orphaned_child_domain" domain create
 run_secdat --dir "$refresh_domain" domain create
 run_secdat --dir "$ephemeral_expiry_race_domain" domain create
 run_secdat --dir "$root_domain" store create team
+run_secdat --dir "$root_domain" store create enumeration
 run_secdat --dir "$ephemeral_expiry_race_domain" store create team
 run_secdat --dir "$root_domain" --store team set API_TOKEN --value sdk-secret-value
 run_secdat --dir "$root_domain" --store team set PUBLIC_URL --unsafe --value public-secret-value
@@ -73,6 +74,12 @@ run_secdat --dir "$root_domain" --store team relation set sdk-long-refresh \
 run_secdat --dir "$orphaned_child_domain" set ORPHANED_SDK_KEY --value orphaned-sdk-value
 rmdir "$orphaned_child_domain"
 run_secdat --dir "$root_domain" --store team set SDK_EPHEMERAL_RACE --value persisted-race-value
+run_secdat --dir "$root_domain" --store team set SDK_MASKED_EPHEMERAL --value persisted-masked-value
+run_secdat --dir "$child_domain" --store team mask SDK_MASKED_EPHEMERAL
+run_secdat --dir "$root_domain" store migrate enumeration --to-format v2
+run_secdat --dir "$root_domain" --store enumeration set SDK_HIDDEN_EPHEMERAL \
+    --key-visibility unlocked \
+    --value persisted-hidden-value
 run_secdat --dir "$ephemeral_expiry_race_domain" --store team set SDK_EPHEMERAL_RACE --value persisted-expiry-race-value
 
 ephemeral_unlock_stdout="$work_root/ephemeral-unlock.stdout"
@@ -85,6 +92,11 @@ if ! grep -q "resolved domain: $root_domain" "$ephemeral_unlock_stderr"; then
 fi
 run_secdat --dir "$root_domain" --store team set --ephemeral SDK_EPHEMERAL --value sdk-ephemeral-value
 run_secdat --dir "$root_domain" --store team set --ephemeral SDK_EPHEMERAL_RACE --value ephemeral-race-value
+run_secdat --dir "$child_domain" --store team set --ephemeral SDK_MASKED_EPHEMERAL \
+    --bulk-select include \
+    --value ephemeral-masked-value
+run_secdat --dir "$root_domain" --store enumeration set --ephemeral SDK_HIDDEN_EPHEMERAL \
+    --value ephemeral-hidden-value
 cat >"$work_root/sdk_ephemeral_harness.c" <<'C'
 #include "secdat-sdk.h"
 
@@ -191,6 +203,96 @@ if ! grep -q "use set --ephemeral to update it: SDK_EPHEMERAL" "$sdk_ephemeral_s
     fail "SDK ephemeral write rejection was not explicit"
 fi
 
+cat >"$work_root/sdk_ephemeral_enumeration_harness.c" <<'C'
+#include "secdat-sdk.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static void fail(const char *message)
+{
+    fprintf(stderr, "FAIL: %s\n", message);
+    exit(1);
+}
+
+static const struct secdat_sdk_key_metadata *find_key(
+    const struct secdat_sdk_key_metadata_list *keys,
+    const char *key
+)
+{
+    size_t index;
+
+    for (index = 0; index < keys->count; index += 1) {
+        if (strcmp(keys->items[index].key, key) == 0) {
+            return &keys->items[index];
+        }
+    }
+    return NULL;
+}
+
+int main(int argc, char **argv)
+{
+    struct secdat_sdk_options options = {0};
+    struct secdat_sdk_list_filters filters = {0};
+    struct secdat_sdk_key_metadata_list keys = {0};
+    const struct secdat_sdk_key_metadata *item;
+
+    if (argc != 3) {
+        fail("expected root and child domain paths");
+    }
+
+    options.dir = argv[2];
+    options.store = "team";
+    filters.include_pattern = "SDK_MASKED_EPHEMERAL";
+    filters.bulk_gate = 1;
+    if (secdat_sdk_list_keys(&options, &filters, &keys) != 0) {
+        fail("SDK list rejected tombstone-shadowing ephemeral key");
+    }
+    item = find_key(&keys, "SDK_MASKED_EPHEMERAL");
+    if (keys.count != 1 || item == NULL
+        || strcmp(item->storage_mode, "ephemeral") != 0
+        || strcmp(item->bulk_select, "include") != 0) {
+        fail("SDK list omitted or misclassified tombstone-shadowing ephemeral key");
+    }
+    secdat_sdk_free(keys.items);
+    memset(&keys, 0, sizeof(keys));
+    memset(&filters, 0, sizeof(filters));
+
+    options.dir = argv[1];
+    options.store = "enumeration";
+    filters.include_pattern = "SDK_HIDDEN_EPHEMERAL";
+    if (secdat_sdk_list_keys(&options, &filters, &keys) != 0) {
+        fail("SDK list authenticated a shadowed v2 hidden backing key");
+    }
+    item = find_key(&keys, "SDK_HIDDEN_EPHEMERAL");
+    if (keys.count != 1 || item == NULL
+        || strcmp(item->storage_mode, "ephemeral") != 0
+        || strcmp(item->key_visibility, "unlocked") != 0) {
+        fail("SDK list omitted or misclassified v2-hidden ephemeral key");
+    }
+    secdat_sdk_free(keys.items);
+    return 0;
+}
+C
+
+cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_ephemeral_enumeration_harness.c" \
+    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -Wl,-rpath,"$build_root/src/.libs" \
+    -o "$work_root/sdk_ephemeral_enumeration_harness"
+
+sdk_ephemeral_enumeration_stderr="$work_root/sdk-ephemeral-enumeration.stderr"
+if ! SECDAT_MASTER_KEY=unrelated-sdk-process-key \
+    "$work_root/sdk_ephemeral_enumeration_harness" "$root_domain" "$child_domain" \
+    2>"$sdk_ephemeral_enumeration_stderr"; then
+    printf 'stderr:\n%s\n' "$(cat "$sdk_ephemeral_enumeration_stderr")" >&2
+    fail "SDK ephemeral enumeration harness failed"
+fi
+if test -s "$sdk_ephemeral_enumeration_stderr"; then
+    printf 'stderr:\n%s\n' "$(cat "$sdk_ephemeral_enumeration_stderr")" >&2
+    fail "SDK ephemeral enumeration wrote unexpected stderr"
+fi
+
 cat >"$work_root/sdk_ephemeral_race_harness.c" <<'C'
 #include "secdat-sdk.h"
 
@@ -292,7 +394,8 @@ fi
 
 expiry_race_unlock_stdout="$work_root/expiry-race-unlock.stdout"
 expiry_race_unlock_stderr="$work_root/expiry-race-unlock.stderr"
-if ! SECDAT_SESSION_IDLE_SECONDS=1 "$bin_path" --dir "$ephemeral_expiry_race_domain" unlock --volatile >"$expiry_race_unlock_stdout" 2>"$expiry_race_unlock_stderr"; then
+expiry_race_idle_seconds=5
+if ! SECDAT_SESSION_IDLE_SECONDS="$expiry_race_idle_seconds" "$bin_path" --dir "$ephemeral_expiry_race_domain" unlock --volatile >"$expiry_race_unlock_stdout" 2>"$expiry_race_unlock_stderr"; then
     fail "failed to start SDK expiry-race ephemeral session"
 fi
 if ! grep -q "resolved domain: $ephemeral_expiry_race_domain" "$expiry_race_unlock_stderr"; then
@@ -300,14 +403,14 @@ if ! grep -q "resolved domain: $ephemeral_expiry_race_domain" "$expiry_race_unlo
 fi
 run_secdat --dir "$ephemeral_expiry_race_domain" --store team set --ephemeral SDK_EPHEMERAL_RACE --value ephemeral-expiry-race-value
 
-python3 - "$work_root/sdk_ephemeral_race_harness" "$ephemeral_expiry_race_domain" <<'PY'
+python3 - "$work_root/sdk_ephemeral_race_harness" "$ephemeral_expiry_race_domain" "$expiry_race_idle_seconds" <<'PY'
 import os
 import socket
 import subprocess
 import sys
 import time
 
-harness, domain = sys.argv[1:]
+harness, domain, idle_seconds_text = sys.argv[1:]
 controller, worker = socket.socketpair()
 writer_env = os.environ.copy()
 writer_env["SECDAT_TEST_SDK_UPDATE_SYNC_FD"] = str(worker.fileno())
@@ -324,7 +427,7 @@ if controller.recv(1) != b"R":
     writer.kill()
     raise SystemExit("SDK atomic writer did not pause before session expiry")
 
-time.sleep(2)
+time.sleep(int(idle_seconds_text) + 1)
 controller.sendall(b"G")
 controller.close()
 writer_stdout, writer_stderr = writer.communicate(timeout=10)
@@ -459,6 +562,9 @@ for sdk_lock_key in SDK_LOCK_SERIALIZED_A SDK_LOCK_SERIALIZED_B; do
     fi
 done
 run_secdat --dir "$root_domain" --store team rm --ephemeral SDK_EPHEMERAL
+run_secdat --dir "$child_domain" --store team rm --ephemeral SDK_MASKED_EPHEMERAL
+run_secdat --dir "$child_domain" --store team unmask SDK_MASKED_EPHEMERAL
+run_secdat --dir "$root_domain" --store enumeration rm --ephemeral SDK_HIDDEN_EPHEMERAL
 run_secdat --dir "$root_domain" lock
 
 cat >"$work_root/sdk_harness.c" <<'C'

@@ -40,8 +40,11 @@ def fail(message):
     sys.exit(1)
 
 
-def run(args, cwd=None):
-    completed = subprocess.run(args, text=True, capture_output=True, env=env, cwd=cwd)
+def run(args, cwd=None, extra_env=None):
+    command_env = env.copy()
+    if extra_env:
+        command_env.update(extra_env)
+    completed = subprocess.run(args, text=True, capture_output=True, env=command_env, cwd=cwd)
     return completed.returncode, completed.stdout, completed.stderr
 
 
@@ -515,6 +518,77 @@ if rc != 0 or stdout != "persisted-fuse-value" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "lock"])
 if rc != 0 or stdout != "session locked\n" or stderr != "":
     fail(f"ephemeral FUSE session lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+v2_ephemeral_domain = work_root / "v2-ephemeral-domain"
+v2_ephemeral_domain.mkdir()
+for args in [
+    [bin_path, "--dir", str(v2_ephemeral_domain), "domain", "create"],
+    [bin_path, "--dir", str(v2_ephemeral_domain), "store", "migrate", "default", "--to-format", "v2"],
+    [
+        bin_path,
+        "--dir",
+        str(v2_ephemeral_domain),
+        "set",
+        "FUSE_V2_EPHEMERAL",
+        "--key-visibility",
+        "unlocked",
+        "--value",
+        "persisted-v2-fuse-value",
+    ],
+    [bin_path, "--dir", str(v2_ephemeral_domain), "unlock", "--volatile"],
+    [
+        bin_path,
+        "--dir",
+        str(v2_ephemeral_domain),
+        "set",
+        "--ephemeral",
+        "FUSE_V2_EPHEMERAL",
+        "--value",
+        "ephemeral-v2-fuse-value",
+    ],
+]:
+    rc, stdout, stderr = run(args)
+    if rc != 0:
+        fail(f"v2-hidden ephemeral FUSE setup failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+wrong_v2_key_env = {"SECDAT_MASTER_KEY": "unrelated-v2-fuse-process-key"}
+rc, stdout, stderr = run([
+    fuse_bin,
+    "--dir",
+    str(v2_ephemeral_domain),
+    "--pattern",
+    "FUSE_V2_EPHEMERAL",
+    "--require-key",
+    "FUSE_V2_EPHEMERAL",
+    "--dry-run",
+    str(mountpoint),
+], extra_env=wrong_v2_key_env)
+if rc != 0 or "file_count: 1\n" not in stdout or "FUSE_V2_EPHEMERAL\n" not in stdout or stderr != "":
+    fail(f"v2-hidden ephemeral FUSE selection with wrong process key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([
+    bin_path,
+    "--dir",
+    str(v2_ephemeral_domain),
+    "rm",
+    "--ephemeral",
+    "FUSE_V2_EPHEMERAL",
+])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"v2-hidden ephemeral FUSE cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([
+    fuse_bin,
+    "--dir",
+    str(v2_ephemeral_domain),
+    "--pattern",
+    "FUSE_V2_EPHEMERAL",
+    "--dry-run",
+    str(mountpoint),
+], extra_env=wrong_v2_key_env)
+if rc == 0 or stdout != "" or "failed to authenticate encrypted value" not in stderr:
+    fail(f"unshadowed v2-hidden FUSE selection did not fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(v2_ephemeral_domain), "lock"])
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"v2-hidden ephemeral FUSE session lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([fuse_bin, "--dry-run"])
 if rc == 0 or "missing mountpoint" not in stderr:
