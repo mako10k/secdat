@@ -79,6 +79,7 @@ task T177_FUSE_ATOMIC M_FINDINGS -> M_CORE_FIXES:
   title "Make FUSE ephemeral write rejection atomic"
   description "Move ephemeral-state validation into the same authoritative update boundary as SDK/FUSE read-modify-write. Add a deterministic interleaving regression test and prove rejected writes leave persisted and ephemeral state unchanged."
   duration 2.5d
+  status done
   priority 100
   requires:
     CODEX 1
@@ -180,3 +181,25 @@ plan_seal T_CLOSE:
   accepted_inputs:
     T_ACCEPT both sha256:00fc8762c22d60c0aa4e04859c078b22f9e594cca44d1b336beb3e3b94cf973f
   reason "Initial reviewed root-cause baseline for GitHub issues 174 through 179"
+
+task_outcome OUTCOME_T177_20260806:
+  model 1
+  task T177_FUSE_ATOMIC
+  against_basis sha256:838f0af3ece21e51df5fe345a07af3eb0f6840b5280f1eb3fb3e04e3a5307db7
+  status conformant
+  reason "Full check and deterministic SDK and FUSE race regressions passed"
+
+work_event START_T177_20260806:
+  model 1
+  task T177_FUSE_ATOMIC
+  kind start
+  occurred_at 2026-08-06T13:32:58+09:00
+  planned_value 2.5d
+
+work_event FINISH_T177_20260806:
+  model 1
+  task T177_FUSE_ATOMIC
+  kind finish
+  occurred_at 2026-08-06T13:54:34+09:00
+  active_time 0.36h
+  effort 0.36ph

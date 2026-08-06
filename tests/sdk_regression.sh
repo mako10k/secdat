@@ -26,8 +26,9 @@ root_domain="$work_root/root"
 child_domain="$root_domain/child"
 orphaned_child_domain="$root_domain/orphaned-child"
 refresh_domain="$work_root/refresh"
+ephemeral_expiry_race_domain="$work_root/ephemeral-expiry-race"
 long_role="$(printf '%*s' 5000 '' | tr ' ' r)"
-mkdir -p "$root_domain" "$child_domain" "$orphaned_child_domain" "$refresh_domain"
+mkdir -p "$root_domain" "$child_domain" "$orphaned_child_domain" "$refresh_domain" "$ephemeral_expiry_race_domain"
 
 run_secdat() {
     local stdout_path="$work_root/stdout"
@@ -47,7 +48,9 @@ run_secdat --dir "$root_domain" domain create
 run_secdat --dir "$child_domain" domain create
 run_secdat --dir "$orphaned_child_domain" domain create
 run_secdat --dir "$refresh_domain" domain create
+run_secdat --dir "$ephemeral_expiry_race_domain" domain create
 run_secdat --dir "$root_domain" store create team
+run_secdat --dir "$ephemeral_expiry_race_domain" store create team
 run_secdat --dir "$root_domain" --store team set API_TOKEN --value sdk-secret-value
 run_secdat --dir "$root_domain" --store team set PUBLIC_URL --unsafe --value public-secret-value
 run_secdat --dir "$root_domain" --store team set BULK_TOKEN --bulk-select include --value bulk-secret-value
@@ -69,6 +72,8 @@ run_secdat --dir "$root_domain" --store team relation set sdk-long-refresh \
     --security combination-sensitive
 run_secdat --dir "$orphaned_child_domain" set ORPHANED_SDK_KEY --value orphaned-sdk-value
 rmdir "$orphaned_child_domain"
+run_secdat --dir "$root_domain" --store team set SDK_EPHEMERAL_RACE --value persisted-race-value
+run_secdat --dir "$ephemeral_expiry_race_domain" --store team set SDK_EPHEMERAL_RACE --value persisted-expiry-race-value
 
 ephemeral_unlock_stdout="$work_root/ephemeral-unlock.stdout"
 ephemeral_unlock_stderr="$work_root/ephemeral-unlock.stderr"
@@ -79,7 +84,7 @@ if ! grep -q "resolved domain: $root_domain" "$ephemeral_unlock_stderr"; then
     fail "SDK ephemeral test unlock did not report its domain"
 fi
 run_secdat --dir "$root_domain" --store team set --ephemeral SDK_EPHEMERAL --value sdk-ephemeral-value
-
+run_secdat --dir "$root_domain" --store team set --ephemeral SDK_EPHEMERAL_RACE --value ephemeral-race-value
 cat >"$work_root/sdk_ephemeral_harness.c" <<'C'
 #include "secdat-sdk.h"
 
@@ -145,6 +150,30 @@ int main(int argc, char **argv)
         ) == 0) {
         fail("SDK write unexpectedly persisted over an ephemeral key");
     }
+    if (secdat_sdk_write_at_preserve_attrs(
+            &options,
+            "SDK_EPHEMERAL",
+            (const unsigned char *)"blocked",
+            strlen("blocked"),
+            0,
+            0
+        ) == 0) {
+        fail("SDK atomic write unexpectedly updated an ephemeral key");
+    }
+    if (secdat_sdk_resize_preserve_attrs(
+            &options,
+            "SDK_EPHEMERAL",
+            strlen("short")
+        ) == 0) {
+        fail("SDK atomic resize unexpectedly updated an ephemeral key");
+    }
+    if (secdat_sdk_get(&options, "SDK_EPHEMERAL", &value, &value_length, &unsafe_store) != 0
+        || value_length != strlen("sdk-ephemeral-value")
+        || memcmp(value, "sdk-ephemeral-value", value_length) != 0
+        || unsafe_store) {
+        fail("rejected SDK atomic update changed the ephemeral value");
+    }
+    secdat_sdk_free(value);
     return 0;
 }
 C
@@ -160,6 +189,159 @@ if ! "$work_root/sdk_ephemeral_harness" "$root_domain" 2>"$sdk_ephemeral_stderr"
 fi
 if ! grep -q "use set --ephemeral to update it: SDK_EPHEMERAL" "$sdk_ephemeral_stderr"; then
     fail "SDK ephemeral write rejection was not explicit"
+fi
+
+cat >"$work_root/sdk_ephemeral_race_harness.c" <<'C'
+#include "secdat-sdk.h"
+
+#include <string.h>
+
+int main(int argc, char **argv)
+{
+    struct secdat_sdk_options options = {0};
+    const unsigned char update[] = "must-not-persist";
+
+    if (argc != 2) {
+        return 2;
+    }
+    options.dir = argv[1];
+    options.store = "team";
+    return secdat_sdk_write_at_preserve_attrs(
+        &options,
+        "SDK_EPHEMERAL_RACE",
+        update,
+        strlen((const char *)update),
+        0,
+        0
+    ) == 0;
+}
+C
+
+cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_ephemeral_race_harness.c" \
+    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -Wl,-rpath,"$build_root/src/.libs" \
+    -o "$work_root/sdk_ephemeral_race_harness"
+
+python3 - "$work_root/sdk_ephemeral_race_harness" "$bin_path" "$root_domain" <<'PY'
+import os
+import socket
+import subprocess
+import sys
+
+harness, bin_path, domain = sys.argv[1:]
+update_controller, update_worker = socket.socketpair()
+lock_controller, lock_worker = socket.socketpair()
+writer_env = os.environ.copy()
+writer_env["SECDAT_TEST_SDK_UPDATE_SYNC_FD"] = str(update_worker.fileno())
+writer = subprocess.Popen(
+    [harness, domain],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    env=writer_env,
+    pass_fds=(update_worker.fileno(),),
+)
+update_worker.close()
+update_controller.settimeout(10)
+if update_controller.recv(1) != b"R":
+    writer.kill()
+    raise SystemExit("SDK atomic writer did not pause after reading the ephemeral value")
+
+remover_env = os.environ.copy()
+remover_env["SECDAT_TEST_TRANSACTION_LOCK_ATTEMPT_FD"] = str(lock_worker.fileno())
+remover = subprocess.Popen(
+    [bin_path, "--dir", domain, "--store", "team", "rm", "--ephemeral", "SDK_EPHEMERAL_RACE"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    env=remover_env,
+    pass_fds=(lock_worker.fileno(),),
+)
+lock_worker.close()
+lock_controller.settimeout(10)
+if lock_controller.recv(1) != b"B":
+    writer.kill()
+    remover.kill()
+    raise SystemExit("ephemeral remover did not wait for the SDK update lock")
+if remover.poll() is not None:
+    writer.kill()
+    raise SystemExit("ephemeral remover bypassed the SDK update lock")
+
+update_controller.sendall(b"G")
+update_controller.close()
+writer_stdout, writer_stderr = writer.communicate(timeout=10)
+remover_stdout, remover_stderr = remover.communicate(timeout=10)
+if (
+    writer.returncode != 0
+    or writer_stdout != b""
+    or b"use set --ephemeral to update it: SDK_EPHEMERAL_RACE" not in writer_stderr
+):
+    raise SystemExit(
+        f"SDK atomic writer did not reject the paused ephemeral value: "
+        f"rc={writer.returncode} stdout={writer_stdout!r} stderr={writer_stderr!r}"
+    )
+if remover.returncode != 0 or remover_stdout != b"" or remover_stderr != b"":
+    raise SystemExit(
+        f"ephemeral remover failed after SDK update rejection: "
+        f"rc={remover.returncode} stdout={remover_stdout!r} stderr={remover_stderr!r}"
+    )
+PY
+
+sdk_ephemeral_race_value="$($bin_path --dir "$root_domain" --store team get SDK_EPHEMERAL_RACE --stdout)"
+if test "$sdk_ephemeral_race_value" != "persisted-race-value"; then
+    fail "SDK atomic write persisted stale ephemeral plaintext after concurrent removal"
+fi
+
+expiry_race_unlock_stdout="$work_root/expiry-race-unlock.stdout"
+expiry_race_unlock_stderr="$work_root/expiry-race-unlock.stderr"
+if ! SECDAT_SESSION_IDLE_SECONDS=1 "$bin_path" --dir "$ephemeral_expiry_race_domain" unlock --volatile >"$expiry_race_unlock_stdout" 2>"$expiry_race_unlock_stderr"; then
+    fail "failed to start SDK expiry-race ephemeral session"
+fi
+if ! grep -q "resolved domain: $ephemeral_expiry_race_domain" "$expiry_race_unlock_stderr"; then
+    fail "SDK expiry-race unlock did not report its domain"
+fi
+run_secdat --dir "$ephemeral_expiry_race_domain" --store team set --ephemeral SDK_EPHEMERAL_RACE --value ephemeral-expiry-race-value
+
+python3 - "$work_root/sdk_ephemeral_race_harness" "$ephemeral_expiry_race_domain" <<'PY'
+import os
+import socket
+import subprocess
+import sys
+import time
+
+harness, domain = sys.argv[1:]
+controller, worker = socket.socketpair()
+writer_env = os.environ.copy()
+writer_env["SECDAT_TEST_SDK_UPDATE_SYNC_FD"] = str(worker.fileno())
+writer = subprocess.Popen(
+    [harness, domain],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    env=writer_env,
+    pass_fds=(worker.fileno(),),
+)
+worker.close()
+controller.settimeout(10)
+if controller.recv(1) != b"R":
+    writer.kill()
+    raise SystemExit("SDK atomic writer did not pause before session expiry")
+
+time.sleep(2)
+controller.sendall(b"G")
+controller.close()
+writer_stdout, writer_stderr = writer.communicate(timeout=10)
+if (
+    writer.returncode != 0
+    or writer_stdout != b""
+    or b"use set --ephemeral to update it: SDK_EPHEMERAL_RACE" not in writer_stderr
+):
+    raise SystemExit(
+        f"SDK atomic writer lost its initial ephemeral precondition after expiry: "
+        f"rc={writer.returncode} stdout={writer_stdout!r} stderr={writer_stderr!r}"
+    )
+PY
+
+sdk_ephemeral_expiry_race_value="$($bin_path --dir "$ephemeral_expiry_race_domain" --store team get SDK_EPHEMERAL_RACE --stdout)"
+if test "$sdk_ephemeral_expiry_race_value" != "persisted-expiry-race-value"; then
+    fail "SDK atomic write persisted stale ephemeral plaintext after session expiry"
 fi
 
 cat >"$work_root/sdk_lock_harness.c" <<'C'
@@ -514,6 +696,42 @@ int main(int argc, char **argv)
     if (unsafe_store || value_length != strlen("bulk-updated-value")
         || memcmp(value, "bulk-updated-value", value_length) != 0) {
         fail("secdat_sdk_set_preserve_attrs wrote the wrong value or storage mode");
+    }
+    secdat_sdk_free(value);
+    value = NULL;
+    value_length = 0;
+
+    if (secdat_sdk_write_at_preserve_attrs(
+            &root_options,
+            "BULK_TOKEN",
+            (const unsigned char *)"-tail",
+            strlen("-tail"),
+            0,
+            1
+        ) != 0) {
+        fail("secdat_sdk_write_at_preserve_attrs failed");
+    }
+    if (secdat_sdk_get(&root_options, "BULK_TOKEN", &value, &value_length, &unsafe_store) != 0
+        || unsafe_store
+        || value_length != strlen("bulk-updated-value-tail")
+        || memcmp(value, "bulk-updated-value-tail", value_length) != 0) {
+        fail("secdat_sdk_write_at_preserve_attrs wrote the wrong value");
+    }
+    secdat_sdk_free(value);
+    value = NULL;
+    value_length = 0;
+    if (secdat_sdk_resize_preserve_attrs(
+            &root_options,
+            "BULK_TOKEN",
+            strlen("bulk-updated-value")
+        ) != 0) {
+        fail("secdat_sdk_resize_preserve_attrs failed");
+    }
+    if (secdat_sdk_get(&root_options, "BULK_TOKEN", &value, &value_length, &unsafe_store) != 0
+        || unsafe_store
+        || value_length != strlen("bulk-updated-value")
+        || memcmp(value, "bulk-updated-value", value_length) != 0) {
+        fail("secdat_sdk_resize_preserve_attrs wrote the wrong value");
     }
     secdat_sdk_free(value);
     value = NULL;

@@ -174,6 +174,19 @@ int secdat_sdk_set_preserve_attrs(
     const unsigned char *value,
     size_t value_length
 );
+int secdat_sdk_write_at_preserve_attrs(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    const unsigned char *value,
+    size_t value_length,
+    size_t offset,
+    int append
+);
+int secdat_sdk_resize_preserve_attrs(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    size_t new_length
+);
 int secdat_sdk_rm(
     const struct secdat_sdk_options *options,
     const char *keyref,

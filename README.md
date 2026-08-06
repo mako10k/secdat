@@ -70,6 +70,7 @@ The first SDK surface is intentionally small:
 - `secdat_sdk_get()` for binary-safe reads
 - `secdat_sdk_set()` for binary-safe writes
 - `secdat_sdk_set_preserve_attrs()` for binary-safe value updates that keep an existing key's non-secret attributes
+- `secdat_sdk_write_at_preserve_attrs()` and `secdat_sdk_resize_preserve_attrs()` for atomic read-modify-write updates that keep an existing key's non-secret attributes
 - `secdat_sdk_rm()` for deletes with optional ignore-missing behavior
 - `secdat_sdk_mv()` and `secdat_sdk_cp()` for key moves and copies
 - `secdat_sdk_mask()` and `secdat_sdk_unmask()` for domain-local tombstones

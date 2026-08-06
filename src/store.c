@@ -769,7 +769,8 @@ static int secdat_load_resolved_plaintext(
     size_t *plaintext_length,
     size_t *resolved_index,
     int *unsafe_store,
-    const struct secdat_key_access_options *access_options
+    const struct secdat_key_access_options *access_options,
+    int *ephemeral_out
 );
 static int secdat_load_resolved_plaintext_with_missing_context(
     const struct secdat_domain_chain *chain,
@@ -780,7 +781,8 @@ static int secdat_load_resolved_plaintext_with_missing_context(
     size_t *resolved_index,
     int *unsafe_store,
     const struct secdat_key_access_options *access_options,
-    const struct secdat_cli *missing_context_cli
+    const struct secdat_cli *missing_context_cli,
+    int *ephemeral_out
 );
 static int secdat_resolve_entry_path(
     const struct secdat_domain_chain *chain,
@@ -946,6 +948,7 @@ static int secdat_transaction_open_lock(const char *root);
 static int secdat_mutation_cleanup_abandoned_stages(
     const char *transactions_root
 );
+static int secdat_test_synchronize_sdk_update(void);
 static int secdat_test_signal_transaction_lock_attempt(unsigned char signal);
 static int secdat_parse_i64(const char *value, time_t *result);
 static int secdat_session_agent_connect_chain_details(const struct secdat_domain_chain *chain, size_t *matched_index, size_t *blocked_index);
@@ -7528,7 +7531,7 @@ static int secdat_collect_bundle_payload(const struct secdat_cli *cli, unsigned 
         size_t plaintext_length = 0;
         uint32_t key_length = (uint32_t)strlen(visible_keys.items[index]);
 
-        if (secdat_load_resolved_plaintext(&chain, cli->store, visible_keys.items[index], &plaintext, &plaintext_length, NULL, NULL, NULL) != 0) {
+        if (secdat_load_resolved_plaintext(&chain, cli->store, visible_keys.items[index], &plaintext, &plaintext_length, NULL, NULL, NULL, NULL) != 0) {
             goto cleanup;
         }
         if (plaintext_length > UINT32_MAX) {
@@ -7985,12 +7988,13 @@ int secdat_sdk_exists(
     return 0;
 }
 
-int secdat_sdk_get(
+static int secdat_sdk_get_value(
     const struct secdat_sdk_options *options,
     const char *keyref,
     unsigned char **value_out,
     size_t *value_length_out,
-    int *unsafe_store_out
+    int *unsafe_store_out,
+    int *ephemeral_out
 )
 {
     struct secdat_key_reference reference;
@@ -8008,6 +8012,9 @@ int secdat_sdk_get(
     if (unsafe_store_out != NULL) {
         *unsafe_store_out = 0;
     }
+    if (ephemeral_out != NULL) {
+        *ephemeral_out = 0;
+    }
 
     if (secdat_parse_key_reference(keyref, secdat_sdk_domain_base(options), options != NULL ? options->store : NULL, &reference) != 0) {
         return 1;
@@ -8015,7 +8022,7 @@ int secdat_sdk_get(
     if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
         return 1;
     }
-    if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL) != 0) {
+    if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL, ephemeral_out) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;
     }
@@ -8027,6 +8034,24 @@ int secdat_sdk_get(
         *unsafe_store_out = unsafe_store;
     }
     return 0;
+}
+
+int secdat_sdk_get(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    unsigned char **value_out,
+    size_t *value_length_out,
+    int *unsafe_store_out
+)
+{
+    return secdat_sdk_get_value(
+        options,
+        keyref,
+        value_out,
+        value_length_out,
+        unsafe_store_out,
+        NULL
+    );
 }
 
 static int secdat_mutation_lock_acquire(int *owned)
@@ -8174,6 +8199,144 @@ int secdat_sdk_set_preserve_attrs(
         return 1;
     }
     status = secdat_sdk_set_value(options, keyref, value, value_length, 0, 1);
+    secdat_mutation_lock_release(lock_owned);
+    return status;
+}
+
+int secdat_sdk_write_at_preserve_attrs(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    const unsigned char *value,
+    size_t value_length,
+    size_t offset,
+    int append
+)
+{
+    unsigned char *current = NULL;
+    unsigned char *updated = NULL;
+    size_t current_length = 0;
+    size_t write_offset;
+    size_t end_offset;
+    size_t updated_length = 0;
+    int initial_ephemeral = 0;
+    int lock_owned;
+    int status = 1;
+
+    if (keyref == NULL || (value == NULL && value_length != 0)) {
+        return 1;
+    }
+    if (value_length == 0) {
+        return 0;
+    }
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0) {
+        return 1;
+    }
+    if (secdat_sdk_get_value(options, keyref, &current, &current_length, NULL, &initial_ephemeral) != 0
+        || secdat_test_synchronize_sdk_update() != 0) {
+        goto cleanup;
+    }
+    if (initial_ephemeral) {
+        fprintf(
+            stderr,
+            _("key is ephemeral in the current session; use set --ephemeral to update it: %s\n"),
+            keyref
+        );
+        goto cleanup;
+    }
+
+    write_offset = append ? current_length : offset;
+    if (write_offset > (size_t)-1 - value_length) {
+        goto cleanup;
+    }
+    end_offset = write_offset + value_length;
+    updated_length = current_length > end_offset ? current_length : end_offset;
+    updated = malloc(updated_length == 0 ? 1 : updated_length);
+    if (updated == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    memset(updated, 0, updated_length);
+    if (current_length > 0) {
+        memcpy(updated, current, current_length);
+    }
+    memcpy(updated + write_offset, value, value_length);
+    status = secdat_sdk_set_value(
+        options,
+        keyref,
+        updated,
+        updated_length,
+        0,
+        1
+    );
+
+cleanup:
+    secdat_secure_clear(updated, updated_length);
+    free(updated);
+    secdat_secure_clear(current, current_length);
+    free(current);
+    secdat_mutation_lock_release(lock_owned);
+    return status;
+}
+
+int secdat_sdk_resize_preserve_attrs(
+    const struct secdat_sdk_options *options,
+    const char *keyref,
+    size_t new_length
+)
+{
+    unsigned char *current = NULL;
+    unsigned char *resized = NULL;
+    size_t current_length = 0;
+    size_t copy_length;
+    int initial_ephemeral = 0;
+    int lock_owned;
+    int status = 1;
+
+    if (keyref == NULL) {
+        return 1;
+    }
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0) {
+        return 1;
+    }
+    if (secdat_sdk_get_value(options, keyref, &current, &current_length, NULL, &initial_ephemeral) != 0
+        || secdat_test_synchronize_sdk_update() != 0) {
+        goto cleanup;
+    }
+    if (initial_ephemeral) {
+        fprintf(
+            stderr,
+            _("key is ephemeral in the current session; use set --ephemeral to update it: %s\n"),
+            keyref
+        );
+        goto cleanup;
+    }
+
+    resized = malloc(new_length == 0 ? 1 : new_length);
+    if (resized == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    if (new_length > 0) {
+        memset(resized, 0, new_length);
+        copy_length = current_length < new_length ? current_length : new_length;
+        if (copy_length > 0) {
+            memcpy(resized, current, copy_length);
+        }
+    }
+    status = secdat_sdk_set_value(
+        options,
+        keyref,
+        resized,
+        new_length,
+        0,
+        1
+    );
+
+cleanup:
+    secdat_secure_clear(resized, new_length);
+    free(resized);
+    secdat_secure_clear(current, current_length);
+    free(current);
     secdat_mutation_lock_release(lock_owned);
     return status;
 }
@@ -11002,7 +11165,8 @@ static int secdat_load_resolved_plaintext_with_missing_context(
     size_t *resolved_index,
     int *unsafe_store,
     const struct secdat_key_access_options *access_options,
-    const struct secdat_cli *missing_context_cli
+    const struct secdat_cli *missing_context_cli,
+    int *ephemeral_out
 )
 {
     struct secdat_effective_entry entry = {0};
@@ -11018,11 +11182,18 @@ static int secdat_load_resolved_plaintext_with_missing_context(
     int v2_object_value = 0;
     int status;
 
+    if (ephemeral_out != NULL) {
+        *ephemeral_out = 0;
+    }
+
     status = secdat_resolve_effective_entry(chain, store_name, key, 1, &entry);
     if (status != 0) {
         fprintf(stderr, _("key not found: %s\n"), key);
         secdat_print_missing_key_context_for_cli(chain, store_name, key, missing_context_cli);
         return 1;
+    }
+    if (ephemeral_out != NULL) {
+        *ephemeral_out = entry.ephemeral;
     }
 
     if (resolved_index != NULL) {
@@ -11180,7 +11351,8 @@ static int secdat_load_resolved_plaintext(
     size_t *plaintext_length,
     size_t *resolved_index,
     int *unsafe_store,
-    const struct secdat_key_access_options *access_options
+    const struct secdat_key_access_options *access_options,
+    int *ephemeral_out
 )
 {
     return secdat_load_resolved_plaintext_with_missing_context(
@@ -11192,7 +11364,8 @@ static int secdat_load_resolved_plaintext(
         resolved_index,
         unsafe_store,
         access_options,
-        NULL
+        NULL,
+        ephemeral_out
     );
 }
 
@@ -15319,6 +15492,44 @@ static int secdat_test_synchronize_mask_plan(void)
     } while (result < 0 && errno == EINTR);
     if (result != (ssize_t)sizeof(signal) || signal != 'G') {
         fprintf(stderr, "failed to resume prepared test mask plan\n");
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_test_synchronize_sdk_update(void)
+{
+    const char *value = getenv("SECDAT_TEST_SDK_UPDATE_SYNC_FD");
+    char *end = NULL;
+    long parsed;
+    unsigned char signal = 'R';
+    ssize_t result;
+
+    if (value == NULL) {
+        return 0;
+    }
+    errno = 0;
+    parsed = strtol(value, &end, 10);
+    if (errno != 0
+        || end == value
+        || *end != '\0'
+        || parsed < 3
+        || parsed > INT_MAX) {
+        fprintf(stderr, "invalid test SDK update synchronization fd\n");
+        return 1;
+    }
+    do {
+        result = write((int)parsed, &signal, sizeof(signal));
+    } while (result < 0 && errno == EINTR);
+    if (result != (ssize_t)sizeof(signal)) {
+        fprintf(stderr, "failed to signal prepared test SDK update\n");
+        return 1;
+    }
+    do {
+        result = read((int)parsed, &signal, sizeof(signal));
+    } while (result < 0 && errno == EINTR);
+    if (result != (ssize_t)sizeof(signal) || signal != 'G') {
+        fprintf(stderr, "failed to resume prepared test SDK update\n");
         return 1;
     }
     return 0;
@@ -20542,7 +20753,7 @@ static int secdat_command_attr(const struct secdat_cli *cli)
         }
         if (attrs.value_access != original_attrs.value_access) {
             target_unsafe_store = attrs.value_access == SECDAT_VALUE_ACCESS_ALWAYS;
-            if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, NULL, NULL) != 0) {
+            if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, NULL, NULL, NULL) != 0) {
                 secdat_effective_entry_reset(&entry);
                 secdat_domain_chain_free(&chain);
                 return 1;
@@ -20614,7 +20825,7 @@ static int secdat_command_attr(const struct secdat_cli *cli)
 
     target_unsafe_store = attrs.value_access == SECDAT_VALUE_ACCESS_ALWAYS;
     if (target_unsafe_store != unsafe_store) {
-        if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, NULL, NULL) != 0) {
+        if (secdat_load_resolved_plaintext(&chain, reference.store_value, reference.key, &plaintext, &plaintext_length, NULL, NULL, NULL, NULL) != 0) {
             secdat_effective_entry_reset(&entry);
             secdat_domain_chain_free(&chain);
             return 1;
@@ -21846,7 +22057,7 @@ static int secdat_collect_relation_link_candidates_for_root(
             secdat_effective_entry_reset(&entry);
             continue;
         }
-        if (secdat_load_resolved_plaintext(&chain, options->store_name, visible_keys.items[key_index], &plaintext, &plaintext_length, NULL, NULL, NULL) != 0
+        if (secdat_load_resolved_plaintext(&chain, options->store_name, visible_keys.items[key_index], &plaintext, &plaintext_length, NULL, NULL, NULL, NULL) != 0
             || secdat_read_key_metadata(chain.ids[0], options->store_name, visible_keys.items[key_index], &metadata, 0) != 0
             || secdat_format_canonical_key(
                 canonical_keyref,
@@ -22409,7 +22620,8 @@ static int secdat_command_get(const struct secdat_cli *cli)
             NULL,
             &unsafe_store,
             &options.access,
-            cli
+            cli,
+            NULL
         ) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;
@@ -25391,8 +25603,8 @@ static int secdat_ln_values_match(
     int status = 1;
 
     *matches = 0;
-    if (secdat_load_resolved_plaintext(source_chain, source_store_name, source_key, &source_plaintext, &source_length, NULL, NULL, NULL) != 0
-        || secdat_load_resolved_plaintext(destination_chain, destination_store_name, destination_key, &destination_plaintext, &destination_length, NULL, NULL, NULL) != 0) {
+    if (secdat_load_resolved_plaintext(source_chain, source_store_name, source_key, &source_plaintext, &source_length, NULL, NULL, NULL, NULL) != 0
+        || secdat_load_resolved_plaintext(destination_chain, destination_store_name, destination_key, &destination_plaintext, &destination_length, NULL, NULL, NULL, NULL) != 0) {
         goto cleanup;
     }
     *matches = source_length == destination_length
@@ -25713,7 +25925,7 @@ static int secdat_command_cp(const struct secdat_cli *cli)
 
     if (secdat_resolve_effective_entry(&source_chain, source_reference.store_value, source_reference.key, 0, &source_entry) != 0
         || secdat_load_resolved_secret_attrs(&source_chain, source_reference.store_value, source_reference.key, &attrs, &unsafe_store) != 0
-        || secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL) != 0) {
+        || secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL, NULL) != 0) {
         secdat_effective_entry_reset(&source_entry);
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
@@ -25833,7 +26045,7 @@ static int secdat_command_mv(const struct secdat_cli *cli)
 
     if (secdat_resolve_effective_entry(&source_chain, source_reference.store_value, source_reference.key, 0, &source_entry) != 0
         || secdat_load_resolved_secret_attrs(&source_chain, source_reference.store_value, source_reference.key, &attrs, &unsafe_store) != 0
-        || secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL) != 0) {
+        || secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL, NULL) != 0) {
         secdat_effective_entry_reset(&source_entry);
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
@@ -29433,6 +29645,7 @@ int secdat_exec_port_load_plaintext(
         key,
         plaintext_out,
         plaintext_length_out,
+        NULL,
         NULL,
         NULL,
         NULL

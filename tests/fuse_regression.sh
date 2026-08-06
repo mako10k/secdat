@@ -437,6 +437,9 @@ if live_mount_available:
     if (mountpoint / "FUSE_TOKEN").exists():
         fail("secdat-fuse size metadata command mode left the mount active after command exit")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "FUSE_EPHEMERAL", "--value", "persisted-fuse-value"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"ephemeral FUSE persisted shadow setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "unlock", "--volatile"])
 if rc != 0 or "volatile session unlocked from environment" not in stdout or f"resolved domain: {domain}\n" not in stderr:
     fail(f"ephemeral FUSE test unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -470,9 +473,45 @@ if live_mount_available:
     ])
     if rc != 0 or stdout != "fuse-ephemeral-value":
         fail(f"ephemeral FUSE read failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    rc, stdout, stderr = run([
+        fuse_bin,
+        "--dir",
+        str(domain),
+        "--pattern",
+        "FUSE_EPHEMERAL",
+        str(mountpoint),
+        "--",
+        "python3",
+        "-c",
+        "import sys\np=sys.argv[1]\ntry:\n    with open(p, 'r+b', buffering=0) as stream:\n        stream.write(b'blocked')\nexcept OSError:\n    raise SystemExit(0)\nraise SystemExit('ephemeral FUSE write unexpectedly succeeded')",
+        str(mountpoint / "FUSE_EPHEMERAL"),
+    ])
+    if rc != 0 or stdout != "":
+        fail(f"ephemeral FUSE write did not fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    rc, stdout, stderr = run([
+        fuse_bin,
+        "--dir",
+        str(domain),
+        "--pattern",
+        "FUSE_EPHEMERAL",
+        str(mountpoint),
+        "--",
+        "python3",
+        "-c",
+        "import os, sys\ntry:\n    os.truncate(sys.argv[1], 4)\nexcept OSError:\n    raise SystemExit(0)\nraise SystemExit('ephemeral FUSE truncate unexpectedly succeeded')",
+        str(mountpoint / "FUSE_EPHEMERAL"),
+    ])
+    if rc != 0 or stdout != "":
+        fail(f"ephemeral FUSE truncate did not fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "FUSE_EPHEMERAL", "-o"])
+    if rc != 0 or stdout != "fuse-ephemeral-value" or stderr != "":
+        fail(f"rejected FUSE mutations changed the ephemeral value: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "rm", "--ephemeral", "FUSE_EPHEMERAL"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"ephemeral FUSE cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "get", "FUSE_EPHEMERAL", "-o"])
+if rc != 0 or stdout != "persisted-fuse-value" or stderr != "":
+    fail(f"rejected FUSE mutations changed the persisted shadow: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "lock"])
 if rc != 0 or stdout != "session locked\n" or stderr != "":
     fail(f"ephemeral FUSE session lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

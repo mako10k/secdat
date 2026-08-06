@@ -545,40 +545,9 @@ static int secdat_fuse_chown(const char *path, uid_t uid, gid_t gid, struct fuse
 
 static int secdat_fuse_resize_key(struct secdat_fuse_state *state, const char *key, size_t new_length)
 {
-    unsigned char *value = NULL;
-    unsigned char *resized = NULL;
-    size_t value_length = 0;
-    size_t copy_length;
-    int unsafe_store = 0;
-    int result = 0;
-
-    if (secdat_sdk_get(&state->options, key, &value, &value_length, &unsafe_store) != 0) {
-        return -EACCES;
-    }
-
-    resized = malloc(new_length == 0 ? 1 : new_length);
-    if (resized == NULL) {
-        secdat_fuse_secure_clear(value, value_length);
-        secdat_sdk_free(value);
-        return -ENOMEM;
-    }
-    if (new_length > 0) {
-        memset(resized, 0, new_length);
-        copy_length = value_length < new_length ? value_length : new_length;
-        if (copy_length > 0) {
-            memcpy(resized, value, copy_length);
-        }
-    }
-
-    (void)unsafe_store;
-    if (secdat_sdk_set_preserve_attrs(&state->options, key, resized, new_length) != 0) {
-        result = -EACCES;
-    }
-    secdat_fuse_secure_clear(resized, new_length);
-    free(resized);
-    secdat_fuse_secure_clear(value, value_length);
-    secdat_sdk_free(value);
-    return result;
+    return secdat_sdk_resize_preserve_attrs(&state->options, key, new_length) == 0
+        ? 0
+        : -EACCES;
 }
 
 static int secdat_fuse_truncate(const char *path, off_t size, struct fuse_file_info *file_info)
@@ -616,13 +585,6 @@ static int secdat_fuse_write(
 {
     struct secdat_fuse_state *state = fuse_get_context()->private_data;
     const char *key = NULL;
-    unsigned char *value = NULL;
-    unsigned char *updated = NULL;
-    size_t value_length = 0;
-    size_t write_offset;
-    size_t end_offset;
-    size_t updated_length;
-    int unsafe_store = 0;
     int result;
 
     if (size > INT_MAX) {
@@ -647,46 +609,18 @@ static int secdat_fuse_write(
         return 0;
     }
 
-    if (secdat_sdk_get(&state->options, key, &value, &value_length, &unsafe_store) != 0) {
-        return -EACCES;
-    }
-    (void)unsafe_store;
-
-    if (file_info != NULL && (file_info->flags & O_APPEND) != 0) {
-        write_offset = value_length;
-    } else {
-        write_offset = (size_t)offset;
-    }
-    if (write_offset > (size_t)-1 - size) {
-        secdat_fuse_secure_clear(value, value_length);
-        secdat_sdk_free(value);
-        return -EFBIG;
-    }
-    end_offset = write_offset + size;
-
-    updated_length = value_length > end_offset ? value_length : end_offset;
-    updated = malloc(updated_length == 0 ? 1 : updated_length);
-    if (updated == NULL) {
-        secdat_fuse_secure_clear(value, value_length);
-        secdat_sdk_free(value);
-        return -ENOMEM;
-    }
-    memset(updated, 0, updated_length);
-    if (value_length > 0) {
-        memcpy(updated, value, value_length);
-    }
-    memcpy(updated + write_offset, buffer, size);
-
-    if (secdat_sdk_set_preserve_attrs(&state->options, key, updated, updated_length) != 0) {
+    if (secdat_sdk_write_at_preserve_attrs(
+            &state->options,
+            key,
+            (const unsigned char *)buffer,
+            size,
+            (size_t)offset,
+            file_info != NULL && (file_info->flags & O_APPEND) != 0
+        ) != 0) {
         result = -EACCES;
     } else {
         result = (int)size;
     }
-
-    secdat_fuse_secure_clear(updated, updated_length);
-    free(updated);
-    secdat_fuse_secure_clear(value, value_length);
-    secdat_sdk_free(value);
     return result;
 }
 
