@@ -386,19 +386,23 @@ msgstr ""
 
 #: src/cli.c:1735
 msgid ""
-"  set: store or update one key in the resolved current domain; --ephemeral "
-"keeps one unlocked-only value in the active session agent\n"
+"  set: store or update one key in the resolved current domain; --unsafe "
+"stores plaintext visible while locked; --ephemeral keeps one unlocked-only "
+"value in the active session agent\n"
 msgstr ""
 "  set: 解決された current domain に 1 つの key を保存または更新します。--"
-"ephemeral は active session agent に unlocked-only の値を 1 つ保持します\n"
+"unsafe は lock 中も見える平文を保存します。--ephemeral は active session agent "
+"に unlocked-only の値を 1 つ保持します\n"
 
 #: src/cli.c:1736
 msgid ""
 "  rm: remove one key locally or create a tombstone for an inherited key; --"
-"ephemeral removes only a session-local ephemeral value\n"
+"ignore-missing treats absent keys as success; --ephemeral removes only a "
+"session-local ephemeral value\n"
 msgstr ""
 "  rm: 1 つの key をローカルに削除するか、継承 key 用の tombstone を作成しま"
-"す。--ephemeral は session-local ephemeral value のみを削除します\n"
+"す。--ignore-missing は未存在の key を成功扱いにします。--ephemeral は session-"
+"local ephemeral value のみを削除します\n"
 
 #: src/cli.c:1737 src/cli.c:1911
 msgid "  mv: rename or relocate one key between resolved locations\n"

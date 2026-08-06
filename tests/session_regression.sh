@@ -1001,6 +1001,15 @@ output = stdout + stderr
 normalized_output = normalize_spaces(output)
 if rc != 0 or "[options] subcommand ..." not in normalized_output or "Options:" not in output or "Commands:" not in output or "Topics:" not in output or "inject: explain exec --inject layers" not in normalized_output or "Support:" not in output or "issues: https://github.com/mako10k/secdat/issues" not in normalized_output or "help: show global help" not in normalized_output or "version: print the secdat version" not in normalized_output:
     fail(f"help subcommand check failed: rc={rc} output={output!r}")
+wrapped_guidance = " ".join(output.split())
+for marker in [
+    "--unsafe stores plaintext visible while locked",
+    "--ephemeral keeps one unlocked-only value in the active session agent",
+    "--ignore-missing treats absent keys as success",
+    "--ephemeral removes only a session-local ephemeral value",
+]:
+    if marker not in wrapped_guidance:
+        fail(f"top-level command option guidance missing {marker!r}: output={output!r}")
 
 for args, expected in [
     ([bin_path, "unlock", "--bad"], f"Try: {bin_path} help unlock"),

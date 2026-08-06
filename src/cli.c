@@ -1732,8 +1732,8 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  exists: check whether one resolved key is visible from the current domain view\n"));
     secdat_cli_print_detail_line(_("  id: print the v2 secret object UUID for one resolved key without reading its value\n"));
     secdat_cli_print_detail_line(_("  get: decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock\n"));
-    secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --ephemeral keeps one unlocked-only value in the active session agent\n"));
-    secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ephemeral removes only a session-local ephemeral value\n"));
+    secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked; --ephemeral keeps one unlocked-only value in the active session agent\n"));
+    secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success; --ephemeral removes only a session-local ephemeral value\n"));
     secdat_cli_print_detail_line(_("  mv: rename or relocate one key between resolved locations\n"));
     secdat_cli_print_detail_line(_("  cp: copy one key into another resolved location\n"));
     secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object, including cross-domain v2 links and authorized @UUID sources\n"));

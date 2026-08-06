@@ -94,6 +94,7 @@ task T178_HELP M_FINDINGS -> M_CORE_FIXES:
   title "Restore set and rm option discoverability"
   description "Restore established unsafe and ignore option guidance while retaining ephemeral markers in top-level help. Add exact help-contract regression coverage."
   duration 0.25d
+  status done
   priority 40
   requires:
     CODEX 1
@@ -213,6 +214,13 @@ task_outcome OUTCOME_T175_20260806:
   status conformant
   reason "Used authoritative overlay attributes for current-domain list filtering; exclude, named, include, volatile default, ls, and list regressions pass."
 
+task_outcome OUTCOME_T178_20260806:
+  model 1
+  task T178_HELP
+  against_basis sha256:d7b55d17ca261286a5473daf6db0c9842817e73be1c88f761ee4bf376389f6bf
+  status conformant
+  reason "Restored top-level set unsafe and rm ignore-missing meanings alongside ephemeral guidance; independent wrap-insensitive markers, Japanese catalog checks, focused session regression, and full make check pass."
+
 work_event START_T177_20260806:
   model 1
   task T177_FUSE_ATOMIC
@@ -266,3 +274,16 @@ work_event FINISH_T175_20260806:
   task T175_LIST_ATTRS
   kind finish
   occurred_at 2026-08-06T15:09:16+09:00
+
+work_event START_T178_20260806:
+  model 1
+  task T178_HELP
+  kind start
+  occurred_at 2026-08-06T15:11:01+09:00
+  planned_value 0.25d
+
+work_event FINISH_T178_20260806:
+  model 1
+  task T178_HELP
+  kind finish
+  occurred_at 2026-08-06T15:17:14+09:00
