@@ -2380,6 +2380,46 @@ rc, stdout, stderr = run(scoped(["lock"], lifecycle_root))
 if rc != 0 or stdout != "session locked\n" or stderr != "":
     fail(f"ephemeral lifecycle owner lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+process_exit_domain = isolated_root / "ephemeral-agent-exit"
+process_exit_domain.mkdir()
+process_exit_env = {"SECDAT_MASTER_KEY": "ephemeral-agent-exit-key"}
+rc, stdout, stderr = run(scoped(["domain", "create"], process_exit_domain), process_exit_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"agent-exit domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["unlock", "--volatile"], process_exit_domain), process_exit_env)
+if rc != 0 or "volatile session unlocked from environment\n" not in stdout or f"resolved domain: {process_exit_domain}\n" not in stderr:
+    fail(f"agent-exit session unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped([
+    "set", "--ephemeral", "EPHEMERAL_AGENT_EXIT",
+    "--value", "cleared-on-agent-exit",
+], process_exit_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"agent-exit ephemeral seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+process_exit_registry_path = (
+    Path(env["XDG_DATA_HOME"])
+    / "secdat"
+    / "domains"
+    / "registry"
+    / "by-root"
+    / quote(str(process_exit_domain), safe="")
+)
+process_exit_domain_id = process_exit_registry_path.read_text().strip()
+process_exit_socket_path = socket_path_for(process_exit_domain_id)
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as agent_client:
+    agent_client.connect(str(process_exit_socket_path))
+    agent_client.sendall(b"CLEAR\n")
+    if agent_client.recv(16) != b"OK\n":
+        fail("agent-exit CLEAR request failed")
+for _ in range(200):
+    if not process_exit_socket_path.exists():
+        break
+    time.sleep(0.01)
+else:
+    fail(f"session agent socket survived process exit: {process_exit_socket_path}")
+rc, stdout, stderr = run(scoped(["exists", "EPHEMERAL_AGENT_EXIT"], process_exit_domain), process_exit_env)
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"ephemeral key survived session agent process exit: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 default_runtime = isolated_root / "runtime-default"
 default_data = isolated_root / "data-default"
 default_scope = isolated_root / "default-scope"

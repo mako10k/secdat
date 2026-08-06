@@ -2506,11 +2506,6 @@ static const char *secdat_session_scope_id(const struct secdat_domain_chain *cha
     return SECDAT_USER_GLOBAL_SCOPE_ID;
 }
 
-static int secdat_session_agent_set_current_scope(const struct secdat_domain_chain *chain, const char *master_key)
-{
-    return secdat_session_agent_set(secdat_session_scope_id(chain), master_key, SECDAT_SESSION_ACCESS_PERSISTENT, secdat_session_idle_seconds());
-}
-
 static int secdat_session_agent_clear_current_scope(const struct secdat_domain_chain *chain)
 {
     return secdat_session_agent_clear(secdat_session_scope_id(chain));
@@ -3523,48 +3518,6 @@ static int secdat_parse_store_finalize_migration_options(
         return 2;
     }
     options->store_name = argv[optind];
-    return 0;
-}
-
-static int secdat_parse_simple_ls_pattern(const struct secdat_cli *cli, const char *command_name, const char **pattern)
-{
-    static const struct option long_options[] = {
-        {"pattern", required_argument, NULL, 'p'},
-        {NULL, 0, NULL, 0},
-    };
-    char *argv[cli->argc + 2];
-    int argc;
-    int option;
-
-    *pattern = NULL;
-    secdat_prepare_option_argv(cli, command_name, &argc, argv);
-    secdat_reset_getopt_state();
-    while ((option = getopt_long(argc, argv, ":p:", long_options, NULL)) != -1) {
-        switch (option) {
-        case 'p':
-            if (*pattern != NULL) {
-                fprintf(stderr, _("invalid arguments for %s\n"), command_name);
-                return 2;
-            }
-            *pattern = optarg;
-            break;
-        case '?':
-        case ':':
-        default:
-            fprintf(stderr, _("invalid arguments for %s\n"), command_name);
-            return 2;
-        }
-    }
-
-    if (optind + 1 == argc && *pattern == NULL) {
-        *pattern = argv[optind];
-        return 0;
-    }
-    if (optind != argc) {
-        fprintf(stderr, _("invalid arguments for %s\n"), command_name);
-        return 2;
-    }
-
     return 0;
 }
 
@@ -4728,17 +4681,6 @@ static int secdat_state_dir(char *buffer, size_t size)
     }
 
     return 0;
-}
-
-static int secdat_session_agent_path(char *buffer, size_t size)
-{
-    char runtime_dir[PATH_MAX];
-
-    if (secdat_runtime_dir(runtime_dir, sizeof(runtime_dir)) != 0) {
-        return 1;
-    }
-
-    return secdat_join_path(buffer, size, runtime_dir, "agent.sock");
 }
 
 static int secdat_session_agent_path_for_domain(const char *domain_id, char *buffer, size_t size)
@@ -5934,16 +5876,6 @@ static int secdat_read_secret_confirmation_with_askpass_mode(char *buffer, size_
     return 0;
 }
 
-static int secdat_read_secret_confirmation_with_askpass(char *buffer, size_t size, const char *askpass)
-{
-    return secdat_read_secret_confirmation_with_askpass_mode(buffer, size, askpass, 0);
-}
-
-static int secdat_read_secret_confirmation(char *buffer, size_t size)
-{
-    return secdat_read_secret_confirmation_with_askpass(buffer, size, NULL);
-}
-
 static int secdat_read_secret_confirmation_prompts(
     const char *prompt,
     const char *confirm_prompt,
@@ -6000,11 +5932,6 @@ static int secdat_read_unlock_passphrase_with_askpass(char *buffer, size_t size,
     return secdat_read_unlock_passphrase_with_askpass_mode(buffer, size, askpass, 0);
 }
 
-static int secdat_read_unlock_passphrase(char *buffer, size_t size)
-{
-    return secdat_read_unlock_passphrase_with_askpass(buffer, size, NULL);
-}
-
 static int secdat_read_new_master_key_passphrase_with_askpass_mode(char *buffer, size_t size, const char *askpass, int force_askpass)
 {
     const char *env_passphrase = secdat_master_key_passphrase_env();
@@ -6016,16 +5943,6 @@ static int secdat_read_new_master_key_passphrase_with_askpass_mode(char *buffer,
         return 0;
     }
     return secdat_read_secret_confirmation_with_askpass_mode(buffer, size, askpass, force_askpass);
-}
-
-static int secdat_read_new_master_key_passphrase_with_askpass(char *buffer, size_t size, const char *askpass)
-{
-    return secdat_read_new_master_key_passphrase_with_askpass_mode(buffer, size, askpass, 0);
-}
-
-static int secdat_read_new_master_key_passphrase(char *buffer, size_t size)
-{
-    return secdat_read_new_master_key_passphrase_with_askpass(buffer, size, NULL);
 }
 
 static int secdat_session_agent_connect_domain(const char *domain_id, int start_if_missing)
@@ -12894,16 +12811,6 @@ static int secdat_validate_v2_secret_value_file(const char *path)
     secdat_secure_clear(payload, payload_length);
     free(payload);
     return status;
-}
-
-static int secdat_validate_v2_domain_entry_file(const char *path, const char *file_entry_id, char *secret_id, size_t secret_id_size)
-{
-    struct secdat_v2_domain_entry_info info;
-
-    if (secdat_read_v2_domain_entry_info(path, file_entry_id, &info) != 0) {
-        return 1;
-    }
-    return secdat_copy_string(secret_id, secret_id_size, info.secret_id);
 }
 
 static int secdat_validate_v2_secret_object_file(const char *path, const char *file_secret_id, int *refcount_present, size_t *refcount)

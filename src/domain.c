@@ -1354,31 +1354,6 @@ static int secdat_generate_domain_id(char *buffer, size_t size)
     return 0;
 }
 
-static int secdat_directory_is_empty(const char *path)
-{
-    DIR *directory;
-    struct dirent *entry;
-
-    directory = opendir(path);
-    if (directory == NULL) {
-        if (errno == ENOENT) {
-            return 1;
-        }
-        fprintf(stderr, _("failed to open directory: %s\n"), path);
-        return 0;
-    }
-
-    while ((entry = readdir(directory)) != NULL) {
-        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-            closedir(directory);
-            return 0;
-        }
-    }
-
-    closedir(directory);
-    return 1;
-}
-
 static int secdat_remove_tree(const char *path)
 {
     DIR *directory;

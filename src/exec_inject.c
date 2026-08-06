@@ -1494,14 +1494,14 @@ int secdat_exec_completion_command_index(int argc, char **argv)
 
 static void secdat_prepare_exec_option_argv(const struct secdat_cli *cli, int *argc_out, char **argv_out)
 {
-    size_t index;
+    int index;
 
     argv_out[0] = (char *)cli->program_name;
     for (index = 0; index < cli->argc; index += 1) {
         argv_out[index + 1] = cli->argv[index];
     }
     argv_out[cli->argc + 1] = NULL;
-    *argc_out = (int)cli->argc + 1;
+    *argc_out = cli->argc + 1;
 }
 
 static void secdat_exec_reset_getopt_state(void)

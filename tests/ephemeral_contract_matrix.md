@@ -34,6 +34,7 @@ listed regression script; they are more durable anchors than line numbers.
 | Replace an existing ephemeral item | `session_regression.sh`: `existing ephemeral replacement`, `ephemeral replacement value mismatch` |
 | Remove and ignore a missing item | `session_regression.sh`: `ephemeral shadow removal`, `missing ephemeral ignore-missing` |
 | Setter process exits while the agent remains active | `session_regression.sh`: `ephemeral value did not survive setter process exit` |
+| Session agent process exits and clears its memory | `session_regression.sh`: `ephemeral key survived session agent process exit`, `session agent socket survived process exit` |
 | Same-master refresh preserves items | `session_regression.sh`: `same-master owner refresh lost ephemeral key` |
 | Local and inherited-agent locks purge only the target domain | `session_regression.sh`: `child ephemeral reappeared after lock`, `child lock cleared unrelated ephemeral key`, `ancestor-owned same-master child ephemeral reappeared` |
 | Different-master child replacement clears the target domain | `session_regression.sh`: `replaced child session retained ancestor-owned ephemeral key`, `different-key replacement ephemeral reappeared` |
