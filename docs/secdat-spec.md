@@ -69,6 +69,7 @@ secdat [--dir DIR] [--store STORE] get KEYREF [--shellescaped|-e]
 secdat [--dir DIR] [--store STORE] get [-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF [--stdout|-o|--shellescaped|-e]
 
 secdat [--dir DIR] [--store STORE] set [--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] KEYREF
+secdat [--dir DIR] [--store STORE] set --ephemeral KEYREF [--secret-value] [--key-visibility unlocked] [--value-access unlocked] [--bulk-select exclude|named|include]
 secdat [--dir DIR] [--store STORE] set [MASK_MUTATION_OPTIONS] KEYREF VALUE
 secdat [--dir DIR] [--store STORE] set KEYREF [-u|--unsafe] VALUE
 secdat [--dir DIR] [--store STORE] set KEYREF [--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include] VALUE
@@ -77,6 +78,7 @@ secdat [--dir DIR] [--store STORE] set KEYREF [--env|-e] ENVNAME
 secdat [--dir DIR] [--store STORE] set KEYREF [--value|-v] VALUE
 
 secdat [--dir DIR] [--store STORE] rm [-f|--ignore-missing] [MASK_MUTATION_OPTIONS] KEYREF
+secdat [--dir DIR] [--store STORE] rm --ephemeral [-f|--ignore-missing] KEYREF
 secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] cp [MASK_MUTATION_OPTIONS] SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] ln [--replace] [--skip-same-value-check] [MASK_MUTATION_OPTIONS] SRC_KEYREF|@UUID DST_KEYREF
@@ -529,6 +531,14 @@ revalidated so changed-since-plan state fails before live mutation.
 - `unlock --volatile` redirects subsequent secret writes, deletes, and tombstone changes to a session-agent memory overlay that is cleared by `lock`
 - `lock --save` persists supported local volatile overlay changes into the real store files before clearing that local session; it must fail for non-volatile sessions
 - reads, listing, export-like operations, and bundle save/load must prefer the active volatile overlay before consulting persisted store files
+- `set --ephemeral KEYREF` stores one secret only in the effective active session agent without enabling session-wide volatile mode; `SECDAT_MASTER_KEY` without an active agent is insufficient
+- ephemeral secrets force `key_visibility=unlocked` and `value_access=unlocked`; `bulk_select` defaults to `exclude` and may be explicitly set to `named` or `include`
+- normal get/list/exec/export, SDK, and FUSE read paths resolve ephemeral secrets before persisted same-name entries, including when the calling process also has `SECDAT_MASTER_KEY`
+- refreshing the same session with the same master key preserves its ephemeral secrets; lock, expiry, or replacement with a different master key clears them
+- `rm --ephemeral KEYREF` removes only the current-domain ephemeral entry and reveals a persisted same-name entry; plain set/rm and SDK/FUSE writes must reject an ephemeral target
+- bundle save, `lock --save`, cp, mv, ln, mask, unmask, and attribute mutation must not serialize or transform ephemeral secrets; operations that are ambiguous must fail before persisted state changes
+- persisted and ephemeral mutations are serialized by the mutation lock; mask-planning options (`--dry-run`, `--json`, and mask policy/warning options) are rejected with `--ephemeral` because an agent-only mutation has no persisted mask plan
+- unrelated keys remain writable through the normal persisted path while ephemeral secrets exist
 - when no wrapped persistent master key exists, `unlock --volatile` may generate an ephemeral in-memory master key without writing the wrapped-key file
 - the current implementation removes only tombstones created in the active volatile overlay; removing persisted tombstones and deleting v2 local entries still require a normal writable session
 - `unlock --readonly` reuses an existing master key but must reject mutating commands, including `meta set`, `meta unset`, `relation set`, `relation rm`, `fsck --repair`, `gc` without `--dry-run`, `store migrate` without `--dry-run`, and `store finalize-migration` without `--dry-run`, while keeping reads, listing, export-like operations, dry-run cleanup review, and status available

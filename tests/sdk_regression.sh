@@ -70,6 +70,215 @@ run_secdat --dir "$root_domain" --store team relation set sdk-long-refresh \
 run_secdat --dir "$orphaned_child_domain" set ORPHANED_SDK_KEY --value orphaned-sdk-value
 rmdir "$orphaned_child_domain"
 
+ephemeral_unlock_stdout="$work_root/ephemeral-unlock.stdout"
+ephemeral_unlock_stderr="$work_root/ephemeral-unlock.stderr"
+if ! "$bin_path" --dir "$root_domain" unlock --volatile >"$ephemeral_unlock_stdout" 2>"$ephemeral_unlock_stderr"; then
+    fail "failed to start SDK ephemeral test session"
+fi
+if ! grep -q "resolved domain: $root_domain" "$ephemeral_unlock_stderr"; then
+    fail "SDK ephemeral test unlock did not report its domain"
+fi
+run_secdat --dir "$root_domain" --store team set --ephemeral SDK_EPHEMERAL --value sdk-ephemeral-value
+
+cat >"$work_root/sdk_ephemeral_harness.c" <<'C'
+#include "secdat-sdk.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static void fail(const char *message)
+{
+    fprintf(stderr, "FAIL: %s\n", message);
+    exit(1);
+}
+
+int main(int argc, char **argv)
+{
+    struct secdat_sdk_options options = {0};
+    struct secdat_sdk_key_metadata_list keys = {0};
+    const struct secdat_sdk_key_metadata *ephemeral = NULL;
+    unsigned char *value = NULL;
+    size_t value_length = 0;
+    int unsafe_store = 0;
+    size_t index;
+
+    if (argc != 2) {
+        fail("expected root domain path");
+    }
+    options.dir = argv[1];
+    options.store = "team";
+
+    if (secdat_sdk_get(&options, "SDK_EPHEMERAL", &value, &value_length, &unsafe_store) != 0
+        || value_length != strlen("sdk-ephemeral-value")
+        || memcmp(value, "sdk-ephemeral-value", value_length) != 0
+        || unsafe_store) {
+        fail("SDK get did not read the ephemeral value");
+    }
+    secdat_sdk_free(value);
+
+    if (secdat_sdk_list_keys(&options, NULL, &keys) != 0) {
+        fail("SDK list did not read ephemeral metadata");
+    }
+    for (index = 0; index < keys.count; index += 1) {
+        if (strcmp(keys.items[index].key, "SDK_EPHEMERAL") == 0) {
+            ephemeral = &keys.items[index];
+            break;
+        }
+    }
+    if (ephemeral == NULL
+        || strcmp(ephemeral->storage_mode, "ephemeral") != 0
+        || ephemeral->unsafe_store
+        || strcmp(ephemeral->key_visibility, "unlocked") != 0
+        || strcmp(ephemeral->value_access, "unlocked") != 0
+        || strcmp(ephemeral->bulk_select, "exclude") != 0) {
+        fail("SDK list returned wrong ephemeral metadata");
+    }
+    secdat_sdk_free(keys.items);
+
+    if (secdat_sdk_set(
+            &options,
+            "SDK_EPHEMERAL",
+            (const unsigned char *)"must-not-persist",
+            strlen("must-not-persist"),
+            0
+        ) == 0) {
+        fail("SDK write unexpectedly persisted over an ephemeral key");
+    }
+    return 0;
+}
+C
+
+cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_ephemeral_harness.c" \
+    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -Wl,-rpath,"$build_root/src/.libs" \
+    -o "$work_root/sdk_ephemeral_harness"
+
+sdk_ephemeral_stderr="$work_root/sdk-ephemeral.stderr"
+if ! "$work_root/sdk_ephemeral_harness" "$root_domain" 2>"$sdk_ephemeral_stderr"; then
+    fail "SDK ephemeral harness failed"
+fi
+if ! grep -q "use set --ephemeral to update it: SDK_EPHEMERAL" "$sdk_ephemeral_stderr"; then
+    fail "SDK ephemeral write rejection was not explicit"
+fi
+
+cat >"$work_root/sdk_lock_harness.c" <<'C'
+#include "secdat-sdk.h"
+
+#include <pthread.h>
+#include <stdint.h>
+#include <string.h>
+#include <unistd.h>
+
+struct worker_args {
+    const struct secdat_sdk_options *options;
+    const char *key;
+};
+
+static void *run_worker(void *raw_args)
+{
+    const struct worker_args *args = raw_args;
+    const unsigned char value[] = "sdk-lock-serialized-value";
+    int status = secdat_sdk_set(
+        args->options,
+        args->key,
+        value,
+        strlen((const char *)value),
+        0
+    );
+
+    if (status == 0) {
+        (void)write(STDOUT_FILENO, "D", 1);
+    }
+    return (void *)(intptr_t)status;
+}
+
+int main(int argc, char **argv)
+{
+    struct secdat_sdk_options options = {0};
+    struct worker_args args[2];
+    pthread_t workers[2];
+    void *result = NULL;
+    size_t index;
+
+    if (argc != 2) {
+        return 2;
+    }
+    options.dir = argv[1];
+    options.store = "team";
+    args[0].options = &options;
+    args[0].key = "SDK_LOCK_SERIALIZED_A";
+    args[1].options = &options;
+    args[1].key = "SDK_LOCK_SERIALIZED_B";
+    for (index = 0; index < 2; index += 1) {
+        if (pthread_create(&workers[index], NULL, run_worker, &args[index]) != 0) {
+            return 1;
+        }
+    }
+    for (index = 0; index < 2; index += 1) {
+        if (pthread_join(workers[index], &result) != 0
+            || (intptr_t)result != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+C
+
+cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_lock_harness.c" \
+    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -pthread \
+    -Wl,-rpath,"$build_root/src/.libs" \
+    -o "$work_root/sdk_lock_harness"
+
+python3 - "$work_root/sdk_lock_harness" "$root_domain" "$XDG_DATA_HOME/secdat/transactions/lock" <<'PY'
+import fcntl
+import os
+import select
+import socket
+import subprocess
+import sys
+
+harness, domain, lock_path = sys.argv[1:]
+lock_file = open(lock_path, "a+b")
+fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+controller, worker = socket.socketpair()
+child_env = os.environ.copy()
+child_env["SECDAT_TEST_TRANSACTION_LOCK_ATTEMPT_FD"] = str(worker.fileno())
+child = subprocess.Popen(
+    [harness, domain],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    env=child_env,
+    pass_fds=(worker.fileno(),),
+)
+worker.close()
+controller.settimeout(10)
+if controller.recv(1) != b"B":
+    child.kill()
+    raise SystemExit("SDK writer did not observe the held transaction lock")
+ready, _, _ = select.select([child.stdout], [], [], 0.5)
+if ready or child.poll() is not None:
+    child.kill()
+    raise SystemExit("concurrent SDK thread bypassed the transaction lock")
+fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+stdout, stderr = child.communicate(timeout=10)
+if child.returncode != 0 or stdout != b"DD" or stderr != b"":
+    raise SystemExit(
+        f"SDK writer failed after lock release: rc={child.returncode} "
+        f"stdout={stdout!r} stderr={stderr!r}"
+    )
+PY
+
+for sdk_lock_key in SDK_LOCK_SERIALIZED_A SDK_LOCK_SERIALIZED_B; do
+    sdk_lock_value="$($bin_path --dir "$root_domain" --store team get "$sdk_lock_key" --stdout)"
+    if test "$sdk_lock_value" != "sdk-lock-serialized-value"; then
+        fail "SDK transaction-lock probe did not persist $sdk_lock_key"
+    fi
+done
+run_secdat --dir "$root_domain" --store team rm --ephemeral SDK_EPHEMERAL
+run_secdat --dir "$root_domain" lock
+
 cat >"$work_root/sdk_harness.c" <<'C'
 #include "secdat-sdk.h"
 

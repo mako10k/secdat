@@ -1181,12 +1181,12 @@ int secdat_cli_complete(int argc, char **argv)
     };
     static const char *const set_options[] = {
         "--unsafe", "-u", "--public-value", "--secret-value", "--stdin", "-i", "--env", "-e", "--value", "-v",
-        "--key-visibility", "--value-access", "--bulk-select",
+        "--ephemeral", "--key-visibility", "--value-access", "--bulk-select",
         "--mask-action", "--mask-warnings", "--warn-mask", "--no-warn-mask",
         "--dry-run", "--json", "--help", "-h", NULL,
     };
     static const char *const rm_options[] = {
-        "--ignore-missing", "-f", "--mask-action", "--mask-warnings",
+        "--ephemeral", "--ignore-missing", "-f", "--mask-action", "--mask-warnings",
         "--warn-mask", "--no-warn-mask", "--dry-run", "--json",
         "--help", "-h", NULL,
     };
@@ -1533,9 +1533,11 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_SET:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "[--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] KEYREF [-u|--unsafe|--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "--ephemeral KEYREF [--secret-value] [--key-visibility unlocked] [--value-access unlocked] [--bulk-select exclude|named|include] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
         break;
     case SECDAT_COMMAND_RM:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "rm", "[-f|--ignore-missing] [--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] KEYREF");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "rm", "--ephemeral [-f|--ignore-missing] KEYREF");
         break;
     case SECDAT_COMMAND_MV:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mv", "SRC_KEYREF DST_KEYREF");
@@ -1730,8 +1732,8 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  exists: check whether one resolved key is visible from the current domain view\n"));
     secdat_cli_print_detail_line(_("  id: print the v2 secret object UUID for one resolved key without reading its value\n"));
     secdat_cli_print_detail_line(_("  get: decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock\n"));
-    secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
-    secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success\n"));
+    secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --ephemeral keeps one unlocked-only value in the active session agent\n"));
+    secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ephemeral removes only a session-local ephemeral value\n"));
     secdat_cli_print_detail_line(_("  mv: rename or relocate one key between resolved locations\n"));
     secdat_cli_print_detail_line(_("  cp: copy one key into another resolved location\n"));
     secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object, including cross-domain v2 links and authorized @UUID sources\n"));
@@ -1888,6 +1890,10 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "set") == 0) {
         secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
+        secdat_cli_print_detail_line(_("  --ephemeral stores only in the active session agent, forces unlocked key/value access, and defaults bulk_select to exclude\n"));
+        secdat_cli_print_detail_line(_("  ephemeral values shadow persisted same-name values until rm --ephemeral, lock, or session expiry; use --bulk-select include to allow bulk-gated selection\n"));
+        secdat_cli_print_detail_line(_("  plain set, SDK/FUSE writes, cp, mv, ln, mask, unmask, attr updates, and save reject an ephemeral target instead of persisting it accidentally\n"));
+        secdat_cli_print_detail_line(_("  mutation planning options such as --dry-run and --json are not supported with --ephemeral\n"));
         secdat_cli_print_detail_line(_("  v2 writes default to --mask-action=preserve; reject fails before any direct hit or mask state transition\n"));
         secdat_cli_print_detail_line(_("  mask warnings default to on for preserve and off for reject; warning controls never change behavior or exit status\n"));
         secdat_cli_print_detail_line(_("  --dry-run and --json expose the same secdat.mutation-plan.v1 used for one key or the whole assignment batch\n"));
@@ -1895,6 +1901,7 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "rm") == 0) {
         secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success\n"));
+        secdat_cli_print_detail_line(_("  --ephemeral removes only the current domain's session-local ephemeral value and reveals any persisted value it shadowed\n"));
         secdat_cli_print_detail_line(_("  v2 rm preserves canonical masks and reports reactivation or source-mask creation through the common mutation plan\n"));
         secdat_cli_print_detail_line(_("  --mask-action=reject blocks those interactions; warning controls affect only successful post-commit warnings\n"));
         secdat_cli_print_detail_line(_("  --dry-run and --json expose secdat.mutation-plan.v1 without changing persisted state\n"));

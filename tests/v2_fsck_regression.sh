@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# Synthetic store fixtures must honor secdat's 0600 data-file contract.
+umask 077
+
 bin_path="${1:-./src/secdat}"
 
 fail() {

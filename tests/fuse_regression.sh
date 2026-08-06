@@ -437,6 +437,46 @@ if live_mount_available:
     if (mountpoint / "FUSE_TOKEN").exists():
         fail("secdat-fuse size metadata command mode left the mount active after command exit")
 
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "unlock", "--volatile"])
+if rc != 0 or "volatile session unlocked from environment" not in stdout or f"resolved domain: {domain}\n" not in stderr:
+    fail(f"ephemeral FUSE test unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "--ephemeral", "FUSE_EPHEMERAL", "--value", "fuse-ephemeral-value"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"ephemeral FUSE test set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([
+    fuse_bin,
+    "--dir",
+    str(domain),
+    "--pattern",
+    "FUSE_EPHEMERAL",
+    "--dry-run",
+    str(mountpoint),
+])
+if rc != 0 or "file_count: 1\n" not in stdout or "FUSE_EPHEMERAL\n" not in stdout or stderr != "":
+    fail(f"ephemeral FUSE dry-run selection failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if live_mount_available:
+    rc, stdout, stderr = run([
+        fuse_bin,
+        "--dir",
+        str(domain),
+        "--pattern",
+        "FUSE_EPHEMERAL",
+        str(mountpoint),
+        "--",
+        "python3",
+        "-c",
+        "from pathlib import Path; import sys; print(Path(sys.argv[1]).read_text(), end='')",
+        str(mountpoint / "FUSE_EPHEMERAL"),
+    ])
+    if rc != 0 or stdout != "fuse-ephemeral-value":
+        fail(f"ephemeral FUSE read failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "rm", "--ephemeral", "FUSE_EPHEMERAL"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"ephemeral FUSE cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "lock"])
+if rc != 0 or stdout != "session locked\n" or stderr != "":
+    fail(f"ephemeral FUSE session lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run([fuse_bin, "--dry-run"])
 if rc == 0 or "missing mountpoint" not in stderr:
     fail(f"secdat-fuse missing mountpoint did not fail cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")

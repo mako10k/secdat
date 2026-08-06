@@ -83,7 +83,8 @@ static const char secdat_v2_secret_object_magic[] = "SECDATSECOBJ1";
 static const char secdat_v2_mask_magic[] = "SECDATMASK1";
 static const char secdat_v2_compat_tombstone_magic[] = "SECDATMASKCOMPAT1";
 static const char secdat_transaction_magic[] = "SECDATTXN1";
-static int secdat_command_transaction_lock_fd = -1;
+static _Thread_local int secdat_command_transaction_lock_fd = -1;
+static _Thread_local pid_t secdat_command_transaction_lock_pid = 0;
 
 struct secdat_key_list {
     char **items;
@@ -649,6 +650,11 @@ enum secdat_overlay_item_kind {
     SECDAT_OVERLAY_ITEM_TOMBSTONE,
 };
 
+enum secdat_overlay_save_policy {
+    SECDAT_OVERLAY_SAVE_VOLATILE_CHANGE = 0,
+    SECDAT_OVERLAY_SAVE_NEVER,
+};
+
 struct secdat_overlay_item {
     char *domain_id;
     char *store_name;
@@ -656,6 +662,8 @@ struct secdat_overlay_item {
     unsigned char *plaintext;
     size_t plaintext_length;
     int unsafe_store;
+    struct secdat_secret_attrs attrs;
+    enum secdat_overlay_save_policy save_policy;
     enum secdat_overlay_item_kind kind;
 };
 
@@ -669,8 +677,10 @@ struct secdat_effective_entry {
     int found;
     int tombstone;
     int from_overlay;
+    int ephemeral;
     int from_v2;
     int unsafe_store;
+    struct secdat_secret_attrs attrs;
     size_t resolved_index;
     char path[PATH_MAX];
     char entry_id[64];
@@ -779,6 +789,13 @@ static int secdat_resolve_entry_path(
     char *buffer,
     size_t size
 );
+static int secdat_resolve_effective_entry(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    int load_plaintext,
+    struct secdat_effective_entry *entry
+);
 static int secdat_lookup_v2_domain_entry_authoritative(
     const char *domain_id,
     const char *store_name,
@@ -829,6 +846,7 @@ static int secdat_store_plaintext_attrs_for_chain(
     int unsafe_store,
     const struct secdat_secret_attrs *attrs
 );
+static void secdat_print_readonly_write_guidance(const struct secdat_domain_chain *chain);
 static int secdat_write_empty_file(const char *path);
 static int secdat_entry_uses_plaintext_storage(const char *path, int *unsafe_store);
 static int secdat_file_exists(const char *path);
@@ -923,6 +941,8 @@ static int secdat_update_v2_secret_refcount(
 static int secdat_atomic_write_file(const char *path, const unsigned char *data, size_t length);
 static int secdat_remove_if_exists(const char *path);
 static int secdat_recover_transactions(void);
+static int secdat_transaction_ensure_root(char *root, size_t root_size);
+static int secdat_transaction_open_lock(const char *root);
 static int secdat_mutation_cleanup_abandoned_stages(
     const char *transactions_root
 );
@@ -991,6 +1011,8 @@ struct secdat_overlay_lookup_result {
     int found;
     int tombstone;
     int unsafe_store;
+    int ephemeral;
+    struct secdat_secret_attrs attrs;
     unsigned char *plaintext;
     size_t plaintext_length;
 };
@@ -1134,7 +1156,9 @@ static int secdat_overlay_list_set_entry(
     const char *key,
     const unsigned char *plaintext,
     size_t plaintext_length,
-    int unsafe_store
+    int unsafe_store,
+    const struct secdat_secret_attrs *attrs,
+    enum secdat_overlay_save_policy save_policy
 )
 {
     struct secdat_overlay_item item;
@@ -1142,10 +1166,7 @@ static int secdat_overlay_list_set_entry(
 
     memset(&item, 0, sizeof(item));
     existing_index = secdat_overlay_list_find(list, domain_id, store_name, key);
-    if (existing_index >= 0) {
-        secdat_overlay_item_free(&list->items[existing_index]);
-        memset(&list->items[existing_index], 0, sizeof(list->items[existing_index]));
-    } else if (secdat_overlay_list_ensure_capacity(list) != 0) {
+    if (existing_index < 0 && secdat_overlay_list_ensure_capacity(list) != 0) {
         return 1;
     }
 
@@ -1164,9 +1185,16 @@ static int secdat_overlay_list_set_entry(
     }
     item.plaintext_length = plaintext_length;
     item.unsafe_store = unsafe_store;
+    if (attrs != NULL) {
+        item.attrs = *attrs;
+    } else {
+        secdat_secret_attrs_default(unsafe_store, &item.attrs);
+    }
+    item.save_policy = save_policy;
     item.kind = SECDAT_OVERLAY_ITEM_ENTRY;
 
     if (existing_index >= 0) {
+        secdat_overlay_item_free(&list->items[existing_index]);
         list->items[existing_index] = item;
     } else {
         list->items[list->count] = item;
@@ -1187,10 +1215,7 @@ static int secdat_overlay_list_set_tombstone(
 
     memset(&item, 0, sizeof(item));
     existing_index = secdat_overlay_list_find(list, domain_id, store_name, key);
-    if (existing_index >= 0) {
-        secdat_overlay_item_free(&list->items[existing_index]);
-        memset(&list->items[existing_index], 0, sizeof(list->items[existing_index]));
-    } else if (secdat_overlay_list_ensure_capacity(list) != 0) {
+    if (existing_index < 0 && secdat_overlay_list_ensure_capacity(list) != 0) {
         return 1;
     }
 
@@ -1204,8 +1229,10 @@ static int secdat_overlay_list_set_tombstone(
         return 1;
     }
     item.kind = SECDAT_OVERLAY_ITEM_TOMBSTONE;
+    item.save_policy = SECDAT_OVERLAY_SAVE_VOLATILE_CHANGE;
 
     if (existing_index >= 0) {
+        secdat_overlay_item_free(&list->items[existing_index]);
         list->items[existing_index] = item;
     } else {
         list->items[list->count] = item;
@@ -3632,8 +3659,12 @@ static int secdat_print_ls_json_key(
     fputs(",\n", stdout);
     printf("      \"unsafe_store\": %s,\n", entry_is_unsafe ? "true" : "false");
     fputs("      \"storage_mode\": ", stdout);
-    secdat_write_json_string(stdout, entry_is_unsafe ? "unsafe" : "safe");
+    secdat_write_json_string(
+        stdout,
+        entry->ephemeral ? "ephemeral" : (entry_is_unsafe ? "unsafe" : "safe")
+    );
     fputs(",\n", stdout);
+    printf("      \"ephemeral\": %s,\n", entry->ephemeral ? "true" : "false");
     fputs("      \"key_visibility\": ", stdout);
     secdat_write_json_string(stdout, secdat_key_visibility_name(attrs->key_visibility));
     fputs(",\n", stdout);
@@ -3707,6 +3738,10 @@ static int secdat_hex_encode_bytes(const unsigned char *input, size_t length, ch
     char *buffer;
     size_t index;
 
+    if (length > (SIZE_MAX - 1) / 2) {
+        fprintf(stderr, _("secret value is too large\n"));
+        return 1;
+    }
     buffer = malloc(length * 2 + 1);
     if (buffer == NULL) {
         fprintf(stderr, _("out of memory\n"));
@@ -4795,6 +4830,74 @@ static void secdat_session_record_reset(struct secdat_session_record *record)
     secdat_overlay_list_clear(&record->overlay);
 }
 
+static void secdat_overlay_list_prune_for_session_reconfigure(
+    struct secdat_overlay_list *list,
+    int keep_volatile_changes,
+    int keep_ephemeral_secrets
+)
+{
+    size_t index = list->count;
+
+    while (index > 0) {
+        struct secdat_overlay_item *item = &list->items[index - 1];
+        int keep = item->save_policy == SECDAT_OVERLAY_SAVE_NEVER
+            ? keep_ephemeral_secrets
+            : keep_volatile_changes;
+
+        if (!keep) {
+            secdat_overlay_list_remove(
+                list,
+                item->domain_id,
+                item->store_name,
+                item->key
+            );
+        }
+        index -= 1;
+    }
+}
+
+static int secdat_session_record_reconfigure(
+    struct secdat_session_record *record,
+    const char *master_key,
+    enum secdat_session_access_mode access_mode,
+    const char *duration_text
+)
+{
+    time_t duration_seconds = 0;
+    int same_master_key;
+    int keep_volatile_changes;
+
+    if (secdat_parse_i64(duration_text, &duration_seconds) != 0
+        || duration_seconds <= 0
+        || strlen(master_key) >= sizeof(record->master_key)) {
+        return 1;
+    }
+
+    same_master_key = record->master_key[0] != '\0'
+        && strcmp(record->master_key, master_key) == 0;
+    keep_volatile_changes = same_master_key
+        && record->volatile_mode
+        && access_mode == SECDAT_SESSION_ACCESS_VOLATILE;
+    secdat_overlay_list_prune_for_session_reconfigure(
+        &record->overlay,
+        keep_volatile_changes,
+        same_master_key
+    );
+
+    secdat_secure_clear(record->master_key, sizeof(record->master_key));
+    record->master_key[0] = '\0';
+    record->expires_at = 0;
+    record->duration_seconds = duration_seconds;
+    record->volatile_mode = access_mode == SECDAT_SESSION_ACCESS_VOLATILE;
+    record->readonly_mode = access_mode == SECDAT_SESSION_ACCESS_READONLY;
+    if (secdat_copy_string(record->master_key, sizeof(record->master_key), master_key) != 0) {
+        secdat_session_record_reset(record);
+        return 1;
+    }
+    record->expires_at = time(NULL) + record->duration_seconds;
+    return 0;
+}
+
 static void secdat_session_record_refresh(struct secdat_session_record *record)
 {
     record->expires_at = time(NULL) + secdat_session_effective_duration(record);
@@ -4819,6 +4922,25 @@ static int secdat_read_line(FILE *stream, char *buffer, size_t size)
     return 0;
 }
 
+static int secdat_read_allocated_line(FILE *stream, char **buffer)
+{
+    char *line = NULL;
+    size_t capacity = 0;
+    ssize_t length;
+
+    length = getline(&line, &capacity, stream);
+    if (length < 0) {
+        free(line);
+        return 1;
+    }
+    while (length > 0
+        && (line[length - 1] == '\n' || line[length - 1] == '\r')) {
+        line[--length] = '\0';
+    }
+    *buffer = line;
+    return 0;
+}
+
 static int secdat_session_agent_handle_client(int client_fd, struct secdat_session_record *record, int *should_exit)
 {
     FILE *stream;
@@ -4829,7 +4951,8 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
     char line_store[PATH_MAX * 3];
     char line_key[PATH_MAX * 3];
     char line_mode[32];
-    char line_value[8192];
+    char line_attrs[64];
+    char *line_value = NULL;
     char *domain_id = NULL;
     char *store_name = NULL;
     char *key = NULL;
@@ -4889,16 +5012,15 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
             fclose(stream);
             return 1;
         }
-        secdat_session_record_reset(record);
-        if (secdat_parse_i64(duration_text, &record->duration_seconds) != 0 || record->duration_seconds <= 0) {
+        if (secdat_session_record_reconfigure(
+                record,
+                payload,
+                SECDAT_SESSION_ACCESS_PERSISTENT,
+                duration_text
+            ) != 0) {
             fclose(stream);
             return 1;
         }
-        if (secdat_copy_string(record->master_key, sizeof(record->master_key), payload) != 0) {
-            fclose(stream);
-            return 1;
-        }
-        secdat_session_record_refresh(record);
         fprintf(stream, "OK %lld\n", (long long)record->expires_at);
         fflush(stream);
         fclose(stream);
@@ -4911,17 +5033,15 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
             fclose(stream);
             return 1;
         }
-        secdat_session_record_reset(record);
-        if (secdat_parse_i64(duration_text, &record->duration_seconds) != 0 || record->duration_seconds <= 0) {
+        if (secdat_session_record_reconfigure(
+                record,
+                payload,
+                SECDAT_SESSION_ACCESS_VOLATILE,
+                duration_text
+            ) != 0) {
             fclose(stream);
             return 1;
         }
-        if (secdat_copy_string(record->master_key, sizeof(record->master_key), payload) != 0) {
-            fclose(stream);
-            return 1;
-        }
-        record->volatile_mode = 1;
-        secdat_session_record_refresh(record);
         fprintf(stream, "OK %lld\n", (long long)record->expires_at);
         fflush(stream);
         fclose(stream);
@@ -4934,25 +5054,25 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
             fclose(stream);
             return 1;
         }
-        secdat_session_record_reset(record);
-        if (secdat_parse_i64(duration_text, &record->duration_seconds) != 0 || record->duration_seconds <= 0) {
+        if (secdat_session_record_reconfigure(
+                record,
+                payload,
+                SECDAT_SESSION_ACCESS_READONLY,
+                duration_text
+            ) != 0) {
             fclose(stream);
             return 1;
         }
-        if (secdat_copy_string(record->master_key, sizeof(record->master_key), payload) != 0) {
-            fclose(stream);
-            return 1;
-        }
-        record->readonly_mode = 1;
-        secdat_session_record_refresh(record);
         fprintf(stream, "OK %lld\n", (long long)record->expires_at);
         fflush(stream);
         fclose(stream);
         return 0;
     }
 
-    if (strcmp(command, "OVLOOKUP") == 0) {
-        if (record->master_key[0] == '\0' || !record->volatile_mode) {
+    if (strcmp(command, "OVLOOKUP") == 0 || strcmp(command, "EPLOOKUP") == 0) {
+        int ephemeral_only = strcmp(command, "EPLOOKUP") == 0;
+
+        if (record->master_key[0] == '\0') {
             fprintf(stream, "ERR missing\n");
             fflush(stream);
             fclose(stream);
@@ -4971,7 +5091,9 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
             return 1;
         }
         overlay_item = secdat_overlay_list_lookup(&record->overlay, domain_id, store_name, key);
-        if (overlay_item == NULL) {
+        if (overlay_item == NULL
+            || (ephemeral_only
+                && overlay_item->save_policy != SECDAT_OVERLAY_SAVE_NEVER)) {
             fprintf(stream, "ERR missing\n");
         } else if (overlay_item->kind == SECDAT_OVERLAY_ITEM_TOMBSTONE) {
             fprintf(stream, "OK tomb\n");
@@ -4982,8 +5104,18 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
             fclose(stream);
             return 1;
         } else {
-            fprintf(stream, "OK entry %d\n%s\n", overlay_item->unsafe_store, hex_value);
+            secdat_session_record_refresh(record);
+            fprintf(
+                stream,
+                "OK entry %d %d %d %d\n%s\n",
+                overlay_item->unsafe_store,
+                overlay_item->save_policy == SECDAT_OVERLAY_SAVE_NEVER,
+                (int)overlay_item->attrs.key_visibility,
+                (int)overlay_item->attrs.bulk_select,
+                hex_value
+            );
         }
+        secdat_secure_clear(hex_value, hex_value != NULL ? strlen(hex_value) : 0);
         free(hex_value);
         free(domain_id);
         free(store_name);
@@ -4993,8 +5125,14 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         return 0;
     }
 
-    if (strcmp(command, "OVPUT") == 0) {
-        if (record->master_key[0] == '\0' || !record->volatile_mode) {
+    if (strcmp(command, "OVPUT") == 0 || strcmp(command, "EPPUT") == 0) {
+        int ephemeral_put = strcmp(command, "EPPUT") == 0;
+        struct secdat_secret_attrs attrs;
+        int bulk_select_value = (int)SECDAT_BULK_SELECT_EXCLUDE;
+
+        if (record->master_key[0] == '\0'
+            || (!ephemeral_put && !record->volatile_mode)
+            || (ephemeral_put && record->readonly_mode)) {
             fprintf(stream, "ERR locked\n");
             fflush(stream);
             fclose(stream);
@@ -5004,7 +5142,8 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
             || secdat_read_line(stream, line_store, sizeof(line_store)) != 0
             || secdat_read_line(stream, line_key, sizeof(line_key)) != 0
             || secdat_read_line(stream, line_mode, sizeof(line_mode)) != 0
-            || secdat_read_line(stream, line_value, sizeof(line_value)) != 0
+            || (ephemeral_put && secdat_read_line(stream, line_attrs, sizeof(line_attrs)) != 0)
+            || secdat_read_allocated_line(stream, &line_value) != 0
             || secdat_unescape_component(line_domain, &domain_id) != 0
             || secdat_unescape_component(line_store, &store_name) != 0
             || secdat_unescape_component(line_key, &key) != 0
@@ -5016,20 +5155,83 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
                 secdat_secure_clear(decoded_value, decoded_length);
                 free(decoded_value);
             }
+            secdat_secure_clear(line_value, line_value != NULL ? strlen(line_value) : 0);
+            free(line_value);
             fclose(stream);
             return 1;
         }
-        if (secdat_overlay_list_set_entry(&record->overlay, domain_id, store_name, key, decoded_value, decoded_length, strcmp(line_mode, "1") == 0) != 0) {
+        secdat_secret_attrs_default(strcmp(line_mode, "1") == 0, &attrs);
+        if (ephemeral_put) {
+            if (sscanf(line_attrs, "%d", &bulk_select_value) != 1
+                || bulk_select_value < (int)SECDAT_BULK_SELECT_EXCLUDE
+                || bulk_select_value > (int)SECDAT_BULK_SELECT_INCLUDE) {
+                free(domain_id);
+                free(store_name);
+                free(key);
+                secdat_secure_clear(decoded_value, decoded_length);
+                free(decoded_value);
+                secdat_secure_clear(line_value, line_value != NULL ? strlen(line_value) : 0);
+                free(line_value);
+                fclose(stream);
+                return 1;
+            }
+            attrs.key_visibility = SECDAT_KEY_VISIBILITY_UNLOCKED;
+            attrs.value_access = SECDAT_VALUE_ACCESS_UNLOCKED;
+            attrs.bulk_select = (enum secdat_bulk_select)bulk_select_value;
+        }
+        {
+            const struct secdat_overlay_item *existing = secdat_overlay_list_lookup(
+                &record->overlay,
+                domain_id,
+                store_name,
+                key
+            );
+
+            if (existing != NULL
+                && ((ephemeral_put
+                        && existing->save_policy != SECDAT_OVERLAY_SAVE_NEVER)
+                    || (!ephemeral_put
+                        && existing->save_policy == SECDAT_OVERLAY_SAVE_NEVER))) {
+                free(domain_id);
+                free(store_name);
+                free(key);
+                secdat_secure_clear(decoded_value, decoded_length);
+                free(decoded_value);
+                secdat_secure_clear(line_value, line_value != NULL ? strlen(line_value) : 0);
+                free(line_value);
+                fprintf(stream, "ERR conflict\n");
+                fflush(stream);
+                fclose(stream);
+                return 0;
+            }
+        }
+        if (secdat_overlay_list_set_entry(
+                &record->overlay,
+                domain_id,
+                store_name,
+                key,
+                decoded_value,
+                decoded_length,
+                strcmp(line_mode, "1") == 0,
+                &attrs,
+                ephemeral_put
+                    ? SECDAT_OVERLAY_SAVE_NEVER
+                    : SECDAT_OVERLAY_SAVE_VOLATILE_CHANGE
+            ) != 0) {
             free(domain_id);
             free(store_name);
             free(key);
             secdat_secure_clear(decoded_value, decoded_length);
             free(decoded_value);
+            secdat_secure_clear(line_value, line_value != NULL ? strlen(line_value) : 0);
+            free(line_value);
             fclose(stream);
             return 1;
         }
         secdat_secure_clear(decoded_value, decoded_length);
         free(decoded_value);
+        secdat_secure_clear(line_value, line_value != NULL ? strlen(line_value) : 0);
+        free(line_value);
         free(domain_id);
         free(store_name);
         free(key);
@@ -5041,6 +5243,8 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
     }
 
     if (strcmp(command, "OVTOMB") == 0) {
+        const struct secdat_overlay_item *existing;
+
         if (record->master_key[0] == '\0' || !record->volatile_mode) {
             fprintf(stream, "ERR locked\n");
             fflush(stream);
@@ -5058,6 +5262,17 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
             free(key);
             fclose(stream);
             return 1;
+        }
+        existing = secdat_overlay_list_lookup(&record->overlay, domain_id, store_name, key);
+        if (existing != NULL
+            && existing->save_policy == SECDAT_OVERLAY_SAVE_NEVER) {
+            free(domain_id);
+            free(store_name);
+            free(key);
+            fprintf(stream, "ERR conflict\n");
+            fflush(stream);
+            fclose(stream);
+            return 0;
         }
         if (secdat_overlay_list_set_tombstone(&record->overlay, domain_id, store_name, key) != 0) {
             free(domain_id);
@@ -5076,8 +5291,12 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         return 0;
     }
 
-    if (strcmp(command, "OVDROP") == 0) {
-        if (record->master_key[0] == '\0' || !record->volatile_mode) {
+    if (strcmp(command, "OVDROP") == 0 || strcmp(command, "EPDROP") == 0) {
+        int ephemeral_drop = strcmp(command, "EPDROP") == 0;
+        const struct secdat_overlay_item *overlay_item;
+
+        if (record->master_key[0] == '\0'
+            || (ephemeral_drop && record->readonly_mode)) {
             fprintf(stream, "ERR locked\n");
             fflush(stream);
             fclose(stream);
@@ -5095,6 +5314,21 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
             fclose(stream);
             return 1;
         }
+        overlay_item = secdat_overlay_list_lookup(&record->overlay, domain_id, store_name, key);
+        if ((ephemeral_drop
+                && (overlay_item == NULL
+                    || overlay_item->save_policy != SECDAT_OVERLAY_SAVE_NEVER))
+            || (!ephemeral_drop
+                && overlay_item != NULL
+                && overlay_item->save_policy == SECDAT_OVERLAY_SAVE_NEVER)) {
+            free(domain_id);
+            free(store_name);
+            free(key);
+            fprintf(stream, "%s\n", ephemeral_drop ? "ERR missing" : "ERR conflict");
+            fflush(stream);
+            fclose(stream);
+            return 0;
+        }
         secdat_overlay_list_remove(&record->overlay, domain_id, store_name, key);
         free(domain_id);
         free(store_name);
@@ -5106,8 +5340,10 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         return 0;
     }
 
-    if (strcmp(command, "OVLIST") == 0) {
-        if (record->master_key[0] == '\0' || !record->volatile_mode) {
+    if (strcmp(command, "OVLIST") == 0 || strcmp(command, "EPLIST") == 0) {
+        int ephemeral_only = strcmp(command, "EPLIST") == 0;
+
+        if (record->master_key[0] == '\0') {
             fprintf(stream, "OK 0\n");
             fflush(stream);
             fclose(stream);
@@ -5125,7 +5361,9 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         fprintf(stream, "OK ");
         for (index = 0; index < record->overlay.count; index += 1) {
             if (strcmp(record->overlay.items[index].domain_id, domain_id) == 0
-                && strcmp(record->overlay.items[index].store_name, store_name) == 0) {
+                && strcmp(record->overlay.items[index].store_name, store_name) == 0
+                && (!ephemeral_only
+                    || record->overlay.items[index].save_policy == SECDAT_OVERLAY_SAVE_NEVER)) {
                 fprintf(stream, "1");
                 break;
             }
@@ -5141,7 +5379,9 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
         fprintf(stream, "\n");
         for (index = 0; index < record->overlay.count; index += 1) {
             if (strcmp(record->overlay.items[index].domain_id, domain_id) != 0
-                || strcmp(record->overlay.items[index].store_name, store_name) != 0) {
+                || strcmp(record->overlay.items[index].store_name, store_name) != 0
+                || (ephemeral_only
+                    && record->overlay.items[index].save_policy != SECDAT_OVERLAY_SAVE_NEVER)) {
                 continue;
             }
             if (secdat_escape_component(record->overlay.items[index].key, &encoded_key) != 0) {
@@ -5168,17 +5408,28 @@ static int secdat_session_agent_handle_client(int client_fd, struct secdat_sessi
     }
 
     if (strcmp(command, "OVDUMP") == 0) {
+        size_t dump_count = 0;
+
         if (record->master_key[0] == '\0' || !record->volatile_mode) {
             fprintf(stream, "ERR mode\n");
             fflush(stream);
             fclose(stream);
             return 0;
         }
-        fprintf(stream, "OK %zu\n", record->overlay.count);
+        for (index = 0; index < record->overlay.count; index += 1) {
+            if (record->overlay.items[index].save_policy == SECDAT_OVERLAY_SAVE_VOLATILE_CHANGE) {
+                dump_count += 1;
+            }
+        }
+        fprintf(stream, "OK %zu\n", dump_count);
         for (index = 0; index < record->overlay.count; index += 1) {
             char *escaped_domain = NULL;
             char *escaped_store = NULL;
             char *escaped_key = NULL;
+
+            if (record->overlay.items[index].save_policy != SECDAT_OVERLAY_SAVE_VOLATILE_CHANGE) {
+                continue;
+            }
 
             if (secdat_escape_component(record->overlay.items[index].domain_id, &escaped_domain) != 0
                 || secdat_escape_component(record->overlay.items[index].store_name, &escaped_store) != 0
@@ -6007,7 +6258,7 @@ static int secdat_session_agent_status_scope(const char *domain_id, struct secda
     return 0;
 }
 
-static int secdat_session_agent_effective_overlay_fd(
+static int secdat_session_agent_effective_fd(
     const struct secdat_domain_chain *chain,
     struct secdat_session_record *record,
     size_t *matched_index
@@ -6016,15 +6267,37 @@ static int secdat_session_agent_effective_overlay_fd(
     int fd;
 
     memset(record, 0, sizeof(*record));
-    if (getenv("SECDAT_MASTER_KEY") != NULL && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
-        return -1;
-    }
-    if (secdat_session_agent_status_details(chain, record, matched_index, NULL) != 0 || !record->volatile_mode) {
+    if (secdat_session_agent_status_details(chain, record, matched_index, NULL) != 0) {
         secdat_secure_clear(record->master_key, strlen(record->master_key));
         return -1;
     }
     fd = secdat_session_agent_connect_chain_details(chain, matched_index, NULL);
     if (fd < 0) {
+        secdat_secure_clear(record->master_key, strlen(record->master_key));
+        return -1;
+    }
+    return fd;
+}
+
+static int secdat_session_agent_effective_overlay_fd(
+    const struct secdat_domain_chain *chain,
+    struct secdat_session_record *record,
+    size_t *matched_index
+)
+{
+    int fd;
+
+    if (getenv("SECDAT_MASTER_KEY") != NULL
+        && getenv("SECDAT_MASTER_KEY")[0] != '\0') {
+        return -1;
+    }
+    fd = secdat_session_agent_effective_fd(chain, record, matched_index);
+
+    if (fd < 0) {
+        return -1;
+    }
+    if (!record->volatile_mode) {
+        close(fd);
         secdat_secure_clear(record->master_key, strlen(record->master_key));
         return -1;
     }
@@ -6077,12 +6350,13 @@ static int secdat_session_agent_overlay_lookup(
     const char *domain_id,
     const char *store_name,
     const char *key,
-    struct secdat_overlay_lookup_result *result
+    struct secdat_overlay_lookup_result *result,
+    int ephemeral_only
 )
 {
     FILE *stream;
     char response[64];
-    char payload[8192];
+    char *payload = NULL;
 
     memset(result, 0, sizeof(*result));
     stream = fdopen(fd, "r+");
@@ -6090,7 +6364,7 @@ static int secdat_session_agent_overlay_lookup(
         close(fd);
         return 1;
     }
-    fprintf(stream, "OVLOOKUP\n");
+    fprintf(stream, "%s\n", ephemeral_only ? "EPLOOKUP" : "OVLOOKUP");
     if (secdat_overlay_write_triplet(stream, domain_id, store_name, key) != 0) {
         fclose(stream);
         return 1;
@@ -6098,9 +6372,13 @@ static int secdat_session_agent_overlay_lookup(
     fflush(stream);
     if (secdat_read_line(stream, response, sizeof(response)) != 0) {
         fclose(stream);
-        return 1;
+        return ephemeral_only ? 0 : 1;
     }
     if (strcmp(response, "ERR missing") == 0) {
+        fclose(stream);
+        return 0;
+    }
+    if (ephemeral_only && strcmp(response, "ERR invalid") == 0) {
         fclose(stream);
         return 0;
     }
@@ -6114,12 +6392,56 @@ static int secdat_session_agent_overlay_lookup(
         fclose(stream);
         return 1;
     }
-    result->unsafe_store = strcmp(response + 9, "1") == 0;
-    if (secdat_read_line(stream, payload, sizeof(payload)) != 0
+    {
+        int unsafe_store = 0;
+        int ephemeral = 0;
+        int key_visibility = 0;
+        int bulk_select = 0;
+        int parsed_fields;
+
+        parsed_fields = sscanf(
+                response,
+                "OK entry %d %d %d %d",
+                &unsafe_store,
+                &ephemeral,
+                &key_visibility,
+                &bulk_select
+            );
+        if (parsed_fields == 1) {
+            char legacy_response[32];
+
+            snprintf(legacy_response, sizeof(legacy_response), "OK entry %d", unsafe_store);
+            if (strcmp(response, legacy_response) != 0) {
+                fclose(stream);
+                return 1;
+            }
+            secdat_secret_attrs_default(unsafe_store != 0, &result->attrs);
+        } else if (parsed_fields != 4
+            || key_visibility < (int)SECDAT_KEY_VISIBILITY_ALWAYS
+            || key_visibility > (int)SECDAT_KEY_VISIBILITY_UNLOCKED
+            || bulk_select < (int)SECDAT_BULK_SELECT_EXCLUDE
+            || bulk_select > (int)SECDAT_BULK_SELECT_INCLUDE) {
+            fclose(stream);
+            return 1;
+        } else {
+            result->attrs.key_visibility = (enum secdat_key_visibility)key_visibility;
+            result->attrs.value_access = unsafe_store
+                ? SECDAT_VALUE_ACCESS_ALWAYS
+                : SECDAT_VALUE_ACCESS_UNLOCKED;
+            result->attrs.bulk_select = (enum secdat_bulk_select)bulk_select;
+        }
+        result->unsafe_store = unsafe_store != 0;
+        result->ephemeral = ephemeral != 0;
+    }
+    if (secdat_read_allocated_line(stream, &payload) != 0
         || secdat_hex_decode_bytes(payload, &result->plaintext, &result->plaintext_length) != 0) {
+        secdat_secure_clear(payload, payload != NULL ? strlen(payload) : 0);
+        free(payload);
         fclose(stream);
         return 1;
     }
+    secdat_secure_clear(payload, payload != NULL ? strlen(payload) : 0);
+    free(payload);
     result->found = 1;
     fclose(stream);
     return 0;
@@ -6158,9 +6480,68 @@ static int secdat_session_agent_overlay_store_plaintext(
     if (secdat_read_line(stream, response, sizeof(response)) != 0) {
         goto cleanup;
     }
-    status = strncmp(response, "OK ", 3) == 0 ? 0 : 1;
+    if (strcmp(response, "ERR conflict") == 0) {
+        fprintf(
+            stderr,
+            _("key is ephemeral in the current session; use set --ephemeral to update it: %s\n"),
+            key
+        );
+    } else {
+        status = strncmp(response, "OK ", 3) == 0 ? 0 : 1;
+    }
 
 cleanup:
+    secdat_secure_clear(encoded, encoded != NULL ? strlen(encoded) : 0);
+    free(encoded);
+    fclose(stream);
+    return status;
+}
+
+static int secdat_session_agent_ephemeral_store_plaintext(
+    int fd,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    const unsigned char *plaintext,
+    size_t plaintext_length,
+    const struct secdat_secret_attrs *attrs
+)
+{
+    FILE *stream;
+    char response[64];
+    char *encoded = NULL;
+    int status = 1;
+
+    stream = fdopen(fd, "r+");
+    if (stream == NULL) {
+        close(fd);
+        return 1;
+    }
+    if (secdat_hex_encode_bytes(plaintext, plaintext_length, &encoded) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    fprintf(stream, "EPPUT\n");
+    if (secdat_overlay_write_triplet(stream, domain_id, store_name, key) != 0) {
+        goto cleanup;
+    }
+    fprintf(stream, "0\n%d\n%s\n", (int)attrs->bulk_select, encoded);
+    fflush(stream);
+    if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        goto cleanup;
+    }
+    if (strcmp(response, "ERR conflict") == 0) {
+        fprintf(
+            stderr,
+            _("key has a volatile session change and cannot be replaced by an ephemeral secret: %s\n"),
+            key
+        );
+    } else {
+        status = strncmp(response, "OK ", 3) == 0 ? 0 : 1;
+    }
+
+cleanup:
+    secdat_secure_clear(encoded, encoded != NULL ? strlen(encoded) : 0);
     free(encoded);
     fclose(stream);
     return status;
@@ -6191,6 +6572,15 @@ static int secdat_session_agent_overlay_set_tombstone(
         fclose(stream);
         return 1;
     }
+    if (strcmp(response, "ERR conflict") == 0) {
+        fprintf(
+            stderr,
+            _("key is ephemeral in the current session; use rm --ephemeral to remove it: %s\n"),
+            key
+        );
+        fclose(stream);
+        return 1;
+    }
     fclose(stream);
     return strncmp(response, "OK ", 3) == 0 ? 0 : 1;
 }
@@ -6199,7 +6589,8 @@ static int secdat_session_agent_overlay_drop(
     int fd,
     const char *domain_id,
     const char *store_name,
-    const char *key
+    const char *key,
+    int ephemeral_only
 )
 {
     FILE *stream;
@@ -6210,13 +6601,22 @@ static int secdat_session_agent_overlay_drop(
         close(fd);
         return 1;
     }
-    fprintf(stream, "OVDROP\n");
+    fprintf(stream, "%s\n", ephemeral_only ? "EPDROP" : "OVDROP");
     if (secdat_overlay_write_triplet(stream, domain_id, store_name, key) != 0) {
         fclose(stream);
         return 1;
     }
     fflush(stream);
     if (secdat_read_line(stream, response, sizeof(response)) != 0) {
+        fclose(stream);
+        return 1;
+    }
+    if (strcmp(response, "ERR conflict") == 0) {
+        fprintf(
+            stderr,
+            _("key is ephemeral in the current session; use rm --ephemeral to remove it: %s\n"),
+            key
+        );
         fclose(stream);
         return 1;
     }
@@ -6229,7 +6629,8 @@ static int secdat_session_agent_overlay_collect_keys(
     const char *domain_id,
     const char *store_name,
     struct secdat_key_list *entries,
-    struct secdat_key_list *tombstones
+    struct secdat_key_list *tombstones,
+    int ephemeral_only
 )
 {
     FILE *stream;
@@ -6246,7 +6647,7 @@ static int secdat_session_agent_overlay_collect_keys(
         close(fd);
         return 1;
     }
-    fprintf(stream, "OVLIST\n");
+    fprintf(stream, "%s\n", ephemeral_only ? "EPLIST" : "OVLIST");
     if (secdat_overlay_write_pair(stream, domain_id, store_name) != 0) {
         fclose(stream);
         return 1;
@@ -6254,9 +6655,13 @@ static int secdat_session_agent_overlay_collect_keys(
     fflush(stream);
     if (secdat_read_line(stream, response, sizeof(response)) != 0) {
         fclose(stream);
-        return 1;
+        return ephemeral_only ? 0 : 1;
     }
     if (strcmp(response, "OK 0") == 0) {
+        fclose(stream);
+        return 0;
+    }
+    if (ephemeral_only && strcmp(response, "ERR invalid") == 0) {
         fclose(stream);
         return 0;
     }
@@ -6319,6 +6724,8 @@ static int secdat_overlay_list_append_dump_item(
     }
     item.kind = kind;
     item.unsafe_store = unsafe_store;
+    secdat_secret_attrs_default(unsafe_store, &item.attrs);
+    item.save_policy = SECDAT_OVERLAY_SAVE_VOLATILE_CHANGE;
     if (kind == SECDAT_OVERLAY_ITEM_ENTRY && secdat_duplicate_bytes(plaintext, plaintext_length, &item.plaintext) != 0) {
         secdat_overlay_item_free(&item);
         return 1;
@@ -6424,13 +6831,30 @@ static int secdat_active_overlay_lookup(
     int fd;
     int status;
 
-    fd = secdat_session_agent_effective_overlay_fd(chain, &record, &matched_index);
+    fd = secdat_session_agent_effective_fd(chain, &record, &matched_index);
     if (fd < 0) {
         memset(result, 0, sizeof(*result));
         return 0;
     }
-    status = secdat_session_agent_overlay_lookup(fd, domain_id, store_name, key, result);
+    status = secdat_session_agent_overlay_lookup(
+        fd,
+        domain_id,
+        store_name,
+        key,
+        result,
+        getenv("SECDAT_MASTER_KEY") != NULL
+            && getenv("SECDAT_MASTER_KEY")[0] != '\0'
+    );
     secdat_secure_clear(record.master_key, strlen(record.master_key));
+    if (status == 0
+        && getenv("SECDAT_MASTER_KEY") != NULL
+        && getenv("SECDAT_MASTER_KEY")[0] != '\0'
+        && result->found
+        && !result->ephemeral) {
+        secdat_secure_clear(result->plaintext, result->plaintext_length);
+        free(result->plaintext);
+        memset(result, 0, sizeof(*result));
+    }
     return status;
 }
 
@@ -6447,11 +6871,19 @@ static int secdat_active_overlay_collect_keys(
     int fd;
     int status;
 
-    fd = secdat_session_agent_effective_overlay_fd(chain, &record, &matched_index);
+    fd = secdat_session_agent_effective_fd(chain, &record, &matched_index);
     if (fd < 0) {
         return 0;
     }
-    status = secdat_session_agent_overlay_collect_keys(fd, domain_id, store_name, entries, tombstones);
+    status = secdat_session_agent_overlay_collect_keys(
+        fd,
+        domain_id,
+        store_name,
+        entries,
+        tombstones,
+        getenv("SECDAT_MASTER_KEY") != NULL
+            && getenv("SECDAT_MASTER_KEY")[0] != '\0'
+    );
     secdat_secure_clear(record.master_key, strlen(record.master_key));
     return status;
 }
@@ -6476,6 +6908,46 @@ static int secdat_active_overlay_store_plaintext(
         return 1;
     }
     status = secdat_session_agent_overlay_store_plaintext(fd, domain_id, store_name, key, plaintext, plaintext_length, unsafe_store);
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    return status;
+}
+
+static int secdat_active_ephemeral_store_plaintext(
+    const struct secdat_domain_chain *chain,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    const unsigned char *plaintext,
+    size_t plaintext_length,
+    const struct secdat_secret_attrs *attrs
+)
+{
+    struct secdat_session_record record = {0};
+    size_t matched_index = SIZE_MAX;
+    int fd;
+    int status;
+
+    fd = secdat_session_agent_effective_fd(chain, &record, &matched_index);
+    if (fd < 0) {
+        fprintf(stderr, _("per-key ephemeral secrets require an active secdat session agent; run secdat unlock first\n"));
+        return 1;
+    }
+    if (record.readonly_mode) {
+        close(fd);
+        secdat_secure_clear(record.master_key, strlen(record.master_key));
+        fprintf(stderr, _("current session is readonly and cannot store an ephemeral secret\n"));
+        secdat_print_readonly_write_guidance(chain);
+        return 1;
+    }
+    status = secdat_session_agent_ephemeral_store_plaintext(
+        fd,
+        domain_id,
+        store_name,
+        key,
+        plaintext,
+        plaintext_length,
+        attrs
+    );
     secdat_secure_clear(record.master_key, strlen(record.master_key));
     return status;
 }
@@ -6513,11 +6985,44 @@ static int secdat_active_overlay_drop(
     int fd;
     int status;
 
-    fd = secdat_session_agent_effective_overlay_fd(chain, &record, &matched_index);
+    fd = secdat_session_agent_effective_fd(chain, &record, &matched_index);
     if (fd < 0) {
         return 1;
     }
-    status = secdat_session_agent_overlay_drop(fd, domain_id, store_name, key);
+    status = secdat_session_agent_overlay_drop(
+        fd,
+        domain_id,
+        store_name,
+        key,
+        0
+    );
+    secdat_secure_clear(record.master_key, strlen(record.master_key));
+    return status;
+}
+
+static int secdat_active_ephemeral_drop(
+    const struct secdat_domain_chain *chain,
+    const char *domain_id,
+    const char *store_name,
+    const char *key
+)
+{
+    struct secdat_session_record record = {0};
+    size_t matched_index = SIZE_MAX;
+    int fd;
+    int status;
+
+    fd = secdat_session_agent_effective_fd(chain, &record, &matched_index);
+    if (fd < 0) {
+        return 1;
+    }
+    status = secdat_session_agent_overlay_drop(
+        fd,
+        domain_id,
+        store_name,
+        key,
+        1
+    );
     secdat_secure_clear(record.master_key, strlen(record.master_key));
     return status;
 }
@@ -7061,6 +7566,47 @@ cleanup:
     return status;
 }
 
+static int secdat_bundle_reject_ephemeral_entries(const struct secdat_cli *cli)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_key_list visible_keys = {0};
+    struct secdat_effective_entry entry = {0};
+    size_t index;
+    int status = 1;
+
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0
+        || secdat_collect_visible_keys(&chain, cli->store, NULL, NULL, &visible_keys) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < visible_keys.count; index += 1) {
+        if (secdat_resolve_effective_entry(
+                &chain,
+                cli->store,
+                visible_keys.items[index],
+                0,
+                &entry
+            ) != 0) {
+            goto cleanup;
+        }
+        if (entry.ephemeral) {
+            fprintf(
+                stderr,
+                _("save is not supported while an ephemeral secret is visible: %s\n"),
+                visible_keys.items[index]
+            );
+            goto cleanup;
+        }
+        secdat_effective_entry_reset(&entry);
+    }
+    status = 0;
+
+cleanup:
+    secdat_effective_entry_reset(&entry);
+    secdat_key_list_free(&visible_keys);
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
 static int secdat_collect_domain_status_summary_for_chain(
     const struct secdat_domain_chain *chain,
     struct secdat_domain_status_summary *summary
@@ -7483,6 +8029,49 @@ int secdat_sdk_get(
     return 0;
 }
 
+static int secdat_mutation_lock_acquire(int *owned)
+{
+    char transactions_root[PATH_MAX];
+    pid_t current_pid = getpid();
+
+    *owned = 0;
+    if (secdat_command_transaction_lock_fd >= 0
+        && secdat_command_transaction_lock_pid == current_pid) {
+        return 0;
+    }
+    if (secdat_command_transaction_lock_fd >= 0) {
+        close(secdat_command_transaction_lock_fd);
+        secdat_command_transaction_lock_fd = -1;
+        secdat_command_transaction_lock_pid = 0;
+    }
+    if (secdat_transaction_ensure_root(
+            transactions_root,
+            sizeof(transactions_root)
+        ) != 0) {
+        return 1;
+    }
+    secdat_command_transaction_lock_fd = secdat_transaction_open_lock(
+        transactions_root
+    );
+    if (secdat_command_transaction_lock_fd < 0) {
+        return 1;
+    }
+    secdat_command_transaction_lock_pid = current_pid;
+    *owned = 1;
+    return 0;
+}
+
+static void secdat_mutation_lock_release(int owned)
+{
+    if (!owned) {
+        return;
+    }
+    (void)flock(secdat_command_transaction_lock_fd, LOCK_UN);
+    close(secdat_command_transaction_lock_fd);
+    secdat_command_transaction_lock_fd = -1;
+    secdat_command_transaction_lock_pid = 0;
+}
+
 static int secdat_sdk_set_value(
     const struct secdat_sdk_options *options,
     const char *keyref,
@@ -7560,7 +8149,15 @@ int secdat_sdk_set(
     int unsafe_store
 )
 {
-    return secdat_sdk_set_value(options, keyref, value, value_length, unsafe_store, 0);
+    int lock_owned;
+    int status;
+
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0) {
+        return 1;
+    }
+    status = secdat_sdk_set_value(options, keyref, value, value_length, unsafe_store, 0);
+    secdat_mutation_lock_release(lock_owned);
+    return status;
 }
 
 int secdat_sdk_set_preserve_attrs(
@@ -7570,7 +8167,15 @@ int secdat_sdk_set_preserve_attrs(
     size_t value_length
 )
 {
-    return secdat_sdk_set_value(options, keyref, value, value_length, 0, 1);
+    int lock_owned;
+    int status;
+
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0) {
+        return 1;
+    }
+    status = secdat_sdk_set_value(options, keyref, value, value_length, 0, 1);
+    secdat_mutation_lock_release(lock_owned);
+    return status;
 }
 
 int secdat_sdk_rm(
@@ -7582,6 +8187,8 @@ int secdat_sdk_rm(
     struct secdat_cli cli;
     char *argv[2];
     int argc = 0;
+    int lock_owned;
+    int status;
 
     if (keyref == NULL) {
         return 1;
@@ -7594,7 +8201,12 @@ int secdat_sdk_rm(
     argv[argc] = (char *)keyref;
     argc += 1;
     secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_RM, argc, argv);
-    return secdat_command_rm(&cli);
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0) {
+        return 1;
+    }
+    status = secdat_command_rm(&cli);
+    secdat_mutation_lock_release(lock_owned);
+    return status;
 }
 
 int secdat_sdk_mv(
@@ -7605,6 +8217,8 @@ int secdat_sdk_mv(
 {
     struct secdat_cli cli;
     char *argv[2];
+    int lock_owned;
+    int status;
 
     if (source_keyref == NULL || destination_keyref == NULL) {
         return 1;
@@ -7613,7 +8227,12 @@ int secdat_sdk_mv(
     argv[0] = (char *)source_keyref;
     argv[1] = (char *)destination_keyref;
     secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_MV, 2, argv);
-    return secdat_command_mv(&cli);
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0) {
+        return 1;
+    }
+    status = secdat_command_mv(&cli);
+    secdat_mutation_lock_release(lock_owned);
+    return status;
 }
 
 int secdat_sdk_cp(
@@ -7624,6 +8243,8 @@ int secdat_sdk_cp(
 {
     struct secdat_cli cli;
     char *argv[2];
+    int lock_owned;
+    int status;
 
     if (source_keyref == NULL || destination_keyref == NULL) {
         return 1;
@@ -7632,7 +8253,12 @@ int secdat_sdk_cp(
     argv[0] = (char *)source_keyref;
     argv[1] = (char *)destination_keyref;
     secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_CP, 2, argv);
-    return secdat_command_cp(&cli);
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0) {
+        return 1;
+    }
+    status = secdat_command_cp(&cli);
+    secdat_mutation_lock_release(lock_owned);
+    return status;
 }
 
 int secdat_sdk_mask(
@@ -7642,6 +8268,8 @@ int secdat_sdk_mask(
 {
     struct secdat_cli cli;
     char *argv[1];
+    int lock_owned;
+    int status;
 
     if (keyref == NULL) {
         return 1;
@@ -7649,7 +8277,12 @@ int secdat_sdk_mask(
 
     argv[0] = (char *)keyref;
     secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_MASK, 1, argv);
-    return secdat_command_mask(&cli);
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0) {
+        return 1;
+    }
+    status = secdat_command_mask(&cli);
+    secdat_mutation_lock_release(lock_owned);
+    return status;
 }
 
 int secdat_sdk_unmask(
@@ -7659,6 +8292,8 @@ int secdat_sdk_unmask(
 {
     struct secdat_cli cli;
     char *argv[1];
+    int lock_owned;
+    int status;
 
     if (keyref == NULL) {
         return 1;
@@ -7666,7 +8301,12 @@ int secdat_sdk_unmask(
 
     argv[0] = (char *)keyref;
     secdat_sdk_init_cli(options, &cli, SECDAT_COMMAND_UNMASK, 1, argv);
-    return secdat_command_unmask(&cli);
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0) {
+        return 1;
+    }
+    status = secdat_command_unmask(&cli);
+    secdat_mutation_lock_release(lock_owned);
+    return status;
 }
 
 int secdat_sdk_unlock(const struct secdat_sdk_options *options)
@@ -10055,7 +10695,9 @@ static int secdat_resolve_effective_entry(
             }
             entry->found = 1;
             entry->from_overlay = 1;
+            entry->ephemeral = overlay.ephemeral;
             entry->unsafe_store = overlay.unsafe_store;
+            entry->attrs = overlay.attrs;
             entry->resolved_index = index;
             if (load_plaintext) {
                 entry->plaintext = overlay.plaintext;
@@ -10575,7 +11217,7 @@ static int secdat_load_resolved_secret_attrs(
 
     if (entry.from_overlay) {
         entry_is_unsafe = entry.unsafe_store;
-        secdat_secret_attrs_default(entry_is_unsafe, attrs);
+        *attrs = entry.attrs;
         if (unsafe_store != NULL) {
             *unsafe_store = entry_is_unsafe;
         }
@@ -10671,7 +11313,7 @@ static int secdat_command_ls(const struct secdat_cli *cli)
 
         if (entry.from_overlay) {
             entry_is_unsafe = entry.unsafe_store;
-            secdat_secret_attrs_default(entry_is_unsafe, &attrs);
+            attrs = entry.attrs;
         } else if (entry.from_v2) {
             if (secdat_load_v2_secret_attrs(chain.ids[entry.resolved_index], cli->store, &entry, &attrs, &entry_is_unsafe) != 0) {
                 secdat_effective_entry_reset(&entry);
@@ -10843,7 +11485,11 @@ static int secdat_sdk_fill_key_metadata(
         || secdat_copy_string(metadata->store, sizeof(metadata->store), effective_store) != 0
         || secdat_copy_string(metadata->source_domain, sizeof(metadata->source_domain), source_domain) != 0
         || secdat_copy_string(metadata->source_type, sizeof(metadata->source_type), source_type) != 0
-        || secdat_copy_string(metadata->storage_mode, sizeof(metadata->storage_mode), entry_is_unsafe ? "unsafe" : "safe") != 0
+        || secdat_copy_string(
+            metadata->storage_mode,
+            sizeof(metadata->storage_mode),
+            entry->ephemeral ? "ephemeral" : (entry_is_unsafe ? "unsafe" : "safe")
+        ) != 0
         || secdat_copy_string(metadata->key_visibility, sizeof(metadata->key_visibility), secdat_key_visibility_name(attrs->key_visibility)) != 0
         || secdat_copy_string(metadata->value_access, sizeof(metadata->value_access), secdat_value_access_name(attrs->value_access)) != 0
         || secdat_copy_string(metadata->bulk_select, sizeof(metadata->bulk_select), secdat_bulk_select_name(attrs->bulk_select)) != 0) {
@@ -10962,7 +11608,7 @@ int secdat_sdk_list_keys_with_patterns(
 
         if (entry.from_overlay) {
             entry_is_unsafe = entry.unsafe_store;
-            secdat_secret_attrs_default(entry_is_unsafe, &attrs);
+            attrs = entry.attrs;
         } else if (entry.from_v2) {
             if (secdat_load_v2_secret_attrs(chain.ids[entry.resolved_index], options != NULL ? options->store : NULL, &entry, &attrs, &entry_is_unsafe) != 0) {
                 secdat_effective_entry_reset(&entry);
@@ -12562,7 +13208,8 @@ static int secdat_keyref_resolves_to_hidden_v2_key(
     const char *raw_keyref,
     const char *fallback_dir,
     const char *fallback_store,
-    int *is_hidden
+    int *is_hidden,
+    int *is_ephemeral
 )
 {
     struct secdat_key_reference reference;
@@ -12571,6 +13218,7 @@ static int secdat_keyref_resolves_to_hidden_v2_key(
     int status = 1;
 
     *is_hidden = 0;
+    *is_ephemeral = 0;
     if (secdat_parse_key_reference(raw_keyref, fallback_dir, fallback_store, &reference) != 0
         || secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
         return 1;
@@ -12581,6 +13229,7 @@ static int secdat_keyref_resolves_to_hidden_v2_key(
         goto cleanup;
     }
     *is_hidden = entry.from_v2 && entry.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED;
+    *is_ephemeral = entry.ephemeral;
     status = 0;
 
 cleanup:
@@ -14678,7 +15327,7 @@ static int secdat_test_synchronize_mask_plan(void)
 static int secdat_test_signal_transaction_lock_attempt(unsigned char signal)
 {
     const char *value = getenv("SECDAT_TEST_TRANSACTION_LOCK_ATTEMPT_FD");
-    static int signaled = 0;
+    static _Thread_local int signaled = 0;
     char *end = NULL;
     long parsed;
     ssize_t result;
@@ -19925,7 +20574,12 @@ static int secdat_command_attr(const struct secdat_cli *cli)
         return status;
     }
     if (entry.from_overlay) {
-        fprintf(stderr, _("secret attributes cannot be changed for a volatile session overlay\n"));
+        fprintf(
+            stderr,
+            entry.ephemeral
+                ? _("secret attributes cannot be changed for an ephemeral secret; recreate it with set --ephemeral\n")
+                : _("secret attributes cannot be changed for a volatile session overlay\n")
+        );
         secdat_effective_entry_reset(&entry);
         secdat_domain_chain_free(&chain);
         return 1;
@@ -20057,7 +20711,12 @@ static int secdat_set_key_metadata_field(
         goto cleanup;
     }
     if (entry.from_overlay || secdat_active_overlay_enabled(&chain)) {
-        fprintf(stderr, _("key metadata cannot be changed for a volatile session overlay\n"));
+        fprintf(
+            stderr,
+            entry.ephemeral
+                ? _("key metadata cannot be changed for an ephemeral secret\n")
+                : _("key metadata cannot be changed for a volatile session overlay\n")
+        );
         goto cleanup;
     }
     if (entry.from_v2 && entry.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
@@ -20169,7 +20828,12 @@ static int secdat_command_meta_unset(const struct secdat_cli *cli)
         goto cleanup;
     }
     if (entry.from_overlay || secdat_active_overlay_enabled(&chain)) {
-        fprintf(stderr, _("key metadata cannot be changed for a volatile session overlay\n"));
+        fprintf(
+            stderr,
+            entry.ephemeral
+                ? _("key metadata cannot be changed for an ephemeral secret\n")
+                : _("key metadata cannot be changed for a volatile session overlay\n")
+        );
         goto cleanup;
     }
     if (secdat_require_mutable_session_chain(&chain, "meta unset") != 0
@@ -20284,6 +20948,7 @@ static int secdat_command_relation_set(const struct secdat_cli *cli)
                 char *raw_keyref = NULL;
                 char canonical_keyref[PATH_MAX * 2];
                 int member_is_hidden = 0;
+                int member_is_ephemeral = 0;
                 int member_status = secdat_parse_relation_member_arg(optarg, &role, &raw_keyref);
 
                 if (member_status != 0) {
@@ -20306,7 +20971,14 @@ static int secdat_command_relation_set(const struct secdat_cli *cli)
                         raw_keyref,
                         secdat_cli_domain_base(cli),
                         cli->store,
-                        &member_is_hidden) != 0) {
+                        &member_is_hidden,
+                        &member_is_ephemeral) != 0) {
+                    free(role);
+                    free(raw_keyref);
+                    goto cleanup;
+                }
+                if (member_is_ephemeral) {
+                    fprintf(stderr, _("relation member cannot reference an ephemeral secret: %s\n"), raw_keyref);
                     free(role);
                     free(raw_keyref);
                     goto cleanup;
@@ -21876,6 +22548,47 @@ static int secdat_store_plaintext_for_chain(
     return secdat_store_plaintext_attrs_for_chain(chain, domain_id, store_name, key, plaintext, plaintext_length, unsafe_store, NULL);
 }
 
+static int secdat_store_ephemeral_plaintext_for_chain(
+    const struct secdat_domain_chain *chain,
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    const unsigned char *plaintext,
+    size_t plaintext_length,
+    const struct secdat_secret_attrs *attrs
+)
+{
+    struct secdat_effective_entry entry = {0};
+
+    if (attrs == NULL
+        || attrs->key_visibility != SECDAT_KEY_VISIBILITY_UNLOCKED
+        || attrs->value_access != SECDAT_VALUE_ACCESS_UNLOCKED) {
+        fprintf(stderr, _("ephemeral secrets require key_visibility=unlocked and value_access=unlocked\n"));
+        return 1;
+    }
+    if (secdat_resolve_effective_entry(chain, store_name, key, 0, &entry) == 0
+        && entry.from_overlay
+        && !entry.ephemeral) {
+        fprintf(
+            stderr,
+            _("key has a volatile session change and cannot be replaced by an ephemeral secret: %s\n"),
+            key
+        );
+        secdat_effective_entry_reset(&entry);
+        return 1;
+    }
+    secdat_effective_entry_reset(&entry);
+    return secdat_active_ephemeral_store_plaintext(
+        chain,
+        domain_id,
+        store_name,
+        key,
+        plaintext,
+        plaintext_length,
+        attrs
+    );
+}
+
 static int secdat_store_plaintext_attrs_for_chain(
     const struct secdat_domain_chain *chain,
     const char *domain_id,
@@ -21887,6 +22600,19 @@ static int secdat_store_plaintext_attrs_for_chain(
     const struct secdat_secret_attrs *attrs
 )
 {
+    struct secdat_effective_entry effective_entry = {0};
+
+    if (secdat_resolve_effective_entry(chain, store_name, key, 0, &effective_entry) == 0
+        && effective_entry.ephemeral) {
+        fprintf(
+            stderr,
+            _("key is ephemeral in the current session; use set --ephemeral to update it: %s\n"),
+            key
+        );
+        secdat_effective_entry_reset(&effective_entry);
+        return 1;
+    }
+    secdat_effective_entry_reset(&effective_entry);
     if (secdat_mutation_stage.active
         && secdat_active_overlay_enabled(chain)) {
         secdat_mutation_stage.saw_overlay = 1;
@@ -21920,7 +22646,8 @@ static int secdat_store_literal_keyref(
     const char *keyref,
     const char *literal_value,
     int unsafe_store,
-    const struct secdat_secret_attrs *attrs
+    const struct secdat_secret_attrs *attrs,
+    int ephemeral
 )
 {
     struct secdat_key_reference reference;
@@ -21964,7 +22691,26 @@ static int secdat_store_literal_keyref(
     }
 
     key = reference.key;
-    status = secdat_store_plaintext_attrs_for_chain(&chain, current_domain_id, reference.store_value, key, plaintext, plaintext_length, unsafe_store, attrs);
+    status = ephemeral
+        ? secdat_store_ephemeral_plaintext_for_chain(
+            &chain,
+            current_domain_id,
+            reference.store_value,
+            key,
+            plaintext,
+            plaintext_length,
+            attrs
+        )
+        : secdat_store_plaintext_attrs_for_chain(
+            &chain,
+            current_domain_id,
+            reference.store_value,
+            key,
+            plaintext,
+            plaintext_length,
+            unsafe_store,
+            attrs
+        );
     secdat_domain_chain_free(&chain);
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
@@ -21980,7 +22726,8 @@ static int secdat_store_assignment_operand(
     const struct secdat_cli *cli,
     const char *operand,
     int unsafe_store,
-    const struct secdat_secret_attrs *attrs
+    const struct secdat_secret_attrs *attrs,
+    int ephemeral
 )
 {
     const char *separator = strchr(operand, '=');
@@ -22003,7 +22750,14 @@ static int secdat_store_assignment_operand(
     memcpy(keyref, operand, keyref_length);
     keyref[keyref_length] = '\0';
 
-    status = secdat_store_literal_keyref(cli, keyref, separator + 1, unsafe_store, attrs);
+    status = secdat_store_literal_keyref(
+        cli,
+        keyref,
+        separator + 1,
+        unsafe_store,
+        attrs,
+        ephemeral
+    );
     free(keyref);
     return status;
 }
@@ -22017,6 +22771,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
         {"key-visibility", required_argument, NULL, 1002},
         {"value-access", required_argument, NULL, 1003},
         {"bulk-select", required_argument, NULL, 1004},
+        {"ephemeral", no_argument, NULL, 1005},
         {"inject-bulk", required_argument, NULL, 9003},
         {"sandbox-inject", required_argument, NULL, 9004},
         {"inject", required_argument, NULL, 9005},
@@ -22040,6 +22795,8 @@ static int secdat_command_set(const struct secdat_cli *cli)
     int read_stdin = 1;
     int unsafe_store = 0;
     int value_mode_configured = 0;
+    int key_visibility_configured = 0;
+    int ephemeral = 0;
     int argc;
     int option;
     int status;
@@ -22074,6 +22831,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
             if (secdat_parse_key_visibility(optarg, &attrs.key_visibility) != 0) {
                 return 2;
             }
+            key_visibility_configured = 1;
             break;
         case 1003:
             {
@@ -22096,6 +22854,9 @@ static int secdat_command_set(const struct secdat_cli *cli)
             if (secdat_parse_bulk_select(optarg, &attrs.bulk_select) != 0) {
                 return 2;
             }
+            break;
+        case 1005:
+            ephemeral = 1;
             break;
         case 9004:
             return secdat_store_reject_removed_flag("--sandbox-inject", "--bulk-select");
@@ -22145,6 +22906,19 @@ static int secdat_command_set(const struct secdat_cli *cli)
     }
 
     unsafe_store = attrs.value_access == SECDAT_VALUE_ACCESS_ALWAYS;
+    if (ephemeral) {
+        if (unsafe_store
+            || (key_visibility_configured
+                && attrs.key_visibility != SECDAT_KEY_VISIBILITY_UNLOCKED)) {
+            fprintf(
+                stderr,
+                _("ephemeral secrets require key_visibility=unlocked and value_access=unlocked\n")
+            );
+            return 2;
+        }
+        attrs.key_visibility = SECDAT_KEY_VISIBILITY_UNLOCKED;
+        attrs.value_access = SECDAT_VALUE_ACCESS_UNLOCKED;
+    }
 
     if (optind >= argc) {
         fprintf(stderr, _("missing key for set\n"));
@@ -22170,11 +22944,22 @@ static int secdat_command_set(const struct secdat_cli *cli)
             return 2;
         }
 
+        if (ephemeral && saw_assignment && argc - optind != 1) {
+            fprintf(stderr, _("set --ephemeral accepts exactly one key\n"));
+            return 2;
+        }
+
         if (saw_assignment) {
             int assignment_index;
 
             for (assignment_index = optind; assignment_index < argc; assignment_index += 1) {
-                status = secdat_store_assignment_operand(cli, argv[assignment_index], unsafe_store, &attrs);
+                status = secdat_store_assignment_operand(
+                    cli,
+                    argv[assignment_index],
+                    unsafe_store,
+                    &attrs,
+                    ephemeral
+                );
                 if (status != 0) {
                     return status;
                 }
@@ -22234,14 +23019,40 @@ static int secdat_command_set(const struct secdat_cli *cli)
             return 1;
         }
 
-        status = secdat_store_plaintext_attrs_for_chain(&chain, current_domain_id, reference.store_value, key, plaintext, plaintext_length, unsafe_store, &attrs);
+        status = ephemeral
+            ? secdat_store_ephemeral_plaintext_for_chain(
+                &chain,
+                current_domain_id,
+                reference.store_value,
+                key,
+                plaintext,
+                plaintext_length,
+                &attrs
+            )
+            : secdat_store_plaintext_attrs_for_chain(
+                &chain,
+                current_domain_id,
+                reference.store_value,
+                key,
+                plaintext,
+                plaintext_length,
+                unsafe_store,
+                &attrs
+            );
         secdat_domain_chain_free(&chain);
         secdat_secure_clear(plaintext, plaintext_length);
         free(plaintext);
         return status;
     }
 
-    return secdat_store_literal_keyref(cli, keyref, literal_value, unsafe_store, &attrs);
+    return secdat_store_literal_keyref(
+        cli,
+        keyref,
+        literal_value,
+        unsafe_store,
+        &attrs,
+        ephemeral
+    );
 }
 
 static int secdat_write_empty_file(const char *path)
@@ -22516,10 +23327,23 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
     int found_inherited = 0;
     int local_file_exists = 0;
     int removed_v2 = 0;
+    struct secdat_effective_entry effective_entry = {0};
 
     if (secdat_require_mutable_session_chain(chain, "rm") != 0) {
         return 1;
     }
+
+    if (secdat_resolve_effective_entry(chain, store_name, key, 0, &effective_entry) == 0
+        && effective_entry.ephemeral) {
+        fprintf(
+            stderr,
+            _("key is ephemeral in the current session; use rm --ephemeral to remove it: %s\n"),
+            key
+        );
+        secdat_effective_entry_reset(&effective_entry);
+        return 1;
+    }
+    secdat_effective_entry_reset(&effective_entry);
 
     if (chain->count == 0) {
         current_domain_id[0] = '\0';
@@ -23358,6 +24182,30 @@ static int secdat_commit_mask_write_plan(
     return secdat_transaction_commit(transaction);
 }
 
+static int secdat_reject_ephemeral_transform(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    const char *operation
+)
+{
+    struct secdat_effective_entry entry = {0};
+    int status = 0;
+
+    if (secdat_resolve_effective_entry(chain, store_name, key, 0, &entry) == 0
+        && entry.ephemeral) {
+        fprintf(
+            stderr,
+            _("%s is not supported for an ephemeral secret: %s\n"),
+            operation,
+            key
+        );
+        status = 1;
+    }
+    secdat_effective_entry_reset(&entry);
+    return status;
+}
+
 static int secdat_mask_key_in_chain(const struct secdat_domain_chain *chain, const char *store_name, const char *key)
 {
     char current_domain_id[PATH_MAX];
@@ -23367,6 +24215,9 @@ static int secdat_mask_key_in_chain(const struct secdat_domain_chain *chain, con
     int local_file_exists = 0;
 
     if (secdat_require_mutable_session_chain(chain, "mask") != 0) {
+        return 1;
+    }
+    if (secdat_reject_ephemeral_transform(chain, store_name, key, "mask") != 0) {
         return 1;
     }
 
@@ -24246,6 +25097,9 @@ static int secdat_unmask_key_in_chain(const struct secdat_domain_chain *chain, c
     if (secdat_require_mutable_session_chain(chain, "unmask") != 0) {
         return 1;
     }
+    if (secdat_reject_ephemeral_transform(chain, store_name, key, "unmask") != 0) {
+        return 1;
+    }
 
     if (chain->count == 0) {
         current_domain_id[0] = '\0';
@@ -24700,6 +25554,10 @@ static int secdat_command_ln(const struct secdat_cli *cli)
             secdat_print_key_suggestions(&source_chain, source_store_value, source_reference.key);
             goto cleanup;
         }
+        if (source_entry.ephemeral) {
+            fprintf(stderr, _("ln is not supported for an ephemeral secret: %s\n"), source_reference.key);
+            goto cleanup;
+        }
         if (!source_entry.from_v2) {
             fprintf(stderr, _("ln requires source and destination in v2 stores\n"));
             secdat_print_store_migration_hint(cli->program_name, source_store_value);
@@ -24708,6 +25566,10 @@ static int secdat_command_ln(const struct secdat_cli *cli)
     }
     if (secdat_resolve_effective_entry(&destination_chain, destination_reference.store_value, destination_reference.key, 0, &destination_entry) == 0) {
         destination_exists = 1;
+        if (destination_entry.ephemeral) {
+            fprintf(stderr, _("ln is not supported for an ephemeral secret: %s\n"), destination_reference.key);
+            goto cleanup;
+        }
         if (!options.replace) {
             fprintf(
                 stderr,
@@ -24857,6 +25719,15 @@ static int secdat_command_cp(const struct secdat_cli *cli)
         secdat_domain_chain_free(&destination_chain);
         return 1;
     }
+    if (source_entry.ephemeral) {
+        fprintf(stderr, _("cp is not supported for an ephemeral secret: %s\n"), source_reference.key);
+        secdat_effective_entry_reset(&source_entry);
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
+        return 1;
+    }
     if (!source_entry.from_overlay
         && secdat_read_key_metadata(
             source_entry.resolved_index < source_chain.count ? source_chain.ids[source_entry.resolved_index] : "",
@@ -24966,6 +25837,15 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         secdat_effective_entry_reset(&source_entry);
         secdat_domain_chain_free(&source_chain);
         secdat_domain_chain_free(&destination_chain);
+        return 1;
+    }
+    if (source_entry.ephemeral) {
+        fprintf(stderr, _("mv is not supported for an ephemeral secret: %s\n"), source_reference.key);
+        secdat_effective_entry_reset(&source_entry);
+        secdat_domain_chain_free(&source_chain);
+        secdat_domain_chain_free(&destination_chain);
+        secdat_secure_clear(plaintext, plaintext_length);
+        free(plaintext);
         return 1;
     }
     if (!source_entry.from_overlay
@@ -25173,6 +26053,14 @@ static int secdat_command_mask(const struct secdat_cli *cli)
         fprintf(stderr, _("invalid store format marker\n"));
         goto cleanup;
     }
+    if (secdat_reject_ephemeral_transform(
+            &chain,
+            reference.store_value,
+            reference.key,
+            "mask"
+        ) != 0) {
+        goto cleanup;
+    }
     if (secdat_active_overlay_enabled(&chain)
         || format != SECDAT_STORE_FORMAT_V2) {
         if (options.rebind || options.dry_run || options.json) {
@@ -25307,6 +26195,14 @@ static int secdat_command_unmask(const struct secdat_cli *cli)
         fprintf(stderr, _("invalid store format marker\n"));
         goto cleanup;
     }
+    if (secdat_reject_ephemeral_transform(
+            &chain,
+            reference.store_value,
+            reference.key,
+            "unmask"
+        ) != 0) {
+        goto cleanup;
+    }
     if (secdat_active_overlay_enabled(&chain)
         || format != SECDAT_STORE_FORMAT_V2) {
         if (options.mask_chain_id != NULL
@@ -25387,10 +26283,49 @@ cleanup:
     return status;
 }
 
+static int secdat_remove_ephemeral_key_in_chain(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key,
+    int ignore_missing
+)
+{
+    struct secdat_effective_entry entry = {0};
+    const char *domain_id;
+    int status;
+
+    if (secdat_require_mutable_session_chain(chain, "rm --ephemeral") != 0) {
+        return 1;
+    }
+    status = secdat_resolve_effective_entry(chain, store_name, key, 0, &entry);
+    if (status != 0 || !entry.ephemeral) {
+        secdat_effective_entry_reset(&entry);
+        if (ignore_missing) {
+            return 0;
+        }
+        fprintf(stderr, _("ephemeral key not found: %s\n"), key);
+        return 1;
+    }
+    if (entry.resolved_index != 0) {
+        fprintf(
+            stderr,
+            _("cannot remove inherited ephemeral key; use its source domain: %s\n"),
+            key
+        );
+        secdat_effective_entry_reset(&entry);
+        return 1;
+    }
+    domain_id = chain->count == 0 ? "" : chain->ids[0];
+    status = secdat_active_ephemeral_drop(chain, domain_id, store_name, key);
+    secdat_effective_entry_reset(&entry);
+    return status;
+}
+
 static int secdat_command_rm(const struct secdat_cli *cli)
 {
     static const struct option long_options[] = {
         {"ignore-missing", no_argument, NULL, 'f'},
+        {"ephemeral", no_argument, NULL, 1000},
         {NULL, 0, NULL, 0},
     };
     struct secdat_key_reference reference;
@@ -25400,6 +26335,7 @@ static int secdat_command_rm(const struct secdat_cli *cli)
     int option;
     const char *keyref = NULL;
     int ignore_missing = 0;
+    int ephemeral = 0;
     int status;
 
     secdat_prepare_option_argv(cli, "rm", &argc, argv);
@@ -25408,6 +26344,9 @@ static int secdat_command_rm(const struct secdat_cli *cli)
         switch (option) {
         case 'f':
             ignore_missing = 1;
+            break;
+        case 1000:
+            ephemeral = 1;
             break;
         case '?':
         case ':':
@@ -25433,7 +26372,19 @@ static int secdat_command_rm(const struct secdat_cli *cli)
     if (secdat_domain_resolve_chain(reference.domain_value, &chain) != 0) {
         return 1;
     }
-    status = secdat_remove_key_in_chain(&chain, reference.store_value, reference.key, ignore_missing);
+    status = ephemeral
+        ? secdat_remove_ephemeral_key_in_chain(
+            &chain,
+            reference.store_value,
+            reference.key,
+            ignore_missing
+        )
+        : secdat_remove_key_in_chain(
+            &chain,
+            reference.store_value,
+            reference.key,
+            ignore_missing
+        );
     secdat_domain_chain_free(&chain);
     return status;
 }
@@ -26836,6 +27787,9 @@ static int secdat_command_save(const struct secdat_cli *cli)
         fprintf(stderr, _("invalid arguments for save\n"));
         secdat_cli_print_try_help(cli, "save");
         return 2;
+    }
+    if (secdat_bundle_reject_ephemeral_entries(cli) != 0) {
+        return 1;
     }
     if (secdat_read_secret_confirmation_prompts(
             _("Create secdat bundle passphrase: "),
@@ -28307,10 +29261,70 @@ static int secdat_command_requires_transaction_lock(
     }
 }
 
+static int secdat_cli_requests_ephemeral_mutation(const struct secdat_cli *cli)
+{
+    int index;
+    int positional_only = 0;
+
+    if (cli->command != SECDAT_COMMAND_SET
+        && cli->command != SECDAT_COMMAND_RM) {
+        return 0;
+    }
+    for (index = 0; index < cli->argc; index += 1) {
+        const char *argument = cli->argv[index];
+
+        if (positional_only) {
+            continue;
+        }
+        if (strcmp(argument, "--") == 0) {
+            positional_only = 1;
+            continue;
+        }
+        if (strcmp(argument, "--ephemeral") == 0) {
+            return 1;
+        }
+        if (secdat_mutation_option_consumes_next(cli->command, argument)
+            || strcmp(argument, "--mask-action") == 0
+            || strcmp(argument, "--mask-warnings") == 0) {
+            index += 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_run_ephemeral_mutation(const struct secdat_cli *cli)
+{
+    struct secdat_cli filtered;
+    struct secdat_mutation_policy_options policy;
+    char **filtered_argv = NULL;
+    int status;
+
+    status = secdat_parse_mutation_policy_options(
+        cli,
+        &filtered,
+        &policy,
+        &filtered_argv
+    );
+    if (status != 0) {
+        return status;
+    }
+    if (secdat_mutation_policy_was_requested(&policy)) {
+        fprintf(
+            stderr,
+            _("mutation planning options are not supported with --ephemeral\n")
+        );
+        free(filtered_argv);
+        return 2;
+    }
+    status = secdat_dispatch_command(&filtered);
+    free(filtered_argv);
+    return status;
+}
+
 int secdat_run_command(const struct secdat_cli *cli)
 {
     char exact_domain_root[PATH_MAX];
-    char transactions_root[PATH_MAX];
+    int lock_owned;
     int status;
 
     if (cli->dir != NULL && cli->domain != NULL) {
@@ -28332,24 +29346,17 @@ int secdat_run_command(const struct secdat_cli *cli)
     if (!secdat_command_requires_transaction_lock(cli->command)) {
         return secdat_dispatch_command(cli);
     }
-    if (secdat_transaction_ensure_root(
-            transactions_root,
-            sizeof(transactions_root)
-        ) != 0) {
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0) {
         return 1;
     }
-    secdat_command_transaction_lock_fd = secdat_transaction_open_lock(
-        transactions_root
-    );
-    if (secdat_command_transaction_lock_fd < 0) {
-        return 1;
+    if (secdat_cli_requests_ephemeral_mutation(cli)) {
+        status = secdat_run_ephemeral_mutation(cli);
+    } else {
+        status = secdat_command_uses_mutation_plan(cli->command)
+            ? secdat_run_planned_mutation(cli)
+            : secdat_dispatch_command(cli);
     }
-    status = secdat_command_uses_mutation_plan(cli->command)
-        ? secdat_run_planned_mutation(cli)
-        : secdat_dispatch_command(cli);
-    (void)flock(secdat_command_transaction_lock_fd, LOCK_UN);
-    close(secdat_command_transaction_lock_fd);
-    secdat_command_transaction_lock_fd = -1;
+    secdat_mutation_lock_release(lock_owned);
     return status;
 }
 

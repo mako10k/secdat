@@ -128,7 +128,12 @@ def normalize_spaces(text):
 
 for args, marker in [
     ([bin_path, "help", "save"], "save FILE"),
-    ([bin_path, "load", "--help"], "load FILE"),
+    (
+        [bin_path, "load", "--help"],
+        "load [--mask-action=preserve|reject] "
+        "[--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] "
+        "[--dry-run] [--json] FILE",
+    ),
 ]:
     rc, stdout, stderr = run(args)
     output = stdout + stderr

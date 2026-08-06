@@ -153,6 +153,18 @@ For a session that does not write through unless explicitly saved, `unlock --vol
 
 When no wrapped master key exists yet, `unlock --volatile` can still start by generating an ephemeral in-memory master key without writing the wrapped-key file. Current volatile sessions can remove only tombstones created in the same volatile overlay; persisted tombstones and v2 local-entry deletions still require a normal writable session.
 
+For one session-local secret without making every write volatile, use `set --ephemeral` after `unlock`:
+
+```sh
+./src/secdat --dir ~/example/project set --ephemeral API_TOKEN --value session-token
+./src/secdat --dir ~/example/project get API_TOKEN --stdout
+./src/secdat --dir ~/example/project rm --ephemeral API_TOKEN
+```
+
+An ephemeral value lives only in the active domain-scoped session agent. It is available through normal `get`, `ls`, `exec`, SDK, and FUSE read paths, and it shadows a persisted same-name value until explicitly removed. Its key and value are both unlocked-only; `bulk_select` defaults to `exclude`, or may be set to `include` for bulk-gated selection. Refreshing the same session with the same master key preserves it. `lock`, expiry, or replacing the session with a different master key clears it. A process-level `SECDAT_MASTER_KEY` does not hide an active ephemeral value, but that environment variable alone cannot create one because no session agent owns its lifetime.
+
+Ephemeral values never enter store files, bundles, or `lock --save`. Plain `set`/`rm`, SDK or FUSE writes, `cp`, `mv`, `ln`, `mask`, `unmask`, attribute updates, and `save` fail closed when they would ambiguously persist or transform an ephemeral value. Use `set --ephemeral` to replace it and `rm --ephemeral` to reveal any persisted value underneath. Mask-planning options such as `--dry-run` and `--json` are not accepted with these agent-only mutations. Other unrelated keys can still be persisted normally in the same session.
+
 For a read-only session with the real persisted data, `unlock --readonly` reuses an existing master key but rejects mutating commands such as `set`, `rm`, `mask`, `unmask`, `cp`, `mv`, `ln`, `meta set`, `meta unset`, `relation set`, `relation rm`, `gc`, `load`, `fsck --repair`, `store migrate` without `--dry-run`, `store create`, `store delete`, `store finalize-migration` without `--dry-run`, and domain create/delete/move. `--readonly` and `--volatile` are mutually exclusive.
 
 If you already have a master key to migrate or explicitly override with, `SECDAT_MASTER_KEY` still works:

@@ -372,6 +372,8 @@ and
 follow-up commands for that domain.
 .TP
 .B set [\-\-mask-action=preserve|reject] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] [\-\-dry-run] [\-\-json] KEYREF [\-u|\-\-unsafe|\-\-public-value|\-\-secret-value] [\-\-key-visibility always|unlocked] [\-\-value-access unlocked|always] [\-\-bulk-select exclude|named|include] [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
+.br
+.B set \-\-ephemeral KEYREF [\-\-secret-value] [\-\-key-visibility unlocked] [\-\-value-access unlocked] [\-\-bulk-select exclude|named|include] [VALUE|\-i|\-\-stdin|\-e ENVNAME|\-\-env ENVNAME|\-v VALUE|\-\-value VALUE]
 Store or update one key in the resolved current domain. Use
 .B --unsafe
 or
@@ -379,11 +381,19 @@ or
 to write a plaintext entry that remains readable while locked. Use
 .B --bulk-select
 to set the bulk_select policy for bulk-gated selection.
+With
+.B --ephemeral,
+the value is stored only in the active domain-scoped session agent, uses unlocked-only key and value access, and shadows a persisted same-name value. It defaults to bulk_select=exclude and remains available to normal get, list, exec, SDK, and FUSE read paths. Plain set and SDK/FUSE writes reject an ephemeral target. Mask-planning options such as --dry-run and --json are not supported with --ephemeral.
 .TP
 .B rm [\-f|\-\-ignore-missing] [\-\-mask-action=preserve|reject] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] [\-\-dry-run] [\-\-json] KEYREF
+.br
+.B rm \-\-ephemeral [\-f|\-\-ignore-missing] KEYREF
 Remove one key locally or create a tombstone for an inherited key. With
 .B --ignore-missing,
 an absent key is treated as a successful no-op.
+With
+.B --ephemeral,
+only the current-domain session-local value is removed, revealing any persisted value it shadowed. Plain rm rejects an ephemeral target.
 .TP
 .B mv SRC_KEYREF DST_KEYREF
 Rename or relocate one key between resolved locations.
@@ -503,6 +513,11 @@ the command keeps subsequent secret writes, deletes, tombstones, and read-side r
 clears that overlay, so dry runs and read-only filesystems do not touch the persisted store. With
 .B lock --save
 supported local volatile overlay changes are written through to the persisted store before the session is locked. Current volatile sessions remove only overlay-created tombstones; persisted tombstones and v2 local-entry deletions still require a normal writable session.
+Independently of session-wide volatile mode,
+.B set --ephemeral
+can keep one secret in the active agent. Refreshing the same session with the same master key preserves it; lock, expiry, or replacing the session key clears it. Ephemeral values are excluded from
+.B lock --save
+and bundle save, and ambiguous persistence operations such as cp, mv, ln, and attribute mutation fail closed.
 With
 .B --readonly
 the command reuses an existing master key but rejects mutating commands while leaving reads, listing, export-like operations, and status available.

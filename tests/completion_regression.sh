@@ -316,7 +316,7 @@ if mode != "none" or values:
 mode, values, _ = run_completion("set", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: set option completion mode mismatch: {mode!r}")
-for expected in ["--public-value", "--secret-value", "--key-visibility", "--value-access", "--bulk-select"]:
+for expected in ["--ephemeral", "--public-value", "--secret-value", "--key-visibility", "--value-access", "--bulk-select"]:
     assert_contains(values, expected, "set options")
 for unexpected in ["--inject", "--bulk-gate", "--inject-gate", "--inject-bulk-gate", "--sandbox-injectable", "--sandbox-inject", "--inject-bulk"]:
     assert_not_contains(values, unexpected, "set options must not suggest exec/legacy flags")
@@ -324,6 +324,12 @@ for unexpected in ["--inject", "--bulk-gate", "--inject-gate", "--inject-bulk-ga
 mode, values, _ = run_completion("set", "--bulk-select", "")
 if mode != "none" or values:
     raise SystemExit(f"FAIL: set --bulk-select completion should not suggest token values: mode={mode!r} values={values!r}")
+
+mode, values, _ = run_completion("rm", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: rm option completion mode mismatch: {mode!r}")
+for expected in ["--ephemeral", "--ignore-missing"]:
+    assert_contains(values, expected, "rm options")
 
 mode, values, _ = run_completion("exec", "--")
 if mode != "plain":

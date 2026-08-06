@@ -21,14 +21,17 @@ import os
 import pty
 import re
 import shutil
+import socket
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import hashlib
+from urllib.parse import quote
 
 bin_path = sys.argv[1]
 env = os.environ.copy()
@@ -177,11 +180,17 @@ def usage_command_column(output, command):
             return column
     fail(f"missing usage command {command!r} in output {output!r}")
 
-def run(args, extra_env=None):
+def run(args, extra_env=None, input_text=None):
     run_env = env.copy()
     if extra_env:
         run_env.update(extra_env)
-    completed = subprocess.run(args, text=True, capture_output=True, env=run_env)
+    completed = subprocess.run(
+        args,
+        text=True,
+        capture_output=True,
+        env=run_env,
+        input=input_text,
+    )
     return completed.returncode, completed.stdout, completed.stderr
 
 def run_bytes(args, extra_env=None):
@@ -497,6 +506,13 @@ rc, stdout, stderr = run(scoped(["get", "VOLATILE_ONLY_KEY", "-o"]))
 if rc != 0 or stdout != "volatile-value" or stderr != "":
     fail(f"volatile get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run(scoped(["set", "--ephemeral", "VOLATILE_ONLY_KEY", "--value", "must-not-replace"]))
+if rc == 0 or "key has a volatile session change and cannot be replaced by an ephemeral secret" not in stderr:
+    fail(f"ephemeral set should not replace a volatile change: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["get", "VOLATILE_ONLY_KEY", "-o"]))
+if rc != 0 or stdout != "volatile-value" or stderr != "":
+    fail(f"volatile value changed after rejected ephemeral replacement: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run(scoped(["rm", "VOLATILE_TOMBSTONE_KEY"]))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"volatile rm failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -504,6 +520,39 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run(scoped(["get", "VOLATILE_TOMBSTONE_KEY", "-o"]))
 if rc == 0 or "key not found: VOLATILE_TOMBSTONE_KEY" not in stderr:
     fail(f"volatile tombstone should hide persistent key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["status", "--json"]))
+if rc != 0 or stderr != "":
+    fail(f"volatile status before override lookup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+volatile_expiry_before_override = json.loads(stdout)["session_expires_at"]
+
+rc, stdout, stderr = run(
+    scoped(["get", "VOLATILE_ONLY_KEY", "-o"]),
+    volatile_env,
+)
+if rc == 0 or "key not found: VOLATILE_ONLY_KEY" not in stderr:
+    fail(f"process master-key override should bypass volatile value: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["get", "VOLATILE_TOMBSTONE_KEY", "-o"]),
+    volatile_env,
+)
+if rc != 0 or stdout != "persistent-value" or stderr != "":
+    fail(f"process master-key override should bypass volatile tombstone: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["ls", "--pattern", "VOLATILE_ONLY_KEY"], root_domain),
+    volatile_env,
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"process master-key override list exposed volatile value: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["ls", "--pattern", "VOLATILE_TOMBSTONE_KEY"], root_domain),
+    volatile_env,
+)
+if rc != 0 or stdout != "VOLATILE_TOMBSTONE_KEY\n" or stderr != "":
+    fail(f"process master-key override list honored volatile tombstone: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["status", "--json"]))
+if rc != 0 or stderr != "" or json.loads(stdout)["session_expires_at"] != volatile_expiry_before_override:
+    fail(f"override lookup refreshed volatile session expiry: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["unlock", "--volatile"], domain=child_domain), extra_env=volatile_env)
 if rc != 0 or "volatile session unlocked from environment" not in stdout:
@@ -581,6 +630,13 @@ if rc != 0 or stdout != "" or stderr != "":
     fail(f"readonly move source set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 readonly_move_source.rmdir()
 
+rc, stdout, stderr = run(scoped(["unlock", "--volatile"]), extra_env=readonly_env)
+if rc != 0 or "volatile session unlocked from environment" not in stdout:
+    fail(f"readonly ephemeral setup unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["set", "--ephemeral", "READONLY_EPHEMERAL_REMOVE", "--value", "blocked-remove"]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"readonly ephemeral removal seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run(scoped(["unlock", "--readonly"]), extra_env=readonly_env)
 if rc != 0 or "readonly session unlocked from environment" not in stdout or "resolved domain:" not in stderr:
     fail(f"readonly unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -599,6 +655,14 @@ if not readonly_status["unlocked"] or readonly_status["session_mode"] != "readon
 rc, stdout, stderr = run(scoped(["set", "READONLY_BLOCKED_KEY", "--value", "blocked"]))
 if rc == 0 or "current session is readonly and cannot run set" not in stderr or f"unlock writable session: secdat --dir {root_domain} unlock" not in stderr:
     fail(f"readonly set should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["set", "--ephemeral", "READONLY_EPHEMERAL_KEY", "--value", "blocked"]))
+if rc == 0 or "current session is readonly and cannot run set" not in stderr:
+    fail(f"readonly ephemeral set should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["rm", "--ephemeral", "READONLY_EPHEMERAL_REMOVE"]))
+if rc == 0 or "current session is readonly and cannot run rm --ephemeral" not in stderr:
+    fail(f"readonly ephemeral rm should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["store", "migrate", "default", "--to-format", "v2"]))
 if rc == 0 or stdout != "" or "current session is readonly and cannot run store migrate" not in stderr or f"unlock writable session: secdat --dir {root_domain} unlock" not in stderr:
@@ -633,6 +697,10 @@ rc, stdout, stderr = run(scoped(["set", "SAVE_PERSISTED_KEY", "--unsafe", "--val
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"volatile unsafe set for save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run(scoped(["set", "--ephemeral", "SAVE_EPHEMERAL_KEY", "--value", "must-not-save"]))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"ephemeral set before lock --save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run(scoped(["rm", "VOLATILE_TOMBSTONE_KEY"]))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"volatile rm for save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -644,6 +712,10 @@ if rc != 0 or stdout != "volatile session saved and locked\n" or stderr != "":
 rc, stdout, stderr = run(scoped(["get", "SAVE_PERSISTED_KEY", "-o"]))
 if rc != 0 or stdout != "persisted-after-save" or stderr != "":
     fail(f"saved volatile key should persist after lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["exists", "SAVE_EPHEMERAL_KEY"]))
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"lock --save persisted an ephemeral key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["get", "VOLATILE_TOMBSTONE_KEY", "-o"]))
 if rc == 0 or "key not found: VOLATILE_TOMBSTONE_KEY" not in stderr:
@@ -670,10 +742,10 @@ for args, marker in [
     ([bin_path, "help", "get"], "[-w|--on-demand-unlock] [-t SECONDS|--unlock-timeout SECONDS] KEYREF"),
     ([bin_path, "help", "wait-unlock"], "wait-unlock [-t SECONDS|--timeout SECONDS] [-q|--quiet]"),
     ([bin_path, "help", "exec"], "[--inject LAYER:KIND=SELECTOR]... [--inject-file FILE]... [--bulk-gate] [--command-resolution MODE] [--dry-run] [--json] [--json-summary] [--] CMD [ARGS...]"),
-    ([bin_path, "help", "rm"], "rm [-f|--ignore-missing] KEYREF"),
-    ([bin_path, "help", "ln"], "ln [--replace] [--skip-same-value-check] SRC_KEYREF|@UUID DST_KEYREF"),
+    ([bin_path, "help", "rm"], "rm --ephemeral [-f|--ignore-missing]"),
+    ([bin_path, "help", "ln"], "ln [--replace] [--skip-same-value-check]"),
     ([bin_path, "help", "relation", "suggest-link"], "relation suggest-link [--cluster-field FIELD] [KEYREF]"),
-    ([bin_path, "help", "set"], "set KEYREF [-u|--unsafe|--public-value|--secret-value]"),
+    ([bin_path, "help", "set"], "set --ephemeral"),
     ([bin_path, "help", "export"], "export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--bulk-gate]"),
     ([bin_path, "help", "passwd"], "passwd [--askpass PATH]"),
     ([bin_path, "help", "store"], "store migrate STORE --to-format v2 [--dry-run]"),
@@ -904,7 +976,7 @@ if rc != 0 or "Use cases:" not in output or "read one value to stdout:" not in o
 
 for args, marker in [
     ([bin_path, "get", "KEY", "--help"], " KEYREF "),
-    ([bin_path, "set", "KEY", "--help"], "set KEYREF"),
+    ([bin_path, "set", "KEY", "--help"], "set --ephemeral"),
     ([bin_path, "domain", "ls", "ROOT", "--help"], "domain ls [-l|--long]"),
 ]:
     rc, stdout, stderr = run(args)
@@ -1528,6 +1600,154 @@ rc, stdout, stderr = run(scoped(["set", "SESSION_KEY", "-v", "value"], root_doma
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set after passphrase unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+def snapshot_secdat_data():
+    data_root = Path(env["XDG_DATA_HOME"])
+    return [
+        (
+            str(path.relative_to(data_root)),
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+        for path in sorted(data_root.rglob("*"))
+        if path.is_file()
+    ]
+
+ephemeral_data_before = snapshot_secdat_data()
+rc, stdout, stderr = run(scoped(["set", "--ephemeral", "SESSION_KEY", "--value", "ephemeral-value"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"ephemeral shadow set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if snapshot_secdat_data() != ephemeral_data_before:
+    fail("ephemeral set changed persisted secdat data")
+
+rc, stdout, stderr = run(scoped(["get", "SESSION_KEY", "-o"], root_domain))
+if rc != 0 or stdout != "ephemeral-value" or stderr != "":
+    fail(f"ephemeral shadow get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(
+    scoped(["get", "SESSION_KEY", "-o"], root_domain),
+    {"SECDAT_MASTER_KEY": "unrelated-process-override"},
+)
+if rc != 0 or stdout != "ephemeral-value" or stderr != "":
+    fail(f"ephemeral lookup with process master-key override failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["ls", "--pattern", "SESSION_KEY"], root_domain),
+    {"SECDAT_MASTER_KEY": "unrelated-process-override"},
+)
+if rc != 0 or stdout != "SESSION_KEY\n" or stderr != "":
+    fail(f"ephemeral listing with process master-key override failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["ls", "--json", "--pattern", "SESSION_KEY"], root_domain))
+if rc != 0 or stderr != "":
+    fail(f"ephemeral ls --json failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+ephemeral_listing = json.loads(stdout)
+if ephemeral_listing["key_count"] != 1 or len(ephemeral_listing["keys"]) != 1:
+    fail(f"ephemeral ls --json count mismatch: {ephemeral_listing!r}")
+ephemeral_key = ephemeral_listing["keys"][0]
+if (
+    ephemeral_key["key"] != "SESSION_KEY"
+    or ephemeral_key["storage_mode"] != "ephemeral"
+    or not ephemeral_key["ephemeral"]
+    or ephemeral_key["unsafe_store"]
+    or ephemeral_key["key_visibility"] != "unlocked"
+    or ephemeral_key["value_access"] != "unlocked"
+    or ephemeral_key["bulk_select"] != "exclude"
+):
+    fail(f"ephemeral ls --json metadata mismatch: {ephemeral_listing!r}")
+
+rc, stdout, stderr = run(scoped(["attr", "SESSION_KEY"], root_domain))
+if rc != 0 or stdout != "key_visibility=unlocked\nvalue_access=unlocked\nbulk_select=exclude\n" or stderr != "":
+    fail(f"ephemeral attr read failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+large_ephemeral_value = "L" * 5000
+rc, stdout, stderr = run(
+    scoped(["set", "--ephemeral", "EPHEMERAL_LARGE", "--stdin"], root_domain),
+    input_text=large_ephemeral_value,
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"large ephemeral set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["get", "EPHEMERAL_LARGE", "-o"], root_domain))
+if rc != 0 or stdout != large_ephemeral_value or stderr != "":
+    fail(f"large ephemeral get failed: rc={rc} length={len(stdout)} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["rm", "--ephemeral", "EPHEMERAL_LARGE"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"large ephemeral cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["set", "--ephemeral", "EPHEMERAL_BULK", "--bulk-select", "include", "--value", "bulk-ephemeral-value"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"bulk-select ephemeral set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["ls", "--bulk-gate", "--pattern", "EPHEMERAL_*"], root_domain))
+if rc != 0 or stdout != "EPHEMERAL_BULK\n" or stderr != "":
+    fail(f"ephemeral bulk-gate list failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped([
+    "exec",
+    "--inject", "ambient:only=__NO_EPHEMERAL_AMBIENT__",
+    "--inject", "secret:only=SESSION_KEY:EPHEMERAL_BULK",
+    "--inject", "route:prefer=secret",
+    "python3", "-c", "import json, os; print(json.dumps({k: os.environ[k] for k in ('SESSION_KEY', 'EPHEMERAL_BULK')}, sort_keys=True))",
+], root_domain))
+if rc != 0 or json.loads(stdout) != {"EPHEMERAL_BULK": "bulk-ephemeral-value", "SESSION_KEY": "ephemeral-value"}:
+    fail(f"explicit ephemeral exec injection failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped([
+    "exec", "--bulk-gate",
+    "--inject", "ambient:only=__NO_EPHEMERAL_AMBIENT__",
+    "--inject", "secret:only=SESSION_KEY:EPHEMERAL_BULK",
+    "--inject", "route:prefer=secret",
+    "python3", "-c", "import json, os; print(json.dumps({k: os.environ[k] for k in ('SESSION_KEY', 'EPHEMERAL_BULK') if k in os.environ}, sort_keys=True))",
+], root_domain))
+if rc != 0 or json.loads(stdout) != {"EPHEMERAL_BULK": "bulk-ephemeral-value"}:
+    fail(f"bulk-gated ephemeral exec injection failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+for args, expected in [
+    (["set", "SESSION_KEY", "--value", "must-not-persist"], "use set --ephemeral"),
+    (["rm", "SESSION_KEY"], "use rm --ephemeral"),
+    (["cp", "SESSION_KEY", "EPHEMERAL_COPY"], "cp is not supported for an ephemeral secret"),
+    (["mv", "SESSION_KEY", "EPHEMERAL_MOVE"], "mv is not supported for an ephemeral secret"),
+    (["mask", "SESSION_KEY"], "mask is not supported for an ephemeral secret"),
+    (["unmask", "SESSION_KEY"], "unmask is not supported for an ephemeral secret"),
+    (["attr", "SESSION_KEY", "--bulk-select", "include"], "secret attributes cannot be changed for an ephemeral secret"),
+    (["meta", "set", "SESSION_KEY", "label", "must-not-persist"], "key metadata cannot be changed for an ephemeral secret"),
+    (["relation", "set", "ephemeral-relation", "--member", "token=SESSION_KEY", "--member", "public=UNSAFE_VISIBLE_KEY"], "relation member cannot reference an ephemeral secret"),
+    (["save", str(isolated_root / "ephemeral.bundle")], "save is not supported while an ephemeral secret is visible"),
+]:
+    rc, stdout, stderr = run(scoped(args, root_domain))
+    if rc == 0 or expected not in stderr:
+        fail(f"ambiguous ephemeral operation should fail: args={args!r} rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+for args in [
+    ["set", "--ephemeral", "--dry-run", "EPHEMERAL_PLAN", "--value", "blocked"],
+    ["rm", "--ephemeral", "--json", "SESSION_KEY"],
+]:
+    rc, stdout, stderr = run(scoped(args, root_domain))
+    if rc != 2 or "mutation planning options are not supported with --ephemeral" not in stderr:
+        fail(f"ephemeral planning option should fail explicitly: args={args!r} rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["set", "PERSISTENT_BESIDE_EPHEMERAL", "--value", "persisted-value"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"unrelated persistent set beside ephemeral failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["unlock", "--duration", "PT2M"], root_domain))
+if rc != 0 or "session refreshed\n" not in stdout:
+    fail(f"same-session refresh with ephemeral keys failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["get", "SESSION_KEY", "-o"], root_domain))
+if rc != 0 or stdout != "ephemeral-value" or stderr != "":
+    fail(f"ephemeral key did not survive same-session refresh: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["rm", "--ephemeral", "SESSION_KEY"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"ephemeral shadow removal failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["get", "SESSION_KEY", "-o"], root_domain))
+if rc != 0 or stdout != "value" or stderr != "":
+    fail(f"persisted value did not reappear after ephemeral removal: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["set", "--ephemeral", "EPHEMERAL_LOCK_CLEAR", "--value", "clear-me"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"ephemeral lock-clear seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["rm", "--ephemeral", "EPHEMERAL_BULK"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"bulk ephemeral removal failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run(scoped(["get", "MISSING_KEY", "-o"], root_domain))
 output = stdout + stderr
 if rc == 0 or "key not found: MISSING_KEY" not in output or "Hint: check secdat status, --dir, and --store" not in output:
@@ -1605,11 +1825,101 @@ rc, stdout, stderr = run(scoped(["lock"], root_domain))
 if rc != 0 or stdout.strip() != "session locked" or stderr != "":
     fail(f"lock before expiry check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY": "session-test-key", "SECDAT_SESSION_IDLE_SECONDS": "1"})
+rc, stdout, stderr = run(scoped(["exists", "EPHEMERAL_LOCK_CLEAR"], root_domain))
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"ephemeral key survived lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(
+    scoped(["set", "--ephemeral", "EPHEMERAL_WITHOUT_AGENT", "--value", "blocked"], root_domain),
+    {"SECDAT_MASTER_KEY": "session-test-key"},
+)
+if rc == 0 or "per-key ephemeral secrets require an active secdat session agent" not in stderr:
+    fail(f"ephemeral set without agent should fail even with process key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+compat_domain = isolated_root / "ephemeral-old-agent-compat"
+compat_domain.mkdir()
+compat_env = {"SECDAT_MASTER_KEY": "old-agent-compat-key"}
+rc, stdout, stderr = run(scoped(["domain", "create"], compat_domain), compat_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"old-agent compatibility domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["set", "OLD_AGENT_PERSISTED", "--value", "old-agent-value"], compat_domain),
+    compat_env,
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"old-agent compatibility seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+compat_registry_path = (
+    Path(env["XDG_DATA_HOME"])
+    / "secdat"
+    / "domains"
+    / "registry"
+    / "by-root"
+    / quote(str(compat_domain), safe="")
+)
+compat_domain_id = compat_registry_path.read_text().strip()
+compat_socket_path = socket_path_for(compat_domain_id)
+compat_socket_path.parent.mkdir(parents=True, exist_ok=True)
+compat_server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+compat_server.bind(str(compat_socket_path))
+compat_server.listen()
+compat_server.settimeout(0.1)
+compat_stop = threading.Event()
+compat_commands = []
+compat_overlay_response = [b"ERR invalid\n"]
+
+def serve_old_agent():
+    while not compat_stop.is_set():
+        try:
+            connection, _ = compat_server.accept()
+        except socket.timeout:
+            continue
+        with connection:
+            with connection.makefile("rwb") as stream:
+                command = stream.readline().decode().rstrip("\r\n")
+                compat_commands.append(command)
+                if command == "STATUS":
+                    stream.write(f"OK {int(time.time()) + 300} persistent 300\n".encode())
+                else:
+                    stream.write(compat_overlay_response[0])
+                stream.flush()
+
+compat_thread = threading.Thread(target=serve_old_agent)
+compat_thread.start()
+try:
+    rc, stdout, stderr = run(
+        scoped(["get", "OLD_AGENT_PERSISTED", "-o"], compat_domain),
+        compat_env,
+    )
+    compat_overlay_response[0] = b"ERR internal\n"
+    internal_rc, internal_stdout, internal_stderr = run(
+        scoped(["get", "OLD_AGENT_PERSISTED", "-o"], compat_domain),
+        compat_env,
+    )
+finally:
+    compat_stop.set()
+    compat_thread.join(timeout=2)
+    compat_server.close()
+    compat_socket_path.unlink(missing_ok=True)
+if rc != 0 or stdout != "old-agent-value" or stderr != "":
+    fail(f"old-agent EPLOOKUP compatibility failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if "EPLOOKUP" not in compat_commands:
+    fail(f"old-agent compatibility test did not receive EPLOOKUP: {compat_commands!r}")
+if internal_rc == 0 or internal_stdout != "":
+    fail(
+        "unexpected EPLOOKUP errors must fail closed: "
+        f"rc={internal_rc} stdout={internal_stdout!r} stderr={internal_stderr!r}"
+    )
+
+rc, stdout, stderr = run(scoped(["unlock"], root_domain), {"SECDAT_MASTER_KEY": "session-test-key", "SECDAT_SESSION_IDLE_SECONDS": "5"})
 if rc != 0 or "session unlocked from environment" not in stdout:
     fail(f"short-timeout unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-time.sleep(5)
+rc, stdout, stderr = run(scoped(["set", "--ephemeral", "EPHEMERAL_EXPIRY_CLEAR", "--value", "expire-me"], root_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"short-timeout ephemeral set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+time.sleep(7)
 
 rc, stdout, stderr = run(scoped(["status", "-q"], root_domain))
 if rc != 1 or stdout != "" or stderr != "":
@@ -1618,6 +1928,10 @@ if rc != 1 or stdout != "" or stderr != "":
 rc, stdout, stderr = run(scoped(["get", "SESSION_KEY", "-o"], root_domain))
 if rc == 0 or "missing SECDAT_MASTER_KEY and no active secdat session" not in stderr:
     fail(f"expired session get unexpectedly succeeded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run(scoped(["exists", "EPHEMERAL_EXPIRY_CLEAR"], root_domain))
+if rc != 1 or stdout != "" or stderr != "":
+    fail(f"ephemeral key survived session expiry: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, transcript = run_pty(
     scoped(["unlock"], root_domain),
