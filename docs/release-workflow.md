@@ -8,6 +8,46 @@ This document captures the concrete steps for cutting a release tag and preparin
 - binding package versions currently track the same version as the core project
 - release tags should use the form `vX.Y.Z`
 
+## Release candidate review and validation receipts
+
+Use one receipt-driven pipeline instead of alternating full validation and
+review after every repair:
+
+1. While implementation is still changing, run the nearest focused checks.
+2. Before the expensive release matrix, perform a static/read-only review of
+   the complete candidate diff. The reviewer must not run or rerun full
+   validation gates when the purpose is source inspection.
+3. Batch all accepted findings, repair them together, and use focused checks
+   until the static re-review has no findings.
+4. Only after that review is clean, create the reviewed non-WIP candidate
+   commit. Freeze its identity with a clean worktree:
+
+   ```sh
+   test -z "$(git status --porcelain --untracked-files=normal)"
+   candidate_commit=$(git rev-parse --verify 'HEAD^{commit}')
+   candidate_tree=$(git rev-parse --verify 'HEAD^{tree}')
+   ```
+
+5. Run the required matrix in steps 4 and 5 of **Before tagging** once for that
+   candidate. For every gate, record the exact command, configure profile,
+   relevant toolchain/environment, candidate commit, candidate tree, and PASS
+   or failure result. These fields are the validation receipt.
+6. Run full gates serially in one worktree. Do not overlap full build, check,
+   distcheck, or packaging gates in the same worktree or build tree because
+   they share generated configure, archive, and dist-directory state. Parallel
+   gates are allowed only in isolated clean worktrees and build roots checked
+   out at the same candidate identity.
+7. The final acceptance review consumes the frozen diff and its receipts and
+   remains static/read-only. It does not rerun a full gate merely to reproduce
+   an existing PASS for the same candidate. Additional validation requires a
+   specific acceptance axis or evidence gap that the receipts do not cover.
+8. If that review finds a defect, do not restart the matrix immediately. Batch
+   the findings, return to focused checks and static review, freeze a new
+   candidate, and run the invalidated final matrix once.
+
+A receipt does not transfer to a different commit or tracked tree. A focused
+check is useful during repair but does not replace the final matrix.
+
 ## Before tagging
 
 1. update the version in `configure.ac` and the binding manifests that carry an explicit version:
@@ -22,12 +62,17 @@ This document captures the concrete steps for cutting a release tag and preparin
 3. regenerate build metadata when the autotools inputs changed:
    - `autoreconf -fi`
    - `./configure`
-4. run the project validation:
+4. run the required project validation matrix for the frozen candidate:
    - `bash tests/release_metadata_regression.sh "$PWD"`
    - `make check`
    - `make distcheck DISTCHECK_CONFIGURE_FLAGS=--enable-fuse`
+   - `make distcheck DISTCHECK_CONFIGURE_FLAGS='--enable-fuse --enable-shared --disable-static'`
    - `make distcheck DISTCHECK_CONFIGURE_FLAGS='--enable-fuse --disable-shared --enable-static'`
-5. run installed-consumer validation for published artifacts:
+   - for v0.5.0, default/shared-capable, shared-only, and static-only are three
+     distinct package-shape axes because issue #217 exposed a shared-only bug;
+     bind all three receipts to the same candidate and do not restart the
+     review or the whole matrix between profiles
+5. run the required installed-consumer validation for published artifacts:
    - `PKG_CONFIG_PATH=$PWD pkg-config --cflags --libs libsecdat`
    - compile and run a shared C consumer using `pkg-config --cflags --libs libsecdat`
    - compile and run a static-only C consumer using `pkg-config --static --cflags --libs libsecdat`
@@ -44,13 +89,21 @@ This document captures the concrete steps for cutting a release tag and preparin
 ## Tagging
 
 After the tree is clean and the release contents are committed, publish and
-read back `main` before creating the release tag:
+read back `main` before creating the release tag. Load `candidate_commit` and
+`candidate_tree` from the accepted validation receipts; do not recompute those
+expected inputs from the current checkout:
 
 ```sh
 set -eu
 release_tag=vX.Y.Z
 release_subject="secdat $release_tag"
+test -n "${candidate_commit:-}"
+test -n "${candidate_tree:-}"
+test -z "$(git status --porcelain --untracked-files=normal)"
 release_commit=$(git rev-parse --verify 'HEAD^{commit}')
+release_tree=$(git rev-parse --verify 'HEAD^{tree}')
+test "$release_commit" = "$candidate_commit"
+test "$release_tree" = "$candidate_tree"
 origin_push_urls=$(git remote get-url --push --all origin)
 test "$(printf '%s\n' "$origin_push_urls" | wc -l)" -eq 1
 origin_push_url=$origin_push_urls
@@ -72,11 +125,11 @@ esac
 release_repo_ref="$release_host/$release_repo"
 
 set +e
-git push origin HEAD:refs/heads/main
+git push "$origin_push_url" HEAD:refs/heads/main
 main_push_status=$?
 set -e
 set +e
-remote_main_refs=$(git ls-remote --exit-code origin refs/heads/main)
+remote_main_refs=$(git ls-remote --exit-code "$origin_push_url" refs/heads/main)
 main_readback_status=$?
 set -e
 test "$main_readback_status" -eq 0
@@ -96,7 +149,7 @@ test "$(git for-each-ref --format='%(contents:subject)' "$tag_ref")" = \
 
 verify_remote_release_refs() {
   set +e
-  remote_release_refs=$(git ls-remote --exit-code origin \
+  remote_release_refs=$(git ls-remote --exit-code "$origin_push_url" \
     refs/heads/main "$tag_ref" "${tag_ref}^{}")
   remote_release_readback_status=$?
   set -e
@@ -113,7 +166,7 @@ verify_remote_release_refs() {
 }
 
 set +e
-git push origin "${tag_ref}:${tag_ref}"
+git push "$origin_push_url" "${tag_ref}:${tag_ref}"
 tag_push_status=$?
 set -e
 verify_remote_release_refs
@@ -356,11 +409,15 @@ If a public module release is needed, publish tags that are valid for the `bindi
 ## Release checklist
 
 - versions updated consistently
+- candidate commit/tree identity and clean-worktree state frozen
+- every required matrix receipt matches that exact candidate
 - tree clean after validation
 - `make check` passed
-- default/shared-capable and static-only FUSE-enabled `make distcheck` passed
+- default/shared-capable, shared-only, and static-only FUSE-enabled `make distcheck` passed
 - ABI SONAME/export checks passed
 - package-shape checks passed
+- final acceptance review consumed the receipts without duplicate full gates
+- no overlapping full gates shared a worktree or build tree
 - tag created and pushed
 - GitHub Release published and read back
 - release notes mention C SDK changes and binding/API additions

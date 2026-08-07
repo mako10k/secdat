@@ -21,6 +21,7 @@ export XDG_DATA_HOME="$work_root/data"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
 python3 - "$bin_path" "$SECDAT_SESSION_TEST_CLEANUP_SCRIPT" <<'PY'
+import errno
 import os
 import pty
 import re
@@ -272,17 +273,21 @@ def usage_command_column(output, command):
             return column
     fail(f"missing usage command {command!r} in output {output!r}")
 
-def run(args, extra_env=None, input_text=None):
+def run(args, extra_env=None, input_text=None, timeout=None):
     run_env = env.copy()
     if extra_env:
         run_env.update(extra_env)
-    completed = subprocess.run(
-        args,
-        text=True,
-        capture_output=True,
-        env=run_env,
-        input=input_text,
-    )
+    try:
+        completed = subprocess.run(
+            args,
+            text=True,
+            capture_output=True,
+            env=run_env,
+            input=input_text,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        fail(f"command timed out after {timeout} seconds: {args!r}")
     return completed.returncode, completed.stdout, completed.stderr
 
 def run_bytes(args, extra_env=None):
@@ -544,6 +549,99 @@ if (
     )
 ):
     fail(f"agent readiness failure was not propagated: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+transient_probe_domain = isolated_root / "agent-transient-probe"
+transient_probe_domain.mkdir()
+rc, stdout, stderr = run(scoped(["domain", "create"], transient_probe_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"agent-transient-probe domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+transient_probe_socket = socket_path_for(registered_domain_id(transient_probe_domain))
+transient_probe_socket.parent.mkdir(parents=True, exist_ok=True)
+transient_probe_server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+transient_probe_server.bind(str(transient_probe_socket))
+transient_probe_server.listen(0)
+transient_probe_identity = transient_probe_socket.stat()
+transient_probe_filler = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+transient_probe_filler.setblocking(False)
+if transient_probe_filler.connect_ex(str(transient_probe_socket)) != 0:
+    fail("could not fill the fake agent listener backlog")
+transient_probe_confirmation = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+transient_probe_confirmation.setblocking(False)
+confirmation_status = transient_probe_confirmation.connect_ex(str(transient_probe_socket))
+transient_probe_confirmation.close()
+if confirmation_status not in (errno.EAGAIN, errno.EWOULDBLOCK):
+    fail(f"fake agent listener backlog did not report a transient error: {confirmation_status}")
+transient_probe_before = test_runtime_agent_pids()
+rc, stdout, stderr = run(
+    scoped(["unlock", "--volatile"], transient_probe_domain),
+    {"SECDAT_MASTER_KEY": "agent-transient-probe-key"},
+    timeout=3,
+)
+if (
+    rc == 0
+    or stdout != ""
+    or stderr != (
+        f"resolved domain: {transient_probe_domain}\n"
+        "failed to start session agent\n"
+    )
+):
+    fail(f"transient agent probe did not fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+transient_probe_after = test_runtime_agent_pids()
+if transient_probe_after != transient_probe_before:
+    fail(
+        "transient agent probe spawned or removed an agent: "
+        f"before={sorted(transient_probe_before)} after={sorted(transient_probe_after)}"
+    )
+current_transient_identity = transient_probe_socket.stat()
+if (
+    current_transient_identity.st_dev != transient_probe_identity.st_dev
+    or current_transient_identity.st_ino != transient_probe_identity.st_ino
+):
+    fail("transient agent probe replaced the live listener path")
+transient_probe_liveness = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+transient_probe_filler.close()
+queued_client, _ = transient_probe_server.accept()
+queued_client.close()
+transient_probe_liveness.connect(str(transient_probe_socket))
+accepted_liveness, _ = transient_probe_server.accept()
+accepted_liveness.close()
+transient_probe_liveness.close()
+transient_probe_server.close()
+transient_probe_socket.unlink()
+
+stale_probe_domain = isolated_root / "agent-stale-probe"
+stale_probe_domain.mkdir()
+rc, stdout, stderr = run(scoped(["domain", "create"], stale_probe_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"agent-stale-probe domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+stale_probe_socket = socket_path_for(registered_domain_id(stale_probe_domain))
+stale_probe_server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+stale_probe_server.bind(str(stale_probe_socket))
+stale_probe_server.close()
+stale_probe_before = test_runtime_agent_pids()
+rc, stdout, stderr = run(
+    scoped(["unlock", "--volatile"], stale_probe_domain),
+    {"SECDAT_MASTER_KEY": "agent-stale-probe-key"},
+)
+if (
+    rc != 0
+    or stdout != "volatile session unlocked from environment\n"
+    or stderr != f"resolved domain: {stale_probe_domain}\n"
+):
+    fail(f"stale agent socket replacement failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+stale_probe_after = test_runtime_agent_pids()
+stale_probe_new = stale_probe_after - stale_probe_before
+if len(stale_probe_new) != 1:
+    fail(
+        "stale agent socket replacement did not create exactly one agent: "
+        f"before={sorted(stale_probe_before)} after={sorted(stale_probe_after)}"
+    )
+if agent_caps(stale_probe_socket)[2] not in stale_probe_new:
+    fail("stale agent socket replacement did not expose the new agent")
+rc, stdout, stderr = run(scoped(["lock"], stale_probe_domain))
+if rc != 0 or stdout != "session locked\n":
+    fail(f"stale agent socket cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+wait_for_test_runtime_agent_pids(stale_probe_before, "stale agent socket cleanup")
 
 startup_race_domain = isolated_root / "agent-startup-race"
 startup_race_domain.mkdir()

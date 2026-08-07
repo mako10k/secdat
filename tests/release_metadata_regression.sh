@@ -70,8 +70,30 @@ if grep -Fq 'Requires.private:' "$source_root/libsecdat.pc.in"; then
 fi
 
 release_workflow="$source_root/docs/release-workflow.md"
+grep -Fq '## Release candidate review and validation receipts' "$release_workflow" ||
+    fail "release workflow does not define the receipt-driven candidate pipeline"
+grep -Fq "candidate_commit=\$(git rev-parse --verify 'HEAD^{commit}')" "$release_workflow" ||
+    fail "release workflow does not freeze the candidate commit"
+grep -Fq "candidate_tree=\$(git rev-parse --verify 'HEAD^{tree}')" "$release_workflow" ||
+    fail "release workflow does not freeze the candidate tree"
+grep -Fq 'must not run or rerun full' "$release_workflow" ||
+    fail "release workflow does not keep static review separate from full validation"
+grep -Fq 'does not rerun a full gate merely to reproduce' "$release_workflow" ||
+    fail "release workflow does not require final review to consume valid receipts"
+grep -Fq 'Do not overlap full build, check,' "$release_workflow" ||
+    fail "release workflow allows full gates to overlap in one worktree"
+grep -Fq 'issue #217 exposed a shared-only bug' "$release_workflow" ||
+    fail "release workflow does not preserve the shared-only package-shape finding"
+grep -Fq 'bind all three receipts to the same candidate' "$release_workflow" ||
+    fail "release workflow does not bind all distcheck profiles to one candidate"
+grep -Fq 'do not restart the' "$release_workflow" ||
+    fail "release workflow does not prevent per-profile review/matrix restarts"
+test "$(grep -Fc 'make distcheck DISTCHECK_CONFIGURE_FLAGS' "$release_workflow")" -eq 3 ||
+    fail "release workflow does not define exactly the required distcheck profiles"
 grep -Fq 'make distcheck DISTCHECK_CONFIGURE_FLAGS=--enable-fuse' "$release_workflow" ||
     fail "release workflow is missing the default FUSE distcheck"
+grep -Fq "make distcheck DISTCHECK_CONFIGURE_FLAGS='--enable-fuse --enable-shared --disable-static'" "$release_workflow" ||
+    fail "release workflow is missing the shared-only FUSE distcheck"
 grep -Fq "make distcheck DISTCHECK_CONFIGURE_FLAGS='--enable-fuse --disable-shared --enable-static'" "$release_workflow" ||
     fail "release workflow is missing the static-only FUSE distcheck"
 grep -Fq 'go build -tags secdat_static' "$release_workflow" ||
@@ -90,6 +112,27 @@ grep -Fq 'test "$remote_tag_commit" = "$release_commit"' "$release_workflow" ||
     fail "release workflow does not preserve peeled tag commit identity"
 grep -Fq 'git remote get-url --push --all origin' "$release_workflow" ||
     fail "release workflow does not freeze the origin push destination"
+grep -Fq 'test -n "${candidate_commit:-}"' "$release_workflow" ||
+    fail "release workflow does not require the validated candidate commit as input"
+grep -Fq 'test -n "${candidate_tree:-}"' "$release_workflow" ||
+    fail "release workflow does not require the validated candidate tree as input"
+test "$(grep -Fc 'test -z "$(git status --porcelain --untracked-files=normal)"' "$release_workflow")" -eq 2 ||
+    fail "release workflow does not recheck a clean worktree before publication"
+grep -Fq 'test "$release_commit" = "$candidate_commit"' "$release_workflow" ||
+    fail "release workflow does not bind publication to the validated candidate commit"
+grep -Fq 'test "$release_tree" = "$candidate_tree"' "$release_workflow" ||
+    fail "release workflow does not bind publication to the validated candidate tree"
+grep -Fq 'git push "$origin_push_url" HEAD:refs/heads/main' "$release_workflow" ||
+    fail "release workflow does not push main to the frozen push destination"
+grep -Fq 'git push "$origin_push_url" "${tag_ref}:${tag_ref}"' "$release_workflow" ||
+    fail "release workflow does not push the tag to the frozen push destination"
+grep -Fq 'git ls-remote --exit-code "$origin_push_url" refs/heads/main' "$release_workflow" ||
+    fail "release workflow does not read main back from the frozen push destination"
+test "$(grep -Fc 'git ls-remote --exit-code "$origin_push_url"' "$release_workflow")" -eq 2 ||
+    fail "release workflow does not read both main and release refs from the frozen push destination"
+if grep -Eq 'git push origin|git ls-remote --exit-code origin' "$release_workflow"; then
+    fail "release workflow still writes to or reads back from an unfrozen remote name"
+fi
 grep -Fq 'repos/$release_repo/releases/tags/$release_tag' "$release_workflow" ||
     fail "release preflight is not bound to the frozen GitHub repository"
 test "$(grep -Fc -- '--repo "$release_repo_ref"' "$release_workflow")" -eq 2 ||
