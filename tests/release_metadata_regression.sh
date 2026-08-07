@@ -80,6 +80,14 @@ grep -Fq 'main_push_status=$?' "$release_workflow" ||
     fail "release workflow does not capture an ambiguous main push result"
 grep -Fq 'tag_push_status=$?' "$release_workflow" ||
     fail "release workflow does not capture an ambiguous tag push result"
+grep -Fq 'verify_remote_release_refs()' "$release_workflow" ||
+    fail "release workflow does not centralize exact release ref verification"
+test "$(grep -Ec '^verify_remote_release_refs$' "$release_workflow")" -eq 2 ||
+    fail "release refs are not verified after both tag push and Release creation"
+grep -Fq 'test "$remote_tag_object" = "$local_tag_object"' "$release_workflow" ||
+    fail "release workflow does not preserve annotated tag object identity"
+grep -Fq 'test "$remote_tag_commit" = "$release_commit"' "$release_workflow" ||
+    fail "release workflow does not preserve peeled tag commit identity"
 grep -Fq 'git remote get-url --push --all origin' "$release_workflow" ||
     fail "release workflow does not freeze the origin push destination"
 grep -Fq 'repos/$release_repo/releases/tags/$release_tag' "$release_workflow" ||
@@ -94,6 +102,17 @@ grep -Fq -- '--rawfile body "$frozen_release_notes"' "$release_workflow" ||
     fail "GitHub Release readback does not use commit-bound notes"
 grep -Fq 'pkg-config --static --cflags --libs libsecdat' "$release_workflow" ||
     fail "release workflow is missing the static-only C consumer command"
+if grep -Fq '"$OLDPWD/configure"' "$release_workflow"; then
+    fail "static release validation reuses a possibly configured source tree"
+fi
+grep -Fxq 'make dist' "$release_workflow" ||
+    fail "static release validation does not create a clean source archive"
+grep -Fq 'tar -xzf "$static_archive" -C "$static_source_parent"' \
+    "$release_workflow" ||
+    fail "static release validation does not extract a clean source tree"
+grep -Fq '"$static_source/configure" --disable-shared --enable-static' \
+    "$release_workflow" ||
+    fail "static release validation does not use the extracted source tree"
 grep -Fq 'PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR="$static_pc_dir" pkg-config "$@"' \
     "$release_workflow" ||
     fail "static release validation can fall back to host pkg-config metadata"

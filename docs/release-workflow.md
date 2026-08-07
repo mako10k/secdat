@@ -94,30 +94,32 @@ test "$(git rev-parse --verify "${tag_ref}^{commit}")" = "$release_commit"
 test "$(git for-each-ref --format='%(contents:subject)' "$tag_ref")" = \
   "$release_subject"
 
+verify_remote_release_refs() {
+  set +e
+  remote_release_refs=$(git ls-remote --exit-code origin \
+    refs/heads/main "$tag_ref" "${tag_ref}^{}")
+  remote_release_readback_status=$?
+  set -e
+  test "$remote_release_readback_status" -eq 0
+  remote_main=$(printf '%s\n' "$remote_release_refs" |
+    awk '$2 == "refs/heads/main" { print $1 }')
+  remote_tag_object=$(printf '%s\n' "$remote_release_refs" |
+    awk -v ref="$tag_ref" '$2 == ref { print $1 }')
+  remote_tag_commit=$(printf '%s\n' "$remote_release_refs" |
+    awk -v ref="${tag_ref}^{}" '$2 == ref { print $1 }')
+  test "$remote_main" = "$release_commit"
+  test "$remote_tag_object" = "$local_tag_object"
+  test "$remote_tag_commit" = "$release_commit"
+}
+
 set +e
 git push origin "${tag_ref}:${tag_ref}"
 tag_push_status=$?
 set -e
-set +e
-remote_tag_refs=$(git ls-remote --exit-code origin \
-  "$tag_ref" "${tag_ref}^{}")
-tag_readback_status=$?
-set -e
-test "$tag_readback_status" -eq 0
-remote_tag_object=$(printf '%s\n' "$remote_tag_refs" |
-  awk -v ref="$tag_ref" '$2 == ref { print $1 }')
-remote_tag_commit=$(printf '%s\n' "$remote_tag_refs" |
-  awk -v ref="${tag_ref}^{}" '$2 == ref { print $1 }')
-test "$remote_tag_object" = "$local_tag_object"
-test "$remote_tag_commit" = "$release_commit"
+verify_remote_release_refs
 if test "$tag_push_status" -ne 0; then
   echo "tag push returned $tag_push_status; exact readback accepted" >&2
 fi
-
-# Ensure main did not move while the tag was being published.
-remote_main=$(git ls-remote --exit-code origin refs/heads/main |
-  awk '$2 == "refs/heads/main" { print $1 }')
-test "$remote_main" = "$release_commit"
 ```
 
 If the tag should point at a release-specific commit, create and verify that commit before tagging.
@@ -202,14 +204,9 @@ if test "$release_create_status" -ne 0; then
   echo "create returned $release_create_status; exact readback accepted" >&2
 fi
 
-# Reconfirm that publication did not move either release ref.
-remote_main=$(git ls-remote --exit-code origin refs/heads/main |
-  awk '$2 == "refs/heads/main" { print $1 }')
-remote_tag_commit=$(git ls-remote --exit-code origin \
-  "refs/tags/$release_tag^{}" |
-  awk -v ref="refs/tags/$release_tag^{}" '$2 == ref { print $1 }')
-test "$remote_main" = "$release_commit"
-test "$remote_tag_commit" = "$release_commit"
+# Reconfirm both the annotated tag object and its peeled commit after
+# publication, along with main. A replacement annotation is not equivalent.
+verify_remote_release_refs
 ```
 
 If preflight is ambiguous, create readback is absent or mismatched, or any
@@ -239,11 +236,21 @@ use the private dependency closure exposed by `pkg-config --static` and compile
 against an isolated prefix:
 
 ```sh
+static_version=$(sed -n \
+  's/^AC_INIT(\[secdat\], \[\([^]]*\)\].*/\1/p' configure.ac)
+test -n "$static_version"
+make dist
+static_archive="$PWD/secdat-$static_version.tar.gz"
+test -f "$static_archive"
+static_source_parent=$(mktemp -d)
+tar -xzf "$static_archive" -C "$static_source_parent"
+static_source="$static_source_parent/secdat-$static_version"
+test -x "$static_source/configure"
 static_prefix=$(mktemp -d)
 static_build=$(mktemp -d)
 (
   cd "$static_build"
-  "$OLDPWD/configure" --disable-shared --enable-static \
+  "$static_source/configure" --disable-shared --enable-static \
     --prefix="$static_prefix"
   make
   make install

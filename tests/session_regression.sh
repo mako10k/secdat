@@ -135,6 +135,32 @@ def agent_caps(socket_path):
         fail(f"invalid agent CAPS response: {response!r}")
     return tuple(int(value) for value in match.groups())
 
+def test_runtime_agent_pids():
+    expected_runtime = os.fsencode(f"XDG_RUNTIME_DIR={env['XDG_RUNTIME_DIR']}")
+    result = set()
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            if (entry / "comm").read_text().strip() != "secdat":
+                continue
+            process_env = (entry / "environ").read_bytes().split(b"\0")
+        except (FileNotFoundError, PermissionError, ProcessLookupError):
+            continue
+        if expected_runtime in process_env:
+            result.add(int(entry.name))
+    return result
+
+def wait_for_test_runtime_agent_pids(expected, context):
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        actual = test_runtime_agent_pids()
+        if actual == expected:
+            return actual
+        time.sleep(0.02)
+    actual = test_runtime_agent_pids()
+    fail(f"{context}: agent pids are {sorted(actual)}, expected {sorted(expected)}")
+
 def begin_agent_handover(socket_path):
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
@@ -518,6 +544,110 @@ if (
     )
 ):
     fail(f"agent readiness failure was not propagated: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+startup_race_domain = isolated_root / "agent-startup-race"
+startup_race_domain.mkdir()
+rc, stdout, stderr = run(scoped(["domain", "create"], startup_race_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"agent-startup-race domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+startup_race_before = test_runtime_agent_pids()
+startup_race_first = run_background(
+    scoped(["unlock", "--volatile"], startup_race_domain),
+    {
+        "SECDAT_MASTER_KEY": "agent-startup-race-key",
+        "SECDAT_TEST_AGENT_READY_DELAY_MILLISECONDS": "750",
+    },
+)
+time.sleep(0.1)
+startup_race_second = run_background(
+    scoped(["unlock", "--volatile"], startup_race_domain),
+    {"SECDAT_MASTER_KEY": "agent-startup-race-key"},
+)
+first_stdout, first_stderr = startup_race_first.communicate(timeout=10)
+second_stdout, second_stderr = startup_race_second.communicate(timeout=10)
+expected_startup_stdout = "volatile session unlocked from environment\n"
+expected_startup_stderr = f"resolved domain: {startup_race_domain}\n"
+if (
+    startup_race_first.returncode != 0
+    or first_stdout != expected_startup_stdout
+    or first_stderr != expected_startup_stderr
+):
+    fail(
+        "first concurrent agent startup failed: "
+        f"rc={startup_race_first.returncode} stdout={first_stdout!r} stderr={first_stderr!r}"
+    )
+if (
+    startup_race_second.returncode != 0
+    or second_stdout != expected_startup_stdout
+    or second_stderr != expected_startup_stderr
+):
+    fail(
+        "second concurrent agent startup failed: "
+        f"rc={startup_race_second.returncode} stdout={second_stdout!r} stderr={second_stderr!r}"
+    )
+startup_race_after = test_runtime_agent_pids()
+startup_race_new = startup_race_after - startup_race_before
+if len(startup_race_new) != 1:
+    fail(
+        "concurrent startup did not create exactly one agent: "
+        f"before={sorted(startup_race_before)} after={sorted(startup_race_after)}"
+    )
+startup_race_socket = socket_path_for(registered_domain_id(startup_race_domain))
+if agent_caps(startup_race_socket)[2] not in startup_race_new:
+    fail("concurrent startup socket did not resolve to the sole new agent")
+rc, stdout, stderr = run(scoped(["lock"], startup_race_domain))
+if rc != 0 or stdout != "session locked\n":
+    fail(f"concurrent startup lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+wait_for_test_runtime_agent_pids(startup_race_before, "concurrent startup cleanup")
+
+timeout_retry_domain = isolated_root / "agent-timeout-retry"
+timeout_retry_domain.mkdir()
+rc, stdout, stderr = run(scoped(["domain", "create"], timeout_retry_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"agent-timeout-retry domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+timeout_retry_before = test_runtime_agent_pids()
+rc, stdout, stderr = run(
+    scoped(["unlock", "--volatile"], timeout_retry_domain),
+    {
+        "SECDAT_MASTER_KEY": "agent-timeout-retry-key",
+        "SECDAT_TEST_AGENT_READY_DELAY_MILLISECONDS": "5500",
+    },
+)
+if (
+    rc == 0
+    or stdout != ""
+    or stderr != (
+        f"resolved domain: {timeout_retry_domain}\n"
+        "timed out waiting for session agent readiness\n"
+    )
+):
+    fail(f"delayed startup did not time out cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["unlock", "--volatile"], timeout_retry_domain),
+    {"SECDAT_MASTER_KEY": "agent-timeout-retry-key"},
+)
+if (
+    rc != 0
+    or stdout != "volatile session unlocked from environment\n"
+    or stderr != f"resolved domain: {timeout_retry_domain}\n"
+):
+    fail(f"startup retry failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+timeout_retry_after = test_runtime_agent_pids()
+timeout_retry_new = timeout_retry_after - timeout_retry_before
+if len(timeout_retry_new) != 1:
+    fail(
+        "timeout retry did not replace the delayed worker exactly once: "
+        f"before={sorted(timeout_retry_before)} after={sorted(timeout_retry_after)}"
+    )
+timeout_retry_socket = socket_path_for(registered_domain_id(timeout_retry_domain))
+timeout_retry_pid = agent_caps(timeout_retry_socket)[2]
+time.sleep(0.25)
+if agent_caps(timeout_retry_socket)[2] != timeout_retry_pid or timeout_retry_pid not in timeout_retry_new:
+    fail("delayed worker cleanup removed or replaced the successful retry socket")
+rc, stdout, stderr = run(scoped(["lock"], timeout_retry_domain))
+if rc != 0 or stdout != "session locked\n":
+    fail(f"timeout retry lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+wait_for_test_runtime_agent_pids(timeout_retry_before, "timeout retry cleanup")
 
 invalid_utf8_domain_bytes = os.fsencode(isolated_root) + b"/invalid-json-\xff"
 os.mkdir(invalid_utf8_domain_bytes)
