@@ -6,7 +6,34 @@ dist_man1_MANS += docs/secdat-fuse.1
 endif
 dist_noinst_DATA = completions/secdat.bash
 bashcompletiondir = $(datadir)/bash-completion/completions
-EXTRA_DIST = completions/secdat.bash contrib/secdat-askpass docs/secdat-fuse.1 docs/release-workflow.md docs/adr/0006-uuid-stable-mv-and-identity-linked-masks.md plans/adr-0006-implementation.pert docs/release-notes/v0.2.1.md docs/release-notes/v0.2.2.md docs/release-notes/v0.3.0.md docs/release-notes/v0.4.0.md docs/release-notes/v0.4.1.md docs/release-notes/v0.4.2.md tests/ephemeral_contract_matrix.md tests/build_id_regression.sh tests/keyref_regression.sh tests/session_regression.sh tests/sdk_regression.sh tests/e2e_regression.sh tests/save_load_regression.sh tests/export_regression.sh tests/lower_level_regression.sh tests/completion_regression.sh tests/install_regression.sh tests/attribute_regression.sh tests/metadata_relation_regression.sh tests/fsck_regression.sh tests/v2_fsck_regression.sh tests/mask_identity_regression.sh tests/mask_transaction_regression.sh tests/mask_mutation_regression.sh tests/migrate_regression.sh tests/inject_regression.sh tests/redaction_regression.sh tests/fuse_regression.sh
+binding_dist_files = \
+	bindings/README.md \
+	bindings/go/README.md \
+	bindings/go/go.mod \
+	bindings/go/secdat/pkg_config_shared.go \
+	bindings/go/secdat/pkg_config_static.go \
+	bindings/go/secdat/secdat.go \
+	bindings/node/README.md \
+	bindings/node/binding.gyp \
+	bindings/node/index.js \
+	bindings/node/package-lock.json \
+	bindings/node/package.json \
+	bindings/node/src/addon.cc \
+	bindings/python/README.md \
+	bindings/python/pyproject.toml \
+	bindings/python/secdat_sdk.py \
+	bindings/rust/Cargo.lock \
+	bindings/rust/Cargo.toml \
+	bindings/rust/README.md \
+	bindings/rust/build.rs \
+	bindings/rust/src/lib.rs
+EXTRA_DIST = .gitignore $(binding_dist_files) completions/secdat.bash contrib/secdat-askpass docs/secdat-fuse.1 docs/release-workflow.md docs/adr/0006-uuid-stable-mv-and-identity-linked-masks.md plans/adr-0006-implementation.pert docs/release-notes/v0.2.1.md docs/release-notes/v0.2.2.md docs/release-notes/v0.3.0.md docs/release-notes/v0.4.0.md docs/release-notes/v0.4.1.md docs/release-notes/v0.4.2.md docs/release-notes/v0.5.0.md tests/ephemeral_contract_matrix.md tests/gettext_catalog_regression.sh tests/release_metadata_regression.sh tests/libtool_relink_regression.sh tests/abi_regression.sh tests/build_id_regression.sh tests/keyref_regression.sh tests/session_agent_cleanup.py tests/session_test_cleanup.sh tests/session_regression.sh tests/sdk_regression.sh tests/e2e_regression.sh tests/save_load_regression.sh tests/export_regression.sh tests/lower_level_regression.sh tests/completion_regression.sh tests/install_regression.sh tests/attribute_regression.sh tests/metadata_relation_regression.sh tests/fsck_regression.sh tests/v2_fsck_regression.sh tests/mask_identity_regression.sh tests/mask_transaction_regression.sh tests/mask_mutation_regression.sh tests/migrate_regression.sh tests/inject_regression.sh tests/redaction_regression.sh tests/fuse_regression.sh
+
+if BUILD_SHARED_LIBSECDAT
+sdk_shared_library = $(abs_top_builddir)/src/.libs/libsecdat.so
+else
+sdk_shared_library =
+endif
 
 install-data-local:
 	$(MKDIR_P) "$(DESTDIR)$(bashcompletiondir)"
@@ -58,6 +85,14 @@ all-local:
 
 check-local:
 	$(MAKE) all-local
+	bash $(srcdir)/tests/gettext_catalog_regression.sh "$(abs_top_srcdir)"
+	bash $(srcdir)/tests/release_metadata_regression.sh "$(abs_top_srcdir)"
+	bash $(srcdir)/tests/libtool_relink_regression.sh "$(abs_top_builddir)"
+if BUILD_SHARED_LIBSECDAT
+	bash $(srcdir)/tests/abi_regression.sh "$(abs_top_builddir)/src/.libs/libsecdat.so"
+else
+	@printf 'SKIP ABI regression: shared libraries disabled\n'
+endif
 	bash $(srcdir)/tests/build_id_regression.sh "$(abs_top_srcdir)"
 	bash $(srcdir)/tests/lower_level_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/keyref_regression.sh "$(abs_top_builddir)/src/secdat"
@@ -71,7 +106,7 @@ check-local:
 	bash $(srcdir)/tests/migrate_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/session_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/install_regression.sh "$(abs_top_builddir)" "$(abs_top_srcdir)"
-	bash $(srcdir)/tests/sdk_regression.sh "$(abs_top_builddir)/src/secdat"
+	bash $(srcdir)/tests/sdk_regression.sh "$(abs_top_builddir)/src/secdat" "$(sdk_shared_library)"
 	bash $(srcdir)/tests/redaction_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/completion_regression.sh "$(abs_top_builddir)/src/secdat"
 	bash $(srcdir)/tests/e2e_regression.sh "$(abs_top_builddir)/src/secdat"

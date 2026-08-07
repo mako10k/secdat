@@ -60,7 +60,9 @@
 #define SECDAT_WRAP_PBKDF2_ITERATIONS 200000
 #define SECDAT_WRAP_PBKDF2_MIN_ITERATIONS SECDAT_WRAP_PBKDF2_ITERATIONS
 #define SECDAT_WRAP_PBKDF2_MAX_ITERATIONS 10000000
-#define SECDAT_AGENT_CONNECT_RETRIES 50
+#define SECDAT_AGENT_READY_TIMEOUT_MILLISECONDS 5000
+#define SECDAT_TEST_AGENT_READY_DELAY_ENV "SECDAT_TEST_AGENT_READY_DELAY_MILLISECONDS"
+#define SECDAT_TEST_AGENT_READY_FAILURE_ENV "SECDAT_TEST_AGENT_READY_FAILURE"
 #define SECDAT_SESSION_IDLE_ENV "SECDAT_SESSION_IDLE_SECONDS"
 #define SECDAT_WRAP_PBKDF2_ITERATIONS_ENV "SECDAT_MASTER_KEY_PBKDF2_ITERATIONS"
 #define SECDAT_GET_ON_DEMAND_UNLOCK_ENV "SECDAT_GET_ON_DEMAND_UNLOCK"
@@ -5417,6 +5419,167 @@ static int64_t secdat_handover_deadline(void)
         + SECDAT_AGENT_HANDOVER_TIMEOUT_MILLISECONDS;
 }
 
+static int64_t secdat_agent_ready_deadline(void)
+{
+    struct timespec now;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        return -1;
+    }
+    return (int64_t)now.tv_sec * 1000
+        + now.tv_nsec / 1000000
+        + SECDAT_AGENT_READY_TIMEOUT_MILLISECONDS;
+}
+
+static int secdat_session_agent_start_lock(const char *socket_path)
+{
+    char lock_path[PATH_MAX];
+    struct stat status;
+    struct timespec delay = {0, 10000000L};
+    int64_t deadline = secdat_agent_ready_deadline();
+    int descriptor;
+
+    if (snprintf(lock_path, sizeof(lock_path), "%s.startup.lock", socket_path)
+        >= (int)sizeof(lock_path)) {
+        fprintf(stderr, _("path is too long\n"));
+        return -1;
+    }
+    descriptor = open(
+        lock_path,
+        O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW,
+        0600
+    );
+    if (descriptor < 0
+        || fstat(descriptor, &status) != 0
+        || !S_ISREG(status.st_mode)
+        || (status.st_mode & 077) != 0) {
+        if (descriptor >= 0) {
+            close(descriptor);
+        }
+        fprintf(stderr, _("failed to start session agent\n"));
+        return -1;
+    }
+    for (;;) {
+        struct timespec now;
+
+        if (flock(descriptor, LOCK_EX | LOCK_NB) == 0) {
+            return descriptor;
+        }
+        if ((errno != EWOULDBLOCK && errno != EAGAIN)
+            || deadline < 0
+            || clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+            close(descriptor);
+            fprintf(stderr, _("failed to start session agent\n"));
+            return -1;
+        }
+        if ((int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000 >= deadline) {
+            close(descriptor);
+            fprintf(stderr, _("timed out waiting for session agent readiness\n"));
+            return -1;
+        }
+        while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {
+        }
+        delay.tv_sec = 0;
+        delay.tv_nsec = 10000000L;
+    }
+}
+
+enum secdat_session_agent_probe_result {
+    SECDAT_SESSION_AGENT_PROBE_CONNECTED = 0,
+    SECDAT_SESSION_AGENT_PROBE_MISSING,
+    SECDAT_SESSION_AGENT_PROBE_STALE,
+    SECDAT_SESSION_AGENT_PROBE_INDETERMINATE
+};
+
+static int secdat_connect_unix_socket(
+    int descriptor,
+    const struct sockaddr_un *address
+)
+{
+    int descriptor_flags;
+    int connect_errno;
+    int connect_result;
+
+    descriptor_flags = fcntl(descriptor, F_GETFL, 0);
+    if (descriptor_flags < 0
+        || fcntl(descriptor, F_SETFL, descriptor_flags | O_NONBLOCK) != 0) {
+        return -1;
+    }
+    connect_result = connect(
+        descriptor,
+        (const struct sockaddr *)address,
+        sizeof(*address)
+    );
+    connect_errno = errno;
+    if (fcntl(descriptor, F_SETFL, descriptor_flags) != 0) {
+        return -1;
+    }
+    if (connect_result != 0) {
+        errno = connect_errno;
+        return -1;
+    }
+    return 0;
+}
+
+static enum secdat_session_agent_probe_result secdat_session_agent_probe_path(
+    const char *socket_path,
+    int *connected_fd,
+    struct stat *stale_identity
+)
+{
+    int descriptor;
+    int connect_errno;
+    struct sockaddr_un address;
+    struct stat before_identity;
+    struct stat after_identity;
+
+    *connected_fd = -1;
+
+    if (strlen(socket_path) >= sizeof(address.sun_path)) {
+        return SECDAT_SESSION_AGENT_PROBE_INDETERMINATE;
+    }
+    if (lstat(socket_path, &before_identity) != 0) {
+        if (errno == ENOENT) {
+            return SECDAT_SESSION_AGENT_PROBE_MISSING;
+        }
+        return SECDAT_SESSION_AGENT_PROBE_INDETERMINATE;
+    }
+    if (!S_ISSOCK(before_identity.st_mode)) {
+        *stale_identity = before_identity;
+        return SECDAT_SESSION_AGENT_PROBE_STALE;
+    }
+    descriptor = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (descriptor < 0) {
+        return SECDAT_SESSION_AGENT_PROBE_INDETERMINATE;
+    }
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    strcpy(address.sun_path, socket_path);
+    if (secdat_connect_unix_socket(descriptor, &address) != 0) {
+        connect_errno = errno;
+    } else {
+        *connected_fd = descriptor;
+        return SECDAT_SESSION_AGENT_PROBE_CONNECTED;
+    }
+    close(descriptor);
+    if (lstat(socket_path, &after_identity) != 0) {
+        if (connect_errno == ENOENT && errno == ENOENT) {
+            return SECDAT_SESSION_AGENT_PROBE_MISSING;
+        }
+        return SECDAT_SESSION_AGENT_PROBE_INDETERMINATE;
+    }
+    if (!S_ISSOCK(after_identity.st_mode)
+        || after_identity.st_dev != before_identity.st_dev
+        || after_identity.st_ino != before_identity.st_ino) {
+        return SECDAT_SESSION_AGENT_PROBE_INDETERMINATE;
+    }
+    if (connect_errno == ECONNREFUSED) {
+        *stale_identity = after_identity;
+        return SECDAT_SESSION_AGENT_PROBE_STALE;
+    }
+    return SECDAT_SESSION_AGENT_PROBE_INDETERMINATE;
+}
+
 static int secdat_fd_wait_until(int fd, short events, int64_t deadline)
 {
     struct pollfd descriptor;
@@ -6436,6 +6599,21 @@ static int secdat_session_agent_handle_client(
     return 0;
 }
 
+static int secdat_session_agent_unlink_owned_path(
+    const char *socket_path,
+    const struct stat *socket_identity
+)
+{
+    struct stat current_identity;
+
+    if (lstat(socket_path, &current_identity) == 0
+        && current_identity.st_dev == socket_identity->st_dev
+        && current_identity.st_ino == socket_identity->st_ino) {
+        return unlink(socket_path) == 0 ? 0 : 1;
+    }
+    return 1;
+}
+
 static int secdat_run_session_agent_loop(
     int server_fd,
     const char *socket_path,
@@ -6446,8 +6624,14 @@ static int secdat_run_session_agent_loop(
     int should_exit;
     int preserve_request;
     int preserve_socket = 0;
+    struct stat socket_identity;
+    int socket_identity_valid = 0;
     struct secdat_session_record record = *initial_record;
 
+    if (lstat(socket_path, &socket_identity) == 0
+        && S_ISSOCK(socket_identity.st_mode)) {
+        socket_identity_valid = 1;
+    }
     memset(initial_record, 0, sizeof(*initial_record));
     for (;;) {
         client_fd = accept(server_fd, NULL, NULL);
@@ -6474,20 +6658,66 @@ static int secdat_run_session_agent_loop(
 
     secdat_session_record_reset(&record);
     close(server_fd);
-    if (!preserve_socket) {
-        unlink(socket_path);
+    if (!preserve_socket && socket_identity_valid) {
+        secdat_session_agent_unlink_owned_path(socket_path, &socket_identity);
     }
     return 0;
 }
 
-static int secdat_run_session_agent(const char *socket_path)
+static int secdat_agent_ready_notify(int ready_fd, unsigned char status)
+{
+    ssize_t written;
+
+    for (;;) {
+        written = send(ready_fd, &status, 1, MSG_NOSIGNAL);
+        if (written == 1) {
+            close(ready_fd);
+            return 0;
+        }
+        if (written < 0 && errno == EINTR) {
+            continue;
+        }
+        close(ready_fd);
+        return 1;
+    }
+}
+
+static void secdat_test_delay_agent_ready(void)
+{
+    const char *value = getenv(SECDAT_TEST_AGENT_READY_DELAY_ENV);
+    char *end = NULL;
+    unsigned long milliseconds;
+    struct timespec delay;
+
+    if (value == NULL || value[0] == '\0' || !isdigit((unsigned char)value[0])) {
+        return;
+    }
+    errno = 0;
+    milliseconds = strtoul(value, &end, 10);
+    if (errno != 0 || end == value || *end != '\0' || milliseconds > 60000UL) {
+        return;
+    }
+    delay.tv_sec = (time_t)(milliseconds / 1000UL);
+    delay.tv_nsec = (long)(milliseconds % 1000UL) * 1000000L;
+    while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {
+    }
+}
+
+static int secdat_run_session_agent(
+    const char *socket_path,
+    int ready_fd,
+    int startup_lock_fd
+)
 {
     int server_fd;
     struct sockaddr_un address;
+    struct stat socket_identity;
     struct secdat_session_record record = {0};
 
     server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (server_fd < 0) {
+        (void)secdat_agent_ready_notify(ready_fd, 'E');
+        close(startup_lock_fd);
         return 1;
     }
 
@@ -6495,23 +6725,50 @@ static int secdat_run_session_agent(const char *socket_path)
     address.sun_family = AF_UNIX;
     if (strlen(socket_path) >= sizeof(address.sun_path)) {
         close(server_fd);
+        (void)secdat_agent_ready_notify(ready_fd, 'E');
+        close(startup_lock_fd);
         fprintf(stderr, _("path is too long\n"));
         return 1;
     }
     strcpy(address.sun_path, socket_path);
 
-    unlink(socket_path);
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) != 0) {
         close(server_fd);
+        (void)secdat_agent_ready_notify(ready_fd, 'E');
+        close(startup_lock_fd);
         fprintf(stderr, _("failed to bind session agent socket\n"));
         return 1;
     }
-    if (listen(server_fd, 8) != 0) {
-        unlink(socket_path);
+    if (lstat(socket_path, &socket_identity) != 0
+        || !S_ISSOCK(socket_identity.st_mode)) {
         close(server_fd);
+        (void)secdat_agent_ready_notify(ready_fd, 'E');
+        close(startup_lock_fd);
+        return 1;
+    }
+    secdat_test_delay_agent_ready();
+    if (getenv(SECDAT_TEST_AGENT_READY_FAILURE_ENV) != NULL) {
+        secdat_session_agent_unlink_owned_path(socket_path, &socket_identity);
+        close(server_fd);
+        (void)secdat_agent_ready_notify(ready_fd, 'E');
+        close(startup_lock_fd);
+        return 1;
+    }
+    if (listen(server_fd, 8) != 0) {
+        secdat_session_agent_unlink_owned_path(socket_path, &socket_identity);
+        close(server_fd);
+        (void)secdat_agent_ready_notify(ready_fd, 'E');
+        close(startup_lock_fd);
         fprintf(stderr, _("failed to listen on session agent socket\n"));
         return 1;
     }
+    if (secdat_agent_ready_notify(ready_fd, 'R') != 0) {
+        secdat_session_agent_unlink_owned_path(socket_path, &socket_identity);
+        close(server_fd);
+        close(startup_lock_fd);
+        return 1;
+    }
+    close(startup_lock_fd);
     return secdat_run_session_agent_loop(server_fd, socket_path, &record);
 }
 
@@ -6519,9 +6776,16 @@ static int secdat_spawn_session_agent(const char *domain_id)
 {
     char runtime_dir[PATH_MAX];
     char socket_path[PATH_MAX];
+    int ready_sockets[2] = {-1, -1};
+    int startup_lock_fd;
+    int existing_fd;
+    enum secdat_session_agent_probe_result probe_result;
+    struct stat stale_identity;
     pid_t pid;
     int status;
-    int retry;
+    int64_t ready_deadline;
+    unsigned char ready_status;
+    ssize_t received;
 
     if (secdat_runtime_dir(runtime_dir, sizeof(runtime_dir)) != 0) {
         return 1;
@@ -6532,9 +6796,47 @@ static int secdat_spawn_session_agent(const char *domain_id)
     if (secdat_session_agent_path_for_domain(domain_id, socket_path, sizeof(socket_path)) != 0) {
         return 1;
     }
+    startup_lock_fd = secdat_session_agent_start_lock(socket_path);
+    if (startup_lock_fd < 0) {
+        return 1;
+    }
+    probe_result = secdat_session_agent_probe_path(
+        socket_path,
+        &existing_fd,
+        &stale_identity
+    );
+    if (probe_result == SECDAT_SESSION_AGENT_PROBE_CONNECTED) {
+        close(existing_fd);
+        (void)flock(startup_lock_fd, LOCK_UN);
+        close(startup_lock_fd);
+        return 0;
+    }
+    if (probe_result == SECDAT_SESSION_AGENT_PROBE_STALE
+        && secdat_session_agent_unlink_owned_path(
+            socket_path,
+            &stale_identity
+        ) != 0) {
+        probe_result = SECDAT_SESSION_AGENT_PROBE_INDETERMINATE;
+    }
+    if (probe_result == SECDAT_SESSION_AGENT_PROBE_INDETERMINATE) {
+        (void)flock(startup_lock_fd, LOCK_UN);
+        close(startup_lock_fd);
+        fprintf(stderr, _("failed to start session agent\n"));
+        return 1;
+    }
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, ready_sockets) != 0) {
+        (void)flock(startup_lock_fd, LOCK_UN);
+        close(startup_lock_fd);
+        fprintf(stderr, _("failed to start session agent\n"));
+        return 1;
+    }
 
     pid = fork();
     if (pid < 0) {
+        close(ready_sockets[0]);
+        close(ready_sockets[1]);
+        (void)flock(startup_lock_fd, LOCK_UN);
+        close(startup_lock_fd);
         fprintf(stderr, _("failed to start session agent\n"));
         return 1;
     }
@@ -6542,15 +6844,22 @@ static int secdat_spawn_session_agent(const char *domain_id)
         pid_t worker;
         int devnull;
 
+        close(ready_sockets[0]);
         if (setsid() < 0) {
+            (void)secdat_agent_ready_notify(ready_sockets[1], 'E');
+            close(startup_lock_fd);
             _exit(1);
         }
 
         worker = fork();
         if (worker < 0) {
+            (void)secdat_agent_ready_notify(ready_sockets[1], 'E');
+            close(startup_lock_fd);
             _exit(1);
         }
         if (worker > 0) {
+            close(ready_sockets[1]);
+            close(startup_lock_fd);
             _exit(0);
         }
 
@@ -6564,35 +6873,36 @@ static int secdat_spawn_session_agent(const char *domain_id)
             }
         }
 
-        _exit(secdat_run_session_agent(socket_path) == 0 ? 0 : 1);
+        _exit(secdat_run_session_agent(
+            socket_path,
+            ready_sockets[1],
+            startup_lock_fd
+        ) == 0 ? 0 : 1);
     }
 
+    close(ready_sockets[1]);
+    close(startup_lock_fd);
     if (waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        close(ready_sockets[0]);
         fprintf(stderr, _("failed to start session agent\n"));
         return 1;
     }
 
-    for (retry = 0; retry < SECDAT_AGENT_CONNECT_RETRIES; retry += 1) {
-        int fd;
-        struct sockaddr_un address;
-
-        fd = socket(AF_UNIX, SOCK_STREAM, 0);
-        if (fd < 0) {
-            break;
-        }
-        memset(&address, 0, sizeof(address));
-        address.sun_family = AF_UNIX;
-        strcpy(address.sun_path, socket_path);
-        if (connect(fd, (struct sockaddr *)&address, sizeof(address)) == 0) {
-            close(fd);
-            return 0;
-        }
-        close(fd);
-        usleep(10000);
+    ready_deadline = secdat_agent_ready_deadline();
+    if (secdat_fd_wait_until(ready_sockets[0], POLLIN, ready_deadline) != 0) {
+        close(ready_sockets[0]);
+        fprintf(stderr, _("timed out waiting for session agent readiness\n"));
+        return 1;
     }
-
-    fprintf(stderr, _("failed to connect to session agent\n"));
-    return 1;
+    do {
+        received = recv(ready_sockets[0], &ready_status, 1, 0);
+    } while (received < 0 && errno == EINTR);
+    close(ready_sockets[0]);
+    if (received != 1 || ready_status != 'R') {
+        fprintf(stderr, _("session agent failed before readiness\n"));
+        return 1;
+    }
+    return 0;
 }
 
 static const char *secdat_askpass_command(const char *explicit_askpass)
@@ -6921,14 +7231,11 @@ static int secdat_session_agent_connect_domain(const char *domain_id, int start_
     }
     strcpy(address.sun_path, socket_path);
 
-    if (connect(fd, (struct sockaddr *)&address, sizeof(address)) == 0) {
+    if (secdat_connect_unix_socket(fd, &address) == 0) {
         return fd;
     }
 
     close(fd);
-    if (errno == ECONNREFUSED || errno == ENOTSOCK) {
-        unlink(socket_path);
-    }
     if (!start_if_missing) {
         return -1;
     }
@@ -6946,7 +7253,7 @@ static int secdat_session_agent_connect_domain(const char *domain_id, int start_
         fprintf(stderr, _("path is too long\n"));
         return -1;
     }
-    if (connect(fd, (struct sockaddr *)&address, sizeof(address)) != 0) {
+    if (secdat_connect_unix_socket(fd, &address) != 0) {
         close(fd);
         fprintf(stderr, _("failed to connect to session agent\n"));
         return -1;

@@ -1,14 +1,20 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR secdat contributors
+# This file is distributed under the same license as the secdat package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: secdat 0.5.0\n"
 "Report-Msgid-Bugs-To: noreply@example.invalid\n"
 "POT-Creation-Date: 2026-08-07 17:33+0900\n"
-"PO-Revision-Date: 2026-04-13 00:00+0000\n"
-"Last-Translator: GitHub Copilot <noreply@example.invalid>\n"
-"Language-Team: ja\n"
-"Language: ja\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
 "MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Type: text/plain; charset=CHARSET\n"
 "Content-Transfer-Encoding: 8bit\n"
 
 #: src/cli.c:260
@@ -17,52 +23,51 @@ msgid ""
 "Note: a first operand that is not a known command is treated as a key for "
 "get\n"
 msgstr ""
-"注意: 既知のコマンドではない先頭 operand は get の key として扱われます\n"
 
 #: src/cli.c:261
 #, c-format
 msgid "Command candidates (if \"%s\" was meant as a command):\n"
-msgstr "\"%s\" がコマンドのつもりだった場合の候補:\n"
+msgstr ""
 
 #: src/cli.c:263
 #, c-format
 msgid "Command candidates:\n"
-msgstr "コマンド候補:\n"
+msgstr ""
 
 #: src/cli.c:294
 #, c-format
 msgid "Subcommand candidates:\n"
-msgstr "サブコマンド候補:\n"
+msgstr ""
 
 #: src/cli.c:690 src/cli.c:696
 #, c-format
 msgid "missing value for --dir\n"
-msgstr "--dir に値が必要です\n"
+msgstr ""
 
 #: src/cli.c:692 src/cli.c:698
 #, c-format
 msgid "missing value for --domain\n"
-msgstr "--domain に値が必要です\n"
+msgstr ""
 
 #: src/cli.c:694 src/cli.c:700
 #, c-format
 msgid "missing value for --store\n"
-msgstr "--store に値が必要です\n"
+msgstr ""
 
 #: src/cli.c:702 src/secdat-fuse.c:896
 #, c-format
 msgid "missing option value\n"
-msgstr "オプション値が不足しています\n"
+msgstr ""
 
 #: src/cli.c:706 src/secdat-fuse.c:900
 #, c-format
 msgid "unknown option: %s\n"
-msgstr "不明なオプションです: %s\n"
+msgstr ""
 
 #: src/cli.c:1621
 #, c-format
 msgid "  %s [options] subcommand ...\n"
-msgstr "  %s [オプション] サブコマンド ...\n"
+msgstr ""
 
 #: src/cli.c:1626
 #, c-format
@@ -70,40 +75,32 @@ msgid ""
 "\n"
 "Options:\n"
 msgstr ""
-"\n"
-"オプション:\n"
 
 #: src/cli.c:1627
 msgid ""
 "  -d, --dir DIR      set the base directory used for domain resolution\n"
-msgstr "  -d, --dir DIR      domain 解決に使う基準ディレクトリを指定します\n"
+msgstr ""
 
 #: src/cli.c:1628
 msgid ""
 "      --domain DIR   require one exact registered domain root instead of "
 "discovery\n"
 msgstr ""
-"      --domain DIR   ancestor 探索の代わりに登録済みの正確な domain root を必"
-"須にします\n"
 
 #: src/cli.c:1629
 msgid ""
 "  -s, --store STORE  select the store namespace inside the resolved domain\n"
 msgstr ""
-"  -s, --store STORE  解決された domain 内で使う store namespace を選択しま"
-"す\n"
 
 #: src/cli.c:1630
 msgid ""
 "  -h, --help         show global help, or combine with COMMAND or TOPIC for "
 "detailed help\n"
 msgstr ""
-"  -h, --help         全体 help を表示します。COMMAND または TOPIC と組み合わ"
-"せると詳細 help を表示します\n"
 
 #: src/cli.c:1631
 msgid "  -V, --version      print the secdat version\n"
-msgstr "  -V, --version      secdat のバージョンを表示します\n"
+msgstr ""
 
 #: src/cli.c:1665
 #, c-format
@@ -111,63 +108,61 @@ msgid ""
 "\n"
 "Help:\n"
 msgstr ""
-"\n"
-"ヘルプ:\n"
 
 #: src/cli.c:1666
 #, c-format
 msgid "  %s --help\n"
-msgstr "  %s --help\n"
+msgstr ""
 
 #: src/cli.c:1667
 #, c-format
 msgid "  %s help [COMMAND...]\n"
-msgstr "  %s help [コマンド名...]\n"
+msgstr ""
 
 #: src/cli.c:1668
 #, c-format
 msgid "  %s help usecases\n"
-msgstr "  %s help usecases\n"
+msgstr ""
 
 #: src/cli.c:1669
 #, c-format
 msgid "  %s help concepts\n"
-msgstr "  %s help concepts\n"
+msgstr ""
 
 #: src/cli.c:1670
 #, c-format
 msgid "  %s help inject\n"
-msgstr "  %s help inject\n"
+msgstr ""
 
 #: src/cli.c:1672
 #, c-format
 msgid "  %s --help COMMAND...\n"
-msgstr "  %s --help コマンド名...\n"
+msgstr ""
 
 #: src/cli.c:1673
 #, c-format
 msgid "  %s COMMAND --help\n"
-msgstr "  %s コマンド名 --help\n"
+msgstr ""
 
 #: src/cli.c:1675 src/cli.c:1677
 #, c-format
 msgid "  %s --help %s\n"
-msgstr "  %s --help %s\n"
+msgstr ""
 
 #: src/cli.c:1678
 #, c-format
 msgid "  %s %s --help\n"
-msgstr "  %s %s --help\n"
+msgstr ""
 
 #: src/cli.c:1680
 #, c-format
 msgid "  %s --version\n"
-msgstr "  %s --version\n"
+msgstr ""
 
 #: src/cli.c:1681
 #, c-format
 msgid "  %s version\n"
-msgstr "  %s version\n"
+msgstr ""
 
 #: src/cli.c:1686
 #, c-format
@@ -175,26 +170,24 @@ msgid ""
 "\n"
 "Shell:\n"
 msgstr ""
-"\n"
-"シェル:\n"
 
 #: src/cli.c:1689
 #, c-format
 msgid "  bash load current shell vars: source <(%s export)\n"
-msgstr "  bash で現在の shell に読み込む: source <(%s export)\n"
+msgstr ""
 
 #: src/cli.c:1691
 #, c-format
 msgid "  bash alternative: eval \"$(%s export)\"\n"
-msgstr "  bash の別案: eval \"$(%s export)\"\n"
+msgstr ""
 
 #: src/cli.c:1694
 msgid "  bash completion script: completions/secdat.bash\n"
-msgstr "  bash completion script: completions/secdat.bash\n"
+msgstr ""
 
 #: src/cli.c:1695
 msgid "  man page source: docs/secdat.1\n"
-msgstr "  man page source: docs/secdat.1\n"
+msgstr ""
 
 #: src/cli.c:1700
 #, c-format
@@ -202,20 +195,18 @@ msgid ""
 "\n"
 "Support:\n"
 msgstr ""
-"\n"
-"サポート:\n"
 
 #: src/cli.c:1701
 msgid "  issues: https://github.com/mako10k/secdat/issues\n"
-msgstr "  issue 報告先: https://github.com/mako10k/secdat/issues\n"
+msgstr ""
 
 #: src/cli.c:1702
 msgid "  repository: https://github.com/mako10k/secdat\n"
-msgstr "  repository: https://github.com/mako10k/secdat\n"
+msgstr ""
 
 #: src/cli.c:1703
 msgid "  author: Makoto Katsumata <mako10k@mk10.org>\n"
-msgstr "  author: Makoto Katsumata <mako10k@mk10.org>\n"
+msgstr ""
 
 #: src/cli.c:1708
 #, c-format
@@ -223,39 +214,32 @@ msgid ""
 "\n"
 "Groups:\n"
 msgstr ""
-"\n"
-"グループ:\n"
 
 #: src/cli.c:1709
 msgid ""
 "  store: manage store namespaces and v1 to v2 migration inside the resolved "
 "current domain\n"
 msgstr ""
-"  store: 解決された current domain 内の store namespace と v1 から v2 への "
-"migration を管理します\n"
 
 #: src/cli.c:1710
 msgid "  meta: manage non-secret searchable metadata attached to keys\n"
-msgstr "  meta: key に付けた非秘密の検索用 metadata を管理します\n"
+msgstr ""
 
 #: src/cli.c:1711
 msgid ""
 "  relation: connect keys into semantic groups with non-secret security "
 "meaning\n"
 msgstr ""
-"  relation: key を意味的なグループとしてつなぎ、非秘密の security meaning を"
-"管理します\n"
 
 #: src/cli.c:1712 src/cli.c:2021
 msgid ""
 "  secret: inspect v2 secret-object metadata by UUID without reading secret "
 "values\n"
 msgstr ""
-"  secret: 値を読まずに UUID で v2 secret-object metadata を確認します\n"
 
 #: src/cli.c:1713 src/cli.c:2030
 msgid "  domain: manage domain roots and domain discovery scope\n"
-msgstr "  domain: domain root と domain 探索スコープを管理します\n"
+msgstr ""
 
 #: src/cli.c:1718
 #, c-format
@@ -263,126 +247,97 @@ msgid ""
 "\n"
 "Commands:\n"
 msgstr ""
-"\n"
-"コマンド:\n"
 
 #: src/cli.c:1719 src/cli.c:1768
 msgid "  help: show global help or detailed help for one command\n"
-msgstr "  help: 全体ヘルプ、または 1 つのコマンドの詳細ヘルプを表示します\n"
+msgstr ""
 
 #: src/cli.c:1720 src/cli.c:1772
 msgid ""
 "  ls: list effective keys visible from the current domain view, optionally "
 "filtered by safe or unsafe storage\n"
 msgstr ""
-"  ls: 現在の domain view から見える有効な key を、安全または unsafe な保存方"
-"式で絞り込んで一覧します\n"
 
 #: src/cli.c:1721 src/cli.c:1776
 msgid ""
 "  list: inspect current-domain entries or identity and legacy masks by "
 "state, with long or JSON detail\n"
 msgstr ""
-"  list: 現在のドメインのエントリー、または ID 連動 mask と従来の名前 mask を"
-"状態別に確認し、long または JSON で詳細を表示します\n"
 
 #: src/cli.c:1722 src/cli.c:1785
 msgid ""
 "  attr: show or update one key's visibility, value-access, and bulk_select "
 "attribute\n"
 msgstr ""
-"  attr: 1 つの key の visibility、value-access、bulk_select 属性を表示または"
-"更新します\n"
 
 #: src/cli.c:1723
 msgid ""
 "  meta: manage non-secret searchable metadata without reading secret values\n"
 msgstr ""
-"  meta: secret value を読まずに、非秘密の検索用 metadata を管理します\n"
 
 #: src/cli.c:1724
 msgid ""
 "  relation: record semantic links between keys and the security meaning of "
 "those links\n"
 msgstr ""
-"  relation: key 間の意味的な link と、その link の security meaning を記録し"
-"ます\n"
 
 #: src/cli.c:1725
 msgid ""
 "  meta mark-leaked: mark one key as leaked metadata and suggest high-risk "
 "refresh targets\n"
 msgstr ""
-"  meta mark-leaked: 1 つの key を漏洩 metadata として mark し、高リスクの "
-"refresh target を提案します\n"
 
 #: src/cli.c:1726
 msgid ""
 "  relation suggest-refresh: suggest high-risk refresh targets related to one "
 "leaked key\n"
 msgstr ""
-"  relation suggest-refresh: 1 つの leaked key に関連する高リスクの refresh "
-"target を提案します\n"
 
 #: src/cli.c:1727
 msgid ""
 "  relation suggest-link: compare same-name keys across registered domains "
 "and show link candidates\n"
 msgstr ""
-"  relation suggest-link: 登録済み domain 間の同名 key を比較し、link 候補を表"
-"示します\n"
 
 #: src/cli.c:1728 src/cli.c:1849
 msgid ""
 "  fsck: check current-domain store metadata for migration and limited "
 "repair\n"
 msgstr ""
-"  fsck: migration と限定的な repair のために現在の domain の store metadata "
-"を検査します\n"
 
 #: src/cli.c:1729
 msgid "  gc: remove unreachable or dangling v2 graph files after review\n"
 msgstr ""
-"  gc: review 後に到達不能または dangling な v2 graph file を削除します\n"
 
 #: src/cli.c:1730
 msgid ""
 "  mask: create a rollback-safe identity mask for one inherited key, or "
 "atomically rebind an orphan barrier\n"
 msgstr ""
-"  mask: 継承された 1 つの key に rollback-safe な identity mask を作成する"
-"か、orphan barrier を原子的に rebind します\n"
 
 #: src/cli.c:1731
 msgid ""
 "  unmask: atomically remove one logical mask chain, with explicit chain "
 "selection when names are ambiguous\n"
 msgstr ""
-"  unmask: name が曖昧な場合は chain を明示的に選択し、1 つの論理 mask chain "
-"を原子的に削除します\n"
 
 #: src/cli.c:1732 src/cli.c:1879
 msgid ""
 "  exists: check whether one resolved key is visible from the current domain "
 "view\n"
 msgstr ""
-"  exists: 解決された 1 つの key が現在の domain view から見えるか確認します\n"
 
 #: src/cli.c:1733 src/cli.c:1883
 msgid ""
 "  id: print the v2 secret object UUID for one resolved key without reading "
 "its value\n"
 msgstr ""
-"  id: 解決された 1 つの key について、値を読まずに v2 secret object UUID を表"
-"示します\n"
 
 #: src/cli.c:1734 src/cli.c:1888
 msgid ""
 "  get: decrypt one resolved key and write it to standard output; --on-demand-"
 "unlock waits for another terminal to unlock\n"
 msgstr ""
-"  get: 解決された 1 つの key を復号して標準出力へ書き出します。--on-demand-"
-"unlock を付けると別端末での unlock を待機します\n"
 
 #: src/cli.c:1735
 msgid ""
@@ -390,9 +345,6 @@ msgid ""
 "stores plaintext visible while locked; --ephemeral keeps one unlocked-only "
 "value in the active session agent\n"
 msgstr ""
-"  set: 解決された current domain に 1 つの key を保存または更新します。--"
-"unsafe は lock 中も見える平文を保存します。--ephemeral は active session "
-"agent に unlocked-only の値を 1 つ保持します\n"
 
 #: src/cli.c:1736
 msgid ""
@@ -400,54 +352,43 @@ msgid ""
 "ignore-missing treats absent keys as success; --ephemeral removes only a "
 "session-local ephemeral value\n"
 msgstr ""
-"  rm: 1 つの key をローカルに削除するか、継承 key 用の tombstone を作成しま"
-"す。--ignore-missing は未存在の key を成功扱いにします。--ephemeral は "
-"session-local ephemeral value のみを削除します\n"
 
 #: src/cli.c:1737 src/cli.c:1911
 msgid "  mv: rename or relocate one key between resolved locations\n"
-msgstr "  mv: 1 つの key を解決先の場所どうしで改名または移動します\n"
+msgstr ""
 
 #: src/cli.c:1738
 msgid "  cp: copy one key into another resolved location\n"
-msgstr "  cp: 1 つの key を別の解決先へコピーします\n"
+msgstr ""
 
 #: src/cli.c:1739 src/cli.c:1920
 msgid ""
 "  ln: link another key to the same v2 secret object, including cross-domain "
 "v2 links and authorized @UUID sources\n"
 msgstr ""
-"  ln: 同じ v2 secret object へ別の key を link します。cross-domain v2 link "
-"および認可済み @UUID source も含みます\n"
 
 #: src/cli.c:1740 src/cli.c:1927
 msgid ""
 "  exec: build a child environment through supply, route, and final injection "
 "layers\n"
 msgstr ""
-"  exec: supply、route、final の injection layer を通じて子環境を構築します\n"
 
 #: src/cli.c:1741 src/cli.c:1936
 msgid ""
 "  export: emit shell-ready export lines that defer secret reads to secdat "
 "get\n"
 msgstr ""
-"  export: secret の読み出しを secdat get に委ねる shell 向け export 行を出力"
-"します\n"
 
 #: src/cli.c:1742 src/cli.c:1940
 msgid ""
 "  save: export the current visible secrets into a passphrase-protected "
 "bundle\n"
 msgstr ""
-"  save: 現在の view から見える secret をパスフレーズ保護された bundle として"
-"出力します\n"
 
 #: src/cli.c:1743
 msgid ""
 "  load: import a passphrase-protected bundle into the current domain view\n"
 msgstr ""
-"  load: パスフレーズ保護された bundle を現在の domain view に取り込みます\n"
 
 #: src/cli.c:1744 src/cli.c:1950
 msgid ""
@@ -456,11 +397,6 @@ msgid ""
 "as PT1H30M, --until accepts an absolute RFC 3339 timestamp, and --inherit "
 "drops the current domain's local override to fall back to inherited state\n"
 msgstr ""
-"  unlock: 現在の domain 用の local unlock を開始または更新します。--duration "
-"は数値のみなら分、1h30m のようなサフィックス付き形式、または PT1H30M のよう"
-"な ISO 8601 duration を受け付け、--until は絶対 RFC 3339 timestamp を受け付け"
-"ます。--inherit は現在の domain の local override を外して継承状態へ戻しま"
-"す\n"
 
 #: src/cli.c:1745 src/cli.c:1957
 msgid ""
@@ -468,64 +404,50 @@ msgid ""
 "local lock or clearing a local unlock, without checking whether the result "
 "stays unlocked\n"
 msgstr ""
-"  inherit: 結果がアンロックのままか確認せず、local lock を削除するか、local "
-"unlock を消して、現在の domain を継承状態へ戻します\n"
 
 #: src/cli.c:1746 src/cli.c:1961
 msgid "  passwd: change the wrapped-master-key passphrase\n"
-msgstr "  passwd: ラップ済み master key のパスフレーズを変更します\n"
+msgstr ""
 
 #: src/cli.c:1747 src/cli.c:1965
 msgid ""
 "  lock: return the current domain to a locked local state, or do nothing "
 "when it is already locked\n"
 msgstr ""
-"  lock: 現在の domain をローカルなロック状態へ戻し、すでに lock 中なら何もし"
-"ません\n"
 
 #: src/cli.c:1748 src/cli.c:1969
 msgid ""
 "  status: report whether secret material is available from the current "
 "domain scope\n"
 msgstr ""
-"  status: 現在の domain scope から secret material が利用可能かどうかを報告し"
-"ます\n"
 
 #: src/cli.c:1749 src/cli.c:1973
 msgid ""
 "  wait-unlock: wait until the current domain scope becomes unlocked, or fail "
 "on timeout\n"
 msgstr ""
-"  wait-unlock: 現在の domain scope がアンロックされるまで待機し、タイムアウト"
-"時は失敗します\n"
 
 #: src/cli.c:1750 src/cli.c:2025
 msgid ""
 "  secret status: print one v2 secret object's non-secret metadata and "
 "reference counts\n"
 msgstr ""
-"  secret status: 1 つの v2 secret object の非秘密 metadata と参照数を表示しま"
-"す\n"
 
 #: src/cli.c:1751
 msgid ""
 "  store migrate: validate a v1 store and write the side-by-side v2 domain-"
 "entry/object graph after review\n"
 msgstr ""
-"  store migrate: v1 store を検証し、確認後に side-by-side の v2 domain-entry/"
-"object graph を書き込みます\n"
 
 #: src/cli.c:1752
 msgid ""
 "  store finalize-migration: inspect or remove legacy v1 fallback files after "
 "a v2 migration\n"
 msgstr ""
-"  store finalize-migration: v2 migration 後の legacy v1 fallback file を確認"
-"または削除します\n"
 
 #: src/cli.c:1753 src/cli.c:1977
 msgid "  version: print the secdat version\n"
-msgstr "  version: secdat のバージョンを表示します\n"
+msgstr ""
 
 #: src/cli.c:1758
 #, c-format
@@ -533,31 +455,23 @@ msgid ""
 "\n"
 "Topics:\n"
 msgstr ""
-"\n"
-"トピック:\n"
 
 #: src/cli.c:1759 src/cli.c:1981
 msgid ""
 "  usecases: show example workflows and task-oriented command combinations\n"
 msgstr ""
-"  usecases: 典型的なワークフローと作業指向のコマンド組み合わせ例を表示しま"
-"す\n"
 
 #: src/cli.c:1760
 msgid ""
 "  concepts: explain domains, stores, inheritance, local unlocks, local "
 "locks, and KEYREF resolution\n"
 msgstr ""
-"  concepts: domain、store、継承、local unlock、local lock、KEYREF 解決の考え"
-"方を説明します\n"
 
 #: src/cli.c:1761 src/cli.c:1989
 msgid ""
 "  inject: explain exec --inject layers, rule kinds, selectors, policy files, "
 "and preflight checks\n"
 msgstr ""
-"  inject: exec --inject の層、ルール種別、選択子、ポリシーファイル、事前検証"
-"を説明します\n"
 
 #: src/cli.c:1766
 #, c-format
@@ -565,48 +479,36 @@ msgid ""
 "\n"
 "Meaning:\n"
 msgstr ""
-"\n"
-"意味:\n"
 
 #: src/cli.c:1777
 msgid ""
 "  --masked, --dormant, and --orphaned select mask states; combine them or "
 "use --all-masks for all three\n"
 msgstr ""
-"  --masked、--dormant、--orphaned で mask 状態を選択します。組み合わせるか、"
-"3 状態すべてには --all-masks を使います\n"
 
 #: src/cli.c:1778
 msgid ""
 "  --long and --json report record kind, resolution, chain, authorized target "
 "identity, and orphan reason\n"
 msgstr ""
-"  --long と --json は record 種別、解決状態、chain、表示を許可された対象 ID、"
-"orphan 理由を表示します\n"
 
 #: src/cli.c:1779
 msgid ""
 "  locked hidden names are omitted; state=unknown means observation is "
 "incomplete, not a fourth stored state, and lists explicit candidates\n"
 msgstr ""
-"  lock 中の非表示名は省略します。state=unknown は保存済みの第4状態ではなく、"
-"観測が不完全であることを意味し、候補を明示します\n"
 
 #: src/cli.c:1780
 msgid ""
 "  JSON reports visible and redacted unknown-state counts and whether the "
 "selected-state result is complete\n"
 msgstr ""
-"  JSON は表示可能／非表示の状態不明件数と、選択した状態の結果が完全かを表示し"
-"ます\n"
 
 #: src/cli.c:1781
 msgid ""
 "  --long and --json cannot be combined with local-entry filters; short state "
 "filters return a union\n"
 msgstr ""
-"  --long と --json はローカルエントリー用 filter と同時指定できません。短い状"
-"態 filter は和集合を返します\n"
 
 #: src/cli.c:1786
 msgid ""
@@ -615,292 +517,220 @@ msgid ""
 "controls eligibility for bulk-gated selection on export, list, and exec when "
 "--bulk-gate is used for this entry\n"
 msgstr ""
-"  key_visibility は locked 中に key 名が見えるかを制御します。"
-"value_access=always は public/plaintext-at-rest value を保存します。"
-"bulk_select は --bulk-gate 使用時に export・list・exec の bulk-gated "
-"selection 対象にできるかを制御します\n"
 
 #: src/cli.c:1787
 msgid ""
 "  v2 effective --bulk-gate selection also requires the secret object's "
 "bulk_select_value policy to allow bulk selection\n"
 msgstr ""
-"  v2 の実効 --bulk-gate selection では、secret object の bulk_select_value "
-"policy が bulk selection を許可している必要があります\n"
 
 #: src/cli.c:1791
 msgid ""
 "  meta: manage non-secret searchable metadata attached to keys in the "
 "current store\n"
 msgstr ""
-"  meta: current store 内の key に付けた非秘密の検索用 metadata を管理します\n"
 
 #: src/cli.c:1792
 msgid ""
 "  metadata values are labels or descriptions for lookup; do not store secret "
 "material in metadata\n"
 msgstr ""
-"  metadata value は検索用の label や説明です。metadata には secret material "
-"を保存しないでください\n"
 
 #: src/cli.c:1796
 msgid "  meta get: print non-secret searchable metadata for one visible key\n"
 msgstr ""
-"  meta get: 1 つの visible key の非秘密な検索用 metadata を表示します\n"
 
 #: src/cli.c:1800
 msgid ""
 "  meta set: attach or replace one non-secret searchable metadata field on a "
 "local key\n"
 msgstr ""
-"  meta set: local key に非秘密の検索用 metadata field を 1 つ追加または置換し"
-"ます\n"
 
 #: src/cli.c:1804
 msgid "  meta unset: remove one searchable metadata field from a local key\n"
-msgstr "  meta unset: local key から検索用 metadata field を 1 つ削除します\n"
+msgstr ""
 
 #: src/cli.c:1808
 msgid ""
 "  meta search: list visible keys whose non-secret metadata contains all "
 "requested fields or glob-matched values\n"
 msgstr ""
-"  meta search: 指定 field または glob に一致する value をすべて含む非秘密 "
-"metadata を持つ visible key を一覧します\n"
 
 #: src/cli.c:1812
 msgid ""
 "  meta mark-leaked: mark one key as leaked metadata and print high-risk "
 "relation refresh suggestions\n"
 msgstr ""
-"  meta mark-leaked: 1 つの key を漏洩 metadata として mark し、高リスクの "
-"relation refresh 提案を表示します\n"
 
 #: src/cli.c:1816
 msgid ""
 "  relation: record semantic links between multiple key references and the "
 "non-secret security meaning of the combination\n"
 msgstr ""
-"  relation: 複数の key reference 間の意味的な link と、その組み合わせの非秘密"
-"な security meaning を記録します\n"
 
 #: src/cli.c:1820
 msgid ""
 "  relation set: create or replace one semantic relation with two or more "
 "role=KEYREF members\n"
 msgstr ""
-"  relation set: 2 つ以上の role=KEYREF member を持つ semantic relation を作成"
-"または置換します\n"
 
 #: src/cli.c:1824
 msgid ""
 "  relation ls: list relation identifiers, optionally limited to relations "
 "containing one key\n"
 msgstr ""
-"  relation ls: relation identifier を一覧します。必要なら 1 つの key を含む "
-"relation に絞り込みます\n"
 
 #: src/cli.c:1828
 msgid ""
 "  relation search: list relation identifiers whose non-secret relation "
 "fields match all filters\n"
 msgstr ""
-"  relation search: すべての filter に一致する非秘密の relation field を持つ "
-"relation identifier を一覧します\n"
 
 #: src/cli.c:1832
 msgid ""
 "  relation suggest-refresh: suggest high-risk refresh targets related to one "
 "leaked key without reading secret values\n"
 msgstr ""
-"  relation suggest-refresh: secret value を読まずに、1 つの leaked key に関連"
-"する高リスクの refresh target を提案します\n"
 
 #: src/cli.c:1836
 msgid ""
 "  relation suggest-link: compare same-name keys across registered domains "
 "and print link candidates without printing secret values\n"
 msgstr ""
-"  relation suggest-link: 登録済み domain 間の同名 key を比較し、secret value "
-"を表示せずに link 候補を出力します\n"
 
 #: src/cli.c:1837
 msgid ""
 "  link clusters are optional non-secret key metadata; by default relation "
 "suggest-link reads the link_cluster field\n"
 msgstr ""
-"  link cluster は任意の非秘密 key metadata です。relation suggest-link は既定"
-"で link_cluster field を読みます\n"
 
 #: src/cli.c:1841
 msgid ""
 "  relation show: print one semantic relation without reading secret values\n"
 msgstr ""
-"  relation show: secret value を読まずに 1 つの semantic relation を表示しま"
-"す\n"
 
 #: src/cli.c:1845
 msgid "  relation rm: remove one semantic relation record\n"
-msgstr "  relation rm: semantic relation record を 1 つ削除します\n"
+msgstr ""
 
 #: src/cli.c:1850
 msgid ""
 "  with no filters, fsck runs orphaned, dangling, and refcount checks; --"
 "repair only rebuilds cached v2 refcounts\n"
 msgstr ""
-"  filter 指定なしの fsck は orphaned、dangling、refcount check を実行しま"
-"す。--repair は cached v2 refcount だけを再構築します\n"
 
 #: src/cli.c:1851
 msgid ""
 "  v2 mask checks report orphaned-mask, ambiguous-mask, dangling-mask, and "
 "incomplete-mask-state; dormant masks are valid\n"
 msgstr ""
-"  v2 mask 検査は orphaned-mask、ambiguous-mask、dangling-mask、incomplete-"
-"mask-state を報告します。dormant mask は正常です\n"
 
 #: src/cli.c:1852
 msgid ""
 "  corrupt mask rows use a non-reversible record-sha256 handle; <redacted> "
 "means the identity is not authorized\n"
 msgstr ""
-"  壊れた mask 行には逆算できない record-sha256 ハンドルを使用します。"
-"<redacted> は identity の表示権限がないことを意味します\n"
 
 #: src/cli.c:1853
 msgid ""
 "  record-sha256 is the first 16 SHA-256 hex digits of the .mask filename "
 "UUID; match it inside the protected masks directory\n"
 msgstr ""
-"  record-sha256 は .mask ファイル名 UUID の SHA-256 先頭16桁です。保護された "
-"masks ディレクトリ内で照合してください\n"
 
 #: src/cli.c:1854
 msgid ""
 "  no automatic mask-record repair is available; preserve a corrupt record "
 "until its intended mask can be recovered\n"
 msgstr ""
-"  mask record の自動修復はありません。意図した mask を復元できるまで壊れた "
-"record を保存してください\n"
 
 #: src/cli.c:1855
 msgid ""
 "  unlock affected domains for <redacted> rows and rerun list --all-masks --"
 "long and fsck\n"
 msgstr ""
-"  <redacted> 行では対象 domain を unlock し、list --all-masks --long と fsck "
-"を再実行してください\n"
 
 #: src/cli.c:1859
 msgid ""
 "  gc: remove unreachable or dangling v2 graph files after dry-run review\n"
 msgstr ""
-"  gc: dry-run review 後に到達不能または dangling な v2 graph file を削除しま"
-"す\n"
 
 #: src/cli.c:1860
 msgid ""
 "  --dry-run previews selected v2 graph files; without --dry-run it "
 "permanently removes the selected graph files\n"
 msgstr ""
-"  --dry-run は選択された v2 graph file を事前確認します。--dry-run なしでは選"
-"択された graph file を永続的に削除します\n"
 
 #: src/cli.c:1864
 msgid ""
 "  mask: create a canonical identity mask and, for public names, its v1 "
 "rollback-compatible tombstone in one recoverable transaction\n"
 msgstr ""
-"  mask: canonical identity mask と、public name の場合は v1 rollback 互換の "
-"tombstone を 1 つの復旧可能な transaction で作成します\n"
 
 #: src/cli.c:1865
 msgid ""
 "  hidden names remain canonical-only; an unsafe v1 rollback projection is "
 "rejected before mutation\n"
 msgstr ""
-"  hidden name は canonical-only のまま扱い、安全でない v1 rollback 投影は変更"
-"前に拒否します\n"
 
 #: src/cli.c:1866
 msgid ""
 "  --rebind repairs a legacy or orphan barrier by attaching the current "
 "unique inherited target without an exposure window\n"
 msgstr ""
-"  --rebind は現在の一意な継承 target を露出期間なしで関連付け、legacy または "
-"orphan barrier を修復します\n"
 
 #: src/cli.c:1867
 msgid ""
 "  when rebind has multiple candidates, use domain ls --ancestors and id KEY "
 "in each ancestor to locate duplicates before retrying\n"
 msgstr ""
-"  rebind に複数候補がある場合は、domain ls --ancestors と各 ancestor の id "
-"KEY で重複を特定してから再実行してください\n"
 
 #: src/cli.c:1868
 msgid ""
 "  --dry-run reports the immutable plan; --json uses secdat.mask-operation-"
 "plan.v1 for dry-run and committed results\n"
 msgstr ""
-"  --dry-run は不変の plan を報告します。--json は dry-run と commit 済み結果"
-"に secdat.mask-operation-plan.v1 を使います\n"
 
 #: src/cli.c:1872
 msgid ""
 "  unmask: atomically remove the unique logical mask chain controlling one "
 "key\n"
 msgstr ""
-"  unmask: 1 つの key を制御する一意な論理 mask chain を原子的に削除します\n"
 
 #: src/cli.c:1873
 msgid ""
 "  name-only removal refuses competing chains and chains protecting multiple "
 "names; inspect list --all-masks --long and retry with --mask-chain UUID\n"
 msgstr ""
-"  name だけの削除は競合する chain や複数の name を保護する chain を拒否しま"
-"す。list --all-masks --long で確認し、--mask-chain UUID 付きで再実行してくだ"
-"さい\n"
 
 #: src/cli.c:1874
 msgid ""
 "  --mask-chain must identify a chain that protects the requested key; --dry-"
 "run/--json list every affected authorized key slot\n"
 msgstr ""
-"  --mask-chain は要求した key を保護する chain を指定する必要があります。--"
-"dry-run/--json は影響する認可済み key slot をすべて表示します\n"
 
 #: src/cli.c:1875
 msgid ""
 "  deferred-exposure warnings default to on; --mask-warnings=default|on|off, "
 "--warn-mask, and --no-warn-mask change warnings only\n"
 msgstr ""
-"  遅延露出 warning は既定で on です。--mask-warnings=default|on|off、--warn-"
-"mask、--no-warn-mask は warning だけを変更します\n"
 
 #: src/cli.c:1884
 msgid ""
 "  the UUID is an address, not authority; follow-up metadata commands still "
 "use the current domain/store object view\n"
 msgstr ""
-"  UUID は address であって authority ではありません。後続の metadata command "
-"も現在の domain/store object view を使います\n"
 
 #: src/cli.c:1892
 msgid ""
 "  set: store or update one key in the resolved current domain; --unsafe "
 "stores plaintext visible while locked\n"
 msgstr ""
-"  set: 解決された current domain に 1 つの key を保存または更新します。--"
-"unsafe は lock 中も見える平文を保存します\n"
 
 #: src/cli.c:1893
 msgid ""
 "  --ephemeral stores only in the active session agent, forces unlocked key/"
 "value access, and defaults bulk_select to exclude\n"
 msgstr ""
-"  --ephemeral は active session agent にのみ保存し、key/value access を "
-"unlocked に固定して、bulk_select の既定を exclude にします\n"
 
 #: src/cli.c:1894
 msgid ""
@@ -908,113 +738,84 @@ msgid ""
 "lock, or session expiry; use --bulk-select include to allow bulk-gated "
 "selection\n"
 msgstr ""
-"  ephemeral value は rm --ephemeral、lock、または session expiry まで同名の永"
-"続値を隠します。bulk-gated selection を許可するには --bulk-select include を"
-"指定します\n"
 
 #: src/cli.c:1895
 msgid ""
 "  plain set, SDK/FUSE writes, cp, mv, ln, mask, unmask, attr updates, and "
 "save reject an ephemeral target instead of persisting it accidentally\n"
 msgstr ""
-"  plain set、SDK/FUSE write、cp、mv、ln、mask、unmask、attr update、および "
-"save は、ephemeral target を誤って永続化せず拒否します\n"
 
 #: src/cli.c:1896
 msgid ""
 "  mutation planning options such as --dry-run and --json are not supported "
 "with --ephemeral\n"
 msgstr ""
-"  --dry-run や --json などの mutation planning option は --ephemeral と併用で"
-"きません\n"
 
 #: src/cli.c:1897
 msgid ""
 "  v2 writes default to --mask-action=preserve; reject fails before any "
 "direct hit or mask state transition\n"
 msgstr ""
-"  v2 write の既定は --mask-action=preserve です。reject は direct hit または "
-"mask state 遷移の前に失敗します\n"
 
 #: src/cli.c:1898
 msgid ""
 "  mask warnings default to on for preserve and off for reject; warning "
 "controls never change behavior or exit status\n"
 msgstr ""
-"  mask warning は preserve では既定で on、reject では off です。warning 制御"
-"は動作や終了 status を変更しません\n"
 
 #: src/cli.c:1899
 msgid ""
 "  --dry-run and --json expose the same secdat.mutation-plan.v1 used for one "
 "key or the whole assignment batch\n"
 msgstr ""
-"  --dry-run と --json は、単一 key または assignment batch 全体の commit に使"
-"うものと同じ secdat.mutation-plan.v1 を表示します\n"
 
 #: src/cli.c:1903
 msgid ""
 "  rm: remove one key locally or create a tombstone for an inherited key; --"
 "ignore-missing treats absent keys as success\n"
 msgstr ""
-"  rm: 1 つの key をローカルに削除するか、継承 key 用の tombstone を作成しま"
-"す。--ignore-missing は未存在の key を成功扱いにします\n"
 
 #: src/cli.c:1904
 msgid ""
 "  --ephemeral removes only the current domain's session-local ephemeral "
 "value and reveals any persisted value it shadowed\n"
 msgstr ""
-"  --ephemeral は current domain の session-local ephemeral value のみを削除"
-"し、その下に隠れていた永続値を再表示します\n"
 
 #: src/cli.c:1905
 msgid ""
 "  v2 rm preserves canonical masks and reports reactivation or source-mask "
 "creation through the common mutation plan\n"
 msgstr ""
-"  v2 の rm は canonical mask を保持し、再活性化または source mask 作成を共通 "
-"mutation plan で報告します\n"
 
 #: src/cli.c:1906
 msgid ""
 "  --mask-action=reject blocks those interactions; warning controls affect "
 "only successful post-commit warnings\n"
 msgstr ""
-"  --mask-action=reject はそれらの interaction を拒否します。warning 制御が影"
-"響するのは成功した commit 後の warning だけです\n"
 
 #: src/cli.c:1907
 msgid ""
 "  --dry-run and --json expose secdat.mutation-plan.v1 without changing "
 "persisted state\n"
 msgstr ""
-"  --dry-run と --json は persisted state を変更せずに secdat.mutation-plan."
-"v1 を表示します\n"
 
 #: src/cli.c:1915
 msgid ""
 "  cp: copy one key to a new independently identified destination while "
 "preserving destination masks in v2 stores\n"
 msgstr ""
-"  cp: v2 store の destination mask を保持しながら、key を独立した新しい識別子"
-"の destination へコピーします\n"
 
 #: src/cli.c:1916
 msgid ""
 "  --mask-action=preserve is the default; reject, warning controls, dry-run, "
 "and JSON use the common mutation plan\n"
 msgstr ""
-"  --mask-action=preserve が既定です。reject、warning 制御、dry-run、JSON は共"
-"通 mutation plan を使います\n"
 
 #: src/cli.c:1921
 msgid ""
 "  value writes through either linked key affect the shared object; domain-"
 "entry attributes remain per link\n"
 msgstr ""
-"  link されたどちらの key から value を書き込んでも共有 object に反映されま"
-"す。domain-entry 属性は link ごとに保持されます\n"
 
 #: src/cli.c:1922
 msgid ""
@@ -1022,86 +823,64 @@ msgid ""
 "default it first confirms both values are equal, and --skip-same-value-check "
 "bypasses that confirmation\n"
 msgstr ""
-"  --replace は既存の同名 destination key の置換を許可します。デフォルトでは先"
-"に両方の値が同じことを確認し、--skip-same-value-check はその確認を省略しま"
-"す\n"
 
 #: src/cli.c:1923
 msgid ""
 "  destination masks are preserved; reject, warning controls, dry-run, and "
 "JSON use the common mutation plan\n"
 msgstr ""
-"  destination mask は保持されます。reject、warning 制御、dry-run、JSON は共"
-"通 mutation plan を使います\n"
 
 #: src/cli.c:1928
 msgid ""
 "  --inject LAYER:KIND=SELECTOR configures ambient, secret, route, or final "
 "rules; repeated --inject accumulates selectors of the same kind\n"
 msgstr ""
-"  --inject LAYER:KIND=SELECTOR で ambient、secret、route、final のルールを設"
-"定します。同じ種別の選択子は --inject を繰り返すと追加されます\n"
 
 #: src/cli.c:1929
 msgid ""
 "  --inject-file FILE loads a YAML policy; command profiles can refine file "
 "rules before CLI --inject overrides them\n"
 msgstr ""
-"  --inject-file FILE で YAML ポリシーを読み込みます。command profile は CLI "
-"--inject が上書きする前に file rule を調整できます\n"
 
 #: src/cli.c:1930
 msgid ""
 "  --bulk-gate applies the store bulk_select pre-filter before secret supply\n"
 msgstr ""
-"  --bulk-gate は secret 供給の前に store の bulk_select 事前フィルターを適用"
-"します\n"
 
 #: src/cli.c:1931
 msgid ""
 "  --command-resolution MODE selects CMD lookup: caller-path (default), child-"
 "path, or direct\n"
 msgstr ""
-"  --command-resolution MODE は CMD lookup を選択します: caller-path "
-"(default)、child-path、または direct\n"
 
 #: src/cli.c:1932
 msgid ""
 "  see help inject for the rule vocabulary, selector syntax, YAML shape, and "
 "preflight examples\n"
 msgstr ""
-"  ルール語彙、選択子構文、YAML 形式、事前検証例は help inject を参照してくだ"
-"さい\n"
 
 #: src/cli.c:1944
 msgid ""
 "  load: import a passphrase-protected bundle through one v2 mutation plan "
 "and one recoverable transaction\n"
 msgstr ""
-"  load: パスフレーズ保護された bundle を 1 つの v2 mutation plan と復旧可能"
-"な transaction で取り込みます\n"
 
 #: src/cli.c:1945
 msgid ""
 "  --mask-action=reject blocks any batch mask interaction; warning controls "
 "never change the batch result\n"
 msgstr ""
-"  --mask-action=reject は batch 内の mask interaction を拒否します。warning "
-"制御は batch の結果を変更しません\n"
 
 #: src/cli.c:1946
 msgid ""
 "  --dry-run and --json report the whole batch without committing any entry\n"
 msgstr ""
-"  --dry-run と --json は、entry を commit せずに batch 全体を報告します\n"
 
 #: src/cli.c:1951
 msgid ""
 "  --gui forces passphrase prompts through the askpass helper even when a "
 "terminal is available\n"
 msgstr ""
-"  --gui は端末が利用可能な場合でも passphrase prompt を askpass helper 経由に"
-"強制します\n"
 
 #: src/cli.c:1952
 msgid ""
@@ -1109,68 +888,50 @@ msgid ""
 "changes in a session overlay; lock --save persists supported overlay changes "
 "before locking\n"
 msgstr ""
-"  --volatile は write、delete、tombstone、read-side resolution の変更を "
-"session overlay に保持します。lock --save は lock 前に対応済みの overlay 変更"
-"を永続化します\n"
 
 #: src/cli.c:1953
 msgid ""
 "  persisted tombstone removal and v2 local-entry deletions still require a "
 "normal writable session\n"
 msgstr ""
-"  永続 tombstone の削除と v2 local-entry の削除には、通常の writable session "
-"が引き続き必要です\n"
 
 #: src/cli.c:1985
 msgid ""
 "  concepts: explain domains, stores, inheritance, sessions, and KEYREF "
 "resolution\n"
 msgstr ""
-"  concepts: domain、store、継承、session、KEYREF 解決の考え方を説明します\n"
 
 #: src/cli.c:1993
 msgid ""
 "  store: manage store namespaces and migrate v1 stores to the v2 domain-"
 "entry/object layout\n"
 msgstr ""
-"  store: store namespace を管理し、v1 store を v2 domain-entry/object layout "
-"へ migrate します\n"
 
 #: src/cli.c:1997
 msgid ""
 "  store create: create one store namespace in the resolved current domain\n"
 msgstr ""
-"  store create: 解決された current domain 内に store namespace を 1 つ作成し"
-"ます\n"
 
 #: src/cli.c:2001
 msgid ""
 "  store delete: delete one store namespace from the resolved current domain\n"
 msgstr ""
-"  store delete: 解決された current domain から store namespace を 1 つ削除し"
-"ます\n"
 
 #: src/cli.c:2005
 msgid "  store ls: list store namespaces in the resolved current domain\n"
 msgstr ""
-"  store ls: 解決された current domain 内の store namespace を一覧表示します\n"
 
 #: src/cli.c:2009
 msgid ""
 "  store migrate: validate one v1 store; without --dry-run, write the side-by-"
 "side v2 domain-entry/object graph and leave v1 fallback files in place\n"
 msgstr ""
-"  store migrate: 1 つの v1 store を検証します。--dry-run なしでは side-by-"
-"side の v2 domain-entry/object graph を書き込み、v1 fallback file は残しま"
-"す\n"
 
 #: src/cli.c:2010
 msgid ""
 "  mask plan counts separate existing canonical masks, conversion candidates, "
 "ambiguous legacy masks, and v1 rollback blockers\n"
 msgstr ""
-"  mask plan の件数は既存 canonical mask、変換候補、曖昧な legacy mask、v1 "
-"rollback blocker を区別します\n"
 
 #: src/cli.c:2011
 msgid ""
@@ -1178,17 +939,12 @@ msgid ""
 "existing canonical mask; ambiguity remains fail closed and does not alone "
 "block migration\n"
 msgstr ""
-"  dry-run の mask-plan 行は、表示権限のある候補、曖昧な mask、既存 canonical "
-"mask を名前付きで示します。曖昧な mask は fail closed のまま保持され、それだ"
-"けでは migration を妨げません\n"
 
 #: src/cli.c:2012
 msgid ""
 "  an unverifiable legacy projection blocks migration; unlock affected "
 "domains, inspect masks, and retry the dry-run\n"
 msgstr ""
-"  検証できない legacy 投影は移行を停止します。対象 domain を unlock して "
-"mask を確認し、dry-run を再実行してください\n"
 
 #: src/cli.c:2016
 msgid ""
@@ -1196,54 +952,42 @@ msgid ""
 "run, remove only removable files and refuse to remove anything while "
 "blockers remain\n"
 msgstr ""
-"  store finalize-migration: legacy v1 fallback file を確認します。--dry-run "
-"なしでは削除可能な file だけを削除し、blocker が残る間は何も削除しません\n"
 
 #: src/cli.c:2017
 msgid ""
 "  typical order is migrate dry-run, migrate, fsck --format v2, rewrite or "
 "remove fallback-backed values, finalize dry-run, then finalize\n"
 msgstr ""
-"  典型的な順序は migrate dry-run、migrate、fsck --format v2、fallback-backed "
-"value の再書き込みまたは削除、finalize dry-run、finalize です\n"
 
 #: src/cli.c:2026
 msgid ""
 "  UUID lookup is scoped to the current domain/store object view; use the "
 "object's owning context for cross-domain links\n"
 msgstr ""
-"  UUID lookup は現在の domain/store object view に閉じます。cross-domain "
-"link では object の所有 context を使ってください\n"
 
 #: src/cli.c:2034
 msgid "  domain create: register the resolved directory as a domain root\n"
 msgstr ""
-"  domain create: 解決された directory を domain root として登録します\n"
 
 #: src/cli.c:2038
 msgid "  domain delete: unregister the resolved directory as a domain root\n"
 msgstr ""
-"  domain delete: 解決された directory の domain root 登録を解除します\n"
 
 #: src/cli.c:2042
 msgid ""
 "  domain move: update a registered domain root path without deleting its "
 "stored secrets\n"
 msgstr ""
-"  domain move: 保存済み secret を削除せずに登録済み domain root path を更新し"
-"ます\n"
 
 #: src/cli.c:2046
 msgid "  domain ls: list domain roots around the scoped directory\n"
-msgstr "  domain ls: scoped directory 周辺の domain root を一覧表示します\n"
+msgstr ""
 
 #: src/cli.c:2050
 msgid ""
 "  domain status: report the resolved domain root and effective lock/unlock "
 "source\n"
 msgstr ""
-"  domain status: 解決された domain root と有効な lock/unlock source を報告し"
-"ます\n"
 
 #: src/cli.c:2061 src/cli.c:2276
 #, c-format
@@ -1251,13 +995,11 @@ msgid ""
 "\n"
 "Use cases:\n"
 msgstr ""
-"\n"
-"利用例:\n"
 
 #: src/cli.c:2064
 #, c-format
 msgid "  read one value to stdout: %s get API_TOKEN --stdout\n"
-msgstr "  1 つの値を標準出力へ読む: %s get API_TOKEN --stdout\n"
+msgstr ""
 
 #: src/cli.c:2066
 #, c-format
@@ -1265,14 +1007,12 @@ msgid ""
 "  wait for another terminal to unlock before reading: %s get --on-demand-"
 "unlock --unlock-timeout 30 API_TOKEN --stdout\n"
 msgstr ""
-"  読み取り前に別端末の unlock を待つ: %s get --on-demand-unlock --unlock-"
-"timeout 30 API_TOKEN --stdout\n"
 
 #: src/cli.c:2072
 #, c-format
 msgid ""
 "  write one value from an argument: %s set API_TOKEN --value new-token\n"
-msgstr "  引数から 1 つの値を書き込む: %s set API_TOKEN --value new-token\n"
+msgstr ""
 
 #: src/cli.c:2074
 #, c-format
@@ -1280,13 +1020,11 @@ msgid ""
 "  read a value from standard input without echoing it in shell history: "
 "printf 'token' | %s set API_TOKEN --stdin\n"
 msgstr ""
-"  shell 履歴へ残さず標準入力から値を読む: printf 'token' | %s set API_TOKEN "
-"--stdin\n"
 
 #: src/cli.c:2080
 #, c-format
 msgid "  inspect one key's current attributes: %s attr API_TOKEN\n"
-msgstr "  1 つの key の現在の属性を確認する: %s attr API_TOKEN\n"
+msgstr ""
 
 #: src/cli.c:2082
 #, c-format
@@ -1294,20 +1032,16 @@ msgid ""
 "  make one value public while keeping the key name visible: %s attr "
 "API_TOKEN --value-access always\n"
 msgstr ""
-"  key 名を見えるまま 1 つの value を public にする: %s attr API_TOKEN --"
-"value-access always\n"
 
 #: src/cli.c:2088
 #, c-format
 msgid "  tag one key for search: %s meta set API_TOKEN service billing\n"
 msgstr ""
-"  検索用に 1 つの key へ tag を付ける: %s meta set API_TOKEN service "
-"billing\n"
 
 #: src/cli.c:2090
 #, c-format
 msgid "  find keys by metadata: %s meta search service=bill*\n"
-msgstr "  metadata で key を探す: %s meta search service=bill*\n"
+msgstr ""
 
 #: src/cli.c:2092
 #, c-format
@@ -1315,8 +1049,6 @@ msgid ""
 "  mark a leaked key and suggest refresh targets: %s meta mark-leaked "
 "BILLING_PASSWORD\n"
 msgstr ""
-"  leaked key を mark して refresh target を提案する: %s meta mark-leaked "
-"BILLING_PASSWORD\n"
 
 #: src/cli.c:2098
 #, c-format
@@ -1325,9 +1057,6 @@ msgid ""
 "--member id=BILLING_ID --member password=BILLING_PASSWORD --security "
 "combination-sensitive\n"
 msgstr ""
-"  credential pair を記録する: %s relation set billing-login --kind "
-"credential --member id=BILLING_ID --member password=BILLING_PASSWORD --"
-"security combination-sensitive\n"
 
 #: src/cli.c:2100
 #, c-format
@@ -1335,8 +1064,6 @@ msgid ""
 "  find credential relations: %s relation search kind=credential "
 "security=combination-*\n"
 msgstr ""
-"  credential relation を探す: %s relation search kind=credential "
-"security=combination-*\n"
 
 #: src/cli.c:2102
 #, c-format
@@ -1344,8 +1071,6 @@ msgid ""
 "  suggest refresh targets after a leak: %s relation suggest-refresh "
 "BILLING_PASSWORD\n"
 msgstr ""
-"  leak 後の refresh target を提案する: %s relation suggest-refresh "
-"BILLING_PASSWORD\n"
 
 #: src/cli.c:2104
 #, c-format
@@ -1353,17 +1078,16 @@ msgid ""
 "  find same-name cross-domain link candidates: %s relation suggest-link "
 "APP_TOKEN\n"
 msgstr ""
-"  同名 cross-domain link 候補を探す: %s relation suggest-link APP_TOKEN\n"
 
 #: src/cli.c:2106
 #, c-format
 msgid "  inspect relation metadata: %s relation show billing-login\n"
-msgstr "  relation metadata を確認する: %s relation show billing-login\n"
+msgstr ""
 
 #: src/cli.c:2112
 #, c-format
 msgid "  run all current-domain metadata checks: %s fsck\n"
-msgstr "  current-domain metadata check をすべて実行する: %s fsck\n"
+msgstr ""
 
 #: src/cli.c:2114
 #, c-format
@@ -1371,8 +1095,6 @@ msgid ""
 "  rebuild cached v2 refcounts after review: %s fsck --format v2 --refcount --"
 "repair\n"
 msgstr ""
-"  確認後に cached v2 refcount を再構築する: %s fsck --format v2 --refcount --"
-"repair\n"
 
 #: src/cli.c:2120
 #, c-format
@@ -1380,12 +1102,11 @@ msgid ""
 "  preview unreachable v2 graph files before deletion: %s gc --format v2 --"
 "dry-run\n"
 msgstr ""
-"  削除前に到達不能な v2 graph file を確認する: %s gc --format v2 --dry-run\n"
 
 #: src/cli.c:2122
 #, c-format
 msgid "  delete the reviewed unreachable v2 graph files: %s gc --format v2\n"
-msgstr "  確認済みの到達不能な v2 graph file を削除する: %s gc --format v2\n"
+msgstr ""
 
 #: src/cli.c:2128
 #, c-format
@@ -1393,8 +1114,6 @@ msgid ""
 "  preview the canonical identity and any safe rollback projection: %s mask --"
 "dry-run --json API_TOKEN\n"
 msgstr ""
-"  canonical identity と安全な rollback 投影を確認する: %s mask --dry-run --"
-"json API_TOKEN\n"
 
 #: src/cli.c:2130
 #, c-format
@@ -1402,8 +1121,6 @@ msgid ""
 "  repair an orphan barrier without exposing the replacement target: %s mask "
 "--rebind API_TOKEN\n"
 msgstr ""
-"  置換 target を露出せずに orphan barrier を修復する: %s mask --rebind "
-"API_TOKEN\n"
 
 #: src/cli.c:2136
 #, c-format
@@ -1411,8 +1128,6 @@ msgid ""
 "  preview every record removed from the unique chain: %s unmask --dry-run --"
 "json API_TOKEN\n"
 msgstr ""
-"  一意な chain から削除する全 record を確認する: %s unmask --dry-run --json "
-"API_TOKEN\n"
 
 #: src/cli.c:2138
 #, c-format
@@ -1420,15 +1135,12 @@ msgid ""
 "  inspect and explicitly remove one multi-name chain: %s unmask --dry-run --"
 "mask-chain UUID API_TOKEN\n"
 msgstr ""
-"  複数 name の chain を確認して明示的に削除する: %s unmask --dry-run --mask-"
-"chain UUID API_TOKEN\n"
 
 #: src/cli.c:2140
 #, c-format
 msgid ""
 "  suppress only the post-commit warning: %s unmask --no-warn-mask API_TOKEN\n"
 msgstr ""
-"  commit 後の warning だけを抑制する: %s unmask --no-warn-mask API_TOKEN\n"
 
 #: src/cli.c:2146
 #, c-format
@@ -1436,7 +1148,6 @@ msgid ""
 "  load current shell variables without printing raw secrets: source <(%s "
 "export)\n"
 msgstr ""
-"  生の secret を表示せず現在の shell 変数へ読み込む: source <(%s export)\n"
 
 #: src/cli.c:2148
 #, c-format
@@ -1444,8 +1155,6 @@ msgid ""
 "  export one namespace before running another tool: eval \"$(%s --store app "
 "export --pattern 'APP_*')\"\n"
 msgstr ""
-"  別ツール実行前に 1 つの namespace を export する: eval \"$(%s --store app "
-"export --pattern 'APP_*')\"\n"
 
 #: src/cli.c:2154
 #, c-format
@@ -1453,8 +1162,6 @@ msgid ""
 "  run one command with matching secrets injected: %s exec --inject secret:"
 "only=APP_* env\n"
 msgstr ""
-"  一致した secret を注入して 1 つのコマンドを実行する: %s exec --inject "
-"secret:only=APP_* env\n"
 
 #: src/cli.c:2156
 #, c-format
@@ -1462,8 +1169,6 @@ msgid ""
 "  exclude one inherited key while running a child process: %s exec --inject "
 "secret:only=APP_* --inject secret:omit=APP_DEBUG_* CMD\n"
 msgstr ""
-"  子プロセス実行時に 1 つの継承 key を除外する: %s exec --inject secret:"
-"only=APP_* --inject secret:omit=APP_DEBUG_* CMD\n"
 
 #: src/cli.c:2162
 #, c-format
@@ -1471,8 +1176,6 @@ msgid ""
 "  share one v2 secret object under another key: %s ln APP_TOKEN "
 "SERVICE_TOKEN\n"
 msgstr ""
-"  1 つの v2 secret object を別 key 名で共有する: %s ln APP_TOKEN "
-"SERVICE_TOKEN\n"
 
 #: src/cli.c:2164
 #, c-format
@@ -1480,8 +1183,6 @@ msgid ""
 "  link across explicit domains/stores: %s ln /src/domain/APP_TOKEN:app /dst/"
 "domain/APP_TOKEN:ops\n"
 msgstr ""
-"  明示した domain/store をまたいで link する: %s ln /src/domain/APP_TOKEN:"
-"app /dst/domain/APP_TOKEN:ops\n"
 
 #: src/cli.c:2166
 #, c-format
@@ -1489,8 +1190,6 @@ msgid ""
 "  replace an existing same-name destination after value confirmation: %s ln "
 "--replace /src/domain/APP_TOKEN /dst/domain/APP_TOKEN\n"
 msgstr ""
-"  値確認後に既存の同名 destination を置換する: %s ln --replace /src/domain/"
-"APP_TOKEN /dst/domain/APP_TOKEN\n"
 
 #: src/cli.c:2172
 #, c-format
@@ -1498,8 +1197,6 @@ msgid ""
 "  resolve one key to its v2 secret object UUID without reading it: %s id "
 "API_TOKEN\n"
 msgstr ""
-"  value を読まずに 1 つの key を v2 secret object UUID へ解決する: %s id "
-"API_TOKEN\n"
 
 #: src/cli.c:2174
 #, c-format
@@ -1507,13 +1204,11 @@ msgid ""
 "  inspect that object from its owning domain/store context: %s secret status "
 "01234567-89ab-4def-8123-456789abcdef\n"
 msgstr ""
-"  その object の owning domain/store context から確認する: %s secret status "
-"01234567-89ab-4def-8123-456789abcdef\n"
 
 #: src/cli.c:2180
 #, c-format
 msgid "  start a session for the current project directory: %s unlock\n"
-msgstr "  現在の project directory 用 session を開始する: %s unlock\n"
+msgstr ""
 
 #: src/cli.c:2182
 #, c-format
@@ -1521,8 +1216,6 @@ msgid ""
 "  refresh an active session for 15 minutes without re-entering the "
 "passphrase: %s unlock --duration 15\n"
 msgstr ""
-"  パスフレーズ再入力なしで有効な session を 15 分延長する: %s unlock --"
-"duration 15\n"
 
 #: src/cli.c:2184
 #, c-format
@@ -1530,7 +1223,6 @@ msgid ""
 "  unlock one specific domain from elsewhere: %s --dir ~/example/project "
 "unlock\n"
 msgstr ""
-"  別の場所から特定 domain を unlock する: %s --dir ~/example/project unlock\n"
 
 #: src/cli.c:2190
 #, c-format
@@ -1538,8 +1230,6 @@ msgid ""
 "  block a script until another terminal unlocks the same domain: %s --dir ~/"
 "example/project wait-unlock --timeout 900\n"
 msgstr ""
-"  別端末が同じ domain を unlock するまで script を待機させる: %s --dir ~/"
-"example/project wait-unlock --timeout 900\n"
 
 #: src/cli.c:2192
 #, c-format
@@ -1547,49 +1237,46 @@ msgid ""
 "  poll quietly before a later secret read: %s wait-unlock --timeout 30 --"
 "quiet\n"
 msgstr ""
-"  後続の secret 読み取り前に静かに待機する: %s wait-unlock --timeout 30 --"
-"quiet\n"
 
 #: src/cli.c:2198
 #, c-format
 msgid "  check whether the current domain can read secrets now: %s status\n"
-msgstr "  現在の domain が今 secret を読めるか確認する: %s status\n"
+msgstr ""
 
 #: src/cli.c:2200
 #, c-format
 msgid "  use exit status only in scripts: %s status --quiet\n"
-msgstr "  script では終了コードだけを使う: %s status --quiet\n"
+msgstr ""
 
 #: src/cli.c:2202
 #, c-format
 msgid "  read machine-readable state in scripts: %s status --json\n"
-msgstr "  script で機械可読な状態を読む: %s status --json\n"
+msgstr ""
 
 #: src/cli.c:2208
 #, c-format
 msgid ""
 "  inspect local tombstones and overrides before cleanup: %s list --masked\n"
 msgstr ""
-"  cleanup 前に local tombstone と override を確認する: %s list --masked\n"
 
 #: src/cli.c:2210
 #, c-format
 msgid ""
 "  inspect only plaintext-at-rest entries in the current domain: %s list --"
 "unsafe\n"
-msgstr "  現在の domain の平文保存エントリだけ確認する: %s list --unsafe\n"
+msgstr ""
 
 #: src/cli.c:2216
 #, c-format
 msgid "  create one namespace for app-specific keys: %s store create app\n"
-msgstr "  app 専用 key 用 namespace を 1 つ作る: %s store create app\n"
+msgstr ""
 
 #: src/cli.c:2218
 #, c-format
 msgid ""
 "  inspect available namespaces before selecting one with --store: %s store "
 "ls\n"
-msgstr "  --store で選ぶ前に利用可能 namespace を確認する: %s store ls\n"
+msgstr ""
 
 #: src/cli.c:2220 src/cli.c:2232
 #, c-format
@@ -1597,8 +1284,6 @@ msgid ""
 "  inspect a v1 to v2 migration before writing: %s store migrate app --to-"
 "format v2 --dry-run\n"
 msgstr ""
-"  書き込み前に v1 から v2 への migration を確認する: %s store migrate app --"
-"to-format v2 --dry-run\n"
 
 #: src/cli.c:2222
 #, c-format
@@ -1606,8 +1291,6 @@ msgid ""
 "  write the v2 domain-entry/object graph after review: %s store migrate app "
 "--to-format v2\n"
 msgstr ""
-"  確認後に v2 domain-entry/object graph を書き込む: %s store migrate app --"
-"to-format v2\n"
 
 #: src/cli.c:2224
 #, c-format
@@ -1615,8 +1298,6 @@ msgid ""
 "  inspect legacy fallback files after blockers are rewritten or removed: %s "
 "store finalize-migration app --from-format v1 --dry-run\n"
 msgstr ""
-"  blocker の再書き込みまたは削除後に legacy fallback file を確認する: %s "
-"store finalize-migration app --from-format v1 --dry-run\n"
 
 #: src/cli.c:2226
 #, c-format
@@ -1624,8 +1305,6 @@ msgid ""
 "  remove removable legacy fallback files after review: %s store finalize-"
 "migration app --from-format v1\n"
 msgstr ""
-"  確認後に削除可能な legacy fallback file を削除する: %s store finalize-"
-"migration app --from-format v1\n"
 
 #: src/cli.c:2234
 #, c-format
@@ -1633,8 +1312,6 @@ msgid ""
 "  write the v2 graph after reviewing the dry-run output: %s store migrate "
 "app --to-format v2\n"
 msgstr ""
-"  dry-run 出力を確認してから v2 graph を書き込む: %s store migrate app --to-"
-"format v2\n"
 
 #: src/cli.c:2240
 #, c-format
@@ -1642,8 +1319,6 @@ msgid ""
 "  identify legacy fallback blockers before deleting anything: %s store "
 "finalize-migration app --from-format v1 --dry-run\n"
 msgstr ""
-"  何かを削除する前に legacy fallback blocker を特定する: %s store finalize-"
-"migration app --from-format v1 --dry-run\n"
 
 #: src/cli.c:2242
 #, c-format
@@ -1651,8 +1326,6 @@ msgid ""
 "  remove removable legacy fallback files only after blockers are gone: %s "
 "store finalize-migration app --from-format v1\n"
 msgstr ""
-"  blocker がなくなってから削除可能な legacy fallback file だけを削除する: %s "
-"store finalize-migration app --from-format v1\n"
 
 #: src/cli.c:2248
 #, c-format
@@ -1660,15 +1333,12 @@ msgid ""
 "  inspect one v2 secret object by UUID without reading its value: %s secret "
 "status 01234567-89ab-4def-8123-456789abcdef\n"
 msgstr ""
-"  value を読まずに UUID で 1 つの v2 secret object を確認する: %s secret "
-"status 01234567-89ab-4def-8123-456789abcdef\n"
 
 #: src/cli.c:2250
 #, c-format
 msgid ""
 "  resolve a visible or unlocked key to its UUID first: %s id API_TOKEN\n"
 msgstr ""
-"  先に visible または unlocked な key を UUID へ解決する: %s id API_TOKEN\n"
 
 #: src/cli.c:2252
 #, c-format
@@ -1676,13 +1346,11 @@ msgid ""
 "  for cross-domain links, run status from the object's owning domain/store "
 "context\n"
 msgstr ""
-"  cross-domain link では object の owning domain/store context から status を"
-"実行してください\n"
 
 #: src/cli.c:2258
 #, c-format
 msgid "  register the current directory as a domain root: %s domain create\n"
-msgstr "  現在 directory を domain root として登録する: %s domain create\n"
+msgstr ""
 
 #: src/cli.c:2260
 #, c-format
@@ -1690,16 +1358,12 @@ msgid ""
 "  recover a moved domain root: %s --dir /new/path domain move --from /old/"
 "path\n"
 msgstr ""
-"  移動した domain root を復旧する: %s --dir /new/path domain move --from /"
-"old/path\n"
 
 #: src/cli.c:2262
 #, c-format
 msgid ""
 "  inspect inherited and blocked descendants: %s domain ls -l --descendants\n"
 msgstr ""
-"  継承中および block 中の descendant を確認する: %s domain ls -l --"
-"descendants\n"
 
 #: src/cli.c:2269
 #, c-format
@@ -1707,14 +1371,11 @@ msgid ""
 "  see %s help usecases for workflow-oriented examples across multiple "
 "commands\n"
 msgstr ""
-"  複数 command にまたがるワークフロー例は %s help usecases を参照してくださ"
-"い\n"
 
 #: src/cli.c:2279
 #, c-format
 msgid "  bootstrap a new project domain: %s --dir ~/example/project unlock\n"
 msgstr ""
-"  新しい project domain を初期化する: %s --dir ~/example/project unlock\n"
 
 #: src/cli.c:2281
 #, c-format
@@ -1722,8 +1383,6 @@ msgid ""
 "  read one secret directly: %s --dir ~/example/project get API_TOKEN --"
 "stdout\n"
 msgstr ""
-"  1 つの secret を直接読む: %s --dir ~/example/project get API_TOKEN --"
-"stdout\n"
 
 #: src/cli.c:2283
 #, c-format
@@ -1731,8 +1390,6 @@ msgid ""
 "  load shell variables without exposing raw values in exported text: source "
 "<(%s --dir ~/example/project export)\n"
 msgstr ""
-"  export テキスト中に生の値を出さず shell 変数へ読み込む: source <(%s --dir "
-"~/example/project export)\n"
 
 #: src/cli.c:2285
 #, c-format
@@ -1740,8 +1397,6 @@ msgid ""
 "  inject secrets into one subprocess only: %s --dir ~/example/project exec --"
 "inject secret:rename='s/^MY_APP_\\(.*\\)$/APP_\\1/' CMD\n"
 msgstr ""
-"  1 つの子プロセスにだけ secret を注入する: %s --dir ~/example/project exec "
-"--inject secret:rename='s/^MY_APP_\\(.*\\)$/APP_\\1/' CMD\n"
 
 #: src/cli.c:2287
 #, c-format
@@ -1749,8 +1404,6 @@ msgid ""
 "  block automation until a human unlocks the domain elsewhere: %s --dir ~/"
 "example/project wait-unlock --timeout 900\n"
 msgstr ""
-"  人が別の場所で domain を unlock するまで automation を待機させる: %s --dir "
-"~/example/project wait-unlock --timeout 900\n"
 
 #: src/cli.c:2289
 #, c-format
@@ -1758,8 +1411,6 @@ msgid ""
 "  inspect inheritance and local locks under one branch: %s --dir ~/example/"
 "project domain ls -l --descendants\n"
 msgstr ""
-"  1 つの branch 配下の継承と local lock を確認する: %s --dir ~/example/"
-"project domain ls -l --descendants\n"
 
 #: src/cli.c:2296
 #, c-format
@@ -1767,8 +1418,6 @@ msgid ""
 "\n"
 "Concepts:\n"
 msgstr ""
-"\n"
-"概念:\n"
 
 #: src/cli.c:2299
 #, c-format
@@ -1776,32 +1425,24 @@ msgid ""
 "  domain: a directory-scoped boundary for inheritance, sessions, and "
 "tombstones; resolve it with --dir or inspect it with %s domain status\n"
 msgstr ""
-"  domain: 継承、session、tombstone のための directory 単位の境界です。--dir "
-"で解決し、%s domain status で確認できます\n"
 
 #: src/cli.c:2301
 msgid ""
 "  store: a domain-local namespace selected by --store; use it to separate "
 "app, ops, or personal keys inside one domain\n"
 msgstr ""
-"  store: --store で選ぶ domain ローカル namespace です。1 つの domain 内で "
-"app、ops、personal の key を分けるのに使います\n"
 
 #: src/cli.c:2302
 msgid ""
 "  inheritance: reads fall back to parent domains until a local value, "
 "tombstone, or local lock changes the effective view\n"
 msgstr ""
-"  inheritance: 読み取りは local の値、tombstone、local lock が有効 view を変"
-"えるまで親 domain へフォールバックします\n"
 
 #: src/cli.c:2303
 msgid ""
 "  local lock: a local override that blocks reuse of an inherited unlock "
 "until the current domain unlocks or inherits again\n"
 msgstr ""
-"  local lock: 現在 domain が再び unlock または inherit するまで、継承された "
-"unlock の再利用を止める local override です\n"
 
 #: src/cli.c:2304
 #, c-format
@@ -1809,16 +1450,12 @@ msgid ""
 "  local unlock: an authenticated master-key cache scoped to one domain "
 "branch; inspect availability with %s status and refresh it with %s unlock\n"
 msgstr ""
-"  local unlock: 1 つの domain branch に閉じた認証済み master-key cache で"
-"す。%s status で利用可否を見て、%s unlock で更新します\n"
 
 #: src/cli.c:2306
 msgid ""
 "  KEYREF: key lookup syntax is [/ABSOLUTE/DOMAIN/]KEY[:STORE]; when DOMAIN "
 "is present, the trailing slash before KEY is required\n"
 msgstr ""
-"  KEYREF: key lookup 構文は [/ABSOLUTE/DOMAIN/]KEY[:STORE] です。DOMAIN があ"
-"る場合、KEY の前の trailing slash が必要です\n"
 
 #: src/cli.c:2312
 #, c-format
@@ -1826,16 +1463,12 @@ msgid ""
 "\n"
 "Inject rules:\n"
 msgstr ""
-"\n"
-"inject ルール:\n"
 
 #: src/cli.c:2315
 msgid ""
 "  form: pass repeated --inject LAYER:KIND=SELECTOR rules to exec; use --"
 "inject-file FILE for a YAML policy\n"
 msgstr ""
-"  形式: exec に --inject LAYER:KIND=SELECTOR ルールを繰り返し渡します。YAML "
-"ポリシーには --inject-file FILE を使います\n"
 
 #: src/cli.c:2316
 msgid ""
@@ -1843,9 +1476,6 @@ msgid ""
 "keys; route resolves ambient/secret name collisions; final validates the "
 "child environment\n"
 msgstr ""
-"  層: ambient は呼び出し元の環境変数を選び、secret は store の key を選びま"
-"す。route は ambient/secret の名前衝突を解決し、final は子プロセス環境を検証"
-"します\n"
 
 #: src/cli.c:2317
 msgid ""
@@ -1853,33 +1483,24 @@ msgid ""
 "match is missing, reject fails when a match is available, rename maps secret "
 "keys to env names, prefer sets the default collision pick\n"
 msgstr ""
-"  種別: only は許可リスト、omit は一致したものの除外、require は一致対象がな"
-"い場合の失敗、reject は一致対象がある場合の失敗、rename は secret key から環"
-"境変数名への変換、prefer は既定の衝突解決先を設定します\n"
 
 #: src/cli.c:2318
 msgid ""
 "  selectors: exact names and shell-style globs are allowed; separate "
 "multiple selectors in one value with ':'\n"
 msgstr ""
-"  選択子: 完全一致名と shell 形式の glob を使えます。1 つの値に複数の選択子を"
-"書く場合は ':' で区切ります\n"
 
 #: src/cli.c:2319
 msgid ""
 "  route picks: route:prefer=secret, route:prefer=ambient, route:"
 "prefer=error, or route:GLOB=secret|ambient|error\n"
 msgstr ""
-"  route の選択先: route:prefer=secret、route:prefer=ambient、route:"
-"prefer=error、または route:GLOB=secret|ambient|error\n"
 
 #: src/cli.c:2320
 msgid ""
 "  rename: secret:rename=EXPR uses one sed-style s/// expression; generated "
 "environment names must be valid identifiers\n"
 msgstr ""
-"  rename: secret:rename=EXPR は sed 形式の s/// 式を 1 つ使います。生成される"
-"環境変数名は有効な識別子である必要があります\n"
 
 #: src/cli.c:2321
 msgid ""
@@ -1887,33 +1508,24 @@ msgid ""
 "profile_required, profiles, supply, route, demand, scalar values, inline "
 "arrays, and block lists\n"
 msgstr ""
-"  ファイル: --inject-file は小さな YAML subset を受け付けます: bulk_gate、"
-"profile_required、profiles、supply、route、demand、scalar 値、inline array、"
-"block list\n"
 
 #: src/cli.c:2322
 msgid ""
 "  profiles: profiles.NAME.match.command matches CMD path or basename; match."
 "argv_prefix matches CMD arguments from the start\n"
 msgstr ""
-"  profiles: profiles.NAME.match.command は CMD path または basename に一致し"
-"ます。match.argv_prefix は CMD 引数の先頭に一致します\n"
 
 #: src/cli.c:2323
 msgid ""
 "  profile safety: profile_required: true fails when no profile matches, and "
 "multiple matching profiles fail closed\n"
 msgstr ""
-"  profile 安全性: profile_required: true は profile 未一致で失敗します。複数 "
-"profile 一致も fail closed します\n"
 
 #: src/cli.c:2324
 msgid ""
 "  file limits: unsupported YAML syntax fails closed; use block lists for "
 "large selector sets instead of long inline arrays\n"
 msgstr ""
-"  ファイル制約: 未対応の YAML 構文は fail closed します。大きな selector set "
-"には長い inline array ではなく block list を使ってください\n"
 
 #: src/cli.c:2325
 msgid ""
@@ -1921,24 +1533,18 @@ msgid ""
 "supply; list and export can also use --bulk-gate but do not inject into a "
 "child process\n"
 msgstr ""
-"  ゲート: --bulk-gate は secret 供給の前に key の bulk_select 事前フィルター"
-"を適用します。list と export でも --bulk-gate を使えますが、子プロセスへの注"
-"入は行いません\n"
 
 #: src/cli.c:2326
 msgid ""
 "  ptyterm handoff: secdat can be an optional stdin secret provider for "
 "ptyterm; neither tool requires the other\n"
 msgstr ""
-"  ptyterm 受け渡し: secdat は ptyterm 向けの任意の stdin secret provider にな"
-"れます。どちらの tool も相手を必須とはしません\n"
 
 #: src/cli.c:2327
 #, c-format
 msgid ""
 "  preflight: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"
 msgstr ""
-"  事前検証: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"
 
 #: src/cli.c:2329
 #, c-format
@@ -1946,8 +1552,6 @@ msgid ""
 "  example: %s exec --inject ambient:omit=SECDAT_* --inject secret:only=APP_* "
 "--inject route:prefer=secret --inject final:reject=SECDAT_* -- CMD\n"
 msgstr ""
-"  例: %s exec --inject ambient:omit=SECDAT_* --inject secret:only=APP_* --"
-"inject route:prefer=secret --inject final:reject=SECDAT_* -- CMD\n"
 
 #: src/cli.c:2331
 #, c-format
@@ -1955,8 +1559,6 @@ msgid ""
 "  terminal handoff: %s get ROUTER_PASSWORD --stdout | ptyterm --session=1 --"
 "send-stdin --send-eol=cr --redact-sent\n"
 msgstr ""
-"  terminal 受け渡し: %s get ROUTER_PASSWORD --stdout | ptyterm --session=1 --"
-"send-stdin --send-eol=cr --redact-sent\n"
 
 #: src/cli.c:2338
 #, c-format
@@ -1964,95 +1566,85 @@ msgid ""
 "\n"
 "Semantics:\n"
 msgstr ""
-"\n"
-"セマンティクス:\n"
 
 #: src/cli.c:2339
 msgid ""
 "  DIR: base directory used for domain resolution; defaults to the current "
 "working directory\n"
 msgstr ""
-"  DIR: domain 解決の基準ディレクトリです。省略時は現在の作業ディレクトリを使"
-"います\n"
 
 #: src/cli.c:2340
 msgid ""
 "  DOMAIN: directory-scoped configuration boundary used for inheritance and "
 "tombstones\n"
-msgstr "  DOMAIN: 継承と tombstone に使う、ディレクトリ単位の設定境界です\n"
+msgstr ""
 
 #: src/cli.c:2341
 msgid ""
 "  STORE: domain-local namespace selected by --store; defaults to the default "
 "store\n"
 msgstr ""
-"  STORE: --store で選ぶ domain ローカルな名前空間です。省略時は default "
-"store を使います\n"
 
 #: src/cli.c:2342
 msgid ""
 "  KEY / KEYREF: logical secret name, optionally qualified as [/ABSOLUTE/"
 "DOMAIN/]KEY[:STORE]\n"
 msgstr ""
-"  KEY / KEYREF: 論理的な secret 名です。必要なら [/ABSOLUTE/DOMAIN/]KEY[:"
-"STORE] で修飾できます\n"
 
 #: src/cli.c:2343
 msgid ""
 "  migration hints: v2-only errors suggest store migrate; set "
 "SECDAT_SUPPRESS_MIGRATION_HINTS=1 to hide those hints\n"
 msgstr ""
-"  migration hint: v2 専用エラーでは store migrate を提案します。非表示にする"
-"には SECDAT_SUPPRESS_MIGRATION_HINTS=1 を設定します\n"
 
 #: src/cli.c:2371
 #, c-format
 msgid "unknown store subcommand: %s\n"
-msgstr "不明な store サブコマンドです: %s\n"
+msgstr ""
 
 #: src/cli.c:2373
 #, c-format
 msgid "unknown meta subcommand: %s\n"
-msgstr "不明な meta サブコマンドです: %s\n"
+msgstr ""
 
 #: src/cli.c:2375
 #, c-format
 msgid "unknown relation subcommand: %s\n"
-msgstr "不明な relation サブコマンドです: %s\n"
+msgstr ""
 
 #: src/cli.c:2377
 #, c-format
 msgid "unknown secret subcommand: %s\n"
-msgstr "不明な secret サブコマンドです: %s\n"
+msgstr ""
 
 #: src/cli.c:2379
 #, c-format
 msgid "unknown domain subcommand: %s\n"
-msgstr "不明な domain サブコマンドです: %s\n"
+msgstr ""
 
 #: src/cli.c:2524 src/cli.c:2540 src/cli.c:2572 src/cli.c:2594
 #, c-format
 msgid "Usage:\n"
-msgstr "使い方:\n"
+msgstr ""
 
 #: src/cli.c:2550
 #, c-format
 msgid "\n"
-msgstr "\n"
+msgstr ""
 
 #: src/cli.c:2551
 msgid "  KEYREF syntax: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"
-msgstr "  KEYREF 構文: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"
+msgstr ""
 
 #: src/cli.c:2627
 #, c-format
 msgid "Try: %s help %s\n"
-msgstr "試してください: %s help %s\n"
+msgstr ""
 
 #: src/cli.c:2631
 #, c-format
 msgid "Try: %s help\n"
-msgstr "試してください: %s help\n"
+msgstr ""
 
 #: src/domain.c:140 src/domain.c:149 src/domain.c:318 src/domain.c:330
 #: src/domain.c:545 src/domain.c:590 src/domain.c:2072 src/exec_inject.c:435
@@ -2095,7 +1687,7 @@ msgstr "試してください: %s help\n"
 #: src/store.c:31546 src/store.c:31554
 #, c-format
 msgid "out of memory\n"
-msgstr "メモリ不足です\n"
+msgstr ""
 
 #: src/domain.c:237 src/domain.c:244 src/domain.c:273 src/domain.c:621
 #: src/domain.c:644 src/domain.c:667 src/domain.c:679 src/domain.c:706
@@ -2117,496 +1709,487 @@ msgstr "メモリ不足です\n"
 #: src/store.c:26388 src/store.c:27268
 #, c-format
 msgid "path is too long\n"
-msgstr "パスが長すぎます\n"
+msgstr ""
 
 #: src/domain.c:304
 msgid "orphaned-domain"
-msgstr "orphaned-domain"
+msgstr ""
 
 #: src/domain.c:310 src/domain.c:368
 msgid "environment"
-msgstr "environment"
+msgstr ""
 
 #: src/domain.c:313
 msgid "local-unlock"
-msgstr "local-unlock"
+msgstr ""
 
 #: src/domain.c:325
 msgid "local-lock"
-msgstr "local-lock"
+msgstr ""
 
 #: src/domain.c:337 src/domain.c:375 src/domain.c:382 src/store.c:11305
 msgid "locked"
-msgstr "ロック中"
+msgstr ""
 
 #: src/domain.c:356 src/domain.c:2548 src/store.c:11271 src/store.c:11289
 #: src/store.c:11306
 msgid "wrapped master key: present"
-msgstr "ラップ済み master key: あり"
+msgstr ""
 
 #: src/domain.c:356 src/domain.c:2548 src/store.c:11271 src/store.c:11289
 #: src/store.c:11306
 msgid "wrapped master key: absent"
-msgstr "ラップ済み master key: なし"
+msgstr ""
 
 #: src/domain.c:361 src/domain.c:362
 msgid "orphaned"
-msgstr "orphaned"
+msgstr ""
 
 #: src/domain.c:371
 msgid "session"
-msgstr "session"
+msgstr ""
 
 #: src/domain.c:383 src/store.c:11269 src/store.c:11279
 msgid "unlocked"
-msgstr "アンロック済み"
+msgstr ""
 
 #: src/domain.c:392 src/domain.c:434
 msgid "KEY_SOURCE"
-msgstr "KEY_SOURCE"
+msgstr ""
 
 #: src/domain.c:393 src/domain.c:436
 msgid "EFFECTIVE"
-msgstr "EFFECTIVE"
+msgstr ""
 
 #: src/domain.c:394 src/domain.c:438
 msgid "REMAINING"
-msgstr "残り時間"
+msgstr ""
 
 #: src/domain.c:395 src/domain.c:440
 msgid "STATE_SOURCE"
-msgstr "STATE_SOURCE"
+msgstr ""
 
 #: src/domain.c:396 src/domain.c:442
 msgid "STORES"
-msgstr "STORES"
+msgstr ""
 
 #: src/domain.c:397 src/domain.c:444
 msgid "VISIBLE"
-msgstr "VISIBLE"
+msgstr ""
 
 #: src/domain.c:398 src/domain.c:446
 msgid "WRAPPED"
-msgstr "WRAPPED"
+msgstr ""
 
 #: src/domain.c:399 src/domain.c:432
 msgid "DOMAIN"
-msgstr "DOMAIN"
+msgstr ""
 
 #: src/domain.c:639 src/store.c:4755
 #, c-format
 msgid "HOME is not set\n"
-msgstr "HOME が設定されていません\n"
+msgstr ""
 
 #: src/domain.c:768 src/domain.c:775 src/store.c:4531 src/store.c:4538
 #, c-format
 msgid "failed to create directory: %s\n"
-msgstr "ディレクトリの作成に失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:780 src/domain.c:1028 src/domain.c:1788 src/domain.c:1982
 #: src/store.c:4543
 #, c-format
 msgid "not a directory: %s\n"
-msgstr "ディレクトリではありません: %s\n"
+msgstr ""
 
 #: src/domain.c:835 src/store.c:4679
 #, c-format
 msgid "failed to open file: %s\n"
-msgstr "ファイルのオープンに失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:841 src/domain.c:875 src/domain.c:1641 src/store.c:4712
 #, c-format
 msgid "failed to read file: %s\n"
-msgstr "ファイルの読み取りに失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:879
 #, c-format
 msgid "invalid domain root identity metadata: %s\n"
-msgstr "domain root identity metadata が不正です: %s\n"
+msgstr ""
 
 #: src/domain.c:911 src/domain.c:919 src/domain.c:928
 #, c-format
 msgid "domain root identity mismatch for: %s\n"
-msgstr "domain root identity が一致しません: %s\n"
+msgstr ""
 
 #: src/domain.c:955 src/store.c:4611 src/store.c:16498
 #, c-format
 msgid "invalid path: %s\n"
-msgstr "不正なパスです: %s\n"
+msgstr ""
 
 #: src/domain.c:971 src/store.c:4626
 #, c-format
 msgid "failed to create temporary file for: %s\n"
-msgstr "一時ファイルの作成に失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:976 src/store.c:4631
 #, c-format
 msgid "failed to set permissions on: %s\n"
-msgstr "権限の設定に失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:986
 #, c-format
 msgid "failed to open temporary stream for: %s\n"
-msgstr "一時ストリームのオープンに失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:993 src/store.c:4641
 #, c-format
 msgid "failed to write file: %s\n"
-msgstr "ファイルの書き込みに失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:999 src/store.c:4657
 #, c-format
 msgid "failed to close file: %s\n"
-msgstr "ファイルのクローズに失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:1005 src/store.c:4663
 #, c-format
 msgid "failed to rename file into place: %s\n"
-msgstr "ファイルの配置先への rename に失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:1018 src/domain.c:1102 src/domain.c:1587 src/secdat-fuse.c:182
 #: src/store.c:1512
 #, c-format
 msgid "failed to resolve directory: %s\n"
-msgstr "ディレクトリの解決に失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:1274 src/domain.c:1386
 #, c-format
 msgid "failed to stat path: %s\n"
-msgstr "パスの stat に失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:1298 src/domain.c:1865 src/domain.c:1969
 #, c-format
 msgid "domain not found for: %s\n"
-msgstr "domain が見つかりません: %s\n"
+msgstr ""
 
 #: src/domain.c:1346
 #, c-format
 msgid "failed to generate domain id\n"
-msgstr "domain id の生成に失敗しました\n"
+msgstr ""
 
 #: src/domain.c:1369 src/domain.c:1429 src/store.c:3973 src/store.c:4004
 #: src/store.c:12433 src/store.c:28570
 #, c-format
 msgid "failed to open directory: %s\n"
-msgstr "ディレクトリのオープンに失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:1397 src/domain.c:1891 src/domain.c:2027 src/store.c:1634
 #: src/store.c:4587
 #, c-format
 msgid "failed to remove file: %s\n"
-msgstr "ファイルの削除に失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:1404 src/store.c:4597
 #, c-format
 msgid "failed to remove directory: %s\n"
-msgstr "ディレクトリの削除に失敗しました: %s\n"
+msgstr ""
 
 #: src/domain.c:1775
 #, c-format
 msgid "invalid arguments for domain create\n"
-msgstr "domain create の引数が不正です\n"
+msgstr ""
 
 #: src/domain.c:1798 src/domain.c:2001
 #, c-format
 msgid "domain already exists for: %s\n"
-msgstr "domain はすでに存在します: %s\n"
+msgstr ""
 
 #: src/domain.c:1855
 #, c-format
 msgid "invalid arguments for domain delete\n"
-msgstr "domain delete の引数が不正です\n"
+msgstr ""
 
 #: src/domain.c:1880
 #, c-format
 msgid "cannot delete domain with child domains: %s\n"
-msgstr "子 domain があるため domain を削除できません: %s\n"
+msgstr ""
 
 #: src/domain.c:1952 src/domain.c:1958
 #, c-format
 msgid "invalid arguments for domain move\n"
-msgstr "domain move の引数が不正です\n"
+msgstr ""
 
 #: src/domain.c:1992
 #, c-format
 msgid ""
 "source and destination domain roots are the same; use --allow-same-root\n"
 msgstr ""
-"移行元と移行先の domain root が同一です。--allow-same-root を指定してくださ"
-"い\n"
 
 #: src/domain.c:2231 src/domain.c:2243
 #, c-format
 msgid "invalid arguments for domain ls\n"
-msgstr "domain ls の引数が不正です\n"
+msgstr ""
 
 #: src/domain.c:2279
 #, c-format
 msgid "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n"
-msgstr "DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED\n"
+msgstr ""
 
 #: src/domain.c:2465 src/domain.c:2472
 #, c-format
 msgid "invalid arguments for domain status\n"
-msgstr "domain status の引数が不正です\n"
+msgstr ""
 
 #: src/domain.c:2499 src/store.c:1762 src/store.c:1768 src/store.c:8903
 #: src/store.c:11390
 #, c-format
 msgid "resolved domain: %s\n"
-msgstr "解決された domain: %s\n"
+msgstr ""
 
 #: src/domain.c:2500
 #, c-format
 msgid "resolution source: %s\n"
-msgstr "解決元: %s\n"
+msgstr ""
 
 #: src/domain.c:2501
 #, c-format
 msgid "store count: %zu\n"
-msgstr "store 数: %zu\n"
+msgstr ""
 
 #: src/domain.c:2502
 #, c-format
 msgid "visible key count: %zu\n"
-msgstr "可視 key 数: %zu\n"
+msgstr ""
 
 #: src/domain.c:2505
 msgid "key source: environment"
-msgstr "key 取得元: 環境変数"
+msgstr ""
 
 #: src/domain.c:2508
 msgid "key source: session agent"
-msgstr "key 取得元: セッションエージェント"
+msgstr ""
 
 #: src/domain.c:2513
 #, c-format
 msgid "remaining unlock time: %s\n"
-msgstr "残り unlock 時間: %s\n"
+msgstr ""
 
 #: src/domain.c:2517
 msgid "key source: locked"
-msgstr "key 取得元: ロック中"
+msgstr ""
 
 #: src/domain.c:2522 src/domain.c:2526 src/domain.c:2530
 msgid "effective state: unlocked"
-msgstr "実効状態: unlocked"
+msgstr ""
 
 #: src/domain.c:2523
 msgid "effective source: environment"
-msgstr "実効取得元: environment"
+msgstr ""
 
 #: src/domain.c:2527
 msgid "effective source: local unlock"
-msgstr "有効な取得元: local unlock"
+msgstr ""
 
 #: src/domain.c:2531
 msgid "effective source: inherited unlock"
-msgstr "有効な取得元: inherited unlock"
+msgstr ""
 
 #: src/domain.c:2532 src/domain.c:2541
 #, c-format
 msgid "inherited from: %s\n"
-msgstr "%s から継承\n"
+msgstr ""
 
 #: src/domain.c:2535 src/domain.c:2539 src/domain.c:2544
 msgid "effective state: locked"
-msgstr "実効状態: locked"
+msgstr ""
 
 #: src/domain.c:2536
 msgid "effective source: local lock"
-msgstr "有効な取得元: local lock"
+msgstr ""
 
 #: src/domain.c:2540
 msgid "effective source: inherited lock"
-msgstr "有効な取得元: inherited lock"
+msgstr ""
 
 #: src/domain.c:2545
 msgid "effective source: locked"
-msgstr "実効取得元: locked"
+msgstr ""
 
 #: src/domain.c:2566 src/store.c:30166
 #, c-format
 msgid "command not implemented yet: %s\n"
-msgstr "コマンドは未実装です: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:540
 #, c-format
 msgid "exec inject ambient variable must not be present: %s\n"
-msgstr "exec inject: ambient 変数は存在してはなりません: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:544
 #, c-format
 msgid "exec inject secret key must not be present: %s\n"
-msgstr "exec inject: secret key は存在してはなりません: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:553
 #, c-format
 msgid "exec inject required ambient variable not available: %s\n"
-msgstr "exec inject: 必須 ambient 変数を利用できません: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:557
 #, c-format
 msgid "exec inject required secret key not available for injection: %s\n"
-msgstr "exec inject: 注入に必要な secret key を利用できません: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:575
 #, c-format
 msgid "exec inject %s pentad conflict: require and omit overlap: %s\n"
-msgstr "exec inject: %s pentad が競合しています (require と omit が重複): %s\n"
+msgstr ""
 
 #: src/exec_inject.c:579
 #, c-format
 msgid "exec inject %s pentad conflict: require and reject overlap: %s\n"
 msgstr ""
-"exec inject: %s pentad が競合しています (require と reject が重複): %s\n"
 
 #: src/exec_inject.c:587
 #, c-format
 msgid "exec inject %s pentad conflict: omit and reject overlap: %s\n"
-msgstr "exec inject: %s pentad が競合しています (omit と reject が重複): %s\n"
+msgstr ""
 
 #: src/exec_inject.c:626
 #, c-format
 msgid "invalid route pick: %s\n"
-msgstr "不正な route 選択です: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:673
 #, c-format
 msgid "invalid command resolution: %s\n"
-msgstr "不正な command resolution です: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:690 src/exec_inject.c:1202 src/exec_inject.c:1213
 #: src/exec_inject.c:1565
 #, c-format
 msgid "secret rename may be specified at most once\n"
-msgstr "secret rename は 1 回だけ指定できます\n"
+msgstr ""
 
 #: src/exec_inject.c:713 src/exec_inject.c:736 src/exec_inject.c:742
 #: src/exec_inject.c:768 src/exec_inject.c:802
 #, c-format
 msgid "invalid secret rename expression\n"
-msgstr "不正な secret rename 式です\n"
+msgstr ""
 
 #: src/exec_inject.c:726 src/exec_inject.c:818
 #, c-format
 msgid "invalid secret rename regex: %s\n"
-msgstr "不正な secret rename 正規表現です: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:834 src/store.c:2998 src/store.c:29895
 #, c-format
 msgid "key is not a valid environment variable name: %s\n"
-msgstr "key は有効な環境変数名ではありません: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:870 src/exec_inject.c:880
 #, c-format
 msgid "failed to match secret rename against key: %s\n"
-msgstr "secret rename を key に照合できませんでした: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:945
 #, c-format
 msgid "invalid environment variable name from secret rename: %s\n"
-msgstr "secret rename から不正な環境変数名が生成されました: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:986
 #, c-format
 msgid "invalid exec inject kind: %s\n"
-msgstr "不正な exec inject kind です: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:1103
 #, c-format
 msgid "exec: %s is no longer supported; use %s\n"
-msgstr "exec: %s はサポートされなくなりました。%s を使ってください\n"
+msgstr ""
 
 #: src/exec_inject.c:1110
 #, c-format
 msgid "--bulk-gate may be specified at most once\n"
-msgstr "--bulk-gate は 1 回だけ指定できます\n"
+msgstr ""
 
 #: src/exec_inject.c:1124
 #, c-format
 msgid "gate: %s is no longer supported; use bulk_gate: true\n"
 msgstr ""
-"gate: %s はサポートされなくなりました。bulk_gate: true を使ってください\n"
 
 #: src/exec_inject.c:1127
 #, c-format
 msgid "invalid bulk_gate value: %s; use bulk_gate: true\n"
-msgstr "不正な bulk_gate 値です: %s。bulk_gate: true を使ってください\n"
+msgstr ""
 
 #: src/exec_inject.c:1134
 #, c-format
 msgid "invalid --inject-gate value: %s; use --bulk-gate\n"
-msgstr "不正な --inject-gate 値です: %s。--bulk-gate を使ってください\n"
+msgstr ""
 
 #: src/exec_inject.c:1137
 #, c-format
 msgid "exec: --inject-gate is no longer supported; use --bulk-gate\n"
 msgstr ""
-"exec: --inject-gate はサポートされなくなりました。--bulk-gate を使ってくださ"
-"い\n"
 
 #: src/exec_inject.c:1156 src/exec_inject.c:1162 src/exec_inject.c:1176
 #: src/exec_inject.c:1183
 #, c-format
 msgid "invalid --inject token: %s\n"
-msgstr "不正な --inject トークンです: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:1237 src/exec_inject.c:1554
 #, c-format
 msgid "route:prefer may be specified at most once\n"
-msgstr "route:prefer は 1 回だけ指定できます\n"
+msgstr ""
 
 #: src/exec_inject.c:1299
 #, c-format
 msgid "invalid --inject layer: %s\n"
-msgstr "不正な --inject layer です: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:1312
 #, c-format
 msgid "profile_required may be specified at most once\n"
-msgstr "profile_required は 1 回だけ指定できます\n"
+msgstr ""
 
 #: src/exec_inject.c:1324
 #, c-format
 msgid "invalid profile_required value: %s; use true or false\n"
 msgstr ""
-"不正な profile_required 値です: %s。true または false を使ってください\n"
 
 #: src/exec_inject.c:1339
 #, c-format
 msgid "invalid empty inject profile name\n"
-msgstr "空の inject profile 名は不正です\n"
+msgstr ""
 
 #: src/exec_inject.c:1344
 #, c-format
 msgid "duplicate inject profile: %s\n"
-msgstr "inject profile が重複しています: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:1368
 #, c-format
 msgid "inject profile match.command cannot be empty\n"
-msgstr "inject profile の match.command は空にできません\n"
+msgstr ""
 
 #: src/exec_inject.c:1372
 #, c-format
 msgid "inject profile match.command may be specified at most once: %s\n"
-msgstr "inject profile の match.command は 1 回だけ指定できます: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:1660 src/exec_inject.c:1668 src/exec_inject.c:3003
 #: src/exec_inject.c:3013 src/exec_inject.c:3032 src/exec_inject.c:3037
 #: src/exec_inject.c:3059
 #, c-format
 msgid "invalid arguments for exec\n"
-msgstr "exec の引数が不正です\n"
+msgstr ""
 
 #: src/exec_inject.c:1673
 #, c-format
 msgid ""
 "--json requires --dry-run for exec; use --json-summary for real executions\n"
 msgstr ""
-"exec で --json を使うには --dry-run が必要です。実行時は --json-summary を"
-"使ってください\n"
 
 #: src/exec_inject.c:1678
 #, c-format
@@ -2614,105 +2197,103 @@ msgid ""
 "--json-summary cannot be combined with --dry-run; use --dry-run --json for "
 "preflight JSON\n"
 msgstr ""
-"--json-summary と --dry-run は同時に指定できません。preflight JSON には --"
-"dry-run --json を使ってください\n"
 
 #: src/exec_inject.c:2050
 #, c-format
 msgid "duplicate environment variable name from secret rename: %s\n"
-msgstr "secret rename で環境変数名が重複しました: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:2151
 #, c-format
 msgid "ambient/secret collision on environment variable: %s\n"
-msgstr "ambient/secret が環境変数で衝突しました: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:2222
 #, c-format
 msgid "exec inject forbidden variable in final child env: %s\n"
-msgstr "exec inject: 最終子環境に禁止された変数が存在します: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:2282
 #, c-format
 msgid "exec inject required variable missing from final child env: %s\n"
-msgstr "exec inject: 最終子環境に必須変数がありません: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:2690
 #, c-format
 msgid "ambient variable missing during exec: %s\n"
-msgstr "exec 実行中に ambient 変数がありません: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:2802
 #, c-format
 msgid "inject profile missing match.command: %s\n"
-msgstr "inject profile に match.command がありません: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:2961
 #, c-format
 msgid "multiple inject profiles matched command: %s, %s\n"
-msgstr "複数の inject profile が command に一致しました: %s, %s\n"
+msgstr ""
 
 #: src/exec_inject.c:2968
 #, c-format
 msgid "no inject profile matched command: %s\n"
-msgstr "command に一致する inject profile がありません: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:3241 src/exec_inject.c:3257 src/exec_inject.c:3266
 #: src/secdat-fuse.c:1050 src/secdat-fuse.c:1068
 #, c-format
 msgid "failed to execute command: %s\n"
-msgstr "コマンドの実行に失敗しました: %s\n"
+msgstr ""
 
 #: src/exec_inject.c:3247
 #, c-format
 msgid "command resolution direct requires slash-qualified command: %s\n"
-msgstr "command resolution direct には slash 付き command が必要です: %s\n"
+msgstr ""
 
 #: src/exec_inject_policy_file.c:277
 #, c-format
 msgid "inject policy token is too large\n"
-msgstr "inject policy token が大きすぎます\n"
+msgstr ""
 
 #: src/exec_inject_policy_file.c:289
 #, c-format
 msgid "failed to build inject policy token\n"
-msgstr "inject policy token の構築に失敗しました\n"
+msgstr ""
 
 #: src/exec_inject_policy_file.c:593
 #, c-format
 msgid "failed to open inject policy file: %s\n"
-msgstr "inject policy file を開けませんでした: %s\n"
+msgstr ""
 
 #: src/exec_inject_policy_file.c:618
 #, c-format
 msgid "invalid inject policy file indentation: %s\n"
-msgstr "inject policy file のインデントが不正です: %s\n"
+msgstr ""
 
 #: src/exec_inject_policy_file.c:633 src/exec_inject_policy_file.c:644
 #, c-format
 msgid "invalid inject policy file list entry: %s\n"
-msgstr "inject policy file の list 項目が不正です: %s\n"
+msgstr ""
 
 #: src/exec_inject_policy_file.c:679 src/exec_inject_policy_file.c:752
 #: src/exec_inject_policy_file.c:953 src/exec_inject_policy_file.c:1085
 #, c-format
 msgid "invalid inject policy file line: %s\n"
-msgstr "inject policy file の行が不正です: %s\n"
+msgstr ""
 
 #: src/exec_inject_policy_file.c:723
 #, c-format
 msgid "gate: is no longer supported; use bulk_gate: true\n"
-msgstr "gate: はサポートされなくなりました。bulk_gate: true を使ってください\n"
+msgstr ""
 
 #: src/exec_inject_policy_file.c:729
 #, c-format
 msgid "unknown inject policy file section: %s\n"
-msgstr "不明な inject policy file section です: %s\n"
+msgstr ""
 
 #: src/exec_inject_policy_file.c:769
 #, c-format
 msgid "unknown inject profile section: %s\n"
-msgstr "不明な inject profile section です: %s\n"
+msgstr ""
 
 #: src/exec_inject_policy_file.c:798 src/exec_inject_policy_file.c:821
 #: src/exec_inject_policy_file.c:875 src/exec_inject_policy_file.c:899
@@ -2721,37 +2302,37 @@ msgstr "不明な inject profile section です: %s\n"
 #: src/exec_inject_policy_file.c:1044 src/exec_inject_policy_file.c:1068
 #, c-format
 msgid "invalid inject policy file selector list: %s\n"
-msgstr "inject policy file の selector list が不正です: %s\n"
+msgstr ""
 
 #: src/exec_inject_policy_file.c:827
 #, c-format
 msgid "unknown inject profile match key: %s\n"
-msgstr "不明な inject profile match key です: %s\n"
+msgstr ""
 
 #: src/exec_inject_policy_file.c:839 src/exec_inject_policy_file.c:966
 #, c-format
 msgid "unknown inject policy supply section: %s\n"
-msgstr "不明な inject policy supply section です: %s\n"
+msgstr ""
 
 #: src/main.c:185
 #, c-format
 msgid "Build: %s\n"
-msgstr "Build: %s\n"
+msgstr ""
 
 #: src/main.c:187
 #, c-format
 msgid "Repository: %s\n"
-msgstr "Repository: %s\n"
+msgstr ""
 
 #: src/main.c:188
 #, c-format
 msgid "Issues: %s\n"
-msgstr "Issue 報告先: %s\n"
+msgstr ""
 
 #: src/main.c:189
 #, c-format
 msgid "Author: %s\n"
-msgstr "Author: %s\n"
+msgstr ""
 
 #: src/secdat-fuse.c:80
 #, c-format
@@ -2781,103 +2362,81 @@ msgid ""
 "  -h, --help                 show this help\n"
 "  -V, --version              print the secdat-fuse version\n"
 msgstr ""
-"Usage: %s [OPTIONS] MOUNTPOINT [-- CMD [ARGS...]]\n"
-"\n"
-"選択した secdat key を file として mount します。\n"
-"CMD 指定時は mount して command を実行し、その後自動で unmount します。\n"
-"\n"
-"オプション:\n"
-"  -d, --dir DIR              domain 解決に使う基準ディレクトリを指定します\n"
-"      --domain DIR           登録済みの正確な domain root を必須にします\n"
-"  -s, --store STORE          store namespace を選択します\n"
-"  -p, --pattern GLOB         一致する key を含めます。複数回指定できます\n"
-"  -x, --pattern-exclude GLOB 一致する key を除外します。複数回指定できます\n"
-"      --bulk-gate     bulk-gated selection が許可された key だけを含めます\n"
-"      --require-key KEY      KEY が選択後も残らなければ失敗します。複数回指定"
-"できます\n"
-"      --dry-run              mount せずに mount 対象 file を一覧表示します\n"
-"      --json                 dry-run output を JSON で出力します\n"
-"      --size-metadata        getattr で secret value を読んで file size を報"
-"告します\n"
-"  -f, --foreground           FUSE process を foreground に維持します\n"
-"      --debug                FUSE debug output を有効にします\n"
-"  -h, --help                 この help を表示します\n"
-"  -V, --version              secdat-fuse のバージョンを表示します\n"
 
 #: src/secdat-fuse.c:751
 #, c-format
 msgid "required key is not selected for secdat-fuse mount: %s\n"
-msgstr "必須 key が secdat-fuse mount の対象に選択されていません: %s\n"
+msgstr ""
 
 #: src/secdat-fuse.c:811
 #, c-format
 msgid "secdat-fuse: %s is no longer supported; use %s\n"
-msgstr "secdat-fuse: %s はサポートされなくなりました。%s を使ってください\n"
+msgstr ""
 
 #: src/secdat-fuse.c:906
 #, c-format
 msgid "--dir and --domain cannot be combined\n"
-msgstr "--dir と --domain は同時に指定できません\n"
+msgstr ""
 
 #: src/secdat-fuse.c:910
 #, c-format
 msgid "--json requires --dry-run\n"
-msgstr "--json には --dry-run が必要です\n"
+msgstr ""
 
 #: src/secdat-fuse.c:914
 #, c-format
 msgid "missing mountpoint\n"
-msgstr "mountpoint が不足しています\n"
+msgstr ""
 
 #: src/secdat-fuse.c:922 src/secdat-fuse.c:928
 #, c-format
 msgid "invalid arguments\n"
-msgstr "引数が不正です\n"
+msgstr ""
 
 #: src/secdat-fuse.c:1018
 #, c-format
 msgid "failed to wait for secdat-fuse mount process\n"
-msgstr "secdat-fuse mount process の待機に失敗しました\n"
+msgstr ""
 
 #: src/secdat-fuse.c:1020
 #, c-format
 msgid "failed to start secdat-fuse mount\n"
-msgstr "secdat-fuse mount の開始に失敗しました\n"
+msgstr ""
 
 #: src/secdat-fuse.c:1033
 #, c-format
 msgid "failed to wait for %s\n"
-msgstr "%s の待機に失敗しました\n"
+msgstr ""
 
 #: src/secdat-fuse.c:1045 src/secdat-fuse.c:1063 src/secdat-fuse.c:1096
 #, c-format
 msgid "failed to fork\n"
-msgstr "fork に失敗しました\n"
+msgstr ""
 
 #: src/secdat-fuse.c:1074
 #, c-format
 msgid "failed to unmount secdat-fuse mountpoint: %s\n"
-msgstr "secdat-fuse mountpoint の unmount に失敗しました: %s\n"
+msgstr ""
 
 #: src/secdat-fuse.c:1088
 #, c-format
 msgid "failed to create pipe\n"
-msgstr "pipe の作成に失敗しました\n"
+msgstr ""
 
 #: src/store.c:1557
 #, c-format
 msgid "writes to the default domain are not supported\n"
-msgstr "default domain への書き込みはサポートされていません\n"
+msgstr ""
 
 #: src/store.c:1694
 #, c-format
 msgid "note: %zu descendant domains can now reuse this session\n"
-msgstr "補足: %zu 個の descendant domain がこの session を再利用できます\n"
+msgstr ""
 
 #: src/store.c:1697 src/store.c:1734
 #, c-format
 msgid "note: %zu orphaned descendant domains are not affected by unlock\n"
-msgstr "補足: %zu 個の orphaned descendant domain は unlock の対象外です\n"
+msgstr ""
 
 #: src/store.c:1699 src/store.c:1736
 #, c-format
@@ -2885,69 +2444,65 @@ msgid ""
 "recover or delete orphaned descendant: secdat domain move --from %s --to "
 "NEW_ROOT\n"
 msgstr ""
-"orphaned descendant を復旧または削除: secdat domain move --from %s --to "
-"NEW_ROOT\n"
 
 #: src/store.c:1700 src/store.c:1737
 #, c-format
 msgid "discard orphaned descendant: secdat --dir %s domain delete\n"
-msgstr "orphaned descendant を破棄: secdat --dir %s domain delete\n"
+msgstr ""
 
 #: src/store.c:1707
 #, c-format
 msgid "note: %zu descendant domains remain locked under this branch\n"
 msgstr ""
-"補足: この branch 配下では %zu 個の descendant domain がまだ locked のままで"
-"す\n"
 
 #: src/store.c:1708
 msgid "affected descendants:"
-msgstr "影響を受ける descendant:"
+msgstr ""
 
 #: src/store.c:1727
 #, c-format
 msgid "  %s\n"
-msgstr "  %s\n"
+msgstr ""
 
 #: src/store.c:1731
 #, c-format
 msgid "  ... and %zu more\n"
-msgstr "  ... さらに %zu 個\n"
+msgstr ""
 
 #: src/store.c:1741
 #, c-format
 msgid "inspect descendants: secdat --dir %s domain ls -l --descendants\n"
-msgstr "descendant を確認: secdat --dir %s domain ls -l --descendants\n"
+msgstr ""
 
 #: src/store.c:1743
 #, c-format
 msgid "inspect one descendant: secdat --dir %s domain status\n"
-msgstr "1 つの descendant を確認: secdat --dir %s domain status\n"
+msgstr ""
 
 #: src/store.c:1744
 #, c-format
 msgid "unlock one descendant: secdat --dir %s unlock\n"
-msgstr "1 つの descendant を unlock: secdat --dir %s unlock\n"
+msgstr ""
 
 #: src/store.c:1763
 #, c-format
 msgid "inspect current domain: secdat domain status\n"
-msgstr "現在の domain を確認: secdat domain status\n"
+msgstr ""
 
 #: src/store.c:1764
 #, c-format
 msgid "unlock current domain: secdat unlock\n"
-msgstr "現在の domain を unlock: secdat unlock\n"
+msgstr ""
 
 #: src/store.c:1769
 #, c-format
 msgid "inspect current domain: secdat --dir %s domain status\n"
-msgstr "現在の domain を確認: secdat --dir %s domain status\n"
+msgstr ""
 
 #: src/store.c:1770
 #, c-format
 msgid "unlock current domain: secdat --dir %s unlock\n"
-msgstr "現在の domain を unlock: secdat --dir %s unlock\n"
+msgstr ""
 
 #: src/store.c:1866
 #, c-format
@@ -2955,91 +2510,88 @@ msgid ""
 "Hint: inspect migration first with `%s store migrate %s --to-format v2 --dry-"
 "run`\n"
 msgstr ""
-"ヒント: 先に `%s store migrate %s --to-format v2 --dry-run` で migration を確"
-"認してください\n"
 
 #: src/store.c:1867
 #, c-format
 msgid "Hint: suppress migration hints with %s=1\n"
-msgstr "ヒント: migration hint を抑制するには %s=1 を設定してください\n"
+msgstr ""
 
 #: src/store.c:1898
 #, c-format
 msgid "invalid value for --unlock-timeout: %s\n"
-msgstr "--unlock-timeout の値が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:2346
 #, c-format
 msgid "missing value for --unlock-timeout\n"
-msgstr "--unlock-timeout に値が必要です\n"
+msgstr ""
 
 #: src/store.c:2351 src/store.c:2360 src/store.c:2372
 #, c-format
 msgid "invalid arguments for get\n"
-msgstr "get の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:2381
 #, c-format
 msgid "missing key for get\n"
-msgstr "get のキーが不足しています\n"
+msgstr ""
 
 #: src/store.c:2386
 #, c-format
 msgid "--unlock-timeout requires --on-demand-unlock or %s\n"
-msgstr "--unlock-timeout を使うには --on-demand-unlock または %s が必要です\n"
+msgstr ""
 
 #: src/store.c:2415
 #, c-format
 msgid "invalid value for --timeout: %s\n"
-msgstr "--timeout の値が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:2422
 #, c-format
 msgid "missing value for --timeout\n"
-msgstr "--timeout に値が必要です\n"
+msgstr ""
 
 #: src/store.c:2431 src/store.c:2438 src/store.c:11319
 #, c-format
 msgid "invalid arguments for wait-unlock\n"
-msgstr "wait-unlock の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:2460
 #, c-format
 msgid ""
 "waiting for another terminal to unlock secrets for resolved domain: %s\n"
 msgstr ""
-"別端末で secrets が unlock されるのを待機しています。解決済み domain: %s\n"
 
 #: src/store.c:2462 src/store.c:2525
 #, c-format
 msgid "unlock from another terminal: secdat unlock\n"
-msgstr "別端末で unlock: secdat unlock\n"
+msgstr ""
 
 #: src/store.c:2464 src/store.c:2527
 #, c-format
 msgid "unlock from another terminal: secdat --dir %s unlock\n"
-msgstr "別端末で unlock: secdat --dir %s unlock\n"
+msgstr ""
 
 #: src/store.c:2467
 #, c-format
 msgid "unlock wait timeout: %lld seconds\n"
-msgstr "unlock 待機タイムアウト: %lld 秒\n"
+msgstr ""
 
 #: src/store.c:2498
 #, c-format
 msgid ""
 "timed out waiting for another terminal to unlock secrets after %lld seconds\n"
-msgstr "別端末での secrets の unlock 待機が %lld 秒でタイムアウトしました\n"
+msgstr ""
 
 #: src/store.c:2523
 #, c-format
 msgid "waiting for another terminal to unlock resolved domain: %s\n"
-msgstr "別端末で解決済み domain が unlock されるのを待機しています: %s\n"
+msgstr ""
 
 #: src/store.c:2530
 #, c-format
 msgid "wait-unlock timeout: %lld seconds\n"
-msgstr "wait-unlock タイムアウト: %lld 秒\n"
+msgstr ""
 
 #: src/store.c:2558
 #, c-format
@@ -3047,38 +2599,37 @@ msgid ""
 "timed out waiting for another terminal to unlock resolved domain after %lld "
 "seconds\n"
 msgstr ""
-"別端末での解決済み domain の unlock 待機が %lld 秒でタイムアウトしました\n"
 
 #: src/store.c:2630 src/store.c:2642 src/store.c:2649 src/store.c:2661
 #: src/store.c:2666 src/store.c:2671 src/store.c:11375
 #, c-format
 msgid "invalid arguments for unlock\n"
-msgstr "unlock の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:2655
 #, c-format
 msgid "--duration and --until cannot be combined\n"
-msgstr "--duration と --until は同時に指定できません\n"
+msgstr ""
 
 #: src/store.c:2677
 #, c-format
 msgid "invalid value for --duration: %s\n"
-msgstr "--duration の値が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:2682
 #, c-format
 msgid "invalid value for --until: %s\n"
-msgstr "--until の値が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:2707 src/store.c:2716 src/store.c:2723 src/store.c:11756
 #, c-format
 msgid "invalid arguments for passwd\n"
-msgstr "passwd の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:2757 src/store.c:2764 src/store.c:2770 src/store.c:11638
 #, c-format
 msgid "invalid arguments for lock\n"
-msgstr "lock の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:2789
 #, c-format
@@ -3086,18 +2637,16 @@ msgid ""
 "cannot unlock descendant domains because an orphaned registered domain is in "
 "this subtree: %s\n"
 msgstr ""
-"この subtree に orphaned registered domain があるため descendant domain を "
-"unlock できません: %s\n"
 
 #: src/store.c:2790
 #, c-format
 msgid "recover it with: secdat domain move --from %s --to NEW_ROOT\n"
-msgstr "復旧する場合: secdat domain move --from %s --to NEW_ROOT\n"
+msgstr ""
 
 #: src/store.c:2791
 #, c-format
 msgid "or discard it with: secdat --dir %s domain delete\n"
-msgstr "破棄する場合: secdat --dir %s domain delete\n"
+msgstr ""
 
 #: src/store.c:2851
 #, c-format
@@ -3105,43 +2654,37 @@ msgid ""
 "unlock --descendants requires confirmation on a terminal or rerun with --"
 "yes\n"
 msgstr ""
-"unlock --descendants には端末での確認が必要です。非対話では --yes を付けて再"
-"実行してください\n"
 
 #: src/store.c:2858
 #, c-format
 msgid "failed to read confirmation\n"
-msgstr "確認入力の読み取りに失敗しました\n"
+msgstr ""
 
 #: src/store.c:2878
 msgid ""
 "unlock descendant domains in this subtree? local locks will remain [y/N]: "
 msgstr ""
-"この subtree の descendant domain を unlock しますか? local lock は残ります "
-"[y/N]: "
 
 #: src/store.c:2888
 #, c-format
 msgid "descendant unlock cancelled\n"
-msgstr "descendant unlock を中止しました\n"
+msgstr ""
 
 #: src/store.c:2921
 #, c-format
 msgid ""
 "note: unlocked %zu descendant domains in this subtree; local locks remain\n"
 msgstr ""
-"注: この subtree で %zu 個の descendant domain を unlock しました。local "
-"lock は残ります\n"
 
 #: src/store.c:2943 src/store.c:2967 src/store.c:2985 src/store.c:2994
 #, c-format
 msgid "invalid key reference: %s\n"
-msgstr "不正なキー参照です: %s\n"
+msgstr ""
 
 #: src/store.c:3011
 #, c-format
 msgid "%s is no longer supported; use %s\n"
-msgstr "%s はサポートされなくなりました。%s を使ってください\n"
+msgstr ""
 
 #: src/store.c:3018
 #, c-format
@@ -3149,144 +2692,142 @@ msgid ""
 "--inject is not valid for %s; use --bulk-select to set bulk_select policy "
 "(exec supply rules use --inject on exec)\n"
 msgstr ""
-"%s では --inject は使えません。bulk_select policy には --bulk-select を使って"
-"ください (exec の supply ルールには exec で --inject を使います)\n"
 
 #: src/store.c:3098
 #, c-format
 msgid "invalid arguments for ls\n"
-msgstr "ls の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:3138 src/store.c:3153 src/store.c:3163
 #, c-format
 msgid "invalid arguments for export\n"
-msgstr "export の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:3236 src/store.c:3243 src/store.c:3249 src/store.c:3255
 #: src/store.c:3261
 #, c-format
 msgid "invalid arguments for list\n"
-msgstr "list の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:3268
 #, c-format
 msgid "missing state filter for list\n"
-msgstr "list に state filter が必要です\n"
+msgstr ""
 
 #: src/store.c:3325 src/store.c:3339
 #, c-format
 msgid "invalid arguments for attr\n"
-msgstr "attr の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:3332
 #, c-format
 msgid "missing key for attr\n"
-msgstr "attr のキーが不足しています\n"
+msgstr ""
 
 #: src/store.c:3379
 #, c-format
 msgid "invalid fsck format: %s\n"
-msgstr "fsck format が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:3390 src/store.c:3397
 #, c-format
 msgid "invalid arguments for fsck\n"
-msgstr "fsck の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:3408
 #, c-format
 msgid "fsck --repair is only supported with --format v2\n"
-msgstr "fsck --repair は --format v2 でのみサポートされています\n"
+msgstr ""
 
 #: src/store.c:3412
 #, c-format
 msgid "fsck --repair currently requires --refcount\n"
-msgstr "fsck --repair には現在 --refcount が必要です\n"
+msgstr ""
 
 #: src/store.c:3451
 #, c-format
 msgid "invalid gc format: %s\n"
-msgstr "gc format が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:3459 src/store.c:3466
 #, c-format
 msgid "invalid arguments for gc\n"
-msgstr "gc の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:3497
 #, c-format
 msgid "invalid migration target format: %s\n"
-msgstr "migration target format が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:3508 src/store.c:3520
 #, c-format
 msgid "invalid arguments for store migrate\n"
-msgstr "store migrate の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:3515
 #, c-format
 msgid "missing store name for store migrate\n"
-msgstr "store migrate の store 名が不足しています\n"
+msgstr ""
 
 #: src/store.c:3525
 #, c-format
 msgid "store migrate requires --to-format v2\n"
-msgstr "store migrate には --to-format v2 が必要です\n"
+msgstr ""
 
 #: src/store.c:3555
 #, c-format
 msgid "invalid migration source format: %s\n"
-msgstr "migration source format が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:3566 src/store.c:3578
 #, c-format
 msgid "invalid arguments for store finalize-migration\n"
-msgstr "store finalize-migration の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:3573
 #, c-format
 msgid "missing store name for store finalize-migration\n"
-msgstr "store finalize-migration の store 名が不足しています\n"
+msgstr ""
 
 #: src/store.c:3583
 #, c-format
 msgid "store finalize-migration requires --from-format v1\n"
-msgstr "store finalize-migration には --from-format v1 が必要です\n"
+msgstr ""
 
 #: src/store.c:3609 src/store.c:3620 src/store.c:3630
 #, c-format
 msgid "invalid arguments for store ls\n"
-msgstr "store ls の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:3808
 #, c-format
 msgid "secret value is too large\n"
-msgstr "secret value が大きすぎます\n"
+msgstr ""
 
 #: src/store.c:3835 src/store.c:3848
 #, c-format
 msgid "invalid overlay payload\n"
-msgstr "overlay payload が不正です\n"
+msgstr ""
 
 #: src/store.c:4192 src/store.c:20953
 #, c-format
 msgid "invalid key visibility: %s\n"
-msgstr "key visibility が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:4206
 #, c-format
 msgid "invalid value access: %s\n"
-msgstr "value access が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:4264
 #, c-format
 msgid "invalid bulk select policy: %s; use %s\n"
-msgstr "bulk select policy が不正です: %s。%s を使ってください\n"
+msgstr ""
 
 #: src/store.c:4267 src/store.c:4276
 #, c-format
 msgid "invalid bulk select policy: %s\n"
-msgstr "bulk select policy が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:4308
 #, c-format
@@ -3294,130 +2835,128 @@ msgid ""
 "key_visibility=unlocked requires store format v2; run store migrate STORE --"
 "to-format v2 --dry-run first\n"
 msgstr ""
-"key_visibility=unlocked には store format v2 が必要です。先に store migrate "
-"STORE --to-format v2 --dry-run を実行してください\n"
 
 #: src/store.c:4339 src/store.c:4378
 #, c-format
 msgid "invalid secret metadata\n"
-msgstr "secret metadata が不正です\n"
+msgstr ""
 
 #: src/store.c:4356
 #, c-format
 msgid "unsupported secret metadata field: %s\n"
-msgstr "サポートされていない secret metadata field です: %s\n"
+msgstr ""
 
 #: src/store.c:4392
 #, c-format
 msgid "unsupported secret metadata format\n"
-msgstr "サポートされていない secret metadata format です\n"
+msgstr ""
 
 #: src/store.c:4486 src/store.c:21291 src/store.c:24678
 #, c-format
 msgid "secret value_access does not match storage mode\n"
-msgstr "secret value_access が storage mode と一致しません\n"
+msgstr ""
 
 #: src/store.c:4503 src/store.c:21010 src/store.c:21083 src/store.c:21091
 #: src/store.c:21419
 #, c-format
 msgid "secret metadata is too large\n"
-msgstr "secret metadata が大きすぎます\n"
+msgstr ""
 
 #: src/store.c:4650
 #, c-format
 msgid "failed to fsync file: %s\n"
-msgstr "ファイルの fsync に失敗しました: %s\n"
+msgstr ""
 
 #: src/store.c:4685 src/store.c:4698
 #, c-format
 msgid "failed to seek file: %s\n"
-msgstr "ファイルの seek に失敗しました: %s\n"
+msgstr ""
 
 #: src/store.c:4692
 #, c-format
 msgid "failed to determine file size: %s\n"
-msgstr "ファイルサイズの取得に失敗しました: %s\n"
+msgstr ""
 
 #: src/store.c:4793 src/store.c:10742
 #, c-format
 msgid "failed to derive encryption key\n"
-msgstr "暗号化キーの導出に失敗しました\n"
+msgstr ""
 
 #: src/store.c:4876
 #, c-format
 msgid "%s must be an integer between %u and %u\n"
-msgstr "%s には %u から %u までの整数を指定してください\n"
+msgstr ""
 
 #: src/store.c:5459 src/store.c:5472 src/store.c:6824 src/store.c:6830
 #: src/store.c:6840 src/store.c:6887
 #, c-format
 msgid "failed to start session agent\n"
-msgstr "セッションエージェントの起動に失敗しました\n"
+msgstr ""
 
 #: src/store.c:5477 src/store.c:6894
 #, c-format
 msgid "timed out waiting for session agent readiness\n"
-msgstr "セッションエージェントの準備完了待ちがタイムアウトしました\n"
+msgstr ""
 
 #: src/store.c:5903
 #, c-format
 msgid "failed to open file descriptor\n"
-msgstr "ファイル記述子のオープンに失敗しました\n"
+msgstr ""
 
 #: src/store.c:6739
 #, c-format
 msgid "failed to bind session agent socket\n"
-msgstr "セッションエージェントのソケット bind に失敗しました\n"
+msgstr ""
 
 #: src/store.c:6762
 #, c-format
 msgid "failed to listen on session agent socket\n"
-msgstr "セッションエージェントのソケット listen に失敗しました\n"
+msgstr ""
 
 #: src/store.c:6902
 #, c-format
 msgid "session agent failed before readiness\n"
-msgstr "セッションエージェントは準備完了前に失敗しました\n"
+msgstr ""
 
 #: src/store.c:6940
 #, c-format
 msgid "empty passphrase is not allowed\n"
-msgstr "空のパスフレーズは許可されません\n"
+msgstr ""
 
 #: src/store.c:6957
 #, c-format
 msgid "missing askpass provider\n"
-msgstr "askpass provider が不足しています\n"
+msgstr ""
 
 #: src/store.c:6962
 #, c-format
 msgid "missing askpass provider: %s\n"
-msgstr "askpass provider が見つかりません: %s\n"
+msgstr ""
 
 #: src/store.c:6964
 #, c-format
 msgid "unsupported askpass provider: %s\n"
-msgstr "サポートされていない askpass provider です: %s\n"
+msgstr ""
 
 #: src/store.c:6970 src/store.c:6978
 #, c-format
 msgid "failed to start askpass command\n"
-msgstr "askpass コマンドの起動に失敗しました\n"
+msgstr ""
 
 #: src/store.c:7028
 #, c-format
 msgid "failed to read askpass output\n"
-msgstr "askpass 出力の読み取りに失敗しました\n"
+msgstr ""
 
 #: src/store.c:7035
 #, c-format
 msgid "askpass prompt cancelled\n"
-msgstr "askpass prompt がキャンセルされました\n"
+msgstr ""
 
 #: src/store.c:7040
 #, c-format
 msgid "askpass output is too long\n"
-msgstr "askpass 出力が長すぎます\n"
+msgstr ""
 
 #: src/store.c:7067
 #, c-format
@@ -3425,8 +2964,6 @@ msgid ""
 "missing askpass provider; --gui requires --askpass, SECDAT_ASKPASS, or "
 "SSH_ASKPASS\n"
 msgstr ""
-"askpass provider が不足しています。--gui には --askpass、SECDAT_ASKPASS、また"
-"は SSH_ASKPASS が必要です\n"
 
 #: src/store.c:7070
 #, c-format
@@ -3434,92 +2971,84 @@ msgid ""
 "missing askpass provider; this command requires a terminal for passphrase "
 "input\n"
 msgstr ""
-"askpass provider が不足しています。このコマンドにはパスフレーズ入力用の端末が"
-"必要です\n"
 
 #: src/store.c:7078
 #, c-format
 msgid "failed to read terminal settings\n"
-msgstr "端末設定の読み取りに失敗しました\n"
+msgstr ""
 
 #: src/store.c:7085 src/store.c:7101
 #, c-format
 msgid "failed to update terminal settings\n"
-msgstr "端末設定の更新に失敗しました\n"
+msgstr ""
 
 #: src/store.c:7091
 #, c-format
 msgid "failed to read passphrase\n"
-msgstr "パスフレーズの読み取りに失敗しました\n"
+msgstr ""
 
 #: src/store.c:7122
 msgid "Create secdat passphrase: "
-msgstr "secdat パスフレーズを作成してください: "
+msgstr ""
 
 #: src/store.c:7125
 msgid "Confirm secdat passphrase: "
-msgstr "secdat パスフレーズを再入力してください: "
+msgstr ""
 
 #: src/store.c:7132 src/store.c:7160
 #, c-format
 msgid "passphrase confirmation did not match\n"
-msgstr "確認用パスフレーズが一致しません\n"
+msgstr ""
 
 #: src/store.c:7188
 msgid "Enter secdat passphrase: "
-msgstr "secdat パスフレーズを入力してください: "
+msgstr ""
 
 #: src/store.c:7221 src/store.c:7248
 #, c-format
 msgid "failed to create session agent socket\n"
-msgstr "セッションエージェントのソケット作成に失敗しました\n"
+msgstr ""
 
 #: src/store.c:7258
 #, c-format
 msgid "failed to connect to session agent\n"
-msgstr "セッションエージェントへの接続に失敗しました\n"
+msgstr ""
 
 #: src/store.c:7633
 #, c-format
 msgid "failed to hand over the active session agent safely\n"
-msgstr "アクティブなセッションエージェントの安全な引継ぎに失敗しました\n"
+msgstr ""
 
 #: src/store.c:7752 src/store.c:7765 src/store.c:7789
 #, c-format
 msgid "invalid response from the active session agent\n"
-msgstr "アクティブなセッションエージェントから不正な応答が返されました\n"
+msgstr ""
 
 #: src/store.c:7798 src/store.c:8142 src/store.c:8456
 #, c-format
 msgid "failed to negotiate capabilities with the active session agent\n"
-msgstr "アクティブなセッションエージェントとの機能交渉に失敗しました\n"
+msgstr ""
 
 #: src/store.c:7926 src/store.c:7930
 #, c-format
 msgid ""
 "failed to purge session-local ephemeral values from an active session agent\n"
 msgstr ""
-"アクティブなセッションエージェントから session-local ephemeral 値を purge で"
-"きませんでした\n"
 
 #: src/store.c:8148 src/store.c:8462
 #, c-format
 msgid "the active session agent cannot expose its volatile overlay safely\n"
 msgstr ""
-"アクティブなセッションエージェントは volatile overlay を安全に公開できませ"
-"ん\n"
 
 #: src/store.c:8171 src/store.c:8186 src/store.c:8485 src/store.c:8500
 #, c-format
 msgid "legacy volatile session cannot be read safely by this secdat version\n"
 msgstr ""
-"旧式の volatile session はこの secdat バージョンでは安全に読み取れません\n"
 
 #: src/store.c:8174 src/store.c:8488
 #, c-format
 msgid "the active session agent did not complete the overlay protocol\n"
 msgstr ""
-"アクティブなセッションエージェントが overlay protocol を完了しませんでした\n"
 
 #: src/store.c:8290 src/store.c:10077 src/store.c:10144 src/store.c:24770
 #, c-format
@@ -3527,8 +3056,6 @@ msgid ""
 "key is ephemeral in the current session; use set --ephemeral to update it: "
 "%s\n"
 msgstr ""
-"現在のセッションでは key は ephemeral です。更新には set --ephemeral を使用し"
-"てください: %s\n"
 
 #: src/store.c:8340 src/store.c:24735
 #, c-format
@@ -3536,8 +3063,6 @@ msgid ""
 "key has a volatile session change and cannot be replaced by an ephemeral "
 "secret: %s\n"
 msgstr ""
-"key には volatile session change があるため ephemeral secret で置き換えられま"
-"せん: %s\n"
 
 #: src/store.c:8382 src/store.c:8421 src/store.c:25501
 #, c-format
@@ -3545,8 +3070,6 @@ msgid ""
 "key is ephemeral in the current session; use rm --ephemeral to remove it: "
 "%s\n"
 msgstr ""
-"現在のセッションでは key は ephemeral です。削除には rm --ephemeral を使用し"
-"てください: %s\n"
 
 #: src/store.c:8769
 #, c-format
@@ -3554,143 +3077,140 @@ msgid ""
 "per-key ephemeral secrets require an active secdat session agent; run secdat "
 "unlock first\n"
 msgstr ""
-"key ごとの ephemeral secret には active secdat session agent が必要です。先"
-"に secdat unlock を実行してください\n"
 
 #: src/store.c:8775
 #, c-format
 msgid "current session is readonly and cannot store an ephemeral secret\n"
 msgstr ""
-"現在のセッションは読み取り専用のため ephemeral secret を保存できません\n"
 
 #: src/store.c:8905
 #, c-format
 msgid "unlock writable session: secdat unlock\n"
-msgstr "書き込み可能セッションを開始: secdat unlock\n"
+msgstr ""
 
 #: src/store.c:8907
 #, c-format
 msgid "unlock writable session: secdat --dir %s unlock\n"
-msgstr "書き込み可能セッションを開始: secdat --dir %s unlock\n"
+msgstr ""
 
 #: src/store.c:8916
 #, c-format
 msgid "current session is readonly and cannot run %s\n"
-msgstr "現在のセッションは読み取り専用のため %s を実行できません\n"
+msgstr ""
 
 #: src/store.c:8978 src/store.c:25457 src/store.c:25613 src/store.c:27604
 #, c-format
 msgid "failed to remove key: %s\n"
-msgstr "key の削除に失敗しました: %s\n"
+msgstr ""
 
 #: src/store.c:8994 src/store.c:8999
 #, c-format
 msgid "lock --save requires a local volatile session\n"
-msgstr "lock --save にはローカルの揮発セッションが必要です\n"
+msgstr ""
 
 #: src/store.c:9079
 #, c-format
 msgid "invalid wrap key iteration count\n"
-msgstr "wrap key の iteration count が不正です\n"
+msgstr ""
 
 #: src/store.c:9083
 #, c-format
 msgid "failed to derive wrap key\n"
-msgstr "wrap key の導出に失敗しました\n"
+msgstr ""
 
 #: src/store.c:9100 src/store.c:9143 src/store.c:10399 src/store.c:11828
 #: src/store.c:12053 src/store.c:20796
 #, c-format
 msgid "failed to generate nonce\n"
-msgstr "nonce の生成に失敗しました\n"
+msgstr ""
 
 #: src/store.c:9169 src/store.c:10425 src/store.c:11850 src/store.c:12075
 #, c-format
 msgid "failed to create encryption context\n"
-msgstr "暗号化 context の作成に失敗しました\n"
+msgstr ""
 
 #: src/store.c:9175 src/store.c:10431 src/store.c:11857 src/store.c:12081
 #, c-format
 msgid "failed to initialize encryption\n"
-msgstr "暗号化の初期化に失敗しました\n"
+msgstr ""
 
 #: src/store.c:9185 src/store.c:10441 src/store.c:11868 src/store.c:12085
 #: src/store.c:12095
 #, c-format
 msgid "failed to encrypt value\n"
-msgstr "値の暗号化に失敗しました\n"
+msgstr ""
 
 #: src/store.c:9193 src/store.c:10449 src/store.c:11873 src/store.c:12099
 #, c-format
 msgid "failed to finalize encryption\n"
-msgstr "暗号化の finalization に失敗しました\n"
+msgstr ""
 
 #: src/store.c:9198 src/store.c:10454 src/store.c:11879 src/store.c:12104
 #, c-format
 msgid "failed to obtain authentication tag\n"
-msgstr "認証タグの取得に失敗しました\n"
+msgstr ""
 
 #: src/store.c:9240 src/store.c:9248 src/store.c:10662
 #, c-format
 msgid "invalid wrapped master key\n"
-msgstr "ラップ済み master key が不正です\n"
+msgstr ""
 
 #: src/store.c:9332 src/store.c:10493 src/store.c:10502 src/store.c:30027
 #: src/store.c:30031 src/store.c:30054
 #, c-format
 msgid "invalid secret bundle\n"
-msgstr "secret bundle が不正です\n"
+msgstr ""
 
 #: src/store.c:9372
 #, c-format
 msgid "secret bundle entry is too large\n"
-msgstr "secret bundle のエントリが大きすぎます\n"
+msgstr ""
 
 #: src/store.c:9431
 #, c-format
 msgid "save is not supported while an ephemeral secret is visible: %s\n"
-msgstr "ephemeral secret が見えている間は save を使用できません: %s\n"
+msgstr ""
 
 #: src/store.c:10391
 #, c-format
 msgid "bundle file already exists: %s\n"
-msgstr "bundle ファイルは既に存在します: %s\n"
+msgstr ""
 
 #: src/store.c:10395
 #, c-format
 msgid "secret bundle is too large\n"
-msgstr "secret bundle が大きすぎます\n"
+msgstr ""
 
 #: src/store.c:10558 src/store.c:10628 src/store.c:11989 src/store.c:12183
 #, c-format
 msgid "failed to create decryption context\n"
-msgstr "復号 context の作成に失敗しました\n"
+msgstr ""
 
 #: src/store.c:10564 src/store.c:10634 src/store.c:11996 src/store.c:12189
 #, c-format
 msgid "failed to initialize decryption\n"
-msgstr "復号の初期化に失敗しました\n"
+msgstr ""
 
 #: src/store.c:10568 src/store.c:10644 src/store.c:12001 src/store.c:12193
 #: src/store.c:12197
 #, c-format
 msgid "failed to decrypt value\n"
-msgstr "値の復号に失敗しました\n"
+msgstr ""
 
 #: src/store.c:10572 src/store.c:10653 src/store.c:12006 src/store.c:12201
 #, c-format
 msgid "failed to set authentication tag\n"
-msgstr "認証タグの設定に失敗しました\n"
+msgstr ""
 
 #: src/store.c:10576
 #, c-format
 msgid "failed to unlock secret bundle\n"
-msgstr "secret bundle の unlock に失敗しました\n"
+msgstr ""
 
 #: src/store.c:10657
 #, c-format
 msgid "failed to unlock persistent master key\n"
-msgstr "永続 master key の unlock に失敗しました\n"
+msgstr ""
 
 #: src/store.c:10733 src/store.c:16214 src/store.c:27703
 #, c-format
@@ -3698,147 +3218,145 @@ msgid ""
 "missing SECDAT_MASTER_KEY and no active secdat session; run secdat unlock or "
 "export SECDAT_MASTER_KEY\n"
 msgstr ""
-"SECDAT_MASTER_KEY が未設定で、有効な secdat セッションもありません。secdat "
-"unlock を実行するか SECDAT_MASTER_KEY を export してください\n"
 
 #: src/store.c:10904 src/store.c:10908 src/store.c:10931
 #, c-format
 msgid "no local lock for: %s\n"
-msgstr "%s に local lock はありません\n"
+msgstr ""
 
 #: src/store.c:10918
 #, c-format
 msgid "refusing to remove local lock for: %s\n"
-msgstr "%s の local lock の削除を拒否しました\n"
+msgstr ""
 
 #: src/store.c:10919 src/store.c:10967
 #, c-format
 msgid "expected resulting state: %s\n"
-msgstr "期待する結果状態: %s\n"
+msgstr ""
 
 #: src/store.c:10921
 #, c-format
 msgid "actual resulting state after removing local lock: %s\n"
-msgstr "local lock 削除後の実際の結果状態: %s\n"
+msgstr ""
 
 #: src/store.c:10936
 msgid "local lock removed; resulting state: unlocked"
-msgstr "local lock を削除しました。結果状態: unlocked"
+msgstr ""
 
 #: src/store.c:10938
 msgid "local lock removed; resulting state: locked"
-msgstr "local lock を削除しました。結果状態: locked"
+msgstr ""
 
 #: src/store.c:10940
 msgid "local lock removed"
-msgstr "local lock を削除しました"
+msgstr ""
 
 #: src/store.c:10956 src/store.c:11002
 #, c-format
 msgid "no local lock or local unlock for: %s\n"
-msgstr "%s に local lock も local unlock もありません\n"
+msgstr ""
 
 #: src/store.c:10966
 #, c-format
 msgid "refusing to clear local unlock for: %s\n"
-msgstr "%s の local unlock の消去を拒否しました\n"
+msgstr ""
 
 #: src/store.c:10969
 #, c-format
 msgid "actual resulting state after clearing local unlock: %s\n"
-msgstr "local unlock 消去後の実際の結果状態: %s\n"
+msgstr ""
 
 #: src/store.c:10980
 msgid "local unlock cleared; resulting state: unlocked"
-msgstr "local unlock を消去しました。結果状態: unlocked"
+msgstr ""
 
 #: src/store.c:10982
 msgid "local unlock cleared; resulting state: locked"
-msgstr "local unlock を消去しました。結果状態: locked"
+msgstr ""
 
 #: src/store.c:10984
 msgid "local unlock cleared"
-msgstr "local unlock を消去しました"
+msgstr ""
 
 #: src/store.c:11239 src/store.c:11246 src/store.c:11252 src/store.c:11258
 #, c-format
 msgid "invalid arguments for status\n"
-msgstr "status の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:11270
 msgid "source: environment"
-msgstr "取得元: 環境変数"
+msgstr ""
 
 #: src/store.c:11280
 msgid "source: session agent"
-msgstr "取得元: セッションエージェント"
+msgstr ""
 
 #: src/store.c:11282
 msgid "overlay: volatile"
-msgstr "overlay: volatile"
+msgstr ""
 
 #: src/store.c:11285
 msgid "access: readonly"
-msgstr "access: readonly"
+msgstr ""
 
 #: src/store.c:11288
 #, c-format
 msgid "expires in: %s\n"
-msgstr "残り時間: %s\n"
+msgstr ""
 
 #: src/store.c:11408
 #, c-format
 msgid "this will unlock %zu descendant domains in the current subtree\n"
-msgstr "現在の subtree で %zu 個の descendant domain を unlock します\n"
+msgstr ""
 
 #: src/store.c:11409
 #, c-format
 msgid "local locks will remain after local unlock expiry or a later lock\n"
-msgstr "local unlock の期限切れ後や後続の lock 後も local lock は残ります\n"
+msgstr ""
 
 #: src/store.c:11443
 msgid "volatile session refreshed"
-msgstr "揮発セッションを延長しました"
+msgstr ""
 
 #: src/store.c:11443
 msgid "readonly session refreshed"
-msgstr "読み取り専用セッションを延長しました"
+msgstr ""
 
 #: src/store.c:11443
 msgid "session refreshed"
-msgstr "セッションを延長しました"
+msgstr ""
 
 #: src/store.c:11524
 msgid "readonly session unlocked from environment"
-msgstr "環境変数から読み取り専用セッションをアンロックしました"
+msgstr ""
 
 #: src/store.c:11525 src/store.c:11617
 msgid "readonly session unlocked"
-msgstr "読み取り専用セッションをアンロックしました"
+msgstr ""
 
 #: src/store.c:11527 src/store.c:11563
 msgid "volatile session unlocked with an ephemeral master key"
-msgstr "揮発セッションを一時 master key でアンロックしました"
+msgstr ""
 
 #: src/store.c:11530
 msgid "volatile session unlocked from environment"
-msgstr "環境変数から揮発セッションをアンロックしました"
+msgstr ""
 
 #: src/store.c:11531 src/store.c:11617
 msgid "volatile session unlocked"
-msgstr "揮発セッションをアンロックしました"
+msgstr ""
 
 #: src/store.c:11534
 msgid "persistent master key initialized; session unlocked from environment"
-msgstr "永続 master key を初期化し、環境変数からセッションをアンロックしました"
+msgstr ""
 
 #: src/store.c:11535
 msgid "persistent master key initialized; session unlocked"
-msgstr "永続 master key を初期化し、セッションをアンロックしました"
+msgstr ""
 
 #: src/store.c:11537
 msgid "session unlocked from environment"
-msgstr "環境変数からセッションをアンロックしました"
+msgstr ""
 
 #: src/store.c:11570
 #, c-format
@@ -3846,8 +3364,6 @@ msgid ""
 "no persistent master key is initialized; readonly unlock requires an "
 "existing master key\n"
 msgstr ""
-"永続 master key が未初期化のため、readonly unlock には既存の master key が必"
-"要です\n"
 
 #: src/store.c:11575 src/store.c:11765
 #, c-format
@@ -3855,63 +3371,61 @@ msgid ""
 "no persistent master key is initialized; run secdat unlock once to create "
 "one\n"
 msgstr ""
-"永続 master key が未初期化です。一度 secdat unlock を実行して作成してくださ"
-"い\n"
 
 #: src/store.c:11617
 msgid "session unlocked"
-msgstr "セッションをアンロックしました"
+msgstr ""
 
 #: src/store.c:11670
 msgid "already locked"
-msgstr "すでにロック中です"
+msgstr ""
 
 #: src/store.c:11697
 msgid "volatile session saved and locked"
-msgstr "揮発セッションを保存してロックしました"
+msgstr ""
 
 #: src/store.c:11697
 msgid "session locked"
-msgstr "セッションをロックしました"
+msgstr ""
 
 #: src/store.c:11730
 #, c-format
 msgid "invalid arguments for inherit\n"
-msgstr "inherit の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:11777
 msgid "Create new secdat passphrase: "
-msgstr "新しい secdat パスフレーズを作成してください: "
+msgstr ""
 
 #: src/store.c:11778
 msgid "Confirm new secdat passphrase: "
-msgstr "新しい secdat パスフレーズを再入力してください: "
+msgstr ""
 
 #: src/store.c:11794
 msgid "persistent master key passphrase updated"
-msgstr "永続 master key のパスフレーズを更新しました"
+msgstr ""
 
 #: src/store.c:11924 src/store.c:11942 src/store.c:11947 src/store.c:11953
 #: src/store.c:11968 src/store.c:12154 src/store.c:12161 src/store.c:12166
 #: src/store.c:13139 src/store.c:13222
 #, c-format
 msgid "invalid encrypted entry\n"
-msgstr "暗号化エントリが不正です\n"
+msgstr ""
 
 #: src/store.c:11929 src/store.c:13146 src/store.c:13226
 #, c-format
 msgid "unsupported encrypted entry format\n"
-msgstr "暗号化エントリ形式はサポートされていません\n"
+msgstr ""
 
 #: src/store.c:11935 src/store.c:13150 src/store.c:13230
 #, c-format
 msgid "unsupported encryption algorithm\n"
-msgstr "暗号化アルゴリズムはサポートされていません\n"
+msgstr ""
 
 #: src/store.c:12012 src/store.c:12205
 #, c-format
 msgid "failed to authenticate encrypted value\n"
-msgstr "暗号化値の認証に失敗しました\n"
+msgstr ""
 
 #: src/store.c:12371 src/store.c:13164 src/store.c:13170 src/store.c:16116
 #: src/store.c:16133 src/store.c:16187 src/store.c:16198 src/store.c:19504
@@ -3920,12 +3434,12 @@ msgstr "暗号化値の認証に失敗しました\n"
 #: src/store.c:27424 src/store.c:27441
 #, c-format
 msgid "invalid v2 domain entry: %s\n"
-msgstr "v2 domain entry が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:12409
 #, c-format
 msgid "failed to read standard input\n"
-msgstr "標準入力の読み取りに失敗しました\n"
+msgstr ""
 
 #: src/store.c:12556 src/store.c:12777 src/store.c:12945 src/store.c:20177
 #: src/store.c:20422 src/store.c:21712 src/store.c:21815 src/store.c:22077
@@ -3934,12 +3448,12 @@ msgstr "標準入力の読み取りに失敗しました\n"
 #: src/store.c:28768 src/store.c:29388 src/store.c:29679
 #, c-format
 msgid "invalid store format marker\n"
-msgstr "store format marker が不正です\n"
+msgstr ""
 
 #: src/store.c:12679
 #, c-format
 msgid "Key candidates:\n"
-msgstr "key 候補:\n"
+msgstr ""
 
 #: src/store.c:12702
 #, c-format
@@ -3947,16 +3461,12 @@ msgid ""
 "Hint: use %s get KEY for an explicit key lookup, or %s help COMMAND for "
 "command help\n"
 msgstr ""
-"ヒント: key 探索を明示するには %s get KEY を、コマンド help には %s help "
-"COMMAND を使ってください\n"
 
 #: src/store.c:12714
 #, c-format
 msgid ""
 "Hint: check secdat status, --dir, and --store to confirm the lookup context\n"
 msgstr ""
-"ヒント: secdat status、--dir、--store を確認して探索文脈が正しいか確かめてく"
-"ださい\n"
 
 #: src/store.c:13087 src/store.c:13282 src/store.c:15237 src/store.c:15286
 #: src/store.c:22657 src/store.c:22839 src/store.c:24399 src/store.c:25556
@@ -3964,90 +3474,89 @@ msgstr ""
 #: src/store.c:26452 src/store.c:27714
 #, c-format
 msgid "key not found: %s\n"
-msgstr "key が見つかりません: %s\n"
+msgstr ""
 
 #: src/store.c:13119 src/store.c:20761 src/store.c:21177 src/store.c:21181
 #: src/store.c:21313 src/store.c:25383 src/store.c:25390 src/store.c:27417
 #, c-format
 msgid "invalid v2 secret object: %s\n"
-msgstr "v2 secret object が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:13127
 #, c-format
 msgid "v2 secret value storage is not implemented yet\n"
-msgstr "v2 secret value storage はまだ実装されていません\n"
+msgstr ""
 
 #: src/store.c:14131
 #, c-format
 msgid "failed to generate random bytes\n"
-msgstr "random bytes の生成に失敗しました\n"
+msgstr ""
 
 #: src/store.c:14645 src/store.c:14658
 #, c-format
 msgid "metadata is too large\n"
-msgstr "metadata が大きすぎます\n"
+msgstr ""
 
 #: src/store.c:14737 src/store.c:14780 src/store.c:14829 src/store.c:22863
 #: src/store.c:22980 src/store.c:23929
 #, c-format
 msgid "invalid metadata field: %s\n"
-msgstr "metadata field が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:14818
 #, c-format
 msgid "invalid metadata filter: %s\n"
-msgstr "metadata filter が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:14971 src/store.c:15000 src/store.c:15011
 #, c-format
 msgid "invalid key metadata\n"
-msgstr "key metadata が不正です\n"
+msgstr ""
 
 #: src/store.c:14986
 #, c-format
 msgid "unsupported key metadata format\n"
-msgstr "サポートされていない key metadata format です\n"
+msgstr ""
 
 #: src/store.c:15131 src/store.c:15204
 #, c-format
 msgid "invalid relation member role: %s\n"
-msgstr "relation member role が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:15137
 #, c-format
 msgid "invalid relation member key reference\n"
-msgstr "relation member key reference が不正です\n"
+msgstr ""
 
 #: src/store.c:15144
 #, c-format
 msgid "duplicate relation member role: %s\n"
-msgstr "relation member role が重複しています: %s\n"
+msgstr ""
 
 #: src/store.c:15189
 #, c-format
 msgid "invalid relation member: %s\n"
-msgstr "relation member が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:15314 src/store.c:24328
 #, c-format
 msgid "relation not found: %s\n"
-msgstr "relation が見つかりません: %s\n"
+msgstr ""
 
 #: src/store.c:15323 src/store.c:15351 src/store.c:15448
 #, c-format
 msgid "invalid relation metadata\n"
-msgstr "relation metadata が不正です\n"
+msgstr ""
 
 #: src/store.c:15337
 #, c-format
 msgid "unsupported relation metadata format\n"
-msgstr "サポートされていない relation metadata format です\n"
+msgstr ""
 
 #: src/store.c:15631
 #, c-format
 msgid "key_visibility=unlocked cannot be used while key metadata exists: %s\n"
 msgstr ""
-"key metadata が存在する間は key_visibility=unlocked を使用できません: %s\n"
 
 #: src/store.c:15653
 #, c-format
@@ -4055,223 +3564,221 @@ msgid ""
 "key_visibility=unlocked cannot be used while relation references key: %s "
 "(%s)\n"
 msgstr ""
-"relation が key を参照している間は key_visibility=unlocked を使用できません: "
-"%s (%s)\n"
 
 #: src/store.c:16451
 #, c-format
 msgid "failed to calculate transaction digest\n"
-msgstr "transaction digest の計算に失敗しました\n"
+msgstr ""
 
 #: src/store.c:16473
 #, c-format
 msgid "failed to open directory for fsync: %s\n"
-msgstr "fsync 用のディレクトリを開けませんでした: %s\n"
+msgstr ""
 
 #: src/store.c:16477
 #, c-format
 msgid "failed to fsync directory: %s\n"
-msgstr "ディレクトリの fsync に失敗しました: %s\n"
+msgstr ""
 
 #: src/store.c:16482
 #, c-format
 msgid "failed to close directory: %s\n"
-msgstr "ディレクトリを閉じられませんでした: %s\n"
+msgstr ""
 
 #: src/store.c:16522
 #, c-format
 msgid "invalid transaction directory: %s\n"
-msgstr "transaction directory が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:16562
 #, c-format
 msgid "invalid transaction lock\n"
-msgstr "transaction lock が不正です\n"
+msgstr ""
 
 #: src/store.c:16575 src/store.c:16581
 #, c-format
 msgid "failed to lock transactions\n"
-msgstr "transaction の lock に失敗しました\n"
+msgstr ""
 
 #: src/store.c:16723
 #, c-format
 msgid "failed to inspect transaction target: %s\n"
-msgstr "transaction target を確認できませんでした: %s\n"
+msgstr ""
 
 #: src/store.c:16727
 #, c-format
 msgid "invalid transaction target: %s\n"
-msgstr "transaction target が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:16881 src/store.c:16972
 #, c-format
 msgid "invalid transaction target directory\n"
-msgstr "transaction target directory が不正です\n"
+msgstr ""
 
 #: src/store.c:17068
 #, c-format
 msgid "failed to read transaction target\n"
-msgstr "transaction target を読み込めませんでした\n"
+msgstr ""
 
 #: src/store.c:17272
 #, c-format
 msgid "transaction has too many targets\n"
-msgstr "transaction の target が多すぎます\n"
+msgstr ""
 
 #: src/store.c:17284
 #, c-format
 msgid "invalid transaction validation target\n"
-msgstr "transaction validation target が不正です\n"
+msgstr ""
 
 #: src/store.c:17321
 #, c-format
 msgid "transaction changed since plan\n"
-msgstr "plan 作成後に transaction target が変更されました\n"
+msgstr ""
 
 #: src/store.c:17344
 #, c-format
 msgid "duplicate transaction target\n"
-msgstr "transaction target が重複しています\n"
+msgstr ""
 
 #: src/store.c:17563
 #, c-format
 msgid "invalid transaction blob: %s\n"
-msgstr "transaction blob が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:17886
 #, c-format
 msgid "invalid transaction journal: %s\n"
-msgstr "transaction journal が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:17930 src/store.c:17971
 #, c-format
 msgid "failed to open transaction directory: %s\n"
-msgstr "transaction directory を開けませんでした: %s\n"
+msgstr ""
 
 #: src/store.c:17946
 #, c-format
 msgid "unexpected transaction file: %s\n"
-msgstr "予期しない transaction file です: %s\n"
+msgstr ""
 
 #: src/store.c:17954
 #, c-format
 msgid "failed to close transaction directory\n"
-msgstr "transaction directory を閉じられませんでした\n"
+msgstr ""
 
 #: src/store.c:17997
 #, c-format
 msgid "invalid transaction temporary file: %s\n"
-msgstr "transaction の一時ファイルが不正です: %s\n"
+msgstr ""
 
 #: src/store.c:18053
 #, c-format
 msgid "failed to remove completed transaction: %s\n"
-msgstr "完了した transaction を削除できませんでした: %s\n"
+msgstr ""
 
 #: src/store.c:18165
 #, c-format
 msgid "failed to apply transaction target\n"
-msgstr "transaction target を適用できませんでした\n"
+msgstr ""
 
 #: src/store.c:18216
 #, c-format
 msgid "transaction target changed during recovery: %s\n"
-msgstr "復旧中に transaction target の変更を検出しました: %s\n"
+msgstr ""
 
 #: src/store.c:18253
 #, c-format
 msgid "committed transaction target is inconsistent: %s\n"
-msgstr "commit 済み transaction target が不整合です: %s\n"
+msgstr ""
 
 #: src/store.c:18308
 #, c-format
 msgid "invalid unpublished transaction: %s\n"
-msgstr "未公開 transaction が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:18332
 #, c-format
 msgid "failed to open transactions directory\n"
-msgstr "transactions directory を開けませんでした\n"
+msgstr ""
 
 #: src/store.c:18343
 #, c-format
 msgid "invalid transaction entry: %s\n"
-msgstr "transaction entry が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:18426
 #, c-format
 msgid "failed to inspect transactions directory\n"
-msgstr "transactions directory を確認できませんでした\n"
+msgstr ""
 
 #: src/store.c:18513
 #, c-format
 msgid "failed to stage transaction\n"
-msgstr "transaction の stage に失敗しました\n"
+msgstr ""
 
 #: src/store.c:18583
 #, c-format
 msgid "transaction changed since plan: %s\n"
-msgstr "plan 作成後に transaction target が変更されました: %s\n"
+msgstr ""
 
 #: src/store.c:18812 src/store.c:18898
 #, c-format
 msgid "failed to stage mutation state\n"
-msgstr "mutation state の stage に失敗しました\n"
+msgstr ""
 
 #: src/store.c:18881
 #, c-format
 msgid "invalid mutation state file\n"
-msgstr "mutation state file が不正です\n"
+msgstr ""
 
 #: src/store.c:19004
 #, c-format
 msgid "invalid abandoned mutation stage\n"
-msgstr "放棄された mutation stage が不正です\n"
+msgstr ""
 
 #: src/store.c:20040
 #, c-format
 msgid "invalid tombstone file: %s\n"
-msgstr "tombstone file が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:20070 src/store.c:20079 src/store.c:20083
 #, c-format
 msgid "invalid v2 compatibility tombstone\n"
-msgstr "v2 compatibility tombstone が不正です\n"
+msgstr ""
 
 #: src/store.c:20161
 #, c-format
 msgid "invalid v2 mask target store: %s\n"
-msgstr "v2 mask の target store が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:20200
 #, c-format
 msgid "duplicate v2 mask target entry: %s\n"
-msgstr "v2 mask の target entry が重複しています: %s\n"
+msgstr ""
 
 #: src/store.c:20238
 #, c-format
 msgid "invalid encrypted v2 mask name: %s\n"
-msgstr "暗号化された v2 mask name が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:20259 src/store.c:20378
 #, c-format
 msgid "invalid v2 mask target: %s\n"
-msgstr "v2 mask の target が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:20299 src/store.c:20305
 #, c-format
 msgid "invalid v2 mask target name: %s\n"
-msgstr "v2 mask の target name が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:20342
 #, c-format
 msgid "invalid v2 masks directory\n"
-msgstr "v2 mask directory が不正です\n"
+msgstr ""
 
 #: src/store.c:20346 src/store.c:21504
 #, c-format
 msgid "failed to inspect v2 masks directory\n"
-msgstr "v2 mask directory を確認できませんでした\n"
+msgstr ""
 
 #: src/store.c:20366
 #, c-format
@@ -4279,59 +3786,56 @@ msgid ""
 "invalid v2 mask record: %s; run fsck --format v2 --dangling for a diagnostic "
 "handle\n"
 msgstr ""
-"不正な v2 mask record です: %s。診断ハンドルを得るには fsck --format v2 --"
-"dangling を実行してください\n"
 
 #: src/store.c:20620 src/store.c:26156
 #, c-format
 msgid "compatibility tombstone does not match its canonical mask: %s\n"
-msgstr "互換 tombstone が canonical mask と一致しません: %s\n"
+msgstr ""
 
 #: src/store.c:20738
 #, c-format
 msgid "cannot analyze mask impact while hidden mask names are locked\n"
 msgstr ""
-"非表示の mask name が lock されているため mask の影響を解析できません\n"
 
 #: src/store.c:21185 src/store.c:21319
 #, c-format
 msgid "secret object excludes bulk select: %s\n"
-msgstr "secret object が bulk select を除外しています: %s\n"
+msgstr ""
 
 #: src/store.c:21468
 #, c-format
 msgid "failed to encode mask diagnostic handle\n"
-msgstr "mask 診断ハンドルのエンコードに失敗しました\n"
+msgstr ""
 
 #: src/store.c:21704 src/store.c:21807
 #, c-format
 msgid "fsck requires a registered current domain\n"
-msgstr "fsck には登録済みの current domain が必要です\n"
+msgstr ""
 
 #: src/store.c:21716
 #, c-format
 msgid "store format is v2; use --format v2\n"
-msgstr "store format は v2 です。--format v2 を使用してください\n"
+msgstr ""
 
 #: src/store.c:21819
 #, c-format
 msgid "store format is v1; use --format v1\n"
-msgstr "store format は v1 です。--format v1 を使用してください\n"
+msgstr ""
 
 #: src/store.c:22066
 #, c-format
 msgid "gc requires a registered current domain\n"
-msgstr "gc には登録済みの current domain が必要です\n"
+msgstr ""
 
 #: src/store.c:22081
 #, c-format
 msgid "store format is v1; gc requires --format v2\n"
-msgstr "store format は v1 です。gc には --format v2 が必要です\n"
+msgstr ""
 
 #: src/store.c:22241
 #, c-format
 msgid "gc is only supported with --format v2\n"
-msgstr "gc は --format v2 でのみサポートされています\n"
+msgstr ""
 
 #: src/store.c:22582
 #, c-format
@@ -4339,8 +3843,6 @@ msgid ""
 "%zu hidden mask(s) omitted; unlock the affected domains or use --json for "
 "counts\n"
 msgstr ""
-"%zu 件の非表示 mask を省略しました。対象ドメインを unlock するか、件数確認に"
-"は --json を使用してください\n"
 
 #: src/store.c:22593
 #, c-format
@@ -4348,13 +3850,11 @@ msgid ""
 "%zu mask state(s) are incomplete while ancestor key names are locked; unlock "
 "the affected domains or use --json for counts\n"
 msgstr ""
-"ancestor の key name が lock されているため %zu 件の mask 状態が不完全です。"
-"対象 domain を unlock するか、件数確認には --json を使用してください\n"
 
 #: src/store.c:22678 src/store.c:22748
 #, c-format
 msgid "cannot update inherited key attributes: %s\n"
-msgstr "継承された key attributes は更新できません: %s\n"
+msgstr ""
 
 #: src/store.c:22740
 #, c-format
@@ -4362,314 +3862,305 @@ msgid ""
 "secret attributes cannot be changed for an ephemeral secret; recreate it "
 "with set --ephemeral\n"
 msgstr ""
-"ephemeral secret の secret attributes は変更できません。set --ephemeral で作"
-"り直してください\n"
 
 #: src/store.c:22741
 #, c-format
 msgid "secret attributes cannot be changed for a volatile session overlay\n"
-msgstr "volatile session overlay では secret attributes を変更できません\n"
+msgstr ""
 
 #: src/store.c:22870 src/store.c:22987
 #, c-format
 msgid "cannot update inherited key metadata: %s\n"
-msgstr "継承された key metadata は更新できません: %s\n"
+msgstr ""
 
 #: src/store.c:22877 src/store.c:22994
 #, c-format
 msgid "key metadata cannot be changed for an ephemeral secret\n"
-msgstr "ephemeral secret の key metadata は変更できません\n"
+msgstr ""
 
 #: src/store.c:22878 src/store.c:22995
 #, c-format
 msgid "key metadata cannot be changed for a volatile session overlay\n"
-msgstr "volatile session overlay では key metadata を変更できません\n"
+msgstr ""
 
 #: src/store.c:22883
 #, c-format
 msgid "key metadata cannot be set for hidden v2 key: %s\n"
-msgstr "hidden v2 key には key metadata を設定できません: %s\n"
+msgstr ""
 
 #: src/store.c:22915
 #, c-format
 msgid "missing key for meta get\n"
-msgstr "meta get の key が不足しています\n"
+msgstr ""
 
 #: src/store.c:22915
 #, c-format
 msgid "invalid arguments for meta get\n"
-msgstr "meta get の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:22943
 #, c-format
 msgid "missing key for meta set\n"
-msgstr "meta set の key が不足しています\n"
+msgstr ""
 
 #: src/store.c:22943
 #, c-format
 msgid "invalid arguments for meta set\n"
-msgstr "meta set の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:22955
 #, c-format
 msgid "missing key for meta mark-leaked\n"
-msgstr "meta mark-leaked の key が不足しています\n"
+msgstr ""
 
 #: src/store.c:22955
 #, c-format
 msgid "invalid arguments for meta mark-leaked\n"
-msgstr "meta mark-leaked の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:22975
 #, c-format
 msgid "missing key for meta unset\n"
-msgstr "meta unset の key が不足しています\n"
+msgstr ""
 
 #: src/store.c:22975
 #, c-format
 msgid "invalid arguments for meta unset\n"
-msgstr "meta unset の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:23097
 #, c-format
 msgid "invalid relation kind: %s\n"
-msgstr "relation kind が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:23141
 #, c-format
 msgid "relation member cannot reference an ephemeral secret: %s\n"
-msgstr "relation member は ephemeral secret を参照できません: %s\n"
+msgstr ""
 
 #: src/store.c:23147
 #, c-format
 msgid "relation member cannot reference hidden v2 key: %s\n"
-msgstr "relation member は hidden v2 key を参照できません: %s\n"
+msgstr ""
 
 #: src/store.c:23184 src/store.c:23191
 #, c-format
 msgid "invalid arguments for relation set\n"
-msgstr "relation set の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:23191
 #, c-format
 msgid "missing relation id for relation set\n"
-msgstr "relation set の relation id が不足しています\n"
+msgstr ""
 
 #: src/store.c:23197 src/store.c:24261 src/store.c:24311
 #, c-format
 msgid "invalid relation id: %s\n"
-msgstr "relation id が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:23202
 #, c-format
 msgid "relation set requires at least two --member ROLE=KEYREF options\n"
 msgstr ""
-"relation set には少なくとも 2 つの --member ROLE=KEYREF option が必要です\n"
 
 #: src/store.c:23214 src/store.c:24319
 #, c-format
 msgid "relations cannot be changed for a volatile session overlay\n"
-msgstr "volatile session overlay では relation を変更できません\n"
+msgstr ""
 
 #: src/store.c:23937 src/store.c:23943
 #, c-format
 msgid "invalid arguments for relation suggest-link\n"
-msgstr "relation suggest-link の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:24136
 #, c-format
 msgid "invalid arguments for relation ls\n"
-msgstr "relation ls の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:24155
 #, c-format
 msgid "relation ls requires a registered current domain\n"
-msgstr "relation ls には登録済みの current domain が必要です\n"
+msgstr ""
 
 #: src/store.c:24208
 #, c-format
 msgid "relation search requires a registered current domain\n"
-msgstr "relation search には登録済みの current domain が必要です\n"
+msgstr ""
 
 #: src/store.c:24241
 #, c-format
 msgid "missing key for relation suggest-refresh\n"
-msgstr "relation suggest-refresh の key が不足しています\n"
+msgstr ""
 
 #: src/store.c:24241
 #, c-format
 msgid "invalid arguments for relation suggest-refresh\n"
-msgstr "relation suggest-refresh の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:24256
 #, c-format
 msgid "missing relation id for relation show\n"
-msgstr "relation show の relation id が不足しています\n"
+msgstr ""
 
 #: src/store.c:24256
 #, c-format
 msgid "invalid arguments for relation show\n"
-msgstr "relation show の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:24268
 #, c-format
 msgid "relation show requires a registered current domain\n"
-msgstr "relation show には登録済みの current domain が必要です\n"
+msgstr ""
 
 #: src/store.c:24306
 #, c-format
 msgid "missing relation id for relation rm\n"
-msgstr "relation rm の relation id が不足しています\n"
+msgstr ""
 
 #: src/store.c:24306
 #, c-format
 msgid "invalid arguments for relation rm\n"
-msgstr "relation rm の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:24346
 #, c-format
 msgid "missing key for exists\n"
-msgstr "exists のキーが不足しています\n"
+msgstr ""
 
 #: src/store.c:24351
 #, c-format
 msgid "invalid arguments for exists\n"
-msgstr "exists の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:24380
 #, c-format
 msgid "missing key for id\n"
-msgstr "id のキーが不足しています\n"
+msgstr ""
 
 #: src/store.c:24385
 #, c-format
 msgid "invalid arguments for id\n"
-msgstr "id の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:24405
 #, c-format
 msgid "secret id is available only for store format v2\n"
-msgstr "secret id は store format v2 でのみ利用できます\n"
+msgstr ""
 
 #: src/store.c:24432
 #, c-format
 msgid "missing UUID for secret status\n"
-msgstr "secret status の UUID が不足しています\n"
+msgstr ""
 
 #: src/store.c:24437
 #, c-format
 msgid "invalid arguments for secret status\n"
-msgstr "secret status の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:24444
 #, c-format
 msgid "invalid UUID for secret status: %s\n"
-msgstr "secret status の UUID が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:24452
 #, c-format
 msgid "secret status requires a registered current domain\n"
-msgstr "secret status には登録済みの current domain が必要です\n"
+msgstr ""
 
 #: src/store.c:24464
 #, c-format
 msgid "secret status is available only for store format v2\n"
-msgstr "secret status は store format v2 でのみ利用できます\n"
+msgstr ""
 
 #: src/store.c:24474
 #, c-format
 msgid "secret object not found: %s\n"
-msgstr "secret object が見つかりません: %s\n"
+msgstr ""
 
 #: src/store.c:24478
 #, c-format
 msgid "invalid secret object: %s\n"
-msgstr "secret object が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:24517
 #, c-format
 msgid "key value contains NUL byte and cannot be shell-escaped: %s\n"
-msgstr "key の値に NUL バイトが含まれているため shell escaped できません: %s\n"
+msgstr ""
 
 #: src/store.c:24531 src/store.c:24599
 #, c-format
 msgid "failed to write standard output\n"
-msgstr "標準出力への書き込みに失敗しました\n"
+msgstr ""
 
 #: src/store.c:24580
 #, c-format
 msgid "refusing to write secret to a terminal\n"
-msgstr "secret を端末へ書き出すことを拒否しました\n"
+msgstr ""
 
 #: src/store.c:24727 src/store.c:25076
 #, c-format
 msgid ""
 "ephemeral secrets require key_visibility=unlocked and value_access=unlocked\n"
 msgstr ""
-"ephemeral secret には key_visibility=unlocked と value_access=unlocked が必要"
-"です\n"
 
 #: src/store.c:24782 src/store.c:25533 src/store.c:31222
 #, c-format
 msgid "mutation planning is not supported in a volatile session overlay\n"
-msgstr "volatile session overlay では mutation planning はサポートされません\n"
+msgstr ""
 
 #: src/store.c:24797
 #, c-format
 msgid "secret attributes are not supported in a volatile session overlay\n"
-msgstr "volatile session overlay では secret attributes はサポートされません\n"
+msgstr ""
 
 #: src/store.c:24900 src/store.c:24973 src/store.c:24983 src/store.c:25005
 #: src/store.c:25030 src/store.c:25038 src/store.c:25047 src/store.c:25063
 #: src/store.c:25103 src/store.c:25136 src/store.c:25145
 #, c-format
 msgid "invalid arguments for set\n"
-msgstr "set の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:25054
 #, c-format
 msgid "environment variable is not set: %s\n"
-msgstr "環境変数が設定されていません: %s\n"
+msgstr ""
 
 #: src/store.c:25085
 #, c-format
 msgid "missing key for set\n"
-msgstr "set のキーが不足しています\n"
+msgstr ""
 
 #: src/store.c:25109
 #, c-format
 msgid "set --ephemeral accepts exactly one key\n"
-msgstr "set --ephemeral は key を 1 つだけ受け付けます\n"
+msgstr ""
 
 #: src/store.c:25158
 #, c-format
 msgid "refusing to read secret from a terminal\n"
-msgstr "端末から secret を読み取ることを拒否しました\n"
+msgstr ""
 
 #: src/store.c:25716
 #, c-format
 msgid "key has no inherited mask target: %s\n"
-msgstr "key に継承された mask target がありません: %s\n"
+msgstr ""
 
 #: src/store.c:25823
 #, c-format
 msgid "invalid orphan mask chain; inspect fsck --format v2 --dangling: %s\n"
 msgstr ""
-"orphan mask chain が不正です。fsck --format v2 --dangling で確認してくださ"
-"い: %s\n"
 
 #: src/store.c:25832
 #, c-format
 msgid ""
 "multiple orphan mask chains match key; inspect list --all-masks --long: %s\n"
 msgstr ""
-"複数の orphan mask chain が key に一致します。list --all-masks --long で確認"
-"してください: %s\n"
 
 #: src/store.c:25861
 #, c-format
 msgid "key has no mask barrier to rebind: %s\n"
-msgstr "key に rebind 対象の mask barrier がありません: %s\n"
+msgstr ""
 
 #: src/store.c:25888
 #, c-format
@@ -4678,29 +4169,26 @@ msgid ""
 "ancestors and run id KEY in each ancestor, then resolve duplicate or "
 "inaccessible candidates without unmasking: %s\n"
 msgstr ""
-"mask rebind で一意の継承 v2 target を特定できませんでした。domain ls --"
-"ancestors と各 ancestor の id KEY で確認し、unmask せずに重複またはアクセス不"
-"能な候補を解消してください: %s\n"
 
 #: src/store.c:25909
 #, c-format
 msgid "canonical mask requires an inherited v2 entry: %s\n"
-msgstr "canonical mask には継承された v2 entry が必要です: %s\n"
+msgstr ""
 
 #: src/store.c:25966
 #, c-format
 msgid "orphan mask barrier requires mask --rebind: %s\n"
-msgstr "orphan mask barrier には mask --rebind が必要です: %s\n"
+msgstr ""
 
 #: src/store.c:25990
 #, c-format
 msgid "conflicting canonical mask target: %s\n"
-msgstr "canonical mask target が競合しています: %s\n"
+msgstr ""
 
 #: src/store.c:25996 src/store.c:26006
 #, c-format
 msgid "conflicting canonical mask name: %s\n"
-msgstr "canonical mask name が競合しています: %s\n"
+msgstr ""
 
 #: src/store.c:26017
 #, c-format
@@ -4708,8 +4196,6 @@ msgid ""
 "target is already masked by another chain; inspect list --all-masks --long "
 "and choose a chain with unmask --dry-run --mask-chain: %s\n"
 msgstr ""
-"target は別の chain ですでに mask されています。list --all-masks --long で確"
-"認し、unmask --dry-run --mask-chain で chain を選択してください: %s\n"
 
 #: src/store.c:26104
 #, c-format
@@ -4717,7 +4203,6 @@ msgid ""
 "hidden-name mask cannot be projected to v1 rollback state without exposing "
 "its name: %s\n"
 msgstr ""
-"hidden-name mask は名前を露出せずに v1 rollback state へ投影できません: %s\n"
 
 #: src/store.c:26132
 #, c-format
@@ -4725,40 +4210,37 @@ msgid ""
 "ambiguous legacy mask blocks this write; inspect list --all-masks --long and "
 "use mask --rebind after exactly one inherited v2 target remains: %s\n"
 msgstr ""
-"曖昧な legacy mask がこの書き込みを拒否しました。list --all-masks --long で確"
-"認し、継承 v2 target が一つだけになってから mask --rebind を実行してくださ"
-"い: %s\n"
 
 #: src/store.c:26239 src/store.c:27007 src/store.c:27042 src/store.c:27049
 #: src/store.c:27146 src/store.c:27152
 #, c-format
 msgid "failed to encode mask operation plan\n"
-msgstr "mask operation plan のエンコードに失敗しました\n"
+msgstr ""
 
 #: src/store.c:26360
 #, c-format
 msgid "%s is not supported for an ephemeral secret: %s\n"
-msgstr "ephemeral secret では %s はサポートされません: %s\n"
+msgstr ""
 
 #: src/store.c:26410 src/store.c:26442
 #, c-format
 msgid "key exists locally and cannot be masked: %s\n"
-msgstr "key はローカルに存在するため mask できません: %s\n"
+msgstr ""
 
 #: src/store.c:26562
 #, c-format
 msgid "cannot unmask while matching mask state is locked\n"
-msgstr "一致する mask state が lock されているため unmask できません\n"
+msgstr ""
 
 #: src/store.c:26578
 #, c-format
 msgid "ambiguous legacy mask requires mask --rebind before unmask: %s\n"
-msgstr "曖昧な legacy mask は unmask の前に mask --rebind が必要です: %s\n"
+msgstr ""
 
 #: src/store.c:26611
 #, c-format
 msgid "mask chain does not protect requested key: %s\n"
-msgstr "mask chain は要求した key を保護していません: %s\n"
+msgstr ""
 
 #: src/store.c:26619
 #, c-format
@@ -4766,18 +4248,16 @@ msgid ""
 "multiple mask chains match key; use list --all-masks --long and --mask-"
 "chain: %s\n"
 msgstr ""
-"複数の mask chain が key に一致します。list --all-masks --long と --mask-"
-"chain を使ってください: %s\n"
 
 #: src/store.c:26684
 #, c-format
 msgid "mask state changed since plan\n"
-msgstr "plan 作成後に mask state が変更されました\n"
+msgstr ""
 
 #: src/store.c:26691 src/store.c:27291 src/store.c:27303
 #, c-format
 msgid "key is not masked in current domain: %s\n"
-msgstr "key は現在の domain で mask されていません: %s\n"
+msgstr ""
 
 #: src/store.c:26724
 #, c-format
@@ -4785,8 +4265,6 @@ msgid ""
 "mask chain protects multiple key names; inspect with unmask --dry-run --mask-"
 "chain: %s\n"
 msgstr ""
-"mask chain は複数の key name を保護しています。unmask --dry-run --mask-chain "
-"で確認してください: %s\n"
 
 #: src/store.c:27288
 #, c-format
@@ -4794,57 +4272,56 @@ msgid ""
 "cannot unmask a persisted tombstone while volatile session overlay is "
 "active: %s\n"
 msgstr ""
-"揮発セッション overlay が有効な間は永続 tombstone を unmask できません: %s\n"
 
 #: src/store.c:27337
 #, c-format
 msgid "invalid UUID source for ln: %s\n"
-msgstr "ln の UUID source が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:27371
 #, c-format
 msgid "secret UUID is not authorized in current context: %s\n"
-msgstr "secret UUID は現在の context で認可されていません: %s\n"
+msgstr ""
 
 #: src/store.c:27518 src/store.c:27524
 #, c-format
 msgid "invalid arguments for ln\n"
-msgstr "ln の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:27529
 #, c-format
 msgid "--skip-same-value-check requires --replace\n"
-msgstr "--skip-same-value-check には --replace が必要です\n"
+msgstr ""
 
 #: src/store.c:27588 src/store.c:27871 src/store.c:27991
 #, c-format
 msgid "destination key already exists: %s\n"
-msgstr "destination key はすでに存在します: %s\n"
+msgstr ""
 
 #: src/store.c:27648
 #, c-format
 msgid "UUID references are only valid as ln source: %s\n"
-msgstr "UUID reference は ln source としてのみ有効です: %s\n"
+msgstr ""
 
 #: src/store.c:27653 src/store.c:27750 src/store.c:27834 src/store.c:27953
 #, c-format
 msgid "source and destination keys must differ\n"
-msgstr "source key と destination key は異なる必要があります\n"
+msgstr ""
 
 #: src/store.c:27687
 #, c-format
 msgid "ln is not supported in a volatile session overlay\n"
-msgstr "volatile session overlay では ln はサポートされません\n"
+msgstr ""
 
 #: src/store.c:27698 src/store.c:27723
 #, c-format
 msgid "ln requires source and destination in v2 stores\n"
-msgstr "ln には v2 store 内の source と destination が必要です\n"
+msgstr ""
 
 #: src/store.c:27719 src/store.c:27731
 #, c-format
 msgid "ln is not supported for an ephemeral secret: %s\n"
-msgstr "ephemeral secret では ln はサポートされません: %s\n"
+msgstr ""
 
 #: src/store.c:27737
 #, c-format
@@ -4852,13 +4329,11 @@ msgid ""
 "destination key already exists: %s (use --replace to replace a same-name key "
 "after value confirmation)\n"
 msgstr ""
-"destination key はすでに存在します: %s (値確認後に同名 key を置換するには --"
-"replace を使用してください)\n"
 
 #: src/store.c:27743
 #, c-format
 msgid "ln --replace only supports existing same-name key references\n"
-msgstr "ln --replace は既存の同名 key reference のみサポートします\n"
+msgstr ""
 
 #: src/store.c:27770
 #, c-format
@@ -4866,53 +4341,51 @@ msgid ""
 "same-name destination value differs: %s (use --skip-same-value-check with --"
 "replace to replace anyway)\n"
 msgstr ""
-"同名 destination の値が異なります: %s (それでも置換するには --replace と --"
-"skip-same-value-check を併用してください)\n"
 
 #: src/store.c:27829
 #, c-format
 msgid "invalid arguments for cp\n"
-msgstr "cp の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:27884
 #, c-format
 msgid "cp is not supported for an ephemeral secret: %s\n"
-msgstr "ephemeral secret では cp はサポートされません: %s\n"
+msgstr ""
 
 #: src/store.c:27908 src/store.c:28028
 #, c-format
 msgid "key metadata cannot be preserved for hidden v2 key: %s\n"
-msgstr "hidden v2 key には key metadata を保持できません: %s\n"
+msgstr ""
 
 #: src/store.c:27948
 #, c-format
 msgid "invalid arguments for mv\n"
-msgstr "mv の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:28004
 #, c-format
 msgid "mv is not supported for an ephemeral secret: %s\n"
-msgstr "ephemeral secret では mv はサポートされません: %s\n"
+msgstr ""
 
 #: src/store.c:28163
 #, c-format
 msgid "invalid arguments for %s\n"
-msgstr "%s の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:28230
 #, c-format
 msgid "mask planning and rebind require a persisted v2 store\n"
-msgstr "mask planning と rebind には永続 v2 store が必要です\n"
+msgstr ""
 
 #: src/store.c:28255
 #, c-format
 msgid "canonical mask planning requires an inherited v2 entry\n"
-msgstr "canonical mask planning には継承された v2 entry が必要です\n"
+msgstr ""
 
 #: src/store.c:28375
 #, c-format
 msgid "unmask planning requires a persisted v2 store\n"
-msgstr "unmask planning には永続 v2 store が必要です\n"
+msgstr ""
 
 #: src/store.c:28426
 #, c-format
@@ -4920,8 +4393,6 @@ msgid ""
 "warning: unmask: removed mask chain; %s remains masked by %zu other chain or "
 "barrier\n"
 msgstr ""
-"warning: unmask: mask chain を削除しましたが、%s は他の %zu 個の chain また"
-"は barrier によって mask されたままです\n"
 
 #: src/store.c:28433
 #, c-format
@@ -4929,776 +4400,238 @@ msgid ""
 "warning: unmask: %s remains local; removing it later may expose the "
 "inherited value\n"
 msgstr ""
-"warning: unmask: %s は local のままです。後で削除すると継承値が露出する可能性"
-"があります\n"
 
 #: src/store.c:28467
 #, c-format
 msgid "ephemeral key not found: %s\n"
-msgstr "ephemeral key が見つかりません: %s\n"
+msgstr ""
 
 #: src/store.c:28473
 #, c-format
 msgid "cannot remove inherited ephemeral key; use its source domain: %s\n"
 msgstr ""
-"継承された ephemeral key は削除できません。source domain を使用してください: "
-"%s\n"
 
 #: src/store.c:28515 src/store.c:28522
 #, c-format
 msgid "invalid arguments for rm\n"
-msgstr "rm の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:28650 src/store.c:29161 src/store.c:29519 src/store.c:29552
 #: src/store.c:29627
 #, c-format
 msgid "--store is not valid with store commands\n"
-msgstr "--store は store コマンドでは使えません\n"
+msgstr ""
 
 #: src/store.c:28750
 #, c-format
 msgid "store migrate requires a registered current domain\n"
-msgstr "store migrate には登録済みの current domain が必要です\n"
+msgstr ""
 
 #: src/store.c:28761 src/store.c:29381 src/store.c:29662
 #, c-format
 msgid "store not found: %s\n"
-msgstr "store が見つかりません: %s\n"
+msgstr ""
 
 #: src/store.c:28772
 #, c-format
 msgid "store format is v2; migration is not needed\n"
-msgstr "store format は v2 です。migration は不要です\n"
+msgstr ""
 
 #: src/store.c:29050
 #, c-format
 msgid "v2 migration artifacts already exist\n"
-msgstr "v2 migration artifacts はすでに存在します\n"
+msgstr ""
 
 #: src/store.c:29119
 #, c-format
 msgid "v2 migration verification failed\n"
-msgstr "v2 migration verification に失敗しました\n"
+msgstr ""
 
 #: src/store.c:29371
 #, c-format
 msgid "store finalize-migration requires a registered current domain\n"
-msgstr "store finalize-migration には登録済みの current domain が必要です\n"
+msgstr ""
 
 #: src/store.c:29392
 #, c-format
 msgid "store format is v1; finalize-migration requires a migrated v2 store\n"
 msgstr ""
-"store format は v1 です。finalize-migration には migrated v2 store が必要で"
-"す\n"
 
 #: src/store.c:29557
 #, c-format
 msgid "missing store name for store create\n"
-msgstr "store create の store 名が不足しています\n"
+msgstr ""
 
 #: src/store.c:29562
 #, c-format
 msgid "invalid arguments for store create\n"
-msgstr "store create の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:29587
 #, c-format
 msgid "store already exists: %s\n"
-msgstr "store はすでに存在します: %s\n"
+msgstr ""
 
 #: src/store.c:29632
 #, c-format
 msgid "missing store name for store delete\n"
-msgstr "store delete の store 名が不足しています\n"
+msgstr ""
 
 #: src/store.c:29637
 #, c-format
 msgid "invalid arguments for store delete\n"
-msgstr "store delete の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:29706 src/store.c:29715 src/store.c:29739 src/store.c:29748
 #, c-format
 msgid "store is not empty: %s\n"
-msgstr "store は空ではありません: %s\n"
+msgstr ""
 
 #: src/store.c:29776
 #, c-format
 msgid "key value contains NUL byte and cannot be exported: %s\n"
-msgstr "key の値に NUL バイトが含まれているため export できません: %s\n"
+msgstr ""
 
 #: src/store.c:29948
 #, c-format
 msgid "invalid arguments for save\n"
-msgstr "save の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:29956
 msgid "Create secdat bundle passphrase: "
-msgstr "secdat bundle 用パスフレーズを作成してください: "
+msgstr ""
 
 #: src/store.c:29957
 msgid "Confirm secdat bundle passphrase: "
-msgstr "secdat bundle 用パスフレーズを再入力してください: "
+msgstr ""
 
 #: src/store.c:29989
 #, c-format
 msgid "invalid arguments for load\n"
-msgstr "load の引数が不正です\n"
+msgstr ""
 
 #: src/store.c:30003
 msgid "Enter secdat bundle passphrase: "
-msgstr "secdat bundle 用パスフレーズを入力してください: "
+msgstr ""
 
 #: src/store.c:30168
 #, c-format
 msgid "  dir=%s\n"
-msgstr "  dir=%s\n"
+msgstr ""
 
 #: src/store.c:30171
 #, c-format
 msgid "  domain=%s\n"
-msgstr "  domain=%s\n"
+msgstr ""
 
 #: src/store.c:30174
 #, c-format
 msgid "  store=%s\n"
-msgstr "  store=%s\n"
+msgstr ""
 
 #: src/store.c:30209
 #, c-format
 msgid "invalid mask action: %s\n"
-msgstr "mask action が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:30213
 #, c-format
 msgid "conflicting mask action options\n"
-msgstr "mask action option が競合しています\n"
+msgstr ""
 
 #: src/store.c:30227
 #, c-format
 msgid "conflicting mask warning options\n"
-msgstr "mask warning option が競合しています\n"
+msgstr ""
 
 #: src/store.c:30306
 #, c-format
 msgid "missing value for --mask-action\n"
-msgstr "--mask-action に値が必要です\n"
+msgstr ""
 
 #: src/store.c:30336 src/store.c:30368
 #, c-format
 msgid "invalid mask warning policy: %s\n"
-msgstr "mask warning policy が不正です: %s\n"
+msgstr ""
 
 #: src/store.c:30347
 #, c-format
 msgid "missing value for --mask-warnings\n"
-msgstr "--mask-warnings に値が必要です\n"
+msgstr ""
 
 #: src/store.c:30828
 #, c-format
 msgid "mutation failed to preserve a mask\n"
-msgstr "mutation で mask を保持できませんでした\n"
+msgstr ""
 
 #: src/store.c:30919 src/store.c:31069
 #, c-format
 msgid "failed to encode mutation plan\n"
-msgstr "mutation plan のエンコードに失敗しました\n"
+msgstr ""
 
 #: src/store.c:31132
 #, c-format
 msgid "warning: %s: "
-msgstr "warning: %s: "
+msgstr ""
 
 #: src/store.c:31146
 #, c-format
 msgid "%zu directly affected masked key slot(s)"
-msgstr "%zu 件の masked key slot に直接影響しました"
+msgstr ""
 
 #: src/store.c:31150
 #, c-format
 msgid "%zu mask(s) became dormant"
-msgstr "%zu 件の mask が休眠状態になりました"
+msgstr ""
 
 #: src/store.c:31154
 #, c-format
 msgid "%zu dormant mask(s) reactivated"
-msgstr "%zu 件の休眠 mask が再活性化しました"
+msgstr ""
 
 #: src/store.c:31158
 #, c-format
 msgid "%zu mask(s) became orphaned"
-msgstr "%zu 件の mask が孤児化しました"
+msgstr ""
 
 #: src/store.c:31162
 #, c-format
 msgid "%zu source mask(s) created"
-msgstr "%zu 件の source mask を作成しました"
+msgstr ""
 
 #: src/store.c:31166
 msgid "; inspect with 'secdat --dir DIR list --all-masks --long'\n"
-msgstr "。'secdat --dir DIR list --all-masks --long' で確認してください\n"
+msgstr ""
 
 #: src/store.c:31234
 #, c-format
 msgid "mutation planning requires a registered current domain\n"
-msgstr "mutation planning には登録済みの current domain が必要です\n"
+msgstr ""
 
 #: src/store.c:31252
 #, c-format
 msgid "mask mutation planning requires store format v2\n"
-msgstr "mask mutation planning には store format v2 が必要です\n"
+msgstr ""
 
 #: src/store.c:31350
 msgid "ambiguous legacy mask blocks this mutation\n"
-msgstr "曖昧な legacy mask がこの mutation を拒否しました\n"
+msgstr ""
 
 #: src/store.c:31351
 msgid "mask interaction rejected before mutation\n"
-msgstr "mutation 前に mask interaction を拒否しました\n"
+msgstr ""
 
 #: src/store.c:31475
 #, c-format
 msgid "mutation planning options are not supported with --ephemeral\n"
-msgstr "mutation planning option は --ephemeral と併用できません\n"
+msgstr ""
 
 #: src/store.c:31492
 #, c-format
 msgid "cannot combine --dir and --domain\n"
-msgstr "--dir と --domain は同時に指定できません\n"
+msgstr ""
 
 #: src/store.c:31504
 #, c-format
 msgid "failed to recover pending transactions\n"
-msgstr "保留中 transaction の復旧に失敗しました\n"
-
-#, c-format
-#~ msgid ""
-#~ "warning: %s: preserved %zu mask interaction(s) (direct=%zu, dormant=%zu, "
-#~ "reactivated=%zu, orphaned=%zu, created=%zu); inspect with 'secdat --dir "
-#~ "DIR list --all-masks --long'\n"
-#~ msgstr ""
-#~ "warning: %s: %zu 件の mask interaction を保持しました (direct=%zu, "
-#~ "dormant=%zu, reactivated=%zu, orphaned=%zu, created=%zu)。'secdat --dir "
-#~ "DIR list --all-masks --long' で確認してください\n"
-
-#, c-format
-#~ msgid "target is already masked by another chain: %s\n"
-#~ msgstr "target は別の chain ですでに mask されています: %s\n"
-
-#, c-format
-#~ msgid "mask rebind requires exactly one inherited v2 target: %s\n"
-#~ msgstr "mask rebind には継承された v2 target が 1 つだけ必要です: %s\n"
-
-#~ msgid "  mask: create a local tombstone to hide one inherited key\n"
-#~ msgstr "  mask: 継承された 1 つの key を隠す local tombstone を作成します\n"
-
-#~ msgid "  unmask: remove one local tombstone from the current domain\n"
-#~ msgstr "  unmask: 現在の domain から 1 つの local tombstone を削除します\n"
-
-#, c-format
-#~ msgid "invalid arguments for mask\n"
-#~ msgstr "mask の引数が不正です\n"
-
-#, c-format
-#~ msgid "invalid arguments for unmask\n"
-#~ msgstr "unmask の引数が不正です\n"
-
-#~ msgid ""
-#~ "  unlock affected domains for <redacted> rows; for record-sha256 rows, "
-#~ "inspect the protected masks directory before repair\n"
-#~ msgstr ""
-#~ "  <redacted> 行では対象 domain を unlock してください。record-sha256 行で"
-#~ "は修復前に保護された masks ディレクトリを調べてください\n"
-
-#, c-format
-#~ msgid "invalid v2 mask record: %s\n"
-#~ msgstr "v2 mask record が不正です: %s\n"
-
-#, c-format
-#~ msgid "invalid --inject-gate value: %s\n"
-#~ msgstr "不正な --inject-gate 値です: %s\n"
-
-#, c-format
-#~ msgid "--inject-gate=bulk may be specified at most once\n"
-#~ msgstr "--inject-gate=bulk は 1 回だけ指定できます\n"
-
-#, c-format
-#~ msgid "exec: --env-map-sed conflicts with --inject secret:rename\n"
-#~ msgstr "exec: --env-map-sed は --inject secret:rename と競合します\n"
-
-#, c-format
-#~ msgid "exec: --pattern conflicts with --inject secret:only\n"
-#~ msgstr "exec: --pattern は --inject secret:only と競合します\n"
-
-#, c-format
-#~ msgid "exec: --pattern-exclude conflicts with --inject secret:omit\n"
-#~ msgstr "exec: --pattern-exclude は --inject secret:omit と競合します\n"
-
-#, c-format
-#~ msgid "exec: --require-key conflicts with --inject secret:require\n"
-#~ msgstr "exec: --require-key は --inject secret:require と競合します\n"
-
-#, c-format
-#~ msgid "exec: --sandbox-injectable conflicts with --inject-gate=sandbox\n"
-#~ msgstr "exec: --sandbox-injectable は --inject-gate=sandbox と競合します\n"
-
-#, c-format
-#~ msgid "secret object forbids sandbox injection: %s\n"
-#~ msgstr "secret object が sandbox injection を禁止しています: %s\n"
-
-#, c-format
-#~ msgid ""
-#~ "  run one command with matching secrets injected: %s exec --pattern "
-#~ "'APP_*' env\n"
-#~ msgstr ""
-#~ "  一致した secret を注入して 1 つのコマンドを実行する: %s exec --pattern "
-#~ "'APP_*' env\n"
-
-#, c-format
-#~ msgid ""
-#~ "  exclude one inherited key while running a child process: %s exec --"
-#~ "pattern 'APP_*' --pattern-exclude 'APP_DEBUG_*' CMD\n"
-#~ msgstr ""
-#~ "  子プロセス実行時に 1 つの継承 key を除外する: %s exec --pattern 'APP_*' "
-#~ "--pattern-exclude 'APP_DEBUG_*' CMD\n"
-
-#, c-format
-#~ msgid ""
-#~ "  inject secrets into one subprocess only: %s --dir ~/example/project "
-#~ "exec --env-map-sed 's/^MY_APP_\\(.*\\)$/APP_\\1/' CMD\n"
-#~ msgstr ""
-#~ "  1 つの子プロセスにだけ secret を注入する: %s --dir ~/example/project "
-#~ "exec --env-map-sed 's/^MY_APP_\\(.*\\)$/APP_\\1/' CMD\n"
-
-#, c-format
-#~ msgid "invalid --env-map-sed expression\n"
-#~ msgstr "--env-map-sed の式が不正です\n"
-
-#, c-format
-#~ msgid "invalid --env-map-sed regex: %s\n"
-#~ msgstr "--env-map-sed の正規表現が不正です: %s\n"
-
-#, c-format
-#~ msgid "failed to match --env-map-sed against key: %s\n"
-#~ msgstr "--env-map-sed を key に照合できませんでした: %s\n"
-
-#, c-format
-#~ msgid "invalid environment variable name from --env-map-sed: %s\n"
-#~ msgstr "--env-map-sed から不正な環境変数名が生成されました: %s\n"
-
-#, c-format
-#~ msgid "required key is not selected for exec injection: %s\n"
-#~ msgstr "必須 key が exec injection の対象に選択されていません: %s\n"
-
-#, c-format
-#~ msgid "duplicate environment variable name from --env-map-sed: %s\n"
-#~ msgstr "--env-map-sed で環境変数名が重複しました: %s\n"
-
-#, c-format
-#~ msgid "failed to export key to environment: %s\n"
-#~ msgstr "key の環境変数への書き出しに失敗しました: %s\n"
-
-#, c-format
-#~ msgid "relation suggest-refresh requires a registered current domain\n"
-#~ msgstr "relation suggest-refresh には登録済みの current domain が必要です\n"
-
-#, c-format
-#~ msgid "key is not a valid shell identifier: %s\n"
-#~ msgstr "key は有効な shell 識別子ではありません: %s\n"
-
-#, c-format
-#~ msgid "store finalize-migration currently requires --dry-run\n"
-#~ msgstr "現在 store finalize-migration には --dry-run が必要です\n"
-
-#, c-format
-#~ msgid "v2 key_visibility=unlocked is not implemented yet\n"
-#~ msgstr "v2 key_visibility=unlocked はまだ実装されていません\n"
-
-#, c-format
-#~ msgid "v2 key_visibility updates are not implemented yet\n"
-#~ msgstr "v2 key_visibility の更新はまだ実装されていません\n"
-
-#, c-format
-#~ msgid "v2 value_access updates are not implemented yet\n"
-#~ msgstr "v2 value_access の更新はまだ実装されていません\n"
-
-#~ msgid "present"
-#~ msgstr "あり"
-
-#, c-format
-#~ msgid "unknown command: %s\n"
-#~ msgstr "不明なコマンドです: %s\n"
-
-#~ msgid "direct-session"
-#~ msgstr "direct-session"
-
-#~ msgid "effective source: direct session"
-#~ msgstr "有効な取得元: direct session"
-
-#~ msgid "effective source: blocked by ancestor lock"
-#~ msgstr "有効な取得元: 祖先 lock により block 中"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] ls [GLOBPATTERN] [-p "
-#~ "GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [--"
-#~ "safe|--unsafe] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-"
-#~ "store]\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] ls [GLOBPATTERN] [-p "
-#~ "GLOBPATTERN|--pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] [--"
-#~ "safe|--unsafe] [-c|--canonical] [-D|--canonical-domain] [-S|--canonical-"
-#~ "store]\n"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] list [--masked] [--"
-#~ "overridden] [--orphaned] [--safe] [--unsafe]\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] list [--masked] [--"
-#~ "overridden] [--orphaned] [--safe] [--unsafe]\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mask KEYREF\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mask KEYREF\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] unmask KEYREF\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] unmask KEYREF\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exists KEYREF\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exists KEYREF\n"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get [--on-demand-unlock] "
-#~ "[--unlock-timeout SECONDS] KEYREF [-o|--stdout|--shellescaped]\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] get [--on-demand-unlock] "
-#~ "[--unlock-timeout SECONDS] KEYREF [-o|--stdout|--shellescaped]\n"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] set KEYREF [--unsafe] "
-#~ "[VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] set KEYREF [--unsafe] "
-#~ "[VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]\n"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm [--ignore-missing] "
-#~ "KEYREF\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] rm [--ignore-missing] "
-#~ "KEYREF\n"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mv SRC_KEYREF "
-#~ "DST_KEYREF\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] mv SRC_KEYREF "
-#~ "DST_KEYREF\n"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] cp SRC_KEYREF "
-#~ "DST_KEYREF\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] cp SRC_KEYREF "
-#~ "DST_KEYREF\n"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--"
-#~ "pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] CMD [ARGS...]\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] exec [-p GLOBPATTERN|--"
-#~ "pattern GLOBPATTERN] [--pattern-exclude GLOBPATTERN] CMD [ARGS...]\n"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] export [-p GLOBPATTERN|--"
-#~ "pattern GLOBPATTERN]\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] export [-p GLOBPATTERN|--"
-#~ "pattern GLOBPATTERN]\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] save FILE\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] save FILE\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] load FILE\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] [-s STORE|--store STORE] load FILE\n"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] unlock [--inherit] [--volatile|--readonly] [--"
-#~ "descendants] [--yes]\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] unlock [--inherit] [--volatile|--readonly] [--"
-#~ "descendants] [--yes]\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] inherit\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] inherit\n"
-
-#, c-format
-#~ msgid "  %s passwd\n"
-#~ msgstr "  %s passwd\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] lock [--inherit] [--save]\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] lock [--inherit] [--save]\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] status [-q|--quiet]\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] status [-q|--quiet]\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] store create STORE\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] store create STORE\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] store delete STORE\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] store delete STORE\n"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] store ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern "
-#~ "GLOBPATTERN]\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] store ls [GLOBPATTERN] [-p GLOBPATTERN|--pattern "
-#~ "GLOBPATTERN]\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] domain create\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] domain create\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] domain delete\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] domain delete\n"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] domain ls [-l|--long] [-a|--inherited] [--"
-#~ "ancestors] [--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern "
-#~ "GLOBPATTERN]\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] domain ls [-l|--long] [-a|--inherited] [--"
-#~ "ancestors] [--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern "
-#~ "GLOBPATTERN]\n"
-
-#, c-format
-#~ msgid "  %s [-d DIR|--dir DIR] domain status [-q|--quiet]\n"
-#~ msgstr "  %s [-d DIR|--dir DIR] domain status [-q|--quiet]\n"
-
-#, c-format
-#~ msgid ""
-#~ "  -h, --help         show global help, or combine with COMMAND for "
-#~ "detailed help\n"
-#~ msgstr ""
-#~ "  -h, --help         全体ヘルプを表示します。COMMAND と組み合わせると詳細"
-#~ "ヘルプを表示します\n"
-
-#, c-format
-#~ msgid "  show global help or detailed help for one command\n"
-#~ msgstr "  全体ヘルプ、または 1 つのコマンドの詳細ヘルプを表示します\n"
-
-#, c-format
-#~ msgid ""
-#~ "  list effective keys visible from the current domain view, optionally "
-#~ "filtered by safe or unsafe storage\n"
-#~ msgstr ""
-#~ "  現在の domain view から見える有効な key を、安全または unsafe な保存方式"
-#~ "で絞り込んで一覧します\n"
-
-#, c-format
-#~ msgid ""
-#~ "  inspect current-domain masked, overridden, orphaned, safe, or unsafe "
-#~ "local state\n"
-#~ msgstr ""
-#~ "  現在の domain の masked・overridden・orphaned・safe・unsafe な local "
-#~ "state を確認します\n"
-
-#, c-format
-#~ msgid "  create a local tombstone to hide one inherited key\n"
-#~ msgstr "  継承された 1 つの key を隠す local tombstone を作成します\n"
-
-#, c-format
-#~ msgid "  remove one local tombstone from the current domain\n"
-#~ msgstr "  現在の domain から 1 つの local tombstone を削除します\n"
-
-#, c-format
-#~ msgid ""
-#~ "  check whether one resolved key is visible from the current domain view\n"
-#~ msgstr ""
-#~ "  解決された 1 つの key が現在の domain view から見えるか確認します\n"
-
-#, c-format
-#~ msgid ""
-#~ "  decrypt one resolved key and write it to standard output; --on-demand-"
-#~ "unlock waits for another terminal to unlock\n"
-#~ msgstr ""
-#~ "  解決された 1 つの key を復号して標準出力へ書き出します。--on-demand-"
-#~ "unlock を付けると別端末での unlock を待機します\n"
-
-#, c-format
-#~ msgid ""
-#~ "  store or update one key in the resolved current domain; --unsafe stores "
-#~ "plaintext visible while locked\n"
-#~ msgstr ""
-#~ "  解決された current domain に 1 つの key を保存または更新します。--"
-#~ "unsafe は lock 中も見える平文を保存します\n"
-
-#, c-format
-#~ msgid ""
-#~ "  remove one key locally or create a tombstone for an inherited key; --"
-#~ "ignore-missing treats absent keys as success\n"
-#~ msgstr ""
-#~ "  1 つの key をローカルに削除するか、継承 key 用の tombstone を作成しま"
-#~ "す。--ignore-missing は未存在の key を成功扱いにします\n"
-
-#, c-format
-#~ msgid "  rename or relocate one key between resolved locations\n"
-#~ msgstr "  1 つの key を解決先の場所どうしで改名または移動します\n"
-
-#, c-format
-#~ msgid "  copy one key into another resolved location\n"
-#~ msgstr "  1 つの key を別の解決先へコピーします\n"
-
-#, c-format
-#~ msgid "  inject resolved keys into a child process environment\n"
-#~ msgstr "  解決された key を子プロセス環境へ注入します\n"
-
-#, c-format
-#~ msgid ""
-#~ "  emit shell-ready export lines that defer secret reads to secdat get\n"
-#~ msgstr ""
-#~ "  secret の読み出しを secdat get に委ねる shell 向け export 行を出力しま"
-#~ "す\n"
-
-#, c-format
-#~ msgid ""
-#~ "  export the current visible secrets into a passphrase-protected bundle\n"
-#~ msgstr ""
-#~ "  現在の view から見える secret をパスフレーズ保護された bundle として出力"
-#~ "します\n"
-
-#, c-format
-#~ msgid ""
-#~ "  import a passphrase-protected bundle into the current domain view\n"
-#~ msgstr ""
-#~ "  パスフレーズ保護された bundle を現在の domain view に取り込みます\n"
-
-#, c-format
-#~ msgid ""
-#~ "  start or refresh an authenticated secret session for the current "
-#~ "domain; --inherit removes a local explicit-lock marker or clears a local "
-#~ "session when no marker is present\n"
-#~ msgstr ""
-#~ "  現在の domain 用の認証済み secret session を開始または更新します。--"
-#~ "inherit は local explicit-lock marker を削除するか、marker がなければ "
-#~ "local session を消去します\n"
-
-#, c-format
-#~ msgid ""
-#~ "  remove the current domain's local explicit-lock marker, or clear a "
-#~ "local session when no marker is present, without checking the resulting "
-#~ "state\n"
-#~ msgstr ""
-#~ "  結果状態を確認せず、現在の domain の local explicit-lock marker を削除す"
-#~ "るか、marker がなければ local session を消去します\n"
-
-#, c-format
-#~ msgid "  change the wrapped-master-key passphrase\n"
-#~ msgstr "  ラップ済み master key のパスフレーズを変更します\n"
-
-#, c-format
-#~ msgid "  clear the current domain's local secret session\n"
-#~ msgstr "  現在の domain の local secret session を消去します\n"
-
-#, c-format
-#~ msgid ""
-#~ "  report whether secret material is available from the current domain "
-#~ "scope\n"
-#~ msgstr ""
-#~ "  現在の domain scope から secret material が利用可能かどうかを報告しま"
-#~ "す\n"
-
-#, c-format
-#~ msgid "  print the secdat version\n"
-#~ msgstr "  secdat のバージョンを表示します\n"
-
-#, c-format
-#~ msgid "  manage domain roots and domain discovery scope\n"
-#~ msgstr "  domain root と domain 探索スコープを管理します\n"
-
-#~ msgid "local-session"
-#~ msgstr "local-session"
-
-#~ msgid "explicit-lock"
-#~ msgstr "explicit-lock"
-
-#~ msgid "no-session"
-#~ msgstr "no-session"
-
-#~ msgid "absent"
-#~ msgstr "なし"
-
-#~ msgid "effective source: local session"
-#~ msgstr "実効取得元: local session"
-
-#~ msgid "effective source: inherited session"
-#~ msgstr "実効取得元: inherited session"
-
-#~ msgid "effective source: explicit lock"
-#~ msgstr "実効取得元: explicit lock"
-
-#~ msgid "effective source: blocked by explicit lock"
-#~ msgstr "実効取得元: explicit lock により遮断"
-
-#, c-format
-#~ msgid "blocked by: %s\n"
-#~ msgstr "遮断元: %s\n"
-
-#, c-format
-#~ msgid ""
-#~ "  %s [-d DIR|--dir DIR] wait-unlock [--timeout SECONDS] [-q|--quiet]\n"
-#~ msgstr ""
-#~ "  %s [-d DIR|--dir DIR] wait-unlock [--timeout SECONDS] [-q|--quiet]\n"
-
-#, c-format
-#~ msgid ""
-#~ "  wait until the current domain scope becomes unlocked, or fail on "
-#~ "timeout\n"
-#~ msgstr ""
-#~ "  現在の domain scope がアンロックされるまで待機し、タイムアウト時は失敗し"
-#~ "ます\n"
-
-#, c-format
-#~ msgid "  %s unlock\n"
-#~ msgstr "  %s unlock\n"
-
-#, c-format
-#~ msgid "  %s lock\n"
-#~ msgstr "  %s lock\n"
-
-#, c-format
-#~ msgid "missing store subcommand\n"
-#~ msgstr "store サブコマンドが必要です\n"
-
-#, c-format
-#~ msgid "missing domain subcommand\n"
-#~ msgstr "domain サブコマンドが必要です\n"
-
-#, c-format
-#~ msgid ""
-#~ "missing SECDAT_MASTER_KEY; export a secret first, for example: export "
-#~ "SECDAT_MASTER_KEY='change-me'\n"
-#~ msgstr ""
-#~ "SECDAT_MASTER_KEY が未設定です。先に秘密値を export してください。例: "
-#~ "export SECDAT_MASTER_KEY='change-me'\n"
+msgstr ""

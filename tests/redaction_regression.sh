@@ -15,6 +15,15 @@ source_root="$(cd "$script_dir/.." && pwd)"
 work_root="$(mktemp -d)"
 trap 'rm -rf "$work_root"' EXIT
 
+pkg_config_bin="${PKG_CONFIG:-pkg-config}"
+if ! static_link_flags_text=$(
+    PKG_CONFIG_PATH="$build_root${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+        "$pkg_config_bin" --static --libs libsecdat
+); then
+    fail "pkg-config could not resolve the static libsecdat link contract"
+fi
+read -r -a static_link_flags <<<"$static_link_flags_text"
+
 cat >"$work_root/redaction_harness.c" <<'C'
 #include "redaction.h"
 #include "secdat-sdk.h"
@@ -208,7 +217,7 @@ int main(void)
 C
 
 cc -I"$source_root/src" -I"$build_root/src" "$work_root/redaction_harness.c" \
-    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -L"$build_root/src/.libs" "${static_link_flags[@]}" \
     -Wl,-rpath,"$build_root/src/.libs" \
     -o "$work_root/redaction_harness"
 

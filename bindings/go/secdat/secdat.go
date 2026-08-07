@@ -1,7 +1,6 @@
 package secdat
 
 /*
-#cgo pkg-config: libsecdat
 #include <stdlib.h>
 #include "secdat-sdk.h"
 */

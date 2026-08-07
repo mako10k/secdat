@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([secdat], [0.4.2], [noreply@example.invalid])
+AC_INIT([secdat], [0.5.0], [noreply@example.invalid])
 AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_HEADERS([config.h])
 AM_INIT_AUTOMAKE([foreign subdir-objects -Wall])
@@ -7,9 +7,11 @@ AM_INIT_AUTOMAKE([foreign subdir-objects -Wall])
 AC_PROG_CC
 AM_PROG_AR
 LT_INIT
+AM_CONDITIONAL([BUILD_SHARED_LIBSECDAT], [test "x$enable_shared" = "xyes"])
 PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES([OPENSSL], [openssl])
 PKG_CHECK_MODULES([JANSSON], [jansson >= 2.7])
+PKG_CHECK_MODULES_STATIC([SECDAT_PRIVATE], [openssl jansson >= 2.7])
 
 AC_ARG_ENABLE(
     [fuse],

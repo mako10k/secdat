@@ -447,6 +447,25 @@ rc, stdout, stderr = run([
 if rc != 0 or not exec_stderr_ok(stderr) or stdout != "secret-token":
     fail(f"inject-file route override failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+# Quoted YAML scalars compact escaped bytes without leaving gaps in the
+# resulting token. The documented BRE rename needs literal backslashes.
+escaped_rename_policy_file = work_root / "exec.rename-escaped.yaml"
+escaped_rename_policy_file.write_text(
+    "supply:\n"
+    "  secret:\n"
+    "    only: [\"RENAMED_*\"]\n"
+    "    rename: \"s/^OTHER_\\\\(.*\\\\)$/RENAMED_\\\\1/\"\n",
+    encoding="utf-8",
+)
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "exec",
+    "--inject-file", str(escaped_rename_policy_file),
+    "python3", "-c",
+    "import os,sys; sys.stdout.write(os.environ.get('RENAMED_TOKEN','missing'))",
+])
+if rc != 0 or not exec_stderr_ok(stderr) or stdout != "other-secret":
+    fail(f"inject-file escaped rename failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 # --inject-file profiles apply command-scoped policy rules after base file rules.
 profile_policy_file = work_root / "exec.profile.yaml"
 profile_policy_file.write_text(

@@ -79,7 +79,8 @@ static int secdat_exec_yaml_unquote_scalar(const char *input, char **output)
     const char *cursor = input;
     char *result;
     size_t length = 0;
-    size_t index = 0;
+    size_t input_index = 0;
+    size_t output_index = 0;
 
     *output = NULL;
     cursor = secdat_exec_yaml_skip_spaces(cursor);
@@ -102,16 +103,18 @@ static int secdat_exec_yaml_unquote_scalar(const char *input, char **output)
             fprintf(stderr, _("out of memory\n"));
             return 1;
         }
-        while (index < length) {
-            if (cursor[index] == '\\' && cursor[index + 1] != '\0') {
-                result[index] = cursor[index + 1];
-                index += 2;
+        while (input_index < length) {
+            if (cursor[input_index] == '\\' && cursor[input_index + 1] != '\0') {
+                result[output_index] = cursor[input_index + 1];
+                input_index += 2;
+                output_index += 1;
                 continue;
             }
-            result[index] = cursor[index];
-            index += 1;
+            result[output_index] = cursor[input_index];
+            input_index += 1;
+            output_index += 1;
         }
-        result[length] = '\0';
+        result[output_index] = '\0';
         *output = result;
         return 0;
     }

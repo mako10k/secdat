@@ -5,7 +5,10 @@ set -euo pipefail
 bin_path="${1:-./src/secdat}"
 
 work_root="$(mktemp -d)"
-trap 'rm -rf "$work_root"' EXIT
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tests/session_test_cleanup.sh
+. "$script_dir/session_test_cleanup.sh"
+secdat_session_test_cleanup_install "$work_root"
 
 export XDG_RUNTIME_DIR="$work_root/runtime"
 export XDG_DATA_HOME="$work_root/data"

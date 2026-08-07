@@ -3,6 +3,7 @@
 set -euo pipefail
 
 bin_path="${1:-./src/secdat}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 fail() {
     printf 'FAIL: %s\n' "$1" >&2
@@ -10,13 +11,17 @@ fail() {
 }
 
 work_root="$(mktemp -d)"
-trap 'rm -rf "$work_root"' EXIT
+# shellcheck source=tests/session_test_cleanup.sh
+. "$script_dir/session_test_cleanup.sh"
+secdat_session_test_cleanup_install "$work_root"
+export -f session_test_cleanup
 
 export XDG_RUNTIME_DIR="$work_root/runtime"
 export XDG_DATA_HOME="$work_root/data"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
-python3 - "$bin_path" <<'PY'
+python3 - "$bin_path" "$SECDAT_SESSION_TEST_CLEANUP_SCRIPT" <<'PY'
+import errno
 import os
 import pty
 import re
@@ -36,6 +41,7 @@ import hashlib
 from urllib.parse import quote
 
 bin_path = sys.argv[1]
+session_cleanup_script = Path(sys.argv[2])
 env = os.environ.copy()
 env["LC_ALL"] = "C"
 env["LANGUAGE"] = "C"
@@ -52,6 +58,8 @@ for variable_name in (
     "SECDAT_ASKPASS",
     "SECDAT_GET_ON_DEMAND_UNLOCK",
     "SECDAT_GET_UNLOCK_TIMEOUT_SECONDS",
+    "SECDAT_TEST_AGENT_READY_DELAY_MILLISECONDS",
+    "SECDAT_TEST_AGENT_READY_FAILURE",
     "SSH_ASKPASS",
 ):
     env.pop(variable_name, None)
@@ -127,6 +135,32 @@ def agent_caps(socket_path):
     if match is None:
         fail(f"invalid agent CAPS response: {response!r}")
     return tuple(int(value) for value in match.groups())
+
+def test_runtime_agent_pids():
+    expected_runtime = os.fsencode(f"XDG_RUNTIME_DIR={env['XDG_RUNTIME_DIR']}")
+    result = set()
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            if (entry / "comm").read_text().strip() != "secdat":
+                continue
+            process_env = (entry / "environ").read_bytes().split(b"\0")
+        except (FileNotFoundError, PermissionError, ProcessLookupError):
+            continue
+        if expected_runtime in process_env:
+            result.add(int(entry.name))
+    return result
+
+def wait_for_test_runtime_agent_pids(expected, context):
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        actual = test_runtime_agent_pids()
+        if actual == expected:
+            return actual
+        time.sleep(0.02)
+    actual = test_runtime_agent_pids()
+    fail(f"{context}: agent pids are {sorted(actual)}, expected {sorted(expected)}")
 
 def begin_agent_handover(socket_path):
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -239,17 +273,21 @@ def usage_command_column(output, command):
             return column
     fail(f"missing usage command {command!r} in output {output!r}")
 
-def run(args, extra_env=None, input_text=None):
+def run(args, extra_env=None, input_text=None, timeout=None):
     run_env = env.copy()
     if extra_env:
         run_env.update(extra_env)
-    completed = subprocess.run(
-        args,
-        text=True,
-        capture_output=True,
-        env=run_env,
-        input=input_text,
-    )
+    try:
+        completed = subprocess.run(
+            args,
+            text=True,
+            capture_output=True,
+            env=run_env,
+            input=input_text,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        fail(f"command timed out after {timeout} seconds: {args!r}")
     return completed.returncode, completed.stdout, completed.stderr
 
 def run_bytes(args, extra_env=None):
@@ -418,6 +456,296 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run(scoped(["domain", "create"], sibling_domain))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"sibling domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+cleanup_fixture_root = isolated_root / "forced-cleanup-fixture"
+cleanup_fixture_runtime = cleanup_fixture_root / "runtime"
+cleanup_fixture_data = cleanup_fixture_root / "data"
+cleanup_fixture_domain = cleanup_fixture_root / "domain"
+for path in (
+    cleanup_fixture_runtime,
+    cleanup_fixture_data,
+    cleanup_fixture_domain,
+):
+    path.mkdir(parents=True, exist_ok=True)
+cleanup_fixture_env = {
+    "XDG_RUNTIME_DIR": str(cleanup_fixture_runtime),
+    "XDG_DATA_HOME": str(cleanup_fixture_data),
+    "SECDAT_MASTER_KEY": "forced-cleanup-master-key",
+}
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(cleanup_fixture_domain), "domain", "create"],
+    cleanup_fixture_env,
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"forced-cleanup domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(cleanup_fixture_domain), "unlock", "--volatile"],
+    cleanup_fixture_env,
+)
+if (
+    rc != 0
+    or "volatile session unlocked from environment\n" not in stdout
+    or stderr != f"resolved domain: {cleanup_fixture_domain}\n"
+):
+    fail(f"forced-cleanup unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+cleanup_registry_path = (
+    cleanup_fixture_data
+    / "secdat"
+    / "domains"
+    / "registry"
+    / "by-root"
+    / quote(str(cleanup_fixture_domain), safe="")
+)
+cleanup_domain_id = cleanup_registry_path.read_text().strip()
+cleanup_socket_path = (
+    cleanup_fixture_runtime
+    / "secdat"
+    / f"agent-{hashlib.sha256(cleanup_domain_id.encode()).hexdigest()[:32]}.sock"
+)
+cleanup_pid = agent_caps(cleanup_socket_path)[2]
+forced_failure_env = env.copy()
+forced_failure_env.update(cleanup_fixture_env)
+forced_failure_env["SECDAT_SESSION_TEST_ROOT"] = str(cleanup_fixture_root)
+forced_failure_env["SECDAT_SESSION_TEST_CLEANUP_SCRIPT"] = str(session_cleanup_script)
+forced_failure = subprocess.run(
+    ["bash", "-c", "trap session_test_cleanup EXIT; exit 23"],
+    text=True,
+    capture_output=True,
+    env=forced_failure_env,
+)
+if forced_failure.returncode != 23:
+    fail(
+        "forced session-test failure did not preserve its status: "
+        f"rc={forced_failure.returncode} stdout={forced_failure.stdout!r} "
+        f"stderr={forced_failure.stderr!r}"
+    )
+for _ in range(200):
+    if not Path(f"/proc/{cleanup_pid}").exists():
+        break
+    time.sleep(0.01)
+else:
+    fail(f"forced session-test failure left agent pid {cleanup_pid} alive")
+if cleanup_fixture_root.exists():
+    fail(f"forced session-test cleanup left its root behind: {cleanup_fixture_root}")
+
+ready_failure_domain = isolated_root / "agent-ready-failure"
+ready_failure_domain.mkdir()
+rc, stdout, stderr = run(scoped(["domain", "create"], ready_failure_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"agent-ready-failure domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["unlock", "--volatile"], ready_failure_domain),
+    {
+        "SECDAT_MASTER_KEY": "agent-ready-failure-key",
+        "SECDAT_TEST_AGENT_READY_FAILURE": "1",
+    },
+)
+if (
+    rc == 0
+    or stdout != ""
+    or stderr != (
+        f"resolved domain: {ready_failure_domain}\n"
+        "session agent failed before readiness\n"
+    )
+):
+    fail(f"agent readiness failure was not propagated: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+transient_probe_domain = isolated_root / "agent-transient-probe"
+transient_probe_domain.mkdir()
+rc, stdout, stderr = run(scoped(["domain", "create"], transient_probe_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"agent-transient-probe domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+transient_probe_socket = socket_path_for(registered_domain_id(transient_probe_domain))
+transient_probe_socket.parent.mkdir(parents=True, exist_ok=True)
+transient_probe_server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+transient_probe_server.bind(str(transient_probe_socket))
+transient_probe_server.listen(0)
+transient_probe_identity = transient_probe_socket.stat()
+transient_probe_filler = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+transient_probe_filler.setblocking(False)
+if transient_probe_filler.connect_ex(str(transient_probe_socket)) != 0:
+    fail("could not fill the fake agent listener backlog")
+transient_probe_confirmation = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+transient_probe_confirmation.setblocking(False)
+confirmation_status = transient_probe_confirmation.connect_ex(str(transient_probe_socket))
+transient_probe_confirmation.close()
+if confirmation_status not in (errno.EAGAIN, errno.EWOULDBLOCK):
+    fail(f"fake agent listener backlog did not report a transient error: {confirmation_status}")
+transient_probe_before = test_runtime_agent_pids()
+rc, stdout, stderr = run(
+    scoped(["unlock", "--volatile"], transient_probe_domain),
+    {"SECDAT_MASTER_KEY": "agent-transient-probe-key"},
+    timeout=3,
+)
+if (
+    rc == 0
+    or stdout != ""
+    or stderr != (
+        f"resolved domain: {transient_probe_domain}\n"
+        "failed to start session agent\n"
+    )
+):
+    fail(f"transient agent probe did not fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+transient_probe_after = test_runtime_agent_pids()
+if transient_probe_after != transient_probe_before:
+    fail(
+        "transient agent probe spawned or removed an agent: "
+        f"before={sorted(transient_probe_before)} after={sorted(transient_probe_after)}"
+    )
+current_transient_identity = transient_probe_socket.stat()
+if (
+    current_transient_identity.st_dev != transient_probe_identity.st_dev
+    or current_transient_identity.st_ino != transient_probe_identity.st_ino
+):
+    fail("transient agent probe replaced the live listener path")
+transient_probe_liveness = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+transient_probe_filler.close()
+queued_client, _ = transient_probe_server.accept()
+queued_client.close()
+transient_probe_liveness.connect(str(transient_probe_socket))
+accepted_liveness, _ = transient_probe_server.accept()
+accepted_liveness.close()
+transient_probe_liveness.close()
+transient_probe_server.close()
+transient_probe_socket.unlink()
+
+stale_probe_domain = isolated_root / "agent-stale-probe"
+stale_probe_domain.mkdir()
+rc, stdout, stderr = run(scoped(["domain", "create"], stale_probe_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"agent-stale-probe domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+stale_probe_socket = socket_path_for(registered_domain_id(stale_probe_domain))
+stale_probe_server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+stale_probe_server.bind(str(stale_probe_socket))
+stale_probe_server.close()
+stale_probe_before = test_runtime_agent_pids()
+rc, stdout, stderr = run(
+    scoped(["unlock", "--volatile"], stale_probe_domain),
+    {"SECDAT_MASTER_KEY": "agent-stale-probe-key"},
+)
+if (
+    rc != 0
+    or stdout != "volatile session unlocked from environment\n"
+    or stderr != f"resolved domain: {stale_probe_domain}\n"
+):
+    fail(f"stale agent socket replacement failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+stale_probe_after = test_runtime_agent_pids()
+stale_probe_new = stale_probe_after - stale_probe_before
+if len(stale_probe_new) != 1:
+    fail(
+        "stale agent socket replacement did not create exactly one agent: "
+        f"before={sorted(stale_probe_before)} after={sorted(stale_probe_after)}"
+    )
+if agent_caps(stale_probe_socket)[2] not in stale_probe_new:
+    fail("stale agent socket replacement did not expose the new agent")
+rc, stdout, stderr = run(scoped(["lock"], stale_probe_domain))
+if rc != 0 or stdout != "session locked\n":
+    fail(f"stale agent socket cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+wait_for_test_runtime_agent_pids(stale_probe_before, "stale agent socket cleanup")
+
+startup_race_domain = isolated_root / "agent-startup-race"
+startup_race_domain.mkdir()
+rc, stdout, stderr = run(scoped(["domain", "create"], startup_race_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"agent-startup-race domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+startup_race_before = test_runtime_agent_pids()
+startup_race_first = run_background(
+    scoped(["unlock", "--volatile"], startup_race_domain),
+    {
+        "SECDAT_MASTER_KEY": "agent-startup-race-key",
+        "SECDAT_TEST_AGENT_READY_DELAY_MILLISECONDS": "750",
+    },
+)
+time.sleep(0.1)
+startup_race_second = run_background(
+    scoped(["unlock", "--volatile"], startup_race_domain),
+    {"SECDAT_MASTER_KEY": "agent-startup-race-key"},
+)
+first_stdout, first_stderr = startup_race_first.communicate(timeout=10)
+second_stdout, second_stderr = startup_race_second.communicate(timeout=10)
+expected_startup_stdout = "volatile session unlocked from environment\n"
+expected_startup_stderr = f"resolved domain: {startup_race_domain}\n"
+if (
+    startup_race_first.returncode != 0
+    or first_stdout != expected_startup_stdout
+    or first_stderr != expected_startup_stderr
+):
+    fail(
+        "first concurrent agent startup failed: "
+        f"rc={startup_race_first.returncode} stdout={first_stdout!r} stderr={first_stderr!r}"
+    )
+if (
+    startup_race_second.returncode != 0
+    or second_stdout != expected_startup_stdout
+    or second_stderr != expected_startup_stderr
+):
+    fail(
+        "second concurrent agent startup failed: "
+        f"rc={startup_race_second.returncode} stdout={second_stdout!r} stderr={second_stderr!r}"
+    )
+startup_race_after = test_runtime_agent_pids()
+startup_race_new = startup_race_after - startup_race_before
+if len(startup_race_new) != 1:
+    fail(
+        "concurrent startup did not create exactly one agent: "
+        f"before={sorted(startup_race_before)} after={sorted(startup_race_after)}"
+    )
+startup_race_socket = socket_path_for(registered_domain_id(startup_race_domain))
+if agent_caps(startup_race_socket)[2] not in startup_race_new:
+    fail("concurrent startup socket did not resolve to the sole new agent")
+rc, stdout, stderr = run(scoped(["lock"], startup_race_domain))
+if rc != 0 or stdout != "session locked\n":
+    fail(f"concurrent startup lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+wait_for_test_runtime_agent_pids(startup_race_before, "concurrent startup cleanup")
+
+timeout_retry_domain = isolated_root / "agent-timeout-retry"
+timeout_retry_domain.mkdir()
+rc, stdout, stderr = run(scoped(["domain", "create"], timeout_retry_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"agent-timeout-retry domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+timeout_retry_before = test_runtime_agent_pids()
+rc, stdout, stderr = run(
+    scoped(["unlock", "--volatile"], timeout_retry_domain),
+    {
+        "SECDAT_MASTER_KEY": "agent-timeout-retry-key",
+        "SECDAT_TEST_AGENT_READY_DELAY_MILLISECONDS": "5500",
+    },
+)
+if (
+    rc == 0
+    or stdout != ""
+    or stderr != (
+        f"resolved domain: {timeout_retry_domain}\n"
+        "timed out waiting for session agent readiness\n"
+    )
+):
+    fail(f"delayed startup did not time out cleanly: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["unlock", "--volatile"], timeout_retry_domain),
+    {"SECDAT_MASTER_KEY": "agent-timeout-retry-key"},
+)
+if (
+    rc != 0
+    or stdout != "volatile session unlocked from environment\n"
+    or stderr != f"resolved domain: {timeout_retry_domain}\n"
+):
+    fail(f"startup retry failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+timeout_retry_after = test_runtime_agent_pids()
+timeout_retry_new = timeout_retry_after - timeout_retry_before
+if len(timeout_retry_new) != 1:
+    fail(
+        "timeout retry did not replace the delayed worker exactly once: "
+        f"before={sorted(timeout_retry_before)} after={sorted(timeout_retry_after)}"
+    )
+timeout_retry_socket = socket_path_for(registered_domain_id(timeout_retry_domain))
+timeout_retry_pid = agent_caps(timeout_retry_socket)[2]
+time.sleep(0.25)
+if agent_caps(timeout_retry_socket)[2] != timeout_retry_pid or timeout_retry_pid not in timeout_retry_new:
+    fail("delayed worker cleanup removed or replaced the successful retry socket")
+rc, stdout, stderr = run(scoped(["lock"], timeout_retry_domain))
+if rc != 0 or stdout != "session locked\n":
+    fail(f"timeout retry lock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+wait_for_test_runtime_agent_pids(timeout_retry_before, "timeout retry cleanup")
 
 invalid_utf8_domain_bytes = os.fsencode(isolated_root) + b"/invalid-json-\xff"
 os.mkdir(invalid_utf8_domain_bytes)
@@ -1479,9 +1807,19 @@ time.sleep(0.5)
 if pending.poll() is not None:
     fail("on-demand unlock get exited before unlock arrived")
 
-rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+ready_wait_started = time.monotonic()
+rc, stdout, stderr = run(
+    scoped(["unlock"], child_domain),
+    {
+        "SECDAT_MASTER_KEY_PASSPHRASE": passphrase,
+        "SECDAT_TEST_AGENT_READY_DELAY_MILLISECONDS": "750",
+    },
+)
+ready_wait_elapsed = time.monotonic() - ready_wait_started
 if rc != 0 or "session unlocked\n" not in stdout:
     fail(f"child unlock for on-demand get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if ready_wait_elapsed < 0.65:
+    fail(f"child unlock returned before delayed agent readiness: elapsed={ready_wait_elapsed:.3f}")
 
 stdout, stderr = pending.communicate(timeout=5)
 if pending.returncode != 0 or stdout != "visible-from-parent" or f"waiting for another terminal to unlock secrets for resolved domain: {child_domain}\n" not in stderr or f"unlock from another terminal: secdat --dir {child_domain} unlock\n" not in stderr or "unlock wait timeout: 5 seconds\n" not in stderr:

@@ -10,10 +10,13 @@ fail() {
 }
 
 build_root="$(cd "$(dirname "$bin_path")/.." && pwd)"
+shared_library_path="${2-$build_root/src/.libs/libsecdat.so}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source_root="$(cd "$script_dir/.." && pwd)"
 work_root="$(mktemp -d)"
-trap 'rm -rf "$work_root"' EXIT
+# shellcheck source=tests/session_test_cleanup.sh
+. "$script_dir/session_test_cleanup.sh"
+secdat_session_test_cleanup_install "$work_root"
 
 export XDG_RUNTIME_DIR="$work_root/runtime"
 export XDG_DATA_HOME="$work_root/data"
@@ -21,6 +24,19 @@ export LC_ALL=C
 export LANGUAGE=C
 export SECDAT_MASTER_KEY="sdk-regression-master-key"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
+
+pkg_config_bin="${PKG_CONFIG:-pkg-config}"
+if ! sdk_static_link_flags_text=$(
+    PKG_CONFIG_PATH="$build_root${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+        "$pkg_config_bin" --static --libs libsecdat
+); then
+    fail "pkg-config could not resolve the static libsecdat link contract"
+fi
+read -r -a sdk_static_link_flags <<<"$sdk_static_link_flags_text"
+sdk_private_link_flags_text=$(sed -n 's/^Libs\.private:[[:space:]]*//p' "$build_root/libsecdat.pc")
+if test -z "$sdk_private_link_flags_text"; then
+    fail "generated libsecdat.pc does not declare the private static link closure"
+fi
 
 root_domain="$work_root/root"
 child_domain="$root_domain/child"
@@ -256,7 +272,7 @@ int main(int argc, char **argv)
 C
 
 cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_ephemeral_harness.c" \
-    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -L"$build_root/src/.libs" "${sdk_static_link_flags[@]}" \
     -Wl,-rpath,"$build_root/src/.libs" \
     -o "$work_root/sdk_ephemeral_harness"
 
@@ -342,7 +358,7 @@ int main(int argc, char **argv)
 C
 
 cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_ephemeral_enumeration_harness.c" \
-    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -L"$build_root/src/.libs" "${sdk_static_link_flags[@]}" \
     -Wl,-rpath,"$build_root/src/.libs" \
     -o "$work_root/sdk_ephemeral_enumeration_harness"
 
@@ -385,7 +401,7 @@ int main(int argc, char **argv)
 C
 
 cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_ephemeral_race_harness.c" \
-    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -L"$build_root/src/.libs" "${sdk_static_link_flags[@]}" \
     -Wl,-rpath,"$build_root/src/.libs" \
     -o "$work_root/sdk_ephemeral_race_harness"
 
@@ -576,7 +592,7 @@ int main(int argc, char **argv)
 C
 
 cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_lock_harness.c" \
-    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -L"$build_root/src/.libs" "${sdk_static_link_flags[@]}" \
     -pthread \
     -Wl,-rpath,"$build_root/src/.libs" \
     -o "$work_root/sdk_lock_harness"
@@ -1064,7 +1080,7 @@ int main(int argc, char **argv)
 C
 
 cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_harness.c" \
-    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -L"$build_root/src/.libs" "${sdk_static_link_flags[@]}" \
     -Wl,-rpath,"$build_root/src/.libs" \
     -o "$work_root/sdk_harness"
 
@@ -1136,7 +1152,7 @@ int main(int argc, char **argv)
 C
 
 cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_plan_harness.c" \
-    -L"$build_root/src/.libs" -lsecdat -lssl -lcrypto \
+    -L"$build_root/src/.libs" "${sdk_static_link_flags[@]}" \
     -Wl,-rpath,"$build_root/src/.libs" \
     -o "$work_root/sdk_plan_harness"
 
@@ -1177,7 +1193,8 @@ for secret in ["sdk-secret-value", "public-secret-value", "bulk-secret-value", "
         raise SystemExit(f"FAIL: SDK exec plan exposed a secret value: {secret!r}")
 PY
 
-PYTHONPATH="$source_root/bindings/python" SECDAT_SDK_LIBRARY="$build_root/src/.libs/libsecdat.so" \
+if test -n "$shared_library_path"; then
+PYTHONPATH="$source_root/bindings/python" SECDAT_SDK_LIBRARY="$shared_library_path" \
 python3 - "$root_domain" "$refresh_domain" "$long_role" "$cli_plan" <<'PY'
 import json
 import os
@@ -1340,6 +1357,9 @@ if find_refresh_suggestion(long_refreshes, "sdk-long-refresh", long_role, "secon
 for item in long_refreshes:
     assert_no_secret_text(json.dumps(vars(item), sort_keys=True), "Python SDK long relation refresh")
 PY
+else
+    printf 'SKIP Python SDK regression: shared libraries disabled\n'
+fi
 
 go_pkg_config_dir="$work_root/go-pkgconfig"
 go_harness_dir="$work_root/go-sdk-harness"
@@ -1377,8 +1397,9 @@ includedir=$source_root/src
 
 Name: libsecdat
 Description: C SDK for secdat secret access and session control
-Version: 0.4.2
-Libs: -L\${libdir} -Wl,-rpath,\${libdir} -lsecdat -lssl -lcrypto -ljansson
+Version: 0.5.0
+Libs: -L\${libdir} -Wl,-rpath,\${libdir} -lsecdat
+Libs.private: $sdk_private_link_flags_text
 Cflags: -I\${includedir} -I$build_root/src
 EOF
 cat >"$go_harness_dir/go.mod" <<EOF
@@ -1651,10 +1672,16 @@ func main() {
 }
 GO
 
+go_build_args=(run)
+if test -z "$shared_library_path"; then
+    go_build_args+=(-tags secdat_static)
+fi
+go_build_args+=(. "$root_domain" "$refresh_domain" "$long_role" "$cli_plan")
 (cd "$go_harness_dir" && \
     PKG_CONFIG_PATH="$go_pkg_config_dir" \
     LD_LIBRARY_PATH="$build_root/src/.libs:${LD_LIBRARY_PATH:-}" \
-    "$go_bin" run . "$root_domain" "$refresh_domain" "$long_role" "$cli_plan")
+    GOCACHE="$work_root/go-cache" \
+    "$go_bin" "${go_build_args[@]}")
 fi
 
 printf 'PASS SDK exec plan regression\n'

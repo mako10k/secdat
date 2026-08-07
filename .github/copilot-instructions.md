@@ -17,6 +17,14 @@
 - Use the nearest regression script when a feature already has one.
 - When a touched or release-relevant feature is optional at configure time, explicitly enable and build it before accepting its regression as covered. For example, FUSE-related changes or releases should include `./configure --enable-fuse`, a rebuild that produces `src/secdat-fuse`, and `tests/fuse_regression.sh` unless the environment blocker is documented with evidence.
 - Run `make check` before closing an implementation issue when the change affects behavior.
+- Before an expensive final validation matrix, complete a static/read-only review, batch all accepted findings, and use focused checks while repairing them.
+- Before freezing a release candidate after changing C sources or translatable text, explicitly regenerate the gettext template and catalogs, then run `bash tests/gettext_catalog_regression.sh "$PWD"` and include the resulting catalog diff in the static review. Keep `po/secdat.pot` tracked so a clean checkout and `make dist` preserve its reviewed creation metadata; a missing or ignored template is not freshness evidence. The regression must derive a new template from the current sources.
+- After the static review is clean, create the reviewed non-WIP candidate commit. Freeze its exact commit SHA and tree SHA with a clean worktree, and record each final gate's exact command, configuration, candidate identity, and result as a validation receipt.
+- A final acceptance reviewer must consume valid receipts for that exact candidate and remain static/read-only. Do not rerun `make check`, `distcheck`, or another full gate merely to reproduce an existing PASS receipt.
+- Immediately before the first release write, require the reviewed candidate commit and tree as explicit inputs, assert that the clean worktree still has both identities, and stop if either differs from the validation receipts.
+- Request additional validation only for a specific acceptance axis or evidence gap not covered by the receipts.
+- Any candidate commit or tracked-tree change invalidates its final receipts. Batch later findings, use focused checks during repair, complete a new static review, freeze a new candidate, and then rerun the invalidated final matrix once.
+- Do not overlap full build, check, or distcheck gates in the same worktree or build tree. Parallel gates require isolated worktrees and build roots bound to the same candidate identity.
 
 ## GitHub Closeout Hygiene
 
