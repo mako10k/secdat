@@ -3,6 +3,7 @@
 set -euo pipefail
 
 bin_path="${1:-./src/secdat}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 fail() {
     printf 'FAIL: %s\n' "$1" >&2
@@ -10,13 +11,16 @@ fail() {
 }
 
 work_root="$(mktemp -d)"
-trap 'rm -rf "$work_root"' EXIT
+# shellcheck source=tests/session_test_cleanup.sh
+. "$script_dir/session_test_cleanup.sh"
+secdat_session_test_cleanup_install "$work_root"
+export -f session_test_cleanup
 
 export XDG_RUNTIME_DIR="$work_root/runtime"
 export XDG_DATA_HOME="$work_root/data"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
-python3 - "$bin_path" <<'PY'
+python3 - "$bin_path" "$SECDAT_SESSION_TEST_CLEANUP_SCRIPT" <<'PY'
 import os
 import pty
 import re
@@ -36,6 +40,7 @@ import hashlib
 from urllib.parse import quote
 
 bin_path = sys.argv[1]
+session_cleanup_script = Path(sys.argv[2])
 env = os.environ.copy()
 env["LC_ALL"] = "C"
 env["LANGUAGE"] = "C"
@@ -52,6 +57,8 @@ for variable_name in (
     "SECDAT_ASKPASS",
     "SECDAT_GET_ON_DEMAND_UNLOCK",
     "SECDAT_GET_UNLOCK_TIMEOUT_SECONDS",
+    "SECDAT_TEST_AGENT_READY_DELAY_MILLISECONDS",
+    "SECDAT_TEST_AGENT_READY_FAILURE",
     "SSH_ASKPASS",
 ):
     env.pop(variable_name, None)
@@ -418,6 +425,99 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run(scoped(["domain", "create"], sibling_domain))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"sibling domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+cleanup_fixture_root = isolated_root / "forced-cleanup-fixture"
+cleanup_fixture_runtime = cleanup_fixture_root / "runtime"
+cleanup_fixture_data = cleanup_fixture_root / "data"
+cleanup_fixture_domain = cleanup_fixture_root / "domain"
+for path in (
+    cleanup_fixture_runtime,
+    cleanup_fixture_data,
+    cleanup_fixture_domain,
+):
+    path.mkdir(parents=True, exist_ok=True)
+cleanup_fixture_env = {
+    "XDG_RUNTIME_DIR": str(cleanup_fixture_runtime),
+    "XDG_DATA_HOME": str(cleanup_fixture_data),
+    "SECDAT_MASTER_KEY": "forced-cleanup-master-key",
+}
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(cleanup_fixture_domain), "domain", "create"],
+    cleanup_fixture_env,
+)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"forced-cleanup domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(cleanup_fixture_domain), "unlock", "--volatile"],
+    cleanup_fixture_env,
+)
+if (
+    rc != 0
+    or "volatile session unlocked from environment\n" not in stdout
+    or stderr != f"resolved domain: {cleanup_fixture_domain}\n"
+):
+    fail(f"forced-cleanup unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+cleanup_registry_path = (
+    cleanup_fixture_data
+    / "secdat"
+    / "domains"
+    / "registry"
+    / "by-root"
+    / quote(str(cleanup_fixture_domain), safe="")
+)
+cleanup_domain_id = cleanup_registry_path.read_text().strip()
+cleanup_socket_path = (
+    cleanup_fixture_runtime
+    / "secdat"
+    / f"agent-{hashlib.sha256(cleanup_domain_id.encode()).hexdigest()[:32]}.sock"
+)
+cleanup_pid = agent_caps(cleanup_socket_path)[2]
+forced_failure_env = env.copy()
+forced_failure_env.update(cleanup_fixture_env)
+forced_failure_env["SECDAT_SESSION_TEST_ROOT"] = str(cleanup_fixture_root)
+forced_failure_env["SECDAT_SESSION_TEST_CLEANUP_SCRIPT"] = str(session_cleanup_script)
+forced_failure = subprocess.run(
+    ["bash", "-c", "trap session_test_cleanup EXIT; exit 23"],
+    text=True,
+    capture_output=True,
+    env=forced_failure_env,
+)
+if forced_failure.returncode != 23:
+    fail(
+        "forced session-test failure did not preserve its status: "
+        f"rc={forced_failure.returncode} stdout={forced_failure.stdout!r} "
+        f"stderr={forced_failure.stderr!r}"
+    )
+for _ in range(200):
+    if not Path(f"/proc/{cleanup_pid}").exists():
+        break
+    time.sleep(0.01)
+else:
+    fail(f"forced session-test failure left agent pid {cleanup_pid} alive")
+if cleanup_fixture_root.exists():
+    fail(f"forced session-test cleanup left its root behind: {cleanup_fixture_root}")
+
+ready_failure_domain = isolated_root / "agent-ready-failure"
+ready_failure_domain.mkdir()
+rc, stdout, stderr = run(scoped(["domain", "create"], ready_failure_domain))
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"agent-ready-failure domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    scoped(["unlock", "--volatile"], ready_failure_domain),
+    {
+        "SECDAT_MASTER_KEY": "agent-ready-failure-key",
+        "SECDAT_TEST_AGENT_READY_FAILURE": "1",
+    },
+)
+if (
+    rc == 0
+    or stdout != ""
+    or stderr != (
+        f"resolved domain: {ready_failure_domain}\n"
+        "session agent failed before readiness\n"
+    )
+):
+    fail(f"agent readiness failure was not propagated: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 invalid_utf8_domain_bytes = os.fsencode(isolated_root) + b"/invalid-json-\xff"
 os.mkdir(invalid_utf8_domain_bytes)
@@ -1479,9 +1579,19 @@ time.sleep(0.5)
 if pending.poll() is not None:
     fail("on-demand unlock get exited before unlock arrived")
 
-rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
+ready_wait_started = time.monotonic()
+rc, stdout, stderr = run(
+    scoped(["unlock"], child_domain),
+    {
+        "SECDAT_MASTER_KEY_PASSPHRASE": passphrase,
+        "SECDAT_TEST_AGENT_READY_DELAY_MILLISECONDS": "750",
+    },
+)
+ready_wait_elapsed = time.monotonic() - ready_wait_started
 if rc != 0 or "session unlocked\n" not in stdout:
     fail(f"child unlock for on-demand get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if ready_wait_elapsed < 0.65:
+    fail(f"child unlock returned before delayed agent readiness: elapsed={ready_wait_elapsed:.3f}")
 
 stdout, stderr = pending.communicate(timeout=5)
 if pending.returncode != 0 or stdout != "visible-from-parent" or f"waiting for another terminal to unlock secrets for resolved domain: {child_domain}\n" not in stderr or f"unlock from another terminal: secdat --dir {child_domain} unlock\n" not in stderr or "unlock wait timeout: 5 seconds\n" not in stderr:
