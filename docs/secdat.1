@@ -518,6 +518,13 @@ Independently of session-wide volatile mode,
 can keep one secret in the active agent. Refreshing the same session with the same master key preserves it; lock, expiry, or replacing the session key clears it. Ephemeral values are excluded from
 .B lock --save
 and bundle save, and ambiguous persistence operations such as cp, mv, ln, and attribute mutation fail closed.
+Automatic lossless agent handover currently starts only when a capable active agent advertises a lower protocol version than the client. A different build using the same protocol remains active; this is known issue #221. There is no supported manual lossless same-protocol handover command, and
+.B SECDAT_TEST_FORCE_AGENT_HANDOVER
+is test-only. For a persistent session with no volatile or per-key ephemeral state to preserve,
+.B lock
+followed by
+.B unlock --duration TTL
+starts a new agent, but this is a state-clearing restart rather than handover.
 With
 .B --readonly
 the command reuses an existing master key but rejects mutating commands while leaving reads, listing, export-like operations, and status available.

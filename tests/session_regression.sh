@@ -60,6 +60,9 @@ for variable_name in (
     "SECDAT_GET_UNLOCK_TIMEOUT_SECONDS",
     "SECDAT_TEST_AGENT_READY_DELAY_MILLISECONDS",
     "SECDAT_TEST_AGENT_READY_FAILURE",
+    "SECDAT_TEST_FORCE_AGENT_HANDOVER",
+    "SECDAT_TEST_HANDOVER_CORRUPT",
+    "SECDAT_TEST_HANDOVER_CANDIDATE_REJECT",
     "SSH_ASKPASS",
 ):
     env.pop(variable_name, None)
@@ -2563,6 +2566,19 @@ try:
         ], compat_domain),
     )
     legacy_caps_count = compat_commands.count("CAPS")
+    compat_status_protocol[0] = " proto=1"
+    compat_caps_response[0] = b"OK 1 4 pid=0 build=secdat-0.4.2-fixture\n"
+    same_protocol_trigger_start = len(compat_commands)
+    (
+        same_protocol_trigger_rc,
+        same_protocol_trigger_stdout,
+        same_protocol_trigger_stderr,
+    ) = run(
+        scoped(["ls", "--pattern", "OLD_AGENT_PERSISTED"], compat_domain),
+    )
+    same_protocol_trigger_commands = compat_commands[same_protocol_trigger_start:]
+    compat_status_protocol[0] = ""
+    compat_caps_response[0] = b"ERR invalid\n"
     compat_status_mode[0] = "volatile"
     volatile_rc, volatile_stdout, volatile_stderr = run(
         scoped(["ls", "--pattern", "OLD_AGENT_PERSISTED"], compat_domain),
@@ -2648,6 +2664,27 @@ if legacy_exec_rc != 0 or legacy_exec_stdout != "old-agent-value\n" or legacy_ex
     )
 if legacy_caps_count != 0:
     fail(f"client sent CAPS before a protocol advertisement: commands={compat_commands!r}")
+if "HANDOVER" not in same_protocol_trigger_commands:
+    if (
+        same_protocol_trigger_rc != 0
+        or same_protocol_trigger_stdout != "OLD_AGENT_PERSISTED\n"
+        or same_protocol_trigger_stderr != ""
+    ):
+        fail(
+            "same-protocol handover trigger XFAIL fixture failed before the known gap: "
+            f"rc={same_protocol_trigger_rc} stdout={same_protocol_trigger_stdout!r} "
+            f"stderr={same_protocol_trigger_stderr!r} "
+            f"commands={same_protocol_trigger_commands!r}"
+        )
+    print(
+        "XFAIL #221: an ordinary command does not trigger handover from a "
+        "same-protocol capable agent"
+    )
+else:
+    print(
+        "PASS #221: an ordinary command triggered handover from the older "
+        "same-protocol build fixture"
+    )
 if (
     inherited_purge_rc == 0
     or inherited_purge_stdout != ""
@@ -2828,6 +2865,8 @@ if protocol_before != 1 or capabilities_before & 7 != 7:
 rc, stdout, stderr = run(scoped(["status", "--json"], handover_domain))
 if rc != 0 or stderr != "":
     fail(f"handover status before transfer failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if agent_caps(handover_socket)[2] != pid_before:
+    fail("ordinary same-build status unexpectedly replaced the active agent")
 expires_before = json.loads(stdout)["session_expires_at"]
 
 abandon_agent_handover(handover_socket)
