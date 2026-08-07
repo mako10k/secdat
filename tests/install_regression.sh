@@ -78,10 +78,14 @@ int main(void)
 }
 C_EOF
 pkg_config_args=(--cflags --libs libsecdat)
-if test -e "$installed_shared_library"; then
-    test -f "$installed_static_library" ||
-        fail "shared install did not include the configured static library"
-elif test -f "$installed_static_library"; then
+shared_available=0
+static_available=0
+test -e "$installed_shared_library" && shared_available=1
+test -f "$installed_static_library" && static_available=1
+if test "$shared_available" -eq 1; then
+    consumer_linkage=shared
+elif test "$static_available" -eq 1; then
+    consumer_linkage=static
     pkg_config_args=(--static --cflags --libs libsecdat)
 else
     fail "make install did not install libsecdat"
@@ -104,7 +108,7 @@ esac
 read -r -a installed_consumer_flags <<<"$installed_consumer_flags_text"
 cc "$work_root/installed-consumer.c" "${installed_consumer_flags[@]}" \
     -o "$work_root/installed-consumer"
-if test ! -e "$installed_shared_library"; then
+if test "$consumer_linkage" = static; then
     if readelf -d "$work_root/installed-consumer" 2>/dev/null |
         grep -Fq 'Shared library: [libsecdat.so'; then
         fail "static-only installed consumer depends on libsecdat.so"

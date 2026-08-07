@@ -94,6 +94,20 @@ grep -Fq -- '--rawfile body "$frozen_release_notes"' "$release_workflow" ||
     fail "GitHub Release readback does not use commit-bound notes"
 grep -Fq 'pkg-config --static --cflags --libs libsecdat' "$release_workflow" ||
     fail "release workflow is missing the static-only C consumer command"
+grep -Fq 'PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR="$static_pc_dir" pkg-config "$@"' \
+    "$release_workflow" ||
+    fail "static release validation can fall back to host pkg-config metadata"
+grep -Fq 'static_pkg_config --variable=pcfiledir libsecdat' "$release_workflow" ||
+    fail "static release validation does not verify staged metadata provenance"
+grep -Fq 'static_pkg_config --variable=prefix libsecdat' "$release_workflow" ||
+    fail "static release validation does not verify the staged prefix"
+grep -Fq 'static_pkg_config --modversion libsecdat' "$release_workflow" ||
+    fail "static release validation does not verify the staged version"
+grep -Fq 'static_dynamic_section=$(readelf -d "$static_build/consumer")' \
+    "$release_workflow" ||
+    fail "static release validation does not inspect consumer dependencies"
+grep -Fq 'Shared library: [libsecdat.so' "$release_workflow" ||
+    fail "static release validation does not reject a shared libsecdat dependency"
 grep -Fq 'pkg_config_args=(--static --cflags --libs libsecdat)' \
     "$source_root/tests/install_regression.sh" ||
     fail "installed-consumer regression does not select the static C contract"

@@ -250,14 +250,30 @@ static_build=$(mktemp -d)
 )
 test -f "$static_prefix/lib/libsecdat.a"
 test ! -e "$static_prefix/lib/libsecdat.so"
+static_pc_dir="$static_prefix/lib/pkgconfig"
+test -f "$static_pc_dir/libsecdat.pc"
+static_pkg_config() {
+  PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR="$static_pc_dir" pkg-config "$@"
+}
+test "$(static_pkg_config --variable=pcfiledir libsecdat)" = "$static_pc_dir"
+test "$(static_pkg_config --variable=prefix libsecdat)" = "$static_prefix"
+static_build_version=$("$static_build/src/secdat" --version | sed -n '1s/^secdat //p')
+test -n "$static_build_version"
+test "$(static_pkg_config --modversion libsecdat)" = "$static_build_version"
 cat >"$static_build/consumer.c" <<'EOF'
 #include <secdat-sdk.h>
 int main(void) { secdat_sdk_free(0); return 0; }
 EOF
-static_cflags_text=$(PKG_CONFIG_PATH="$static_prefix/lib/pkgconfig" \
-  pkg-config --cflags libsecdat)
-static_libs_text=$(PKG_CONFIG_PATH="$static_prefix/lib/pkgconfig" \
-  pkg-config --static --libs libsecdat)
+static_cflags_text=$(static_pkg_config --cflags libsecdat)
+static_libs_text=$(static_pkg_config --static --libs libsecdat)
+case " $static_cflags_text " in
+  *" -I$static_prefix/include "*) ;;
+  *) echo "staged libsecdat Cflags were not selected" >&2; exit 1 ;;
+esac
+case " $static_libs_text " in
+  *" -L$static_prefix/lib "*) ;;
+  *) echo "staged libsecdat Libs were not selected" >&2; exit 1 ;;
+esac
 read -r -a static_cflags <<EOF
 $static_cflags_text
 EOF
@@ -266,6 +282,13 @@ $static_libs_text
 EOF
 cc "${static_cflags[@]}" "$static_build/consumer.c" \
   -o "$static_build/consumer" "${static_libs[@]}"
+static_dynamic_section=$(readelf -d "$static_build/consumer")
+case "$static_dynamic_section" in
+  *"Shared library: [libsecdat.so"*)
+    echo "static consumer depends on shared libsecdat" >&2
+    exit 1
+    ;;
+esac
 "$static_build/consumer"
 ```
 
