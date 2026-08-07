@@ -97,9 +97,12 @@ grep -Fq 'pkg-config --static --cflags --libs libsecdat' "$release_workflow" ||
 grep -Fq 'pkg_config_args=(--static --cflags --libs libsecdat)' \
     "$source_root/tests/install_regression.sh" ||
     fail "installed-consumer regression does not select the static C contract"
-grep -Fq 'PKG_CONFIG_SYSROOT_DIR="$default_dest"' \
+grep -Fq 'PKG_CONFIG_SYSROOT_DIR="$sdk_dest"' \
     "$source_root/tests/install_regression.sh" ||
     fail "installed-consumer regression does not validate installed pkg-config paths"
+grep -Fq 'PKG_CONFIG_LIBDIR="$installed_pkg_config_dir"' \
+    "$source_root/tests/install_regression.sh" ||
+    fail "installed-consumer regression can fall back to host pkg-config metadata"
 grep -Fq 'gh release create "$release_tag"' "$release_workflow" ||
     fail "release workflow is missing the one GitHub Release create command"
 grep -Fq 'tagName,name,body,isDraft,isPrerelease,targetCommitish,assets,url' "$release_workflow" ||

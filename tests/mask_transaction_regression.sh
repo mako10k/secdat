@@ -191,6 +191,40 @@ def entry_for_key(store, key):
     fail(f"entry not found for {key}")
 
 
+def available_fixture_entry_id(store, high):
+    used = {path.stem for path in (store / "domain-ent").glob("*.dent")}
+    for offset in range(len(used) + 1):
+        suffix = (0xFFFFFFFFFFFF - offset) if high else offset
+        if high:
+            candidate = f"ffffffff-ffff-4fff-bfff-{suffix:012x}"
+        else:
+            candidate = f"00000000-0000-4000-8000-{suffix:012x}"
+        if candidate not in used:
+            return candidate
+    fail("could not allocate deterministic fixture entry ID")
+
+
+def reidentify_entry(store, current_entry_id, replacement_entry_id):
+    current_path = store / "domain-ent" / f"{current_entry_id}.dent"
+    replacement_path = store / "domain-ent" / f"{replacement_entry_id}.dent"
+    if replacement_path.exists():
+        fail(f"fixture entry ID already exists: {replacement_entry_id}")
+    current_text = current_path.read_text(encoding="utf-8")
+    current_field = f"entry_id={current_entry_id}\n"
+    if current_text.count(current_field) != 1:
+        fail(f"fixture entry ID field is invalid: {current_entry_id}")
+    current_path.write_text(
+        current_text.replace(
+            current_field,
+            f"entry_id={replacement_entry_id}\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    current_path.rename(replacement_path)
+    return replacement_entry_id
+
+
 def mask_paths(child_store, target_entry_id, key):
     return (
         child_store / "masks" / f"{target_entry_id}.mask",
@@ -785,29 +819,46 @@ if (
 # If an explicit unmask leaves multiple same-name chains, a visible chain
 # anywhere in the remaining set owns the v1 rollback projection. A hidden
 # orphan sorting first must not make the result depend on directory order.
+mixed_hidden_probe = parse_json(
+    expect_ok(
+        [
+            bin_path,
+            "--dir",
+            str(child),
+            "mask",
+            "--dry-run",
+            "--json",
+            "MIXED_REMAINING",
+        ]
+    ),
+    "mixed hidden mask fixture probe",
+)
+mixed_hidden_entry = reidentify_entry(
+    parent_store,
+    mixed_hidden_probe["target_entry_id"],
+    available_fixture_entry_id(parent_store, high=False),
+)
+mixed_visible_entry = reidentify_entry(
+    root_store,
+    entry_for_key(root_store, "MIXED_REMAINING"),
+    available_fixture_entry_id(root_store, high=True),
+)
+if not mixed_hidden_entry < mixed_visible_entry:
+    fail("deterministic hidden-first canonical mask ordering is invalid")
 mixed_hidden_report = parse_json(
     expect_ok(
         [bin_path, "--dir", str(child), "mask", "--json", "MIXED_REMAINING"]
     ),
     "mixed hidden mask",
 )
-mixed_hidden_entry = mixed_hidden_report["target_entry_id"]
+if mixed_hidden_report["target_entry_id"] != mixed_hidden_entry:
+    fail(f"mixed hidden mask selected wrong target: {mixed_hidden_report!r}")
 mixed_hidden_mask, mixed_tombstone = mask_paths(
     child_store, mixed_hidden_entry, "MIXED_REMAINING"
 )
 mixed_hidden_stash = work_root / "mixed-hidden.mask"
 mixed_hidden_mask.rename(mixed_hidden_stash)
 (parent_store / "domain-ent" / f"{mixed_hidden_entry}.dent").unlink()
-
-mixed_visible_entry = entry_for_key(root_store, "MIXED_REMAINING")
-for attempt in range(128):
-    if mixed_hidden_entry < mixed_visible_entry:
-        break
-    (root_store / "domain-ent" / f"{mixed_visible_entry}.dent").unlink()
-    set_key(root, "MIXED_REMAINING", f"root-visible-{attempt}")
-    mixed_visible_entry = entry_for_key(root_store, "MIXED_REMAINING")
-else:
-    fail("could not construct hidden-first canonical mask ordering")
 
 mixed_visible_report = parse_json(
     expect_ok(
