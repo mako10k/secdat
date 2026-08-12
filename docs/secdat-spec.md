@@ -110,7 +110,7 @@ secdat [--dir DIR] domain move --from OLD_ROOT [--to NEW_ROOT] [--allow-same-roo
 secdat [--dir DIR] domain ls [-l|--long] [-a|--inherited] [-A|--ancestors] [-R|--descendants] [GLOBPATTERN] [-p GLOBPATTERN|--pattern GLOBPATTERN]
 secdat [--dir DIR|--domain DIR] domain status [--quiet|--json]
 
-secdat [--dir DIR] [--store STORE] save FILE
+secdat [--dir DIR] [--store STORE] save [--key KEY]... FILE
 secdat [--dir DIR] [--store STORE] load [MASK_MUTATION_OPTIONS] FILE
 secdat [--dir DIR] [--store STORE] export [-p GLOBPATTERN|--pattern GLOBPATTERN] [--bulk-gate]
 ```
@@ -614,10 +614,10 @@ revalidated so changed-since-plan state fails before live mutation.
 
 #### FR-7b Secret Bundle Save/Load
 
-- `secdat save FILE` exports the currently visible secrets from the current `--dir` and `--store` view into a passphrase-protected bundle file
+- `secdat save [--key KEY]... FILE` writes the currently visible secrets, or only the repeatedly named keys, from the current `--dir` and `--store` view to a passphrase-protected bundle file
 - `secdat load FILE` imports a previously saved bundle into the current `--dir` and `--store` context
 - both commands require terminal-based passphrase entry or an askpass helper; `save` asks for confirmation and `load` asks once
-- the saved bundle format is a PBKDF2 + AES-256-GCM encrypted binary payload containing key/value entries from the current visible view only
+- the saved bundle format is a PBKDF2 + AES-256-GCM encrypted binary payload containing key/value entries from the current visible view or the selected keys only
 - `save` refuses to overwrite an existing bundle file
 - `load` overwrites matching keys in the current domain/store and leaves keys not mentioned by the bundle untouched
 - in a persisted v2 store, `load` preflights and commits all bundle entries as one mutation plan; a later import failure or mask-action rejection leaves the live store unchanged

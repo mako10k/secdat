@@ -531,14 +531,15 @@ When built with `--enable-fuse`, `secdat-fuse` mounts selected keys as files thr
 
 Bash completion source is in `completions/secdat.bash`, and `make install` installs it as `secdat` under the system bash-completion directory when bash-completion is installed and loaded by the shell. The script now asks `secdat __completion --bash` for the current command surface instead of hardcoding command tables, which keeps completion aligned with new commands and options as the CLI evolves while preserving the normal fallback that treats unknown leading operands as keys. Completion still depends on being able to execute `secdat`, so in-tree or custom-prefix testing needs the binary to resolve `libsecdat`. `make install` also installs the command reference into the system manpath from `docs/secdat.1`. The optional GUI askpass helper remains outside default installation; run `make install-askpass-helper` to install it under `PREFIX/libexec/secdat`, then point `SECDAT_ASKPASS` or `--askpass` at that path when using `unlock --gui`. For direct system installs into standard library directories such as `/usr/local/lib`, the install step also refreshes the dynamic linker cache with `ldconfig` when available so the installed `secdat` binary can resolve `libsecdat` immediately.
 
-You can also save the currently visible secrets from one view and load them into another domain/store context:
+You can also save currently visible secrets, or only named keys, from one view and load them into another domain/store context:
 
 ```sh
 ./src/secdat --dir ~/example/project --store app save ~/backup/app.secdat
+./src/secdat --dir ~/example/project --store app save --key API_TOKEN --key DB_PASSWORD ~/backup/app-selected.secdat
 ./src/secdat --dir ~/example/restore --store app load ~/backup/app.secdat
 ```
 
-Both commands require a passphrase from a terminal or askpass helper. `save` exports only the secrets visible from the current `--dir` and `--store` view, writes a passphrase-encrypted bundle, and refuses to overwrite an existing bundle file. `load` imports that bundle into the current domain/store context, overwriting matching local keys but leaving unspecified keys untouched.
+Both commands require a passphrase from a terminal or askpass helper. `save` writes the secrets visible from the current `--dir` and `--store` view, or only keys named with repeated `--key KEY`, to a passphrase-encrypted bundle and refuses to overwrite an existing bundle file. `load` imports that bundle into the current domain/store context, overwriting matching local keys but leaving unspecified keys untouched.
 
 ## Persistent shell setup
 

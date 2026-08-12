@@ -439,6 +439,20 @@ mode, values, _ = run_completion("save", "")
 if mode != "file" or values:
     raise SystemExit(f"FAIL: save completion mode mismatch: mode={mode!r} values={values!r}")
 
+mode, values, _ = run_completion("save", "--")
+if mode != "plain":
+    raise SystemExit(f"FAIL: save option completion mode mismatch: {mode!r}")
+assert_contains(values, "--key", "save long options")
+
+mode, values, _ = run_completion("save", "-")
+if mode != "plain":
+    raise SystemExit(f"FAIL: save short option completion mode mismatch: {mode!r}")
+assert_contains(values, "-k", "save short options")
+
+mode, values, _ = run_completion("save", "--key", "")
+if mode != "none" or values:
+    raise SystemExit(f"FAIL: save --key completion should not suggest values: mode={mode!r} values={values!r}")
+
 work_root = tempfile.mkdtemp(prefix="secdat-completion-")
 env = {**os.environ, "LC_ALL": "C", "LANGUAGE": "C", "XDG_RUNTIME_DIR": os.path.join(work_root, "runtime"), "XDG_DATA_HOME": os.path.join(work_root, "data"), "SECDAT_MASTER_KEY": "completion-test-key"}
 os.makedirs(env["XDG_RUNTIME_DIR"], exist_ok=True)

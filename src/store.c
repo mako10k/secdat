@@ -845,6 +845,11 @@ static int secdat_load_resolved_plaintext_with_missing_context(
     const struct secdat_cli *missing_context_cli,
     int *ephemeral_out
 );
+static void secdat_print_missing_key_context(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    const char *key
+);
 static int secdat_resolve_entry_path(
     const struct secdat_domain_chain *chain,
     const char *store_name,
@@ -9339,10 +9344,16 @@ static int secdat_bundle_read_u32(const unsigned char *buffer, size_t length, si
     return 0;
 }
 
-static int secdat_collect_bundle_payload(const struct secdat_cli *cli, unsigned char **payload_out, size_t *payload_length_out)
+static int secdat_collect_bundle_payload(
+    const struct secdat_cli *cli,
+    const struct secdat_key_list *selected_keys,
+    unsigned char **payload_out,
+    size_t *payload_length_out
+)
 {
     struct secdat_domain_chain chain = {0};
     struct secdat_key_list visible_keys = {0};
+    const struct secdat_key_list *bundle_keys;
     unsigned char *payload = NULL;
     size_t payload_length = 0;
     size_t capacity = 0;
@@ -9352,21 +9363,23 @@ static int secdat_collect_bundle_payload(const struct secdat_cli *cli, unsigned 
     if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
         return 1;
     }
-    if (secdat_collect_visible_keys(&chain, cli->store, NULL, NULL, &visible_keys) != 0) {
+    if ((selected_keys == NULL || selected_keys->count == 0)
+        && secdat_collect_visible_keys(&chain, cli->store, NULL, NULL, &visible_keys) != 0) {
         secdat_domain_chain_free(&chain);
         secdat_key_list_free(&visible_keys);
         return 1;
     }
-    if (secdat_bundle_append_u32(&payload, &payload_length, &capacity, (uint32_t)visible_keys.count) != 0) {
+    bundle_keys = selected_keys != NULL && selected_keys->count > 0 ? selected_keys : &visible_keys;
+    if (secdat_bundle_append_u32(&payload, &payload_length, &capacity, (uint32_t)bundle_keys->count) != 0) {
         goto cleanup;
     }
 
-    for (index = 0; index < visible_keys.count; index += 1) {
+    for (index = 0; index < bundle_keys->count; index += 1) {
         unsigned char *plaintext = NULL;
         size_t plaintext_length = 0;
-        uint32_t key_length = (uint32_t)strlen(visible_keys.items[index]);
+        uint32_t key_length = (uint32_t)strlen(bundle_keys->items[index]);
 
-        if (secdat_load_resolved_plaintext(&chain, cli->store, visible_keys.items[index], &plaintext, &plaintext_length, NULL, NULL, NULL, NULL) != 0) {
+        if (secdat_load_resolved_plaintext(&chain, cli->store, bundle_keys->items[index], &plaintext, &plaintext_length, NULL, NULL, NULL, NULL) != 0) {
             goto cleanup;
         }
         if (plaintext_length > UINT32_MAX) {
@@ -9377,7 +9390,7 @@ static int secdat_collect_bundle_payload(const struct secdat_cli *cli, unsigned 
         }
         if (secdat_bundle_append_u32(&payload, &payload_length, &capacity, key_length) != 0
             || secdat_bundle_append_u32(&payload, &payload_length, &capacity, (uint32_t)plaintext_length) != 0
-            || secdat_bundle_append(&payload, &payload_length, &capacity, visible_keys.items[index], key_length) != 0
+            || secdat_bundle_append(&payload, &payload_length, &capacity, bundle_keys->items[index], key_length) != 0
             || secdat_bundle_append(&payload, &payload_length, &capacity, plaintext, plaintext_length) != 0) {
             secdat_secure_clear(plaintext, plaintext_length);
             free(plaintext);
@@ -9404,33 +9417,38 @@ cleanup:
     return status;
 }
 
-static int secdat_bundle_reject_ephemeral_entries(const struct secdat_cli *cli)
+static int secdat_bundle_reject_ephemeral_entries(const struct secdat_cli *cli, const struct secdat_key_list *selected_keys)
 {
     struct secdat_domain_chain chain = {0};
     struct secdat_key_list visible_keys = {0};
+    const struct secdat_key_list *bundle_keys;
     struct secdat_effective_entry entry = {0};
     size_t index;
     int status = 1;
 
     if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0
-        || secdat_collect_visible_keys(&chain, cli->store, NULL, NULL, &visible_keys) != 0) {
+        || ((selected_keys == NULL || selected_keys->count == 0)
+            && secdat_collect_visible_keys(&chain, cli->store, NULL, NULL, &visible_keys) != 0)) {
         goto cleanup;
     }
-    for (index = 0; index < visible_keys.count; index += 1) {
+    bundle_keys = selected_keys != NULL && selected_keys->count > 0 ? selected_keys : &visible_keys;
+    for (index = 0; index < bundle_keys->count; index += 1) {
         if (secdat_resolve_effective_entry(
                 &chain,
                 cli->store,
-                visible_keys.items[index],
+                bundle_keys->items[index],
                 0,
                 &entry
             ) != 0) {
+            fprintf(stderr, _("key not found: %s\n"), bundle_keys->items[index]);
+            secdat_print_missing_key_context(&chain, cli->store, bundle_keys->items[index]);
             goto cleanup;
         }
         if (entry.ephemeral) {
             fprintf(
                 stderr,
                 _("save is not supported while an ephemeral secret is visible: %s\n"),
-                visible_keys.items[index]
+                bundle_keys->items[index]
             );
             goto cleanup;
         }
@@ -30166,17 +30184,57 @@ static int secdat_command_exec(const struct secdat_cli *cli)
 
 static int secdat_command_save(const struct secdat_cli *cli)
 {
+    static const struct option long_options[] = {
+        {"key", required_argument, NULL, 'k'},
+        {NULL, 0, NULL, 0},
+    };
+    struct secdat_key_list selected_keys = {0};
     unsigned char *payload = NULL;
     size_t payload_length = 0;
     char passphrase[512];
+    char **argv;
+    int argc;
+    int option;
     int status;
 
-    if (cli->argc != 1) {
+    argv = calloc((size_t)cli->argc + 2, sizeof(*argv));
+    if (argv == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    secdat_prepare_option_argv(cli, "save", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":k:", long_options, NULL)) != -1) {
+        if (option == 'k') {
+            if (!secdat_is_valid_env_name(optarg)) {
+                fprintf(stderr, _("key is not a valid environment variable name: %s\n"), optarg);
+                secdat_key_list_free(&selected_keys);
+                free(argv);
+                return 2;
+            }
+            if (secdat_key_list_append(&selected_keys, optarg) != 0) {
+                secdat_key_list_free(&selected_keys);
+                free(argv);
+                return 1;
+            }
+        } else {
+            fprintf(stderr, _("invalid arguments for save\n"));
+            secdat_cli_print_try_help(cli, "save");
+            secdat_key_list_free(&selected_keys);
+            free(argv);
+            return 2;
+        }
+    }
+    if (optind + 1 != argc) {
         fprintf(stderr, _("invalid arguments for save\n"));
         secdat_cli_print_try_help(cli, "save");
+        secdat_key_list_free(&selected_keys);
+        free(argv);
         return 2;
     }
-    if (secdat_bundle_reject_ephemeral_entries(cli) != 0) {
+    if (secdat_bundle_reject_ephemeral_entries(cli, &selected_keys) != 0) {
+        secdat_key_list_free(&selected_keys);
+        free(argv);
         return 1;
     }
     if (secdat_read_secret_confirmation_prompts(
@@ -30186,17 +30244,23 @@ static int secdat_command_save(const struct secdat_cli *cli)
             passphrase,
             sizeof(passphrase)
         ) != 0) {
+        secdat_key_list_free(&selected_keys);
+        free(argv);
         return 1;
     }
-    if (secdat_collect_bundle_payload(cli, &payload, &payload_length) != 0) {
+    if (secdat_collect_bundle_payload(cli, &selected_keys, &payload, &payload_length) != 0) {
         secdat_secure_clear(passphrase, strlen(passphrase));
+        secdat_key_list_free(&selected_keys);
+        free(argv);
         return 1;
     }
 
-    status = secdat_write_secret_bundle_file(cli->argv[0], passphrase, payload, payload_length);
+    status = secdat_write_secret_bundle_file(argv[optind], passphrase, payload, payload_length);
     secdat_secure_clear(passphrase, strlen(passphrase));
     secdat_secure_clear(payload, payload_length);
     free(payload);
+    secdat_key_list_free(&selected_keys);
+    free(argv);
     return status;
 }
 

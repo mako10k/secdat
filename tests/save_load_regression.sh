@@ -38,12 +38,14 @@ root_dir = work_root / "workspace" / "root"
 child_dir = root_dir / "child"
 restore_dir = work_root / "workspace" / "restore"
 askpass_restore_dir = work_root / "workspace" / "askpass-restore"
+selected_restore_dir = work_root / "workspace" / "selected-restore"
 bundle_path = work_root / "backup" / "app.secdat"
+selected_bundle_path = work_root / "backup" / "app-selected.secdat"
 askpass_bundle_path = work_root / "backup" / "askpass.secdat"
 askpass_path = work_root / "askpass.py"
 askpass_log = work_root / "askpass.log"
 bundle_path.parent.mkdir(parents=True, exist_ok=True)
-for path in [root_dir, child_dir, restore_dir, askpass_restore_dir]:
+for path in [root_dir, child_dir, restore_dir, askpass_restore_dir, selected_restore_dir]:
     path.mkdir(parents=True, exist_ok=True)
 
 askpass_path.write_text(
@@ -127,7 +129,7 @@ def normalize_spaces(text):
 
 
 for args, marker in [
-    ([bin_path, "help", "save"], "save FILE"),
+    ([bin_path, "help", "save"], "save [--key KEY]... FILE"),
     (
         [bin_path, "load", "--help"],
         "load [--mask-action=preserve|reject] "
@@ -140,7 +142,7 @@ for args, marker in [
     if rc != 0 or marker not in normalize_spaces(output) or "passphrase-protected bundle" not in output:
         fail(f"save/load help check failed for {args}: rc={rc} output={output!r}")
 
-for path in [root_dir, child_dir, restore_dir, askpass_restore_dir]:
+for path in [root_dir, child_dir, restore_dir, askpass_restore_dir, selected_restore_dir]:
     rc, stdout, stderr = run([bin_path, "--dir", str(path), "domain", "create"])
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"domain create failed for {path}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -152,6 +154,7 @@ if rc != 0 or stdout != "" or stderr != "":
 for args in [
     [bin_path, "--dir", str(root_dir), "--store", "app", "set", "INHERITED_APP", "-v", "root-app"],
     [bin_path, "--dir", str(child_dir), "--store", "app", "set", "LOCAL_APP", "-v", "child-app"],
+    [bin_path, "--dir", str(child_dir), "--store", "app", "set", "UNSELECTED_APP", "-v", "not-saved"],
     [bin_path, "--dir", str(child_dir), "set", "DEFAULT_ONLY", "-v", "default-value"],
 ]:
     rc, stdout, stderr = run(args)
@@ -162,6 +165,22 @@ rc, stdout, stderr = run([bin_path, "--dir", str(child_dir), "--store", "app", "
 output = stdout + stderr
 if rc == 0 or "this command requires a terminal for passphrase input" not in output:
     fail(f"non-tty save should require passphrase terminal: rc={rc} output={output!r}")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(child_dir), "--store", "app", "save",
+    "--key", "LOCAL_APP", "--key", "INHERITED_APP", str(selected_bundle_path),
+], askpass_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"selected save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if not selected_bundle_path.is_file() or selected_bundle_path.stat().st_size == 0:
+    fail("selected save did not create a non-empty bundle file")
+
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(child_dir), "--store", "app", "save",
+    "--key", "MISSING_APP", str(work_root / "backup" / "missing.secdat"),
+], askpass_env)
+if rc == 0 or "key not found: MISSING_APP" not in stdout + stderr or (work_root / "backup" / "missing.secdat").exists():
+    fail(f"selected save missing-key preflight failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 askpass_log.write_text("")
 rc, stdout, stderr = run([bin_path, "--dir", str(child_dir), "--store", "app", "save", str(askpass_bundle_path)], askpass_env)
@@ -217,6 +236,18 @@ for args in [
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"askpass restore setup failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+for args in [
+    [bin_path, "--dir", str(selected_restore_dir), "--store", "app", "set", "LOCAL_APP", "-v", "old-value"],
+    [bin_path, "--dir", str(selected_restore_dir), "--store", "app", "set", "UNSELECTED_APP", "-v", "keep-me"],
+]:
+    rc, stdout, stderr = run(args)
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"selected restore setup failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(selected_restore_dir), "--store", "app", "load", str(selected_bundle_path)], askpass_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"selected load failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 askpass_log.write_text("")
 rc, stdout, stderr = run([bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "load", str(askpass_bundle_path)], askpass_env)
 if rc != 0 or stdout != "" or stderr != "":
@@ -230,6 +261,9 @@ for args, expected, label in [
     ([bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "get", "INHERITED_APP", "-o"], "root-app", "askpass inherited app key"),
     ([bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "get", "LOCAL_APP", "-o"], "child-app", "askpass overwritten local app key"),
     ([bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "get", "EXTRA_APP", "-o"], "keep-me", "askpass unspecified key preserved"),
+    ([bin_path, "--dir", str(selected_restore_dir), "--store", "app", "get", "INHERITED_APP", "-o"], "root-app", "selected inherited app key"),
+    ([bin_path, "--dir", str(selected_restore_dir), "--store", "app", "get", "LOCAL_APP", "-o"], "child-app", "selected local app key"),
+    ([bin_path, "--dir", str(selected_restore_dir), "--store", "app", "get", "UNSELECTED_APP", "-o"], "keep-me", "selected bundle excludes unselected key"),
 ]:
     rc, stdout, stderr = run(args)
     if rc != 0 or stderr != "":

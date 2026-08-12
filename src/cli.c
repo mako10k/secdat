@@ -981,6 +981,10 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
             || strcmp(previous, "--mask-warnings") == 0) {
             return "none";
         }
+    } else if (strcmp(command, "save") == 0) {
+        if (strcmp(previous, "--key") == 0 || strcmp(previous, "-k") == 0) {
+            return "none";
+        }
     } else if (strcmp(command, "cp") == 0
         || strcmp(command, "ln") == 0
         || strcmp(command, "rm") == 0
@@ -1206,6 +1210,9 @@ int secdat_cli_complete(int argc, char **argv)
         "--mask-action", "--mask-warnings", "--warn-mask", "--no-warn-mask",
         "--dry-run", "--json", "--help", "-h", NULL,
     };
+    static const char *const save_options[] = {
+        "--key", "-k", "--help", "-h", NULL,
+    };
     static const char *const exec_options[] = {
         "--inject", "--inject-file", "--bulk-gate", "--command-resolution", "--dry-run", "--json", "--json-summary", "--help", "-h", NULL,
     };
@@ -1256,6 +1263,9 @@ int secdat_cli_complete(int argc, char **argv)
 
     secdat_cli_completion_parse_context(argc, argv, &command, &subcommand, &current, &previous);
     mode = secdat_cli_completion_command_prev_option_mode(command, subcommand, previous);
+    if (command != NULL && strcmp(command, "save") == 0 && current[0] == '-') {
+        mode = "plain";
+    }
     if (command != NULL && strcmp(command, "exec") == 0 && strcmp(mode, "plain") == 0) {
         exec_command_index = secdat_exec_completion_command_index(argc, argv);
         if (exec_command_index >= 0) {
@@ -1335,6 +1345,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, ln_options);
     } else if (strcmp(command, "load") == 0) {
         secdat_cli_completion_print_candidates(current, load_options);
+    } else if (strcmp(command, "save") == 0) {
+        secdat_cli_completion_print_candidates(current, save_options);
     } else if (strcmp(command, "exec") == 0) {
         secdat_cli_completion_print_candidates(current, exec_options);
     } else if (strcmp(command, "export") == 0) {
@@ -1559,7 +1571,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "export", "[-p GLOBPATTERN|--pattern GLOBPATTERN] [--bulk-gate]");
         break;
     case SECDAT_COMMAND_SAVE:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "save", "FILE");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "save", "[--key KEY]... FILE");
         break;
     case SECDAT_COMMAND_LOAD:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "load", "[--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] FILE");
@@ -1743,7 +1755,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  ln: link another key to the same v2 secret object, including cross-domain v2 links and authorized @UUID sources\n"));
     secdat_cli_print_detail_line(_("  exec: build a child environment through supply, route, and final injection layers\n"));
     secdat_cli_print_detail_line(_("  export: emit shell-ready export lines that defer secret reads to secdat get\n"));
-    secdat_cli_print_detail_line(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
+    secdat_cli_print_detail_line(_("  save: write current-view or selected secrets to a passphrase-protected bundle\n"));
     secdat_cli_print_detail_line(_("  load: import a passphrase-protected bundle into the current domain view\n"));
     secdat_cli_print_detail_line(_("  unlock: start or refresh a local unlock for the current domain; --duration accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such as PT1H30M, --until accepts an absolute RFC 3339 timestamp, and --inherit drops the current domain's local override to fall back to inherited state\n"));
     secdat_cli_print_detail_line(_("  inherit: force the current domain back to inherited state by removing a local lock or clearing a local unlock, without checking whether the result stays unlocked\n"));
@@ -1943,7 +1955,8 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "save") == 0) {
-        secdat_cli_print_detail_line(_("  save: export the current visible secrets into a passphrase-protected bundle\n"));
+        secdat_cli_print_detail_line(_("  save: write current-view or selected secrets to a passphrase-protected bundle\n"));
+        secdat_cli_print_detail_line(_("  --key KEY may be repeated to save only named keys from the selected domain and store\n"));
         return;
     }
     if (target != NULL && strcmp(target, "load") == 0) {

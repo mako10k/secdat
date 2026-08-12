@@ -481,8 +481,10 @@ Emit bash-oriented export lines for the current visible keys. The
 .B --bulk-gate
 option limits output to keys whose effective bulk_select policy allows bulk-gated selection. Keys that are not valid environment variable identifiers are rejected before shell text is emitted.
 .TP
-.B save FILE
-Write the current visible secrets into a passphrase-protected bundle.
+.B save [--key KEY]... FILE
+Write current-view secrets, or only keys named with repeated
+.B --key KEY ,
+to a passphrase-protected bundle.
 .TP
 .B load [\-\-mask-action=preserve|reject] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] [\-\-dry-run] [\-\-json] FILE
 Load a passphrase-protected bundle into the current domain/store context.
