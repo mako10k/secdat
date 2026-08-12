@@ -350,6 +350,14 @@ If you explicitly need a value to remain readable while `secdat` is locked, `set
 Unsafe values may also be entered from or written to a terminal. Safe values keep the existing terminal I/O refusal.
 Copying or moving a `--unsafe` key preserves that plaintext-at-rest storage mode.
 For simple shell-style assignment input, you can also use `KEY=VALUE` operands directly. `secdat KEY=VALUE ...` is treated as repeated `set`, and `secdat set KEY=VALUE ...` does the same. The split happens on the first `=`, so later `=` characters stay in the stored value.
+
+To create a new secret without placing its value in terminal input, shell history, or output, generate it through `set`:
+
+```sh
+./src/secdat set API_TOKEN --generate --length 40 --charset lower,upper,digit --require-each-class
+```
+
+`--charset` accepts comma-separated `lower`, `upper`, `digit`, `symbol`, `alnum`, `hex`, `base64url`, and `ascii` classes. `--require-each-class` requires at least one character from every named class. Generated plaintext is never printed and follows the normal `set` targeting, session, attributes, mask planning, and transaction rules.
 If the first operand is not a known subcommand and is not an assignment, `secdat KEY` falls back to `secdat get KEY`.
 When a key lookup fails, diagnostics print close visible key candidates when available. Because `secdat KEY` is valid syntax, a bare first operand that cannot be used as a key or looks like a misspelled command reports command candidates separately as "if this was meant as a command"; unknown group subcommands such as `store migarte` likewise report close subcommand candidates.
 Key names are restricted to shell/environment identifier syntax: they must start with a letter or `_`, and the remaining characters may contain only letters, digits, or `_`. `exec --inject secret:rename=...` applies the same rule to generated environment variable names, so empty results or names with unsuitable characters are rejected during planning.

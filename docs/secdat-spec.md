@@ -77,6 +77,7 @@ secdat [--dir DIR] [--store STORE] set KEYREF [--public-value|--secret-value] [-
 secdat [--dir DIR] [--store STORE] set KEYREF [--stdin|-i]
 secdat [--dir DIR] [--store STORE] set KEYREF [--env|-e] ENVNAME
 secdat [--dir DIR] [--store STORE] set KEYREF [--value|-v] VALUE
+secdat [--dir DIR] [--store STORE] set [MASK_MUTATION_OPTIONS] KEYREF --generate --length N --charset CLASS[,CLASS...] [--require-each-class]
 
 secdat [--dir DIR] [--store STORE] rm [-f|--ignore-missing] [MASK_MUTATION_OPTIONS] KEYREF
 secdat [--dir DIR] [--store STORE] rm --ephemeral [-f|--ignore-missing] KEYREF
@@ -117,6 +118,9 @@ secdat [--dir DIR] [--store STORE] export [-p GLOBPATTERN|--pattern GLOBPATTERN]
 ### 2.2 Explicitly Stated Requirements
 
 - displaying or interactively entering secret values through a terminal must be rejected
+- `set KEYREF --generate --length N --charset CLASS[,CLASS...] [--require-each-class]` generates an encrypted secret value without printing it; `N` is from 1 through 4096, and `CLASS` is one or more of `lower`, `upper`, `digit`, `symbol`, `alnum`, `hex`, `base64url`, or `ascii`
+- generated values use cryptographic random bytes with rejection sampling; `--require-each-class` requires at least one character from each named class and fails when `N` is too short
+- generated values use the same KEYREF, session, secret attributes, mutation-planning, and transaction path as `set --value`; `--generate` cannot be combined with stdin, environment, or literal value input
 - stored values must always be encrypted at rest, except for an explicit `set --unsafe` plaintext path
 - the implementation language is C
 - the design should remain simple

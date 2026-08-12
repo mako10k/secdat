@@ -941,6 +941,8 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
     } else if (strcmp(command, "set") == 0) {
         if (strcmp(previous, "--env") == 0 || strcmp(previous, "-e") == 0
             || strcmp(previous, "--value") == 0 || strcmp(previous, "-v") == 0
+            || strcmp(previous, "--length") == 0
+            || strcmp(previous, "--charset") == 0
             || strcmp(previous, "--key-visibility") == 0
             || strcmp(previous, "--value-access") == 0
             || strcmp(previous, "--bulk-select") == 0
@@ -1182,6 +1184,7 @@ int secdat_cli_complete(int argc, char **argv)
     static const char *const set_options[] = {
         "--unsafe", "-u", "--public-value", "--secret-value", "--stdin", "-i", "--env", "-e", "--value", "-v",
         "--ephemeral", "--key-visibility", "--value-access", "--bulk-select",
+        "--generate", "--length", "--charset", "--require-each-class",
         "--mask-action", "--mask-warnings", "--warn-mask", "--no-warn-mask",
         "--dry-run", "--json", "--help", "-h", NULL,
     };
@@ -1533,6 +1536,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         break;
     case SECDAT_COMMAND_SET:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "[--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] KEYREF [-u|--unsafe|--public-value|--secret-value] [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "[--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] KEYREF --generate --length N --charset lower,upper,digit[,symbol|alnum|hex|base64url|ascii] [--require-each-class]");
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "set", "--ephemeral KEYREF [--secret-value] [--key-visibility unlocked] [--value-access unlocked] [--bulk-select exclude|named|include] [VALUE|-i|--stdin|-e ENVNAME|--env ENVNAME|-v VALUE|--value VALUE]");
         break;
     case SECDAT_COMMAND_RM:
@@ -1732,7 +1736,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  exists: check whether one resolved key is visible from the current domain view\n"));
     secdat_cli_print_detail_line(_("  id: print the v2 secret object UUID for one resolved key without reading its value\n"));
     secdat_cli_print_detail_line(_("  get: decrypt one resolved key and write it to standard output; --on-demand-unlock waits for another terminal to unlock\n"));
-    secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked; --ephemeral keeps one unlocked-only value in the active session agent\n"));
+    secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --generate writes a CSPRNG-generated value without printing it; --unsafe stores plaintext visible while locked; --ephemeral keeps one unlocked-only value in the active session agent\n"));
     secdat_cli_print_detail_line(_("  rm: remove one key locally or create a tombstone for an inherited key; --ignore-missing treats absent keys as success; --ephemeral removes only a session-local ephemeral value\n"));
     secdat_cli_print_detail_line(_("  mv: rename or relocate one key between resolved locations\n"));
     secdat_cli_print_detail_line(_("  cp: copy one key into another resolved location\n"));
@@ -1889,7 +1893,9 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "set") == 0) {
-        secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --unsafe stores plaintext visible while locked\n"));
+        secdat_cli_print_detail_line(_("  set: store or update one key in the resolved current domain; --generate writes a CSPRNG-generated value without printing it; --unsafe stores plaintext visible while locked\n"));
+        secdat_cli_print_detail_line(_("  --generate requires --length N and --charset CLASS[,CLASS...]; classes are lower, upper, digit, symbol, alnum, hex, base64url, and ascii\n"));
+        secdat_cli_print_detail_line(_("  --require-each-class requires at least one character from every named charset class\n"));
         secdat_cli_print_detail_line(_("  --ephemeral stores only in the active session agent, forces unlocked key/value access, and defaults bulk_select to exclude\n"));
         secdat_cli_print_detail_line(_("  ephemeral values shadow persisted same-name values until rm --ephemeral, lock, or session expiry; use --bulk-select include to allow bulk-gated selection\n"));
         secdat_cli_print_detail_line(_("  plain set, SDK/FUSE writes, cp, mv, ln, mask, unmask, attr updates, and save reject an ephemeral target instead of persisting it accidentally\n"));
@@ -2070,6 +2076,8 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
     if (strcmp(target, "set") == 0) {
         char buffer[512];
         snprintf(buffer, sizeof(buffer), _("  write one value from an argument: %s set API_TOKEN --value new-token\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  generate a 40-character token without printing it: %s set API_TOKEN --generate --length 40 --charset lower,upper,digit --require-each-class\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  read a value from standard input without echoing it in shell history: printf 'token' | %s set API_TOKEN --stdin\n"), program_name);
         secdat_cli_print_detail_line(buffer);

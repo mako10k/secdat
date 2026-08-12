@@ -54,6 +54,7 @@
 #define SECDAT_HEADER_LEN 16
 #define SECDAT_BUNDLE_HEADER_LEN 20
 #define SECDAT_MASTER_KEY_RANDOM_BYTES 32
+#define SECDAT_GENERATED_SECRET_MAX_LENGTH 4096
 #define SECDAT_SESSION_IDLE_SECONDS 1800
 #define SECDAT_WRAP_SALT_LEN 16
 #define SECDAT_WRAP_HEADER_LEN 20
@@ -24923,6 +24924,171 @@ static int secdat_store_assignment_operand(
     return status;
 }
 
+static int secdat_generated_secret_random_bounded(size_t limit, size_t *value)
+{
+    unsigned char byte;
+    size_t threshold;
+
+    if (limit == 0 || limit > 256) {
+        fprintf(stderr, _("invalid generated secret charset\n"));
+        return 1;
+    }
+    threshold = 256 - (256 % limit);
+    do {
+        if (RAND_bytes(&byte, sizeof(byte)) != 1) {
+            fprintf(stderr, _("failed to generate random bytes\n"));
+            return 1;
+        }
+    } while ((size_t)byte >= threshold);
+    *value = (size_t)byte % limit;
+    return 0;
+}
+
+static int secdat_generated_secret_append_charset(char *alphabet, size_t *length, const char *characters)
+{
+    size_t index;
+
+    for (index = 0; characters[index] != '\0'; index += 1) {
+        if (strchr(alphabet, characters[index]) == NULL) {
+            if (*length + 1 >= 128) {
+                fprintf(stderr, _("generated secret charset is too large\n"));
+                return 1;
+            }
+            alphabet[*length] = characters[index];
+            *length += 1;
+            alphabet[*length] = '\0';
+        }
+    }
+    return 0;
+}
+
+static int secdat_generate_secret_value(
+    const char *charset_spec,
+    size_t output_length,
+    int require_each_class,
+    char **value_out
+)
+{
+    static const char lower[] = "abcdefghijklmnopqrstuvwxyz";
+    static const char upper[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    static const char digit[] = "0123456789";
+    static const char symbol[] = "!#$%&()*+,-./:<=>?@[]^_{|}~";
+    static const char *const names[] = {"lower", "upper", "digit", "symbol", "alnum", "hex", "base64url", "ascii"};
+    static const char *const values[] = {
+        lower,
+        upper,
+        digit,
+        symbol,
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        "0123456789abcdef",
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_",
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&()*+,-./:<=>?@[]^_{|}~"
+    };
+    char alphabet[128] = "";
+    const char *classes[8];
+    const char *class_names[8];
+    char *spec_copy = NULL;
+    char *cursor;
+    char *token;
+    char *output = NULL;
+    size_t alphabet_length = 0;
+    size_t class_count = 0;
+    size_t charset_spec_length;
+    size_t index;
+    int status = 1;
+
+    if (charset_spec == NULL || charset_spec[0] == '\0'
+        || output_length == 0 || output_length > SECDAT_GENERATED_SECRET_MAX_LENGTH) {
+        fprintf(stderr, _("invalid generated secret length or charset\n"));
+        return 1;
+    }
+    charset_spec_length = strlen(charset_spec);
+    spec_copy = strdup(charset_spec);
+    if (spec_copy == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    cursor = spec_copy;
+    while ((token = strsep(&cursor, ",")) != NULL) {
+        size_t name_index;
+
+        if (token[0] == '\0') {
+            fprintf(stderr, _("invalid generated secret charset: %s\n"), charset_spec);
+            goto cleanup;
+        }
+        for (name_index = 0; name_index < sizeof(names) / sizeof(names[0]); name_index += 1) {
+            if (strcmp(token, names[name_index]) == 0) {
+                break;
+            }
+        }
+        if (name_index == sizeof(names) / sizeof(names[0])) {
+            fprintf(stderr, _("invalid generated secret charset: %s\n"), charset_spec);
+            goto cleanup;
+        }
+        for (index = 0; index < class_count; index += 1) {
+            if (strcmp(token, class_names[index]) == 0) {
+                fprintf(stderr, _("duplicate generated secret charset class: %s\n"), token);
+                goto cleanup;
+            }
+        }
+        class_names[class_count] = names[name_index];
+        classes[class_count++] = values[name_index];
+        if (secdat_generated_secret_append_charset(alphabet, &alphabet_length, values[name_index]) != 0) {
+            goto cleanup;
+        }
+    }
+    if (alphabet_length == 0 || (require_each_class && output_length < class_count)) {
+        fprintf(stderr, _("generated secret length is too short for the selected charset classes\n"));
+        goto cleanup;
+    }
+    output = malloc(output_length + 1);
+    if (output == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    for (index = 0; index < (require_each_class ? class_count : 0); index += 1) {
+        size_t random_index;
+
+        if (secdat_generated_secret_random_bounded(strlen(classes[index]), &random_index) != 0) {
+            goto cleanup;
+        }
+        output[index] = classes[index][random_index];
+    }
+    for (; index < output_length; index += 1) {
+        size_t random_index;
+
+        if (secdat_generated_secret_random_bounded(alphabet_length, &random_index) != 0) {
+            goto cleanup;
+        }
+        output[index] = alphabet[random_index];
+    }
+    for (index = output_length; index > 1; index -= 1) {
+        size_t random_index;
+        char temporary;
+
+        if (secdat_generated_secret_random_bounded(index, &random_index) != 0) {
+            goto cleanup;
+        }
+        temporary = output[index - 1];
+        output[index - 1] = output[random_index];
+        output[random_index] = temporary;
+    }
+    output[output_length] = '\0';
+    *value_out = output;
+    output = NULL;
+    status = 0;
+
+cleanup:
+    if (output != NULL) {
+        secdat_secure_clear(output, output_length);
+        free(output);
+    }
+    secdat_secure_clear(alphabet, sizeof(alphabet));
+    secdat_secure_clear(spec_copy, spec_copy == NULL ? 0 : charset_spec_length);
+    free(spec_copy);
+    return status;
+}
+
 static int secdat_command_set(const struct secdat_cli *cli)
 {
     static const struct option long_options[] = {
@@ -24939,6 +25105,10 @@ static int secdat_command_set(const struct secdat_cli *cli)
         {"stdin", no_argument, NULL, 'i'},
         {"value", required_argument, NULL, 'v'},
         {"env", required_argument, NULL, 'e'},
+        {"generate", no_argument, NULL, 1006},
+        {"length", required_argument, NULL, 1007},
+        {"charset", required_argument, NULL, 1008},
+        {"require-each-class", no_argument, NULL, 1009},
         {NULL, 0, NULL, 0},
     };
     struct secdat_key_reference reference;
@@ -24953,11 +25123,17 @@ static int secdat_command_set(const struct secdat_cli *cli)
     const char *environment_value;
     const char *literal_value = NULL;
     const char *keyref = NULL;
+    const char *generate_length = NULL;
+    const char *generate_charset = NULL;
+    char *generated_value = NULL;
     int read_stdin = 1;
     int unsafe_store = 0;
     int value_mode_configured = 0;
     int key_visibility_configured = 0;
     int ephemeral = 0;
+    int generate = 0;
+    int require_each_class = 0;
+    int explicit_input_mode = 0;
     int argc;
     int option;
     int status;
@@ -25032,6 +25208,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
                 return 2;
             }
             read_stdin = 1;
+            explicit_input_mode = 1;
             break;
         case 'v':
             if (!read_stdin || literal_value != NULL) {
@@ -25041,6 +25218,7 @@ static int secdat_command_set(const struct secdat_cli *cli)
             }
             literal_value = optarg;
             read_stdin = 0;
+            explicit_input_mode = 1;
             break;
         case 'e':
             if (!read_stdin || literal_value != NULL) {
@@ -25056,6 +25234,19 @@ static int secdat_command_set(const struct secdat_cli *cli)
             }
             literal_value = environment_value;
             read_stdin = 0;
+            explicit_input_mode = 1;
+            break;
+        case 1006:
+            generate = 1;
+            break;
+        case 1007:
+            generate_length = optarg;
+            break;
+        case 1008:
+            generate_charset = optarg;
+            break;
+        case 1009:
+            require_each_class = 1;
             break;
         case '?':
         case ':':
@@ -25083,6 +25274,42 @@ static int secdat_command_set(const struct secdat_cli *cli)
 
     if (optind >= argc) {
         fprintf(stderr, _("missing key for set\n"));
+        return 2;
+    }
+
+    if (generate) {
+        size_t generated_length;
+
+        if (explicit_input_mode || generate_length == NULL || generate_charset == NULL
+            || secdat_parse_size_value(generate_length, &generated_length) != 0
+            || optind + 1 != argc) {
+            fprintf(stderr, _("invalid arguments for generated set\n"));
+            secdat_cli_print_try_help(cli, "set");
+            return 2;
+        }
+        keyref = argv[optind];
+        if (secdat_generate_secret_value(
+                generate_charset,
+                generated_length,
+                require_each_class,
+                &generated_value
+            ) != 0) {
+            return 1;
+        }
+        status = secdat_store_literal_keyref(
+            cli,
+            keyref,
+            generated_value,
+            unsafe_store,
+            &attrs,
+            ephemeral
+        );
+        secdat_secure_clear(generated_value, generated_length);
+        free(generated_value);
+        return status;
+    }
+    if (generate_length != NULL || generate_charset != NULL || require_each_class) {
+        fprintf(stderr, _("--length, --charset, and --require-each-class require --generate\n"));
         return 2;
     }
 
@@ -30244,6 +30471,8 @@ static int secdat_mutation_option_consumes_next(
         || strcmp(argument, "--value") == 0
         || strcmp(argument, "-e") == 0
         || strcmp(argument, "--env") == 0
+        || strcmp(argument, "--length") == 0
+        || strcmp(argument, "--charset") == 0
         || strcmp(argument, "--key-visibility") == 0
         || strcmp(argument, "--value-access") == 0
         || strcmp(argument, "--bulk-select") == 0
