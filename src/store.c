@@ -830,6 +830,7 @@ struct secdat_load_options {
     const char *path;
     enum secdat_load_conflict_policy conflict_policy;
     int conflict_policy_configured;
+    int allow_link_split;
 };
 
 static void secdat_write_be32(unsigned char *buffer, uint32_t value);
@@ -9411,8 +9412,6 @@ static void secdat_bundle_labels_free(struct secdat_bundle_label *labels, uint32
 static int secdat_bundle_object_list_find_or_append(
     struct secdat_bundle_object_list *objects,
     const char *identity,
-    unsigned char *value,
-    size_t value_length,
     uint32_t *index_out
 )
 {
@@ -9422,8 +9421,6 @@ static int secdat_bundle_object_list_find_or_append(
 
     for (index = 0; index < objects->count; index += 1) {
         if (strcmp(objects->items[index].identity, identity) == 0) {
-            secdat_secure_clear(value, value_length);
-            free(value);
             if (index_out != NULL) {
                 *index_out = (uint32_t)index;
             }
@@ -9432,8 +9429,6 @@ static int secdat_bundle_object_list_find_or_append(
     }
     if (objects->count == UINT32_MAX) {
         fprintf(stderr, _("secret bundle has too many objects\n"));
-        secdat_secure_clear(value, value_length);
-        free(value);
         return 1;
     }
     if (objects->count == objects->capacity) {
@@ -9441,8 +9436,6 @@ static int secdat_bundle_object_list_find_or_append(
         new_items = realloc(objects->items, sizeof(*new_items) * new_capacity);
         if (new_items == NULL) {
             fprintf(stderr, _("out of memory\n"));
-            secdat_secure_clear(value, value_length);
-            free(value);
             return 1;
         }
         objects->items = new_items;
@@ -9451,17 +9444,66 @@ static int secdat_bundle_object_list_find_or_append(
     objects->items[objects->count].identity = strdup(identity);
     if (objects->items[objects->count].identity == NULL) {
         fprintf(stderr, _("out of memory\n"));
-        secdat_secure_clear(value, value_length);
-        free(value);
         return 1;
     }
-    objects->items[objects->count].value = value;
-    objects->items[objects->count].value_length = value_length;
     if (index_out != NULL) {
         *index_out = (uint32_t)objects->count;
     }
     objects->count += 1;
     return 0;
+}
+
+static int secdat_bundle_entry_identity(
+    const struct secdat_effective_entry *entry,
+    size_t key_index,
+    char *identity,
+    size_t identity_size
+)
+{
+    int written;
+
+    written = entry->from_v2
+        ? snprintf(identity, identity_size, "v2:%s:%s:%s", entry->object_domain, entry->object_store, entry->secret_id)
+        : snprintf(identity, identity_size, "value:%zu", key_index);
+    if (written < 0 || (size_t)written >= identity_size) {
+        fprintf(stderr, _("path is too long\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_bundle_entry_has_v2_object_payload(
+    const struct secdat_effective_entry *entry,
+    int *has_payload
+)
+{
+    char object_path[PATH_MAX];
+    unsigned char *payload = NULL;
+    size_t payload_length = 0;
+    int status;
+
+    *has_payload = 0;
+    if (!entry->from_v2) {
+        return 0;
+    }
+    if (secdat_build_v2_secret_object_path(
+            entry->object_domain,
+            secdat_effective_entry_object_store(entry),
+            entry->secret_id,
+            object_path,
+            sizeof(object_path)
+        ) != 0) {
+        return 1;
+    }
+    status = secdat_read_v2_secret_object_payload(
+        object_path,
+        entry->secret_id,
+        &payload,
+        &payload_length,
+        has_payload
+    );
+    free(payload);
+    return status;
 }
 
 static int secdat_collect_bundle_payload(
@@ -9493,8 +9535,6 @@ static int secdat_collect_bundle_payload(
     bundle_keys = selected_keys != NULL && selected_keys->count > 0 ? selected_keys : &visible_keys;
     for (index = 0; index < bundle_keys->count; index += 1) {
         struct secdat_effective_entry entry = {0};
-        unsigned char *plaintext = NULL;
-        size_t plaintext_length = 0;
         char identity[PATH_MAX * 2 + 80];
 
         if (secdat_resolve_effective_entry(&chain, cli->store, bundle_keys->items[index], 0, &entry) != 0) {
@@ -9502,27 +9542,73 @@ static int secdat_collect_bundle_payload(
             secdat_print_missing_key_context(&chain, cli->store, bundle_keys->items[index]);
             goto cleanup;
         }
-        if (secdat_load_resolved_plaintext(&chain, cli->store, bundle_keys->items[index], &plaintext, &plaintext_length, NULL, NULL, NULL, NULL) != 0) {
-            secdat_effective_entry_reset(&entry);
-            goto cleanup;
-        }
-        if (plaintext_length > UINT32_MAX) {
-            fprintf(stderr, _("secret bundle entry is too large\n"));
-            secdat_secure_clear(plaintext, plaintext_length);
-            free(plaintext);
-            secdat_effective_entry_reset(&entry);
-            goto cleanup;
-        }
-        if (entry.from_v2) {
-            snprintf(identity, sizeof(identity), "v2:%s:%s:%s", entry.object_domain, entry.object_store, entry.secret_id);
-        } else {
-            snprintf(identity, sizeof(identity), "value:%zu", index);
-        }
-        if (secdat_bundle_object_list_find_or_append(&objects, identity, plaintext, plaintext_length, NULL) != 0) {
+        if (secdat_bundle_entry_identity(&entry, index, identity, sizeof(identity)) != 0
+            || secdat_bundle_object_list_find_or_append(&objects, identity, NULL) != 0) {
             secdat_effective_entry_reset(&entry);
             goto cleanup;
         }
         secdat_effective_entry_reset(&entry);
+    }
+
+    for (index = 0; index < objects.count; index += 1) {
+        size_t key_index;
+
+        for (key_index = 0; key_index < bundle_keys->count; key_index += 1) {
+            struct secdat_effective_entry entry = {0};
+            unsigned char *plaintext = NULL;
+            size_t plaintext_length = 0;
+            char identity[PATH_MAX * 2 + 80];
+            int has_v2_object_payload = 0;
+
+            if (secdat_resolve_effective_entry(&chain, cli->store, bundle_keys->items[key_index], 0, &entry) != 0) {
+                secdat_effective_entry_reset(&entry);
+                goto cleanup;
+            }
+            if (secdat_bundle_entry_identity(&entry, key_index, identity, sizeof(identity)) != 0) {
+                secdat_effective_entry_reset(&entry);
+                goto cleanup;
+            }
+            if (strcmp(identity, objects.items[index].identity) != 0) {
+                secdat_effective_entry_reset(&entry);
+                continue;
+            }
+            if (secdat_bundle_entry_has_v2_object_payload(&entry, &has_v2_object_payload) != 0) {
+                secdat_effective_entry_reset(&entry);
+                goto cleanup;
+            }
+            if (entry.from_v2 && entry.path[0] == '\0' && !has_v2_object_payload) {
+                secdat_effective_entry_reset(&entry);
+                continue;
+            }
+            if (secdat_load_resolved_plaintext(
+                    &chain,
+                    cli->store,
+                    bundle_keys->items[key_index],
+                    &plaintext,
+                    &plaintext_length,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL
+                ) != 0) {
+                secdat_effective_entry_reset(&entry);
+                goto cleanup;
+            }
+            secdat_effective_entry_reset(&entry);
+            if (plaintext_length > UINT32_MAX) {
+                fprintf(stderr, _("secret bundle entry is too large\n"));
+                secdat_secure_clear(plaintext, plaintext_length);
+                free(plaintext);
+                goto cleanup;
+            }
+            objects.items[index].value = plaintext;
+            objects.items[index].value_length = plaintext_length;
+            break;
+        }
+        if (objects.items[index].value == NULL) {
+            fprintf(stderr, _("secret bundle value is unavailable for a selected v2 object\n"));
+            goto cleanup;
+        }
     }
 
     if (secdat_bundle_append(&payload, &payload_length, &capacity, (const unsigned char *)"SDB2", 4) != 0
@@ -9547,10 +9633,9 @@ static int secdat_collect_bundle_payload(
         if (secdat_resolve_effective_entry(&chain, cli->store, bundle_keys->items[index], 0, &entry) != 0) {
             goto cleanup;
         }
-        if (entry.from_v2) {
-            snprintf(identity, sizeof(identity), "v2:%s:%s:%s", entry.object_domain, entry.object_store, entry.secret_id);
-        } else {
-            snprintf(identity, sizeof(identity), "value:%zu", index);
+        if (secdat_bundle_entry_identity(&entry, index, identity, sizeof(identity)) != 0) {
+            secdat_effective_entry_reset(&entry);
+            goto cleanup;
         }
         secdat_effective_entry_reset(&entry);
         for (object_index = 0; object_index < objects.count; object_index += 1) {
@@ -30446,6 +30531,7 @@ static int secdat_parse_load_options(
 {
     static const struct option long_options[] = {
         {"conflict", required_argument, NULL, 1000},
+        {"allow-link-split", no_argument, NULL, 1001},
         {NULL, 0, NULL, 0},
     };
     char *argv[cli->argc + 2];
@@ -30480,6 +30566,9 @@ static int secdat_parse_load_options(
                 options->conflict_policy = conflict_policy;
                 options->conflict_policy_configured = 1;
             }
+            break;
+        case 1001:
+            options->allow_link_split = 1;
             break;
         case '?':
         case ':':
@@ -30526,6 +30615,35 @@ static int secdat_preflight_load_conflicts(
         }
     }
     secdat_key_list_free(&visible_keys);
+    return 0;
+}
+
+static int secdat_preflight_v1_link_split(
+    const struct secdat_bundle_label *labels,
+    uint32_t label_count,
+    int allow_link_split
+)
+{
+    uint32_t index;
+
+    if (allow_link_split) {
+        return 0;
+    }
+    for (index = 0; index < label_count; index += 1) {
+        uint32_t other_index;
+
+        if (labels[index].skip) {
+            continue;
+        }
+        for (other_index = index + 1; other_index < label_count; other_index += 1) {
+            if (!labels[other_index].skip
+                && labels[index].object_index == labels[other_index].object_index) {
+                fprintf(stderr, _("cannot load linked v2 object into a v1 store without splitting links\n"));
+                fprintf(stderr, _("  use --allow-link-split to write independent v1 values, or load into a v2 store to preserve links\n"));
+                return 1;
+            }
+        }
+    }
     return 0;
 }
 
@@ -30690,6 +30808,18 @@ static int secdat_command_load(const struct secdat_cli *cli)
                 bundle_labels,
                 entry_count,
                 options.conflict_policy
+            ) != 0) {
+            free(objects);
+            free(object_lengths);
+            secdat_bundle_labels_free(bundle_labels, entry_count);
+            secdat_key_list_free(&labels);
+            goto cleanup;
+        }
+        if (target_format == SECDAT_STORE_FORMAT_V1
+            && secdat_preflight_v1_link_split(
+                bundle_labels,
+                entry_count,
+                options.allow_link_split
             ) != 0) {
             free(objects);
             free(object_lengths);

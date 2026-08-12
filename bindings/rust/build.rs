@@ -1,6 +1,6 @@
 fn main() {
     pkg_config::Config::new()
-        .atleast_version("0.5.0")
+        .atleast_version("0.6.0")
         .probe("libsecdat")
         .expect("pkg-config could not find libsecdat");
 }

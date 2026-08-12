@@ -41,16 +41,20 @@ askpass_restore_dir = work_root / "workspace" / "askpass-restore"
 selected_restore_dir = work_root / "workspace" / "selected-restore"
 legacy_restore_dir = work_root / "workspace" / "legacy-restore"
 malformed_restore_dir = work_root / "workspace" / "malformed-restore"
+linked_v2_source_dir = work_root / "workspace" / "linked-v2-source"
+linked_v1_restore_dir = work_root / "workspace" / "linked-v1-restore"
+linked_v2_restore_dir = work_root / "workspace" / "linked-v2-restore"
 bundle_path = work_root / "backup" / "app.secdat"
 tampered_bundle_path = work_root / "backup" / "app-tampered.secdat"
 selected_bundle_path = work_root / "backup" / "app-selected.secdat"
 legacy_bundle_path = work_root / "backup" / "legacy-v1.secdat"
 malformed_bundle_path = work_root / "backup" / "malformed-v2.secdat"
+linked_bundle_path = work_root / "backup" / "linked-v2.secdat"
 askpass_bundle_path = work_root / "backup" / "askpass.secdat"
 askpass_path = work_root / "askpass.py"
 askpass_log = work_root / "askpass.log"
 bundle_path.parent.mkdir(parents=True, exist_ok=True)
-for path in [root_dir, child_dir, restore_dir, askpass_restore_dir, selected_restore_dir, legacy_restore_dir, malformed_restore_dir]:
+for path in [root_dir, child_dir, restore_dir, askpass_restore_dir, selected_restore_dir, legacy_restore_dir, malformed_restore_dir, linked_v2_source_dir, linked_v1_restore_dir, linked_v2_restore_dir]:
     path.mkdir(parents=True, exist_ok=True)
 
 askpass_path.write_text(
@@ -137,7 +141,7 @@ for args, marker in [
     ([bin_path, "help", "save"], "save [--key KEY]... FILE"),
     (
         [bin_path, "load", "--help"],
-        "load [--conflict=reject|overwrite|skip] [--mask-action=preserve|reject] "
+        "load [--conflict=reject|overwrite|skip] [--allow-link-split] [--mask-action=preserve|reject] "
         "[--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] "
         "[--dry-run] [--json] FILE",
     ),
@@ -147,7 +151,7 @@ for args, marker in [
     if rc != 0 or marker not in normalize_spaces(output) or "passphrase-protected bundle" not in output:
         fail(f"save/load help check failed for {args}: rc={rc} output={output!r}")
 
-for path in [root_dir, child_dir, restore_dir, askpass_restore_dir, selected_restore_dir, legacy_restore_dir, malformed_restore_dir]:
+for path in [root_dir, child_dir, restore_dir, askpass_restore_dir, selected_restore_dir, legacy_restore_dir, malformed_restore_dir, linked_v2_source_dir, linked_v1_restore_dir, linked_v2_restore_dir]:
     rc, stdout, stderr = run([bin_path, "--dir", str(path), "domain", "create"])
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"domain create failed for {path}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -253,6 +257,48 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(legacy_restore_dir), "--store", "app", "get", "LEGACY_KEY"])
 if rc != 0 or stdout != "legacy-value" or stderr != "":
     fail(f"legacy v1 value mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+for path in [linked_v2_source_dir, linked_v1_restore_dir, linked_v2_restore_dir]:
+    rc, stdout, stderr = run([bin_path, "--dir", str(path), "store", "create", "app"])
+    if rc != 0 or stdout != "" or stderr != "":
+        fail(f"linked bundle store setup failed for {path}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(linked_v2_source_dir), "--store", "app", "set", "LINK_A", "-v", "shared-value"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"linked v2 source seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(linked_v2_source_dir), "store", "migrate", "app", "--to-format", "v2"])
+if rc != 0 or stderr != "":
+    fail(f"linked v2 source migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(linked_v2_source_dir), "--store", "app", "ln", "LINK_A", "LINK_B"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"linked v2 source link failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(linked_v2_source_dir), "--store", "app", "save",
+    "--key", "LINK_B", "--key", "LINK_A", str(linked_bundle_path),
+], askpass_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"linked v2 save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(linked_v1_restore_dir), "--store", "app", "load", str(linked_bundle_path)], askpass_env)
+if rc == 0 or "cannot load linked v2 object into a v1 store without splitting links" not in stdout + stderr or "--allow-link-split" not in stdout + stderr:
+    fail(f"linked v2 default v1 rejection failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(linked_v1_restore_dir), "--store", "app", "load", "--allow-link-split", str(linked_bundle_path)], askpass_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"linked v2 v1 split load failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for key in ["LINK_A", "LINK_B"]:
+    rc, stdout, stderr = run([bin_path, "--dir", str(linked_v1_restore_dir), "--store", "app", "get", key])
+    if rc != 0 or stdout != "shared-value" or stderr != "":
+        fail(f"linked v2 v1 split value failed for {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(linked_v2_restore_dir), "store", "migrate", "app", "--to-format", "v2"])
+if rc != 0 or stderr != "":
+    fail(f"linked v2 restore migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(linked_v2_restore_dir), "--store", "app", "load", str(linked_bundle_path)], askpass_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"linked v2 restore failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, first_id, stderr = run([bin_path, "--dir", str(linked_v2_restore_dir), "--store", "app", "id", "LINK_A"])
+if rc != 0 or stderr != "":
+    fail(f"linked v2 first id failed: rc={rc} stdout={first_id!r} stderr={stderr!r}")
+rc, second_id, stderr = run([bin_path, "--dir", str(linked_v2_restore_dir), "--store", "app", "id", "LINK_B"])
+if rc != 0 or stderr != "" or first_id != second_id:
+    fail(f"linked v2 shared id failed: rc={rc} first={first_id!r} second={second_id!r} stderr={stderr!r}")
 
 
 rc, transcript = run_pty(

@@ -1,4 +1,4 @@
-.TH SECDAT 1 "2026-08-06" "secdat 0.5.0" "User Commands"
+.TH SECDAT 1 "2026-08-12" "secdat 0.6.0" "User Commands"
 .SH NAME
 secdat \- minimal local secret store with domain and store scoping
 .SH SYNOPSIS
@@ -486,8 +486,10 @@ Write current-view secrets, or only keys named with repeated
 .B --key KEY ,
 to a passphrase-protected bundle.
 .TP
-.B load [\-\-mask-action=preserve|reject] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] [\-\-dry-run] [\-\-json] FILE
-Load a passphrase-protected bundle into the current domain/store context.
+.B load [\-\-conflict=reject|overwrite|skip] [\-\-allow-link-split] [\-\-mask-action=preserve|reject] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] [\-\-dry-run] [\-\-json] FILE
+Load a passphrase-protected bundle into the current domain/store context. The default conflict policy rejects any destination key visible from the current view; overwrite and skip are explicit alternatives. Shared v2 bundle objects require a v2 destination to preserve links. Loading into v1 fails unless
+.B --allow-link-split
+explicitly permits independent v1 values.
 .TP
 .B [\-d DIR|\-\-dir DIR] unlock [\-t TTL|\-\-duration TTL] [\-\-until TIME] [\-i|\-\-inherit] [\-v|\-\-volatile|\-r|\-\-readonly] [\-d|\-\-descendants] [\-y|\-\-yes] [\-\-askpass PATH] [\-\-gui]
 Start or refresh an authenticated secret session for the current domain. Descendant domains can reuse an unlocked ancestor session, but sibling domains remain locked. With

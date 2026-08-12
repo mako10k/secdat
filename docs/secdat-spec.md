@@ -621,6 +621,7 @@ revalidated so changed-since-plan state fails before live mutation.
 - v2 labels may share one bundle-local value object, preserving selected in-bundle value sharing without exposing source v2 object identity; v1 key/value bundles remain readable
 - `save` refuses to overwrite an existing bundle file
 - `load` defaults to `--conflict=reject`: it rejects any bundle base name already visible from the current `ls` view before writing an entry; `--conflict=overwrite` replaces those names and `--conflict=skip` leaves them unchanged
+- loading a shared v2 bundle object into a v1 store fails by default because v1 cannot preserve links; `--allow-link-split` explicitly permits materializing independent v1 values, while a v2 destination preserves the shared object
 - `load` validates the complete v2 bundle framing, label/object references, duplicate base names, and destination-name conflicts before writing any entry; keys not mentioned by the bundle are untouched
 
 #### FR-8 Store Selection

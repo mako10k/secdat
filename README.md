@@ -15,7 +15,7 @@ Current status:
 - `gc` is implemented for explicit v2 orphaned/dangling graph cleanup after review
 - `secret status` is implemented for read-only v2 secret-object metadata inspection by UUID
 - `export` is implemented for shell-friendly setup without embedding raw secret values
-- `save` and `load` are implemented for passphrase-protected portable secret bundles scoped to the current view; bundles contain logical base names and values, not source domain/store metadata, and `load` defaults to rejecting destination-name conflicts
+- `save` and `load` are implemented for passphrase-protected portable secret bundles scoped to the current view; bundles contain logical base names and values, not source domain/store metadata, `load` defaults to rejecting destination-name conflicts, and shared v2 objects require a v2 destination unless `--allow-link-split` is explicit
 - optional `secdat-fuse` mounting is available when configured with `--enable-fuse`
 - `domain create`, `domain delete`, `domain move`, `domain ls`, and `domain status` are implemented
 - `store create`, `store delete`, `store ls`, `store migrate`, and `store finalize-migration` are implemented
@@ -536,10 +536,10 @@ You can also save currently visible secrets, or only named keys, from one view a
 ```sh
 ./src/secdat --dir ~/example/project --store app save ~/backup/app.secdat
 ./src/secdat --dir ~/example/project --store app save --key API_TOKEN --key DB_PASSWORD ~/backup/app-selected.secdat
-./src/secdat --dir ~/example/restore --store app load ~/backup/app.secdat
+./src/secdat --dir ~/example/restore --store app load --conflict=overwrite ~/backup/app.secdat
 ```
 
-Both commands require a passphrase from a terminal or askpass helper. `save` writes the secrets visible from the current `--dir` and `--store` view, or only keys named with repeated `--key KEY`, to a passphrase-encrypted bundle and refuses to overwrite an existing bundle file. `load` imports that bundle into the current domain/store context, overwriting matching local keys but leaving unspecified keys untouched.
+Both commands require a passphrase from a terminal or askpass helper. `save` writes the secrets visible from the current `--dir` and `--store` view, or only keys named with repeated `--key KEY`, to a passphrase-encrypted bundle and refuses to overwrite an existing bundle file. `load` imports into the current domain/store context and defaults to `--conflict=reject`; use `overwrite` or `skip` explicitly for matching names. A shared v2 bundle object is preserved by a v2 destination. Loading it into a v1 store fails with guidance unless `--allow-link-split` explicitly accepts independent v1 values.
 
 ## Persistent shell setup
 
