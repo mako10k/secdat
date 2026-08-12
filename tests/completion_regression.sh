@@ -7,6 +7,12 @@ script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 source_root="$(CDPATH= cd -- "$script_dir/.." && pwd)"
 completion_script="$source_root/completions/secdat.bash"
 
+# The bash wrapper checks exec command completion with compgen -c.  Limit its
+# command search to the Linux toolchain so WSL-mounted Windows directories do
+# not make this secdat regression depend on host filesystem enumeration.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
 fail() {
     printf 'FAIL: %s\n' "$1" >&2
     exit 1
