@@ -620,8 +620,8 @@ revalidated so changed-since-plan state fails before live mutation.
 - new saves write bundle v2: a PBKDF2 + AES-256-GCM encrypted portable payload with AEAD-authenticated header metadata, bundle-local value objects, and base-name labels; source domain/store, inheritance, masks, attributes, UUIDs, and wrapped keys are not serialized
 - v2 labels may share one bundle-local value object, preserving selected in-bundle value sharing without exposing source v2 object identity; v1 key/value bundles remain readable
 - `save` refuses to overwrite an existing bundle file
-- `load` overwrites matching keys in the current domain/store and leaves keys not mentioned by the bundle untouched
-- `load` validates the complete v2 bundle framing and label/object references before writing any entry; collision-policy preflight and transactional import are specified separately
+- `load` defaults to `--conflict=reject`: it rejects any bundle base name already visible from the current `ls` view before writing an entry; `--conflict=overwrite` replaces those names and `--conflict=skip` leaves them unchanged
+- `load` validates the complete v2 bundle framing, label/object references, duplicate base names, and destination-name conflicts before writing any entry; keys not mentioned by the bundle are untouched
 
 #### FR-8 Store Selection
 

@@ -137,7 +137,7 @@ for args, marker in [
     ([bin_path, "help", "save"], "save [--key KEY]... FILE"),
     (
         [bin_path, "load", "--help"],
-        "load [--mask-action=preserve|reject] "
+        "load [--conflict=reject|overwrite|skip] [--mask-action=preserve|reject] "
         "[--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] "
         "[--dry-run] [--json] FILE",
     ),
@@ -151,6 +151,10 @@ for path in [root_dir, child_dir, restore_dir, askpass_restore_dir, selected_res
     rc, stdout, stderr = run([bin_path, "--dir", str(path), "domain", "create"])
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"domain create failed for {path}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "load", "--conflict=invalid", str(bundle_path)])
+if rc != 2 or "invalid load conflict policy: invalid" not in stdout + stderr:
+    fail(f"invalid load conflict policy handling failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(root_dir), "store", "create", "app"])
 if rc != 0 or stdout != "" or stderr != "":
@@ -275,8 +279,21 @@ rc, transcript = run_pty(
     [bin_path, "--dir", str(restore_dir), "--store", "app", "load", str(bundle_path)],
     [("Enter secdat bundle passphrase:", bundle_passphrase)],
 )
+if rc == 0 or "destination key already exists: LOCAL_APP" not in transcript:
+    fail(f"default load conflict policy failed: rc={rc} transcript={transcript!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(restore_dir), "--store", "app", "get", "LOCAL_APP", "-o"])
+if rc != 0 or stdout != "old-value" or stderr != "":
+    fail(f"default load conflict changed destination: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(restore_dir), "--store", "app", "get", "INHERITED_APP", "-o"])
+if rc == 0:
+    fail(f"default load conflict partially imported another key: stdout={stdout!r} stderr={stderr!r}")
+
+rc, transcript = run_pty(
+    [bin_path, "--dir", str(restore_dir), "--store", "app", "load", "--conflict", "overwrite", str(bundle_path)],
+    [("Enter secdat bundle passphrase:", bundle_passphrase)],
+)
 if rc != 0:
-    fail(f"load command failed: rc={rc} transcript={transcript!r}")
+    fail(f"overwrite load failed: rc={rc} transcript={transcript!r}")
 
 for args in [
     [bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "set", "LOCAL_APP", "-v", "old-value"],
@@ -294,12 +311,12 @@ for args in [
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"selected restore setup failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(selected_restore_dir), "--store", "app", "load", str(selected_bundle_path)], askpass_env)
+rc, stdout, stderr = run([bin_path, "--dir", str(selected_restore_dir), "--store", "app", "load", "--conflict", "skip", str(selected_bundle_path)], askpass_env)
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"selected load failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 askpass_log.write_text("")
-rc, stdout, stderr = run([bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "load", str(askpass_bundle_path)], askpass_env)
+rc, stdout, stderr = run([bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "load", "--conflict=overwrite", str(askpass_bundle_path)], askpass_env)
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"askpass load failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(askpass_log.read_text(), "Enter secdat bundle passphrase:", "askpass load prompt")
@@ -312,7 +329,7 @@ for args, expected, label in [
     ([bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "get", "LOCAL_APP", "-o"], "child-app", "askpass overwritten local app key"),
     ([bin_path, "--dir", str(askpass_restore_dir), "--store", "app", "get", "EXTRA_APP", "-o"], "keep-me", "askpass unspecified key preserved"),
     ([bin_path, "--dir", str(selected_restore_dir), "--store", "app", "get", "INHERITED_APP", "-o"], "root-app", "selected inherited app key"),
-    ([bin_path, "--dir", str(selected_restore_dir), "--store", "app", "get", "LOCAL_APP", "-o"], "child-app", "selected local app key"),
+    ([bin_path, "--dir", str(selected_restore_dir), "--store", "app", "get", "LOCAL_APP", "-o"], "old-value", "selected conflict key skipped"),
     ([bin_path, "--dir", str(selected_restore_dir), "--store", "app", "get", "UNSELECTED_APP", "-o"], "keep-me", "selected bundle excludes unselected key"),
 ]:
     rc, stdout, stderr = run(args)

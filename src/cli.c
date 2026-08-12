@@ -1207,7 +1207,7 @@ int secdat_cli_complete(int argc, char **argv)
         "--dry-run", "--json", "--help", "-h", NULL,
     };
     static const char *const load_options[] = {
-        "--mask-action", "--mask-warnings", "--warn-mask", "--no-warn-mask",
+        "--conflict", "--mask-action", "--mask-warnings", "--warn-mask", "--no-warn-mask",
         "--dry-run", "--json", "--help", "-h", NULL,
     };
     static const char *const save_options[] = {
@@ -1574,7 +1574,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "save", "[--key KEY]... FILE");
         break;
     case SECDAT_COMMAND_LOAD:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "load", "[--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] FILE");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "load", "[--conflict=reject|overwrite|skip] [--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] FILE");
         break;
     case SECDAT_COMMAND_UNLOCK:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "unlock", "[-t TTL|--duration TTL] [--until TIME] [-i|--inherit] [-v|--volatile|-r|--readonly] [-d|--descendants] [-y|--yes] [--askpass PATH] [--gui]");
@@ -1961,6 +1961,7 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "load") == 0) {
         secdat_cli_print_detail_line(_("  load: import a passphrase-protected bundle through one v2 mutation plan and one recoverable transaction\n"));
+        secdat_cli_print_detail_line(_("  --conflict=reject is the default and rejects any destination name visible in ls; overwrite replaces, skip leaves it unchanged\n"));
         secdat_cli_print_detail_line(_("  --mask-action=reject blocks any batch mask interaction; warning controls never change the batch result\n"));
         secdat_cli_print_detail_line(_("  --dry-run and --json report the whole batch without committing any entry\n"));
         return;

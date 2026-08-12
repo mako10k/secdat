@@ -817,6 +817,19 @@ struct secdat_bundle_object_list {
 struct secdat_bundle_label {
     char *key;
     uint32_t object_index;
+    int skip;
+};
+
+enum secdat_load_conflict_policy {
+    SECDAT_LOAD_CONFLICT_REJECT = 0,
+    SECDAT_LOAD_CONFLICT_OVERWRITE,
+    SECDAT_LOAD_CONFLICT_SKIP,
+};
+
+struct secdat_load_options {
+    const char *path;
+    enum secdat_load_conflict_policy conflict_policy;
+    int conflict_policy_configured;
 };
 
 static void secdat_write_be32(unsigned char *buffer, uint32_t value);
@@ -30426,9 +30439,100 @@ static int secdat_command_save(const struct secdat_cli *cli)
     return status;
 }
 
+static int secdat_parse_load_options(
+    const struct secdat_cli *cli,
+    struct secdat_load_options *options
+)
+{
+    static const struct option long_options[] = {
+        {"conflict", required_argument, NULL, 1000},
+        {NULL, 0, NULL, 0},
+    };
+    char *argv[cli->argc + 2];
+    int argc;
+    int option;
+
+    memset(options, 0, sizeof(*options));
+    options->conflict_policy = SECDAT_LOAD_CONFLICT_REJECT;
+    secdat_prepare_option_argv(cli, "load", &argc, argv);
+    secdat_reset_getopt_state();
+    while ((option = getopt_long(argc, argv, ":", long_options, NULL)) != -1) {
+        switch (option) {
+        case 1000:
+            {
+                enum secdat_load_conflict_policy conflict_policy;
+
+                if (strcmp(optarg, "reject") == 0) {
+                    conflict_policy = SECDAT_LOAD_CONFLICT_REJECT;
+                } else if (strcmp(optarg, "overwrite") == 0) {
+                    conflict_policy = SECDAT_LOAD_CONFLICT_OVERWRITE;
+                } else if (strcmp(optarg, "skip") == 0) {
+                    conflict_policy = SECDAT_LOAD_CONFLICT_SKIP;
+                } else {
+                    fprintf(stderr, _("invalid load conflict policy: %s\n"), optarg);
+                    return 2;
+                }
+                if (options->conflict_policy_configured
+                    && options->conflict_policy != conflict_policy) {
+                    fprintf(stderr, _("conflicting load conflict policies\n"));
+                    return 2;
+                }
+                options->conflict_policy = conflict_policy;
+                options->conflict_policy_configured = 1;
+            }
+            break;
+        case '?':
+        case ':':
+        default:
+            fprintf(stderr, _("invalid arguments for load\n"));
+            secdat_cli_print_try_help(cli, "load");
+            return 2;
+        }
+    }
+    if (optind + 1 != argc) {
+        fprintf(stderr, _("invalid arguments for load\n"));
+        secdat_cli_print_try_help(cli, "load");
+        return 2;
+    }
+    options->path = argv[optind];
+    return 0;
+}
+
+static int secdat_preflight_load_conflicts(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    struct secdat_bundle_label *labels,
+    uint32_t label_count,
+    enum secdat_load_conflict_policy conflict_policy
+)
+{
+    struct secdat_key_list visible_keys = {0};
+    uint32_t index;
+
+    if (secdat_collect_visible_keys(chain, store_name, NULL, NULL, &visible_keys) != 0) {
+        return 1;
+    }
+    for (index = 0; index < label_count; index += 1) {
+        if (!secdat_key_list_contains(&visible_keys, labels[index].key)) {
+            continue;
+        }
+        if (conflict_policy == SECDAT_LOAD_CONFLICT_REJECT) {
+            fprintf(stderr, _("destination key already exists: %s\n"), labels[index].key);
+            secdat_key_list_free(&visible_keys);
+            return 1;
+        }
+        if (conflict_policy == SECDAT_LOAD_CONFLICT_SKIP) {
+            labels[index].skip = 1;
+        }
+    }
+    secdat_key_list_free(&visible_keys);
+    return 0;
+}
+
 static int secdat_command_load(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
+    struct secdat_load_options options;
     char current_domain_id[PATH_MAX];
     unsigned char *payload = NULL;
     size_t payload_length = 0;
@@ -30438,11 +30542,9 @@ static int secdat_command_load(const struct secdat_cli *cli)
     char passphrase[512];
     int status = 1;
 
-    if (cli->argc != 1) {
-        fprintf(stderr, _("invalid arguments for load\n"));
-        secdat_cli_print_try_help(cli, "load");
-        return 2;
-    }
+    status = secdat_parse_load_options(cli, &options);
+    if (status != 0) return status;
+    status = 1;
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         return 1;
     }
@@ -30457,7 +30559,7 @@ static int secdat_command_load(const struct secdat_cli *cli)
         secdat_domain_chain_free(&chain);
         return 1;
     }
-    if (secdat_decrypt_secret_bundle(cli->argv[0], passphrase, &payload, &payload_length) != 0) {
+    if (secdat_decrypt_secret_bundle(options.path, passphrase, &payload, &payload_length) != 0) {
         secdat_secure_clear(passphrase, strlen(passphrase));
         secdat_domain_chain_free(&chain);
         return 1;
@@ -30582,6 +30684,19 @@ static int secdat_command_load(const struct secdat_cli *cli)
             secdat_key_list_free(&labels);
             goto cleanup;
         }
+        if (secdat_preflight_load_conflicts(
+                &chain,
+                cli->store,
+                bundle_labels,
+                entry_count,
+                options.conflict_policy
+            ) != 0) {
+            free(objects);
+            free(object_lengths);
+            secdat_bundle_labels_free(bundle_labels, entry_count);
+            secdat_key_list_free(&labels);
+            goto cleanup;
+        }
         if (target_format == SECDAT_STORE_FORMAT_V2 && object_count > 0) {
             object_source_keys = calloc(object_count, sizeof(*object_source_keys));
             if (object_source_keys == NULL) {
@@ -30597,6 +30712,9 @@ static int secdat_command_load(const struct secdat_cli *cli)
             uint32_t object_index = bundle_labels[index].object_index;
             int write_status;
 
+            if (bundle_labels[index].skip) {
+                continue;
+            }
             if (target_format == SECDAT_STORE_FORMAT_V2 && object_source_keys[object_index] != NULL) {
                 struct secdat_effective_entry source_entry = {0};
 
@@ -30671,6 +30789,24 @@ static int secdat_command_load(const struct secdat_cli *cli)
     if (secdat_bundle_read_u32(payload, payload_length, &offset, &entry_count) != 0) {
         goto cleanup;
     }
+    {
+        struct secdat_bundle_label *bundle_labels = NULL;
+        struct secdat_key_list labels = {0};
+        unsigned char **values = NULL;
+        uint32_t *value_lengths = NULL;
+
+        if (entry_count > 0) {
+            bundle_labels = calloc(entry_count, sizeof(*bundle_labels));
+            values = calloc(entry_count, sizeof(*values));
+            value_lengths = calloc(entry_count, sizeof(*value_lengths));
+            if (bundle_labels == NULL || values == NULL || value_lengths == NULL) {
+                fprintf(stderr, _("out of memory\n"));
+                free(values);
+                free(value_lengths);
+                secdat_bundle_labels_free(bundle_labels, entry_count);
+                goto cleanup;
+            }
+        }
     for (index = 0; index < entry_count; index += 1) {
         uint32_t key_length;
         uint32_t value_length;
@@ -30678,38 +30814,102 @@ static int secdat_command_load(const struct secdat_cli *cli)
 
         if (secdat_bundle_read_u32(payload, payload_length, &offset, &key_length) != 0
             || secdat_bundle_read_u32(payload, payload_length, &offset, &value_length) != 0) {
+            free(values);
+            free(value_lengths);
+            secdat_bundle_labels_free(bundle_labels, entry_count);
+            secdat_key_list_free(&labels);
             goto cleanup;
         }
-        if (key_length == 0 || offset + key_length + value_length > payload_length) {
+        if (key_length == 0 || key_length > payload_length - offset
+            || value_length > payload_length - offset - key_length) {
             fprintf(stderr, _("invalid secret bundle\n"));
+            free(values);
+            free(value_lengths);
+            secdat_bundle_labels_free(bundle_labels, entry_count);
+            secdat_key_list_free(&labels);
             goto cleanup;
         }
         if (memchr(payload + offset, '\0', key_length) != NULL) {
             fprintf(stderr, _("invalid secret bundle\n"));
+            free(values);
+            free(value_lengths);
+            secdat_bundle_labels_free(bundle_labels, entry_count);
+            secdat_key_list_free(&labels);
             goto cleanup;
         }
 
         key = malloc((size_t)key_length + 1);
         if (key == NULL) {
             fprintf(stderr, _("out of memory\n"));
+            free(values);
+            free(value_lengths);
+            secdat_bundle_labels_free(bundle_labels, entry_count);
+            secdat_key_list_free(&labels);
             goto cleanup;
         }
         memcpy(key, payload + offset, key_length);
         key[key_length] = '\0';
         offset += key_length;
-
-        if (secdat_store_plaintext_for_chain(&chain, current_domain_id, cli->store, key, payload + offset, value_length, 0) != 0) {
+        if (!secdat_is_valid_env_name(key) || secdat_key_list_contains(&labels, key)
+            || secdat_key_list_append(&labels, key) != 0) {
+            fprintf(stderr, _("invalid secret bundle\n"));
             secdat_secure_clear(key, (size_t)key_length + 1);
             free(key);
+            free(values);
+            free(value_lengths);
+            secdat_bundle_labels_free(bundle_labels, entry_count);
+            secdat_key_list_free(&labels);
             goto cleanup;
         }
-        secdat_secure_clear(key, (size_t)key_length + 1);
-        free(key);
+        bundle_labels[index].key = key;
+        bundle_labels[index].object_index = index;
+        values[index] = payload + offset;
+        value_lengths[index] = value_length;
         offset += value_length;
     }
     if (offset != payload_length) {
         fprintf(stderr, _("invalid secret bundle\n"));
+        free(values);
+        free(value_lengths);
+        secdat_bundle_labels_free(bundle_labels, entry_count);
+        secdat_key_list_free(&labels);
         goto cleanup;
+    }
+    if (secdat_preflight_load_conflicts(
+            &chain,
+            cli->store,
+            bundle_labels,
+            entry_count,
+            options.conflict_policy
+        ) != 0) {
+        free(values);
+        free(value_lengths);
+        secdat_bundle_labels_free(bundle_labels, entry_count);
+        secdat_key_list_free(&labels);
+        goto cleanup;
+    }
+    for (index = 0; index < entry_count; index += 1) {
+        if (!bundle_labels[index].skip
+            && secdat_store_plaintext_for_chain(
+                &chain,
+                current_domain_id,
+                cli->store,
+                bundle_labels[index].key,
+                values[index],
+                value_lengths[index],
+                0
+            ) != 0) {
+            free(values);
+            free(value_lengths);
+            secdat_bundle_labels_free(bundle_labels, entry_count);
+            secdat_key_list_free(&labels);
+            goto cleanup;
+        }
+    }
+    free(values);
+    free(value_lengths);
+    secdat_bundle_labels_free(bundle_labels, entry_count);
+    secdat_key_list_free(&labels);
     }
     status = 0;
 
