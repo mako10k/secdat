@@ -39,13 +39,18 @@ child_dir = root_dir / "child"
 restore_dir = work_root / "workspace" / "restore"
 askpass_restore_dir = work_root / "workspace" / "askpass-restore"
 selected_restore_dir = work_root / "workspace" / "selected-restore"
+legacy_restore_dir = work_root / "workspace" / "legacy-restore"
+malformed_restore_dir = work_root / "workspace" / "malformed-restore"
 bundle_path = work_root / "backup" / "app.secdat"
+tampered_bundle_path = work_root / "backup" / "app-tampered.secdat"
 selected_bundle_path = work_root / "backup" / "app-selected.secdat"
+legacy_bundle_path = work_root / "backup" / "legacy-v1.secdat"
+malformed_bundle_path = work_root / "backup" / "malformed-v2.secdat"
 askpass_bundle_path = work_root / "backup" / "askpass.secdat"
 askpass_path = work_root / "askpass.py"
 askpass_log = work_root / "askpass.log"
 bundle_path.parent.mkdir(parents=True, exist_ok=True)
-for path in [root_dir, child_dir, restore_dir, askpass_restore_dir, selected_restore_dir]:
+for path in [root_dir, child_dir, restore_dir, askpass_restore_dir, selected_restore_dir, legacy_restore_dir, malformed_restore_dir]:
     path.mkdir(parents=True, exist_ok=True)
 
 askpass_path.write_text(
@@ -142,7 +147,7 @@ for args, marker in [
     if rc != 0 or marker not in normalize_spaces(output) or "passphrase-protected bundle" not in output:
         fail(f"save/load help check failed for {args}: rc={rc} output={output!r}")
 
-for path in [root_dir, child_dir, restore_dir, askpass_restore_dir, selected_restore_dir]:
+for path in [root_dir, child_dir, restore_dir, askpass_restore_dir, selected_restore_dir, legacy_restore_dir, malformed_restore_dir]:
     rc, stdout, stderr = run([bin_path, "--dir", str(path), "domain", "create"])
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"domain create failed for {path}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -200,6 +205,51 @@ if rc != 0:
     fail(f"save command failed: rc={rc} transcript={transcript!r}")
 if not bundle_path.is_file() or bundle_path.stat().st_size == 0:
     fail("save did not create a non-empty bundle file")
+bundle_bytes = bundle_path.read_bytes()
+if len(bundle_bytes) < 20 or bundle_bytes[8] != 2:
+    fail("save did not write a version 2 bundle")
+tampered_bytes = bytearray(bundle_bytes)
+tampered_bytes[15] ^= 1
+tampered_bundle_path.write_bytes(tampered_bytes)
+
+rc, stdout, stderr = run([bin_path, "--dir", str(restore_dir), "--store", "app", "load", str(tampered_bundle_path)], askpass_env)
+if rc == 0:
+    fail("tampered v2 bundle unexpectedly loaded")
+
+malformed_bundle_path.write_bytes(bytes.fromhex(
+    "53454344424e444c02100c0000030d4000000029000102030405060708090a0b0c0d0e0f"
+    "101112131415161718191a1bd7fed30ee540450a4767b6a227498038d0c8c1701629849a"
+    "95bb1f7fc54f06441220c77fc17c575c51"
+))
+rc, stdout, stderr = run([bin_path, "--dir", str(malformed_restore_dir), "--store", "app", "set", "EXISTING", "-v", "keep"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"malformed restore setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(malformed_restore_dir), "--store", "app", "load", str(malformed_bundle_path)], askpass_env)
+if rc == 0 or "invalid secret bundle" not in stdout + stderr:
+    fail(f"malformed v2 bundle unexpectedly loaded: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(malformed_restore_dir), "--store", "app", "get", "EXISTING"])
+if rc != 0 or stdout != "keep" or stderr != "":
+    fail(f"malformed v2 bundle changed destination: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+# v1 used the same envelope without authenticated header metadata and stored
+# key/value pairs directly.  Keep its reader compatibility independent of the
+# current v2 writer.
+legacy_bundle_path.write_bytes(bytes.fromhex(
+    "53454344424e444c01100c0000030d4000000032000102030405060708090a0b0c0d0e0f"
+    "101112131415161718191a1b84ba913de54045014767b6af330cc77992919e3b5370e8ff"
+    "f25f396293219f311876ae8e432358478470a2931ef914c8c61f"
+))
+
+rc, stdout, stderr = run([bin_path, "--dir", str(legacy_restore_dir), "--store", "app", "set", "EXISTING", "-v", "keep"])
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"legacy restore setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(legacy_restore_dir), "--store", "app", "load", str(legacy_bundle_path)], askpass_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"legacy v1 load failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(legacy_restore_dir), "--store", "app", "get", "LEGACY_KEY"])
+if rc != 0 or stdout != "legacy-value" or stderr != "":
+    fail(f"legacy v1 value mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 
 rc, transcript = run_pty(
     [bin_path, "--dir", str(child_dir), "--store", "app", "save", str(bundle_path)],

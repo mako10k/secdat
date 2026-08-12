@@ -15,7 +15,7 @@ Current status:
 - `gc` is implemented for explicit v2 orphaned/dangling graph cleanup after review
 - `secret status` is implemented for read-only v2 secret-object metadata inspection by UUID
 - `export` is implemented for shell-friendly setup without embedding raw secret values
-- `save` and `load` are implemented for passphrase-protected secret bundles scoped to the current view
+- `save` and `load` are implemented for passphrase-protected portable secret bundles scoped to the current view; bundles contain logical base names and values, not source domain/store metadata
 - optional `secdat-fuse` mounting is available when configured with `--enable-fuse`
 - `domain create`, `domain delete`, `domain move`, `domain ls`, and `domain status` are implemented
 - `store create`, `store delete`, `store ls`, `store migrate`, and `store finalize-migration` are implemented

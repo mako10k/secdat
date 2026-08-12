@@ -617,10 +617,11 @@ revalidated so changed-since-plan state fails before live mutation.
 - `secdat save [--key KEY]... FILE` writes the currently visible secrets, or only the repeatedly named keys, from the current `--dir` and `--store` view to a passphrase-protected bundle file
 - `secdat load FILE` imports a previously saved bundle into the current `--dir` and `--store` context
 - both commands require terminal-based passphrase entry or an askpass helper; `save` asks for confirmation and `load` asks once
-- the saved bundle format is a PBKDF2 + AES-256-GCM encrypted binary payload containing key/value entries from the current visible view or the selected keys only
+- new saves write bundle v2: a PBKDF2 + AES-256-GCM encrypted portable payload with AEAD-authenticated header metadata, bundle-local value objects, and base-name labels; source domain/store, inheritance, masks, attributes, UUIDs, and wrapped keys are not serialized
+- v2 labels may share one bundle-local value object, preserving selected in-bundle value sharing without exposing source v2 object identity; v1 key/value bundles remain readable
 - `save` refuses to overwrite an existing bundle file
 - `load` overwrites matching keys in the current domain/store and leaves keys not mentioned by the bundle untouched
-- in a persisted v2 store, `load` preflights and commits all bundle entries as one mutation plan; a later import failure or mask-action rejection leaves the live store unchanged
+- `load` validates the complete v2 bundle framing and label/object references before writing any entry; collision-policy preflight and transactional import are specified separately
 
 #### FR-8 Store Selection
 

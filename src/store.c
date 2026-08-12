@@ -793,11 +793,30 @@ struct secdat_wrapped_master_key {
 };
 
 struct secdat_secret_bundle {
+    unsigned char version;
+    unsigned char header[SECDAT_BUNDLE_HEADER_LEN];
     uint32_t iterations;
     unsigned char salt[SECDAT_WRAP_SALT_LEN];
     unsigned char nonce[SECDAT_NONCE_LEN];
     unsigned char *ciphertext;
     size_t ciphertext_length;
+};
+
+struct secdat_bundle_object {
+    char *identity;
+    unsigned char *value;
+    size_t value_length;
+};
+
+struct secdat_bundle_object_list {
+    struct secdat_bundle_object *items;
+    size_t count;
+    size_t capacity;
+};
+
+struct secdat_bundle_label {
+    char *key;
+    uint32_t object_index;
 };
 
 static void secdat_write_be32(unsigned char *buffer, uint32_t value);
@@ -1060,6 +1079,14 @@ static int secdat_command_lock(const struct secdat_cli *cli);
 static int secdat_command_cp(const struct secdat_cli *cli);
 static int secdat_command_mv(const struct secdat_cli *cli);
 static int secdat_command_ln(const struct secdat_cli *cli);
+static int secdat_link_v2_key(
+    const struct secdat_domain_chain *source_chain,
+    const char *destination_domain_id,
+    const char *destination_store_name,
+    const char *destination_key,
+    const struct secdat_effective_entry *source_entry,
+    const struct secdat_effective_entry *destination_attr_entry
+);
 static int secdat_command_mask(const struct secdat_cli *cli);
 static int secdat_command_unmask(const struct secdat_cli *cli);
 static int secdat_command_rm(const struct secdat_cli *cli);
@@ -9344,6 +9371,86 @@ static int secdat_bundle_read_u32(const unsigned char *buffer, size_t length, si
     return 0;
 }
 
+static void secdat_bundle_object_list_free(struct secdat_bundle_object_list *objects)
+{
+    size_t index;
+
+    for (index = 0; index < objects->count; index += 1) {
+        free(objects->items[index].identity);
+        secdat_secure_clear(objects->items[index].value, objects->items[index].value_length);
+        free(objects->items[index].value);
+    }
+    free(objects->items);
+    memset(objects, 0, sizeof(*objects));
+}
+
+static void secdat_bundle_labels_free(struct secdat_bundle_label *labels, uint32_t count)
+{
+    uint32_t index;
+
+    for (index = 0; index < count; index += 1) {
+        secdat_secure_clear(labels[index].key, labels[index].key == NULL ? 0 : strlen(labels[index].key));
+        free(labels[index].key);
+    }
+    free(labels);
+}
+
+static int secdat_bundle_object_list_find_or_append(
+    struct secdat_bundle_object_list *objects,
+    const char *identity,
+    unsigned char *value,
+    size_t value_length,
+    uint32_t *index_out
+)
+{
+    struct secdat_bundle_object *new_items;
+    size_t index;
+    size_t new_capacity;
+
+    for (index = 0; index < objects->count; index += 1) {
+        if (strcmp(objects->items[index].identity, identity) == 0) {
+            secdat_secure_clear(value, value_length);
+            free(value);
+            if (index_out != NULL) {
+                *index_out = (uint32_t)index;
+            }
+            return 0;
+        }
+    }
+    if (objects->count == UINT32_MAX) {
+        fprintf(stderr, _("secret bundle has too many objects\n"));
+        secdat_secure_clear(value, value_length);
+        free(value);
+        return 1;
+    }
+    if (objects->count == objects->capacity) {
+        new_capacity = objects->capacity == 0 ? 8 : objects->capacity * 2;
+        new_items = realloc(objects->items, sizeof(*new_items) * new_capacity);
+        if (new_items == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            secdat_secure_clear(value, value_length);
+            free(value);
+            return 1;
+        }
+        objects->items = new_items;
+        objects->capacity = new_capacity;
+    }
+    objects->items[objects->count].identity = strdup(identity);
+    if (objects->items[objects->count].identity == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        secdat_secure_clear(value, value_length);
+        free(value);
+        return 1;
+    }
+    objects->items[objects->count].value = value;
+    objects->items[objects->count].value_length = value_length;
+    if (index_out != NULL) {
+        *index_out = (uint32_t)objects->count;
+    }
+    objects->count += 1;
+    return 0;
+}
+
 static int secdat_collect_bundle_payload(
     const struct secdat_cli *cli,
     const struct secdat_key_list *selected_keys,
@@ -9354,6 +9461,7 @@ static int secdat_collect_bundle_payload(
     struct secdat_domain_chain chain = {0};
     struct secdat_key_list visible_keys = {0};
     const struct secdat_key_list *bundle_keys;
+    struct secdat_bundle_object_list objects = {0};
     unsigned char *payload = NULL;
     size_t payload_length = 0;
     size_t capacity = 0;
@@ -9370,35 +9478,77 @@ static int secdat_collect_bundle_payload(
         return 1;
     }
     bundle_keys = selected_keys != NULL && selected_keys->count > 0 ? selected_keys : &visible_keys;
-    if (secdat_bundle_append_u32(&payload, &payload_length, &capacity, (uint32_t)bundle_keys->count) != 0) {
-        goto cleanup;
-    }
-
     for (index = 0; index < bundle_keys->count; index += 1) {
+        struct secdat_effective_entry entry = {0};
         unsigned char *plaintext = NULL;
         size_t plaintext_length = 0;
-        uint32_t key_length = (uint32_t)strlen(bundle_keys->items[index]);
+        char identity[PATH_MAX * 2 + 80];
 
+        if (secdat_resolve_effective_entry(&chain, cli->store, bundle_keys->items[index], 0, &entry) != 0) {
+            fprintf(stderr, _("key not found: %s\n"), bundle_keys->items[index]);
+            secdat_print_missing_key_context(&chain, cli->store, bundle_keys->items[index]);
+            goto cleanup;
+        }
         if (secdat_load_resolved_plaintext(&chain, cli->store, bundle_keys->items[index], &plaintext, &plaintext_length, NULL, NULL, NULL, NULL) != 0) {
+            secdat_effective_entry_reset(&entry);
             goto cleanup;
         }
         if (plaintext_length > UINT32_MAX) {
             fprintf(stderr, _("secret bundle entry is too large\n"));
             secdat_secure_clear(plaintext, plaintext_length);
             free(plaintext);
+            secdat_effective_entry_reset(&entry);
             goto cleanup;
         }
-        if (secdat_bundle_append_u32(&payload, &payload_length, &capacity, key_length) != 0
-            || secdat_bundle_append_u32(&payload, &payload_length, &capacity, (uint32_t)plaintext_length) != 0
-            || secdat_bundle_append(&payload, &payload_length, &capacity, bundle_keys->items[index], key_length) != 0
-            || secdat_bundle_append(&payload, &payload_length, &capacity, plaintext, plaintext_length) != 0) {
-            secdat_secure_clear(plaintext, plaintext_length);
-            free(plaintext);
+        if (entry.from_v2) {
+            snprintf(identity, sizeof(identity), "v2:%s:%s:%s", entry.object_domain, entry.object_store, entry.secret_id);
+        } else {
+            snprintf(identity, sizeof(identity), "value:%zu", index);
+        }
+        if (secdat_bundle_object_list_find_or_append(&objects, identity, plaintext, plaintext_length, NULL) != 0) {
+            secdat_effective_entry_reset(&entry);
             goto cleanup;
         }
+        secdat_effective_entry_reset(&entry);
+    }
 
-        secdat_secure_clear(plaintext, plaintext_length);
-        free(plaintext);
+    if (secdat_bundle_append(&payload, &payload_length, &capacity, (const unsigned char *)"SDB2", 4) != 0
+        || secdat_bundle_append_u32(&payload, &payload_length, &capacity, (uint32_t)objects.count) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < objects.count; index += 1) {
+        if (secdat_bundle_append_u32(&payload, &payload_length, &capacity, (uint32_t)objects.items[index].value_length) != 0
+            || secdat_bundle_append(&payload, &payload_length, &capacity, objects.items[index].value, objects.items[index].value_length) != 0) {
+            goto cleanup;
+        }
+    }
+    if (secdat_bundle_append_u32(&payload, &payload_length, &capacity, (uint32_t)bundle_keys->count) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < bundle_keys->count; index += 1) {
+        uint32_t object_index = 0;
+        uint32_t key_length = (uint32_t)strlen(bundle_keys->items[index]);
+        char identity[PATH_MAX * 2 + 80];
+        struct secdat_effective_entry entry = {0};
+
+        if (secdat_resolve_effective_entry(&chain, cli->store, bundle_keys->items[index], 0, &entry) != 0) {
+            goto cleanup;
+        }
+        if (entry.from_v2) {
+            snprintf(identity, sizeof(identity), "v2:%s:%s:%s", entry.object_domain, entry.object_store, entry.secret_id);
+        } else {
+            snprintf(identity, sizeof(identity), "value:%zu", index);
+        }
+        secdat_effective_entry_reset(&entry);
+        for (object_index = 0; object_index < objects.count; object_index += 1) {
+            if (strcmp(objects.items[object_index].identity, identity) == 0) break;
+        }
+        if (object_index == objects.count
+            || secdat_bundle_append_u32(&payload, &payload_length, &capacity, key_length) != 0
+            || secdat_bundle_append_u32(&payload, &payload_length, &capacity, object_index) != 0
+            || secdat_bundle_append(&payload, &payload_length, &capacity, bundle_keys->items[index], key_length) != 0) {
+            goto cleanup;
+        }
     }
 
     *payload_out = payload;
@@ -9414,6 +9564,7 @@ cleanup:
     }
     secdat_domain_chain_free(&chain);
     secdat_key_list_free(&visible_keys);
+    secdat_bundle_object_list_free(&objects);
     return status;
 }
 
@@ -10392,7 +10543,8 @@ static int secdat_write_secret_bundle_file(
     const char *path,
     const char *passphrase,
     const unsigned char *payload,
-    size_t payload_length
+    size_t payload_length,
+    unsigned char version
 )
 {
     unsigned char wrap_key[32];
@@ -10430,7 +10582,7 @@ static int secdat_write_secret_bundle_file(
     }
 
     memcpy(buffer, secdat_bundle_magic, sizeof(secdat_bundle_magic));
-    buffer[8] = 1;
+    buffer[8] = version;
     buffer[9] = SECDAT_WRAP_SALT_LEN;
     buffer[10] = SECDAT_NONCE_LEN;
     buffer[11] = 0;
@@ -10448,6 +10600,10 @@ static int secdat_write_secret_bundle_file(
         || EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, sizeof(nonce), NULL) != 1
         || EVP_EncryptInit_ex(context, NULL, NULL, wrap_key, nonce) != 1) {
         fprintf(stderr, _("failed to initialize encryption\n"));
+        goto cleanup;
+    }
+    if (version == 2 && EVP_EncryptUpdate(context, NULL, &written_length, buffer, SECDAT_BUNDLE_HEADER_LEN) != 1) {
+        fprintf(stderr, _("failed to encrypt bundle metadata\n"));
         goto cleanup;
     }
     if (EVP_EncryptUpdate(
@@ -10504,7 +10660,7 @@ static int secdat_read_secret_bundle(struct secdat_secret_bundle *bundle, const 
     }
     if (length < SECDAT_BUNDLE_HEADER_LEN + SECDAT_WRAP_SALT_LEN + SECDAT_NONCE_LEN + SECDAT_TAG_LEN
         || memcmp(data, secdat_bundle_magic, sizeof(secdat_bundle_magic)) != 0
-        || data[8] != 1
+        || (data[8] != 1 && data[8] != 2)
         || data[9] != SECDAT_WRAP_SALT_LEN
         || data[10] != SECDAT_NONCE_LEN) {
         secdat_secure_clear(data, length);
@@ -10513,6 +10669,8 @@ static int secdat_read_secret_bundle(struct secdat_secret_bundle *bundle, const 
         return 1;
     }
 
+    bundle->version = data[8];
+    memcpy(bundle->header, data, sizeof(bundle->header));
     bundle->iterations = secdat_read_be32(data + 12);
     bundle->ciphertext_length = secdat_read_be32(data + 16);
     if (length != SECDAT_BUNDLE_HEADER_LEN + SECDAT_WRAP_SALT_LEN + SECDAT_NONCE_LEN + bundle->ciphertext_length) {
@@ -10581,6 +10739,10 @@ static int secdat_decrypt_secret_bundle(
         || EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, sizeof(bundle.nonce), NULL) != 1
         || EVP_DecryptInit_ex(context, NULL, NULL, wrap_key, bundle.nonce) != 1) {
         fprintf(stderr, _("failed to initialize decryption\n"));
+        goto cleanup;
+    }
+    if (bundle.version == 2 && EVP_DecryptUpdate(context, NULL, &written_length, bundle.header, sizeof(bundle.header)) != 1) {
+        fprintf(stderr, _("failed to decrypt bundle metadata\n"));
         goto cleanup;
     }
     if (EVP_DecryptUpdate(context, plaintext, &written_length, bundle.ciphertext, (int)plaintext_size) != 1) {
@@ -30255,7 +30417,7 @@ static int secdat_command_save(const struct secdat_cli *cli)
         return 1;
     }
 
-    status = secdat_write_secret_bundle_file(argv[optind], passphrase, payload, payload_length);
+    status = secdat_write_secret_bundle_file(argv[optind], passphrase, payload, payload_length, 2);
     secdat_secure_clear(passphrase, strlen(passphrase));
     secdat_secure_clear(payload, payload_length);
     free(payload);
@@ -30301,6 +30463,210 @@ static int secdat_command_load(const struct secdat_cli *cli)
         return 1;
     }
     secdat_secure_clear(passphrase, strlen(passphrase));
+
+    if (payload_length >= 4 && memcmp(payload, "SDB2", 4) == 0) {
+        unsigned char **objects = NULL;
+        uint32_t *object_lengths = NULL;
+        struct secdat_key_list labels = {0};
+        struct secdat_bundle_label *bundle_labels = NULL;
+        char **object_source_keys = NULL;
+        enum secdat_store_format target_format = SECDAT_STORE_FORMAT_INVALID;
+        uint32_t object_count;
+
+        offset = 4;
+        if (secdat_bundle_read_u32(payload, payload_length, &offset, &object_count) != 0) {
+            goto cleanup;
+        }
+        if (object_count > 0) {
+            objects = calloc(object_count, sizeof(*objects));
+            object_lengths = calloc(object_count, sizeof(*object_lengths));
+            if (objects == NULL || object_lengths == NULL) {
+                fprintf(stderr, _("out of memory\n"));
+                free(objects);
+                free(object_lengths);
+                goto cleanup;
+            }
+        }
+        for (index = 0; index < object_count; index += 1) {
+            if (secdat_bundle_read_u32(payload, payload_length, &offset, &object_lengths[index]) != 0
+                || object_lengths[index] > payload_length - offset) {
+                fprintf(stderr, _("invalid secret bundle\n"));
+                free(objects);
+                free(object_lengths);
+                goto cleanup;
+            }
+            objects[index] = payload + offset;
+            offset += object_lengths[index];
+        }
+        if (secdat_bundle_read_u32(payload, payload_length, &offset, &entry_count) != 0) {
+            free(objects);
+            free(object_lengths);
+            goto cleanup;
+        }
+        if (entry_count > 0) {
+            bundle_labels = calloc(entry_count, sizeof(*bundle_labels));
+            if (bundle_labels == NULL) {
+                fprintf(stderr, _("out of memory\n"));
+                free(objects);
+                free(object_lengths);
+                goto cleanup;
+            }
+        }
+        for (index = 0; index < entry_count; index += 1) {
+            uint32_t key_length;
+            uint32_t object_index;
+            char *key;
+
+            if (secdat_bundle_read_u32(payload, payload_length, &offset, &key_length) != 0
+                || secdat_bundle_read_u32(payload, payload_length, &offset, &object_index) != 0
+                || key_length == 0 || object_index >= object_count || key_length > payload_length - offset
+                || memchr(payload + offset, '\0', key_length) != NULL) {
+                fprintf(stderr, _("invalid secret bundle\n"));
+                free(objects);
+                free(object_lengths);
+                secdat_bundle_labels_free(bundle_labels, entry_count);
+                secdat_key_list_free(&labels);
+                goto cleanup;
+            }
+            key = malloc((size_t)key_length + 1);
+            if (key == NULL) {
+                fprintf(stderr, _("out of memory\n"));
+                free(objects);
+                free(object_lengths);
+                secdat_bundle_labels_free(bundle_labels, entry_count);
+                secdat_key_list_free(&labels);
+                goto cleanup;
+            }
+            memcpy(key, payload + offset, key_length);
+            key[key_length] = '\0';
+            offset += key_length;
+            if (!secdat_is_valid_env_name(key) || secdat_key_list_contains(&labels, key)) {
+                fprintf(stderr, _("invalid secret bundle\n"));
+                secdat_secure_clear(key, (size_t)key_length + 1);
+                free(key);
+                free(objects);
+                free(object_lengths);
+                secdat_bundle_labels_free(bundle_labels, entry_count);
+                secdat_key_list_free(&labels);
+                goto cleanup;
+            }
+            if (secdat_key_list_append(&labels, key) != 0) {
+                secdat_secure_clear(key, (size_t)key_length + 1);
+                free(key);
+                free(objects);
+                free(object_lengths);
+                secdat_bundle_labels_free(bundle_labels, entry_count);
+                secdat_key_list_free(&labels);
+                goto cleanup;
+            }
+            bundle_labels[index].key = key;
+            bundle_labels[index].object_index = object_index;
+            key = NULL;
+        }
+        if (offset != payload_length) {
+            fprintf(stderr, _("invalid secret bundle\n"));
+            free(objects);
+            free(object_lengths);
+            secdat_bundle_labels_free(bundle_labels, entry_count);
+            secdat_key_list_free(&labels);
+            goto cleanup;
+        }
+        if (secdat_read_store_format(current_domain_id, cli->store, &target_format) != 0
+            || target_format == SECDAT_STORE_FORMAT_INVALID) {
+            if (target_format == SECDAT_STORE_FORMAT_INVALID) {
+                fprintf(stderr, _("invalid store format marker\n"));
+            }
+            free(objects);
+            free(object_lengths);
+            secdat_bundle_labels_free(bundle_labels, entry_count);
+            secdat_key_list_free(&labels);
+            goto cleanup;
+        }
+        if (target_format == SECDAT_STORE_FORMAT_V2 && object_count > 0) {
+            object_source_keys = calloc(object_count, sizeof(*object_source_keys));
+            if (object_source_keys == NULL) {
+                fprintf(stderr, _("out of memory\n"));
+                free(objects);
+                free(object_lengths);
+                secdat_bundle_labels_free(bundle_labels, entry_count);
+                secdat_key_list_free(&labels);
+                goto cleanup;
+            }
+        }
+        for (index = 0; index < entry_count; index += 1) {
+            uint32_t object_index = bundle_labels[index].object_index;
+            int write_status;
+
+            if (target_format == SECDAT_STORE_FORMAT_V2 && object_source_keys[object_index] != NULL) {
+                struct secdat_effective_entry source_entry = {0};
+
+                write_status = secdat_resolve_effective_entry(
+                    &chain,
+                    cli->store,
+                    object_source_keys[object_index],
+                    0,
+                    &source_entry
+                );
+                if (write_status == 0 && source_entry.from_v2) {
+                    write_status = secdat_link_v2_key(
+                        &chain,
+                        current_domain_id,
+                        cli->store,
+                        bundle_labels[index].key,
+                        &source_entry,
+                        NULL
+                    );
+                } else if (write_status == 0) {
+                    write_status = 1;
+                }
+                secdat_effective_entry_reset(&source_entry);
+            } else {
+                write_status = secdat_store_plaintext_for_chain(
+                    &chain,
+                    current_domain_id,
+                    cli->store,
+                    bundle_labels[index].key,
+                    objects[object_index],
+                    object_lengths[object_index],
+                    0
+                );
+                if (write_status == 0 && target_format == SECDAT_STORE_FORMAT_V2) {
+                    object_source_keys[object_index] = strdup(bundle_labels[index].key);
+                    if (object_source_keys[object_index] == NULL) {
+                        fprintf(stderr, _("out of memory\n"));
+                        write_status = 1;
+                    }
+                }
+            }
+            if (write_status != 0) {
+                uint32_t clear_index;
+
+                free(objects);
+                free(object_lengths);
+                secdat_bundle_labels_free(bundle_labels, entry_count);
+                if (object_source_keys != NULL) {
+                    for (clear_index = 0; clear_index < object_count; clear_index += 1) {
+                        free(object_source_keys[clear_index]);
+                    }
+                }
+                free(object_source_keys);
+                secdat_key_list_free(&labels);
+                goto cleanup;
+            }
+        }
+        free(objects);
+        free(object_lengths);
+        secdat_bundle_labels_free(bundle_labels, entry_count);
+        if (object_source_keys != NULL) {
+            for (index = 0; index < object_count; index += 1) {
+                free(object_source_keys[index]);
+            }
+        }
+        free(object_source_keys);
+        secdat_key_list_free(&labels);
+        status = 0;
+        goto cleanup;
+    }
 
     if (secdat_bundle_read_u32(payload, payload_length, &offset, &entry_count) != 0) {
         goto cleanup;
