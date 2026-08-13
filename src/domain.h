@@ -17,6 +17,8 @@
 struct secdat_domain_chain {
     char **ids;
     size_t count;
+    /* Key lookup prefix; the remaining IDs stay available for authorization. */
+    size_t lookup_count;
     char current_path[PATH_MAX];
 };
 
@@ -30,6 +32,7 @@ void secdat_domain_root_list_free(struct secdat_domain_root_list *list);
 int secdat_domain_validate_root(const char *domain_root, char *buffer, size_t size);
 int secdat_domain_resolve_current(const char *dir_override, char *buffer, size_t size);
 int secdat_domain_resolve_chain(const char *dir_override, struct secdat_domain_chain *chain);
+int secdat_domain_resolve_exact_chain(const char *domain_root, struct secdat_domain_chain *chain);
 int secdat_domain_resolve_registered_root_chain(const char *registered_root, struct secdat_domain_chain *chain);
 int secdat_domain_registered_root_is_stale(const char *registered_root, int *stale);
 int secdat_collect_registered_domain_roots(struct secdat_domain_root_list *list);

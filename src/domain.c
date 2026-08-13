@@ -1481,6 +1481,7 @@ void secdat_domain_chain_free(struct secdat_domain_chain *chain)
     free(chain->ids);
     chain->ids = NULL;
     chain->count = 0;
+    chain->lookup_count = 0;
     chain->current_path[0] = '\0';
 }
 
@@ -1539,6 +1540,7 @@ int secdat_domain_resolve_chain(const char *dir_override, struct secdat_domain_c
 
     chain->ids = NULL;
     chain->count = 0;
+    chain->lookup_count = 0;
     chain->current_path[0] = '\0';
 
     if (secdat_check_logical_registered_root_identities(dir_override) != 0) {
@@ -1569,6 +1571,24 @@ int secdat_domain_resolve_chain(const char *dir_override, struct secdat_domain_c
 
     chain->ids = ids.items;
     chain->count = ids.count;
+    chain->lookup_count = ids.count;
+    return 0;
+}
+
+int secdat_domain_resolve_exact_chain(const char *domain_root, struct secdat_domain_chain *chain)
+{
+    char canonical_root[PATH_MAX];
+
+    if (secdat_domain_validate_root(domain_root, canonical_root, sizeof(canonical_root)) != 0
+        || secdat_domain_resolve_chain(canonical_root, chain) != 0) {
+        return 1;
+    }
+    if (chain->count == 0) {
+        secdat_domain_chain_free(chain);
+        fprintf(stderr, _("domain not found for: %s\n"), canonical_root);
+        return 1;
+    }
+    chain->lookup_count = 1;
     return 0;
 }
 
@@ -1581,6 +1601,7 @@ int secdat_domain_resolve_registered_root_chain(const char *registered_root, str
 
     chain->ids = NULL;
     chain->count = 0;
+    chain->lookup_count = 0;
     chain->current_path[0] = '\0';
 
     if (registered_root == NULL || registered_root[0] != '/') {
@@ -1615,6 +1636,7 @@ int secdat_domain_resolve_registered_root_chain(const char *registered_root, str
 
     chain->ids = ids.items;
     chain->count = ids.count;
+    chain->lookup_count = ids.count;
     return 0;
 }
 

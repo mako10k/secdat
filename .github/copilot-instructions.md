@@ -32,7 +32,7 @@
 
 ## Project Knowledge
 
-- `KEYREF` is the canonical targeting syntax: `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`.
+- `KEYREF` is the canonical targeting syntax: `[DOMAIN_PATH/]KEY[:STORE]`; `DOMAIN_PATH` may be absolute or relative, and any path-qualified reference targets only that exact registered domain.
 - Do not add destination-specific `cp` or `mv` flags when `KEYREF` qualification already expresses the target.
 - The first interactive `unlock` generates a fresh master key, wraps it with the passphrase, and stores the wrapped copy under `XDG_DATA_HOME`.
 - `SECDAT_MASTER_KEY` remains an explicit override or migration source, not the default first-use path.

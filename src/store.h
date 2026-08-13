@@ -44,6 +44,13 @@ int secdat_print_completion_keys(
 	const char *current,
 	int append_equals
 );
+int secdat_print_completion_destination_key(
+	const char *dir_override,
+	const char *domain_override,
+	const char *store_name,
+	const char *source,
+	const char *current
+);
 int secdat_collect_domain_status_summary(const char *dir_override, struct secdat_domain_status_summary *summary);
 int secdat_collect_registered_domain_status_summary(const char *registered_root, struct secdat_domain_status_summary *summary);
 int secdat_collect_user_global_status_summary(struct secdat_domain_status_summary *summary);

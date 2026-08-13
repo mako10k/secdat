@@ -201,11 +201,16 @@ To make the requested behavior implementable, the following are treated as norma
 - Store metadata and entries live inside exactly one resolved domain
 - Domain: a configuration boundary associated with a directory path
 - Key: the logical name of a stored value
-- Key reference (`KEYREF`): `[/ABSOLUTE/DOMAIN/]KEY[:STORE]`
+- Key reference (`KEYREF`): `[DOMAIN_PATH/]KEY[:STORE]`
 - `KEY` must be a valid environment-variable identifier: it starts with a letter or `_`, and the remaining characters are limited to letters, digits, or `_`
-- the `/ABSOLUTE/DOMAIN/` qualifier is optional, must begin with `/`, and must include the trailing slash before `KEY`
+- `DOMAIN_PATH/` is optional, may be absolute or relative, and must include the trailing slash before `KEY`
+- a relative `DOMAIN_PATH` is resolved from `--domain`, then `--dir`, then the current working directory; it must resolve to an exact registered domain root
+- any path-qualified KEYREF, including an absolute path or a relative path such as `../KEY` or `./KEY`, searches only that exact domain for the key and never falls back to a parent key entry
+- path qualification does not disable inherited authorization: an eligible parent session or environment master key may still authorize access to the exact-domain entry
+- domain paths are canonicalized with the same real-path and registered-root identity checks as `--dir`; a symlink alias to a valid registered target is accepted, while a broken alias, a non-root path, or a replaced registered root fails closed
+- shell completion applies the same base and exact-local rules to qualified KEYREFs, completes keys and explicit store suffixes from the selected domain, and may reuse a source key name as an absent `cp`/`mv`/`ln` destination candidate
 - the `:STORE` qualifier is optional
-- if the domain qualifier is omitted, the command falls back to `--domain DIR`, then `--dir DIR`, and then the current working directory
+- if the domain qualifier is omitted, the command selects its current context from `--domain DIR`, then `--dir DIR`, and then the current working directory, and key lookup keeps the normal current-to-parent inheritance chain
 - if the store qualifier is omitted, the command falls back to `--store STORE` and then the default store
 - if a write command would resolve to the implicit user-global default scope instead of a registered domain, it fails
 - Value: secret plaintext
@@ -250,7 +255,7 @@ To make the requested behavior implementable, the following are treated as norma
 
 #### FR-3a Key Existence Query
 
-- `secdat exists KEYREF` checks whether the resolved key is visible in the current effective domain/store view
+- `secdat exists KEYREF` checks whether the resolved key is visible in the selected domain/store view; an unqualified reference uses the effective inheritance chain and a path-qualified reference is exact-local
 - the command exits with status 0 when the key exists
 - the command exits with a non-zero status when the key does not exist or the lookup context is invalid
 - the command is intended for shell-friendly branching and should not print secret values
@@ -299,6 +304,7 @@ to legacy semantics.
 #### FR-3b Tombstone Operations
 
 - in a persisted v2 store, `secdat mask KEYREF` creates a canonical mask for the nearest inherited v2 `entry_id` and, when the name is publicly representable, a v1 rollback-compatible name tombstone in one recoverable transaction
+- because a path-qualified KEYREF is exact-local, `mask ./KEY` or `mask /DOMAIN/KEY` does not search ancestors for a mask target; use an unqualified `KEY` with the intended `--domain`/`--dir` context when explicitly masking an inherited key
 - a hidden-name target is canonical-only and keeps its last-known name encrypted; if a retained v1 fallback or existing name tombstone would require exposing the hidden name, planning fails without mutation
 - a nearer local entry and an inherited-entry mask may coexist; the canonical mask is then dormant and remains effective if the local entry is later removed
 - repeated `mask` for the same target is a no-op that retains the existing `mask_chain_id`
@@ -328,22 +334,23 @@ revalidated so changed-since-plan state fails before live mutation.
 - `secdat rm KEYREF` applies deletion in the resolved target domain and store
 - `secdat rm --ignore-missing KEYREF` treats an absent key as a successful no-op
 - if the key exists as a concrete entry in the current domain, that entry is removed
-- if the key is only inherited from a parent domain, a tombstone is created in the current domain
-- it is an error if the key does not exist in the effective domain view
+- for an unqualified KEYREF, if the key is only inherited from a parent domain, a tombstone is created in the current domain
+- a path-qualified KEYREF never removes or masks a same-name parent entry when the exact domain has no local entry
+- it is an error if the key does not exist in the selected effective or exact-local domain view
 
 #### FR-5 Key Rename
 
 - `secdat mv SRC_KEYREF DST_KEYREF` moves a key between resolved source and destination locations
-- it is an error if `DST_KEYREF` already exists in the effective destination view
-- it is an error if `SRC_KEYREF` and `DST_KEYREF` are identical textually
-- if `SRC_KEYREF` is inherited from a parent domain, the source name is hidden with a tombstone in the resolved source current domain after the destination is materialized
+- it is an error if `DST_KEYREF` already exists in its selected view: the effective destination view for an unqualified reference, or the exact local destination for a path-qualified reference
+- it is an error if `SRC_KEYREF` and `DST_KEYREF` identify the same canonical domain/key/store slot, including through different symlink aliases
+- for an unqualified source only, if `SRC_KEYREF` is inherited from a parent domain, the source name is hidden with a tombstone in the resolved source current domain after the destination is materialized
 - `mv` preserves the source entry storage mode, including plaintext-at-rest entries created with `set --unsafe`
 - `mv` preserves searchable key metadata on the destination and removes local searchable key metadata from a removed local source
 
 #### FR-6 Key Copy
 
 - `secdat cp SRC_KEYREF DST_KEYREF` copies the resolved plaintext value of `SRC_KEYREF` into `DST_KEYREF`
-- it is an error if `DST_KEYREF` already exists in the effective destination view
+- it is an error if `DST_KEYREF` already exists in its selected effective or exact-local destination view
 - the copied value must be re-encrypted with a new nonce
 - `cp` preserves the source entry storage mode, including plaintext-at-rest entries created with `set --unsafe`
 - `cp` preserves searchable key metadata on the destination

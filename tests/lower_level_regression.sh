@@ -212,8 +212,8 @@ assert_eq(stdout, "team-token", "explicit keyref value")
 
 for bad_ref, expected in [
     (f"{root_domain}/API_TOKEN:", "invalid key reference"),
-    (f"API_TOKEN/{root_domain}:team", "invalid key reference"),
-    ("nested/API_TOKEN", "invalid key reference"),
+    (f"API_TOKEN/{root_domain}:team", "key is not a valid environment variable name"),
+    ("nested/API_TOKEN", "failed to resolve directory"),
     (f"{root_domain}/", "invalid key reference"),
 ]:
     rc, stdout, stderr = run([bin_path, "exists", bad_ref])
@@ -409,6 +409,10 @@ symlink_domain.symlink_to(symlink_moved_domain, target_is_directory=True)
 rc, stdout, stderr = run(scoped(["domain", "status", "--quiet"], symlink_domain))
 if rc == 0 or stdout != "" or f"domain root identity mismatch for: {symlink_domain}\n" not in stderr:
     fail(f"symlink replacement did not fail closed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+rc, stdout, stderr = run([bin_path, "get", f"{symlink_domain}/IDENTITY_KEY", "--stdout"])
+if rc == 0 or stdout != "" or f"domain root identity mismatch for: {symlink_domain}\n" not in stderr:
+    fail(f"qualified KEYREF did not fail closed on symlink replacement: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(
     [bin_path, "domain", "status", "--quiet"],

@@ -822,6 +822,7 @@ int main(int argc, char **argv)
     unsigned char *value = NULL;
     size_t value_length = 0;
     int unsafe_store = 0;
+    int exists = 0;
     size_t index;
 
     if (argc != 6) {
@@ -836,6 +837,30 @@ int main(int argc, char **argv)
     root_options.store = "team";
     child_options.dir = child;
     child_options.store = "team";
+
+    if (secdat_sdk_get(
+            &child_options,
+            "../API_TOKEN",
+            &value,
+            &value_length,
+            &unsafe_store
+        ) != 0
+        || unsafe_store
+        || value_length != strlen("sdk-secret-value")
+        || memcmp(value, "sdk-secret-value", value_length) != 0) {
+        fail("relative SDK KEYREF did not resolve the exact parent domain");
+    }
+    secdat_sdk_free(value);
+    value = NULL;
+    value_length = 0;
+    if (secdat_sdk_exists(&child_options, "./API_TOKEN", &exists) != 0
+        || exists) {
+        fail("qualified SDK KEYREF inherited a parent key");
+    }
+    if (secdat_sdk_exists(&child_options, "API_TOKEN", &exists) != 0
+        || !exists) {
+        fail("unqualified SDK KEYREF lost inherited lookup");
+    }
 
     if (secdat_sdk_list_stores(&root_options, &stores) != 0) {
         fail("secdat_sdk_list_stores failed");
@@ -1397,7 +1422,7 @@ includedir=$source_root/src
 
 Name: libsecdat
 Description: C SDK for secdat secret access and session control
-Version: 0.6.1
+Version: 0.7.0
 Libs: -L\${libdir} -Wl,-rpath,\${libdir} -lsecdat
 Libs.private: $sdk_private_link_flags_text
 Cflags: -I\${includedir} -I$build_root/src

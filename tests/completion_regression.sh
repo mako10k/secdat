@@ -465,10 +465,20 @@ os.makedirs(env["XDG_RUNTIME_DIR"], exist_ok=True)
 os.makedirs(env["XDG_DATA_HOME"], exist_ok=True)
 
 literal_dir = os.path.join(work_root, "literal")
+literal_child = os.path.join(literal_dir, "child")
+space_domain = os.path.join(work_root, "space domain")
 os.makedirs(literal_dir, exist_ok=True)
+os.makedirs(literal_child, exist_ok=True)
+os.makedirs(space_domain, exist_ok=True)
 subprocess.run([bin_path, "--dir", literal_dir, "domain", "create"], check=True, capture_output=True, text=True, env=env)
+subprocess.run([bin_path, "--dir", literal_child, "domain", "create"], check=True, capture_output=True, text=True, env=env)
+subprocess.run([bin_path, "--dir", space_domain, "domain", "create"], check=True, capture_output=True, text=True, env=env)
 subprocess.run([bin_path, "--dir", literal_dir, "set", "__completion", "literal-value"], check=True, capture_output=True, text=True, env=env)
 subprocess.run([bin_path, "--dir", literal_dir, "set", "COMPLETION_ALPHA", "alpha-value"], check=True, capture_output=True, text=True, env=env)
+subprocess.run([bin_path, "--dir", literal_child, "set", "COMPLETION_CHILD", "child-value"], check=True, capture_output=True, text=True, env=env)
+subprocess.run([bin_path, "--dir", literal_dir, "store", "create", "team"], check=True, capture_output=True, text=True, env=env)
+subprocess.run([bin_path, "--dir", literal_dir, "--store", "team", "set", "COMPLETION_TEAM", "team-value"], check=True, capture_output=True, text=True, env=env)
+subprocess.run([bin_path, "--dir", space_domain, "set", "COMPLETION_SPACE", "space-value"], check=True, capture_output=True, text=True, env=env)
 literal_get = subprocess.run([bin_path, "--dir", literal_dir, "__completion"], check=False, capture_output=True, text=True, env=env)
 if literal_get.returncode != 0 or literal_get.stdout != "literal-value":
     raise SystemExit(f"FAIL: bare __completion no longer falls back to get: rc={literal_get.returncode} stdout={literal_get.stdout!r} stderr={literal_get.stderr!r}")
@@ -503,6 +513,85 @@ for command in ["cp", "mv", "ln"]:
     mode, values, _ = run_scoped_completion("--dir", literal_dir, command, "COMPLETION_ALPHA", "")
     if "COMPLETION_ALPHA" in values:
         raise SystemExit(f"FAIL: {command} destination completion should not reuse existing key candidates: {values!r}")
+
+mode, values, _ = run_scoped_completion("--dir", literal_child, "get", "../COMPLETION_")
+assert_contains(values, "../COMPLETION_ALPHA", "relative parent KEYREF completion")
+if "../COMPLETION_CHILD" in values:
+    raise SystemExit(f"FAIL: relative parent completion leaked a child-local key: {values!r}")
+
+mode, values, _ = run_scoped_completion("--domain", literal_child, "get", "../COMPLETION_")
+assert_contains(values, "../COMPLETION_ALPHA", "--domain relative KEYREF completion")
+
+mode, values, _ = run_scoped_completion("--dir", literal_child, "get", "./COMPLETION_")
+assert_contains(values, "./COMPLETION_CHILD", "relative local KEYREF completion")
+if "./COMPLETION_ALPHA" in values:
+    raise SystemExit(f"FAIL: exact-local completion inherited a parent key: {values!r}")
+
+absolute_prefix = f"{literal_dir}/COMPLETION_"
+mode, values, _ = run_scoped_completion("get", absolute_prefix)
+assert_contains(values, f"{literal_dir}/COMPLETION_ALPHA", "absolute KEYREF completion")
+
+mode, values, _ = run_scoped_completion("--dir", literal_child, "get", "../COMPLETION_T:t")
+assert_contains(values, "../COMPLETION_TEAM:team", "qualified KEYREF store completion")
+
+mode, values, _ = run_scoped_completion(
+    "--dir", literal_child, "mv", "../COMPLETION_ALPHA", "./COMPLETION_"
+)
+assert_contains(values, "./COMPLETION_ALPHA", "relative mv destination completion")
+
+bash_qualified_test = subprocess.run(
+    [
+        "bash",
+        "-lc",
+        (
+            f"source {completion_script!r}; "
+            f"export SECDAT_COMPLETION_BIN={bin_path!r}; "
+            f"COMP_WORDS=(secdat --dir {literal_child!r} get '../COMPLETION_'); "
+            "COMP_CWORD=4; "
+            "_secdat_complete; "
+            "printf '%s\n' \"${COMPREPLY[@]}\""
+        ),
+    ],
+    text=True,
+    capture_output=True,
+    env=env,
+    check=False,
+)
+if bash_qualified_test.returncode != 0:
+    raise SystemExit(
+        f"FAIL: bash qualified KEYREF completion failed: "
+        f"rc={bash_qualified_test.returncode} stderr={bash_qualified_test.stderr!r}"
+    )
+assert_contains(
+    [line for line in bash_qualified_test.stdout.splitlines() if line],
+    "../COMPLETION_ALPHA",
+    "bash relative KEYREF completion",
+)
+
+bash_space_test = subprocess.run(
+    [
+        "bash",
+        "-lc",
+        (
+            f"source {completion_script!r}; "
+            f"export SECDAT_COMPLETION_BIN={bin_path!r}; "
+            f"COMP_WORDS=(secdat get {space_domain + '/COMPLETION_'!r}); "
+            "COMP_CWORD=2; "
+            "_secdat_complete; "
+            "printf '<%s>\n' \"${COMPREPLY[@]}\""
+        ),
+    ],
+    text=True,
+    capture_output=True,
+    env=env,
+    check=False,
+)
+if bash_space_test.returncode != 0 or bash_space_test.stdout != f"<{space_domain}/COMPLETION_SPACE>\n":
+    raise SystemExit(
+        f"FAIL: bash qualified completion did not preserve spaces: "
+        f"rc={bash_space_test.returncode} stdout={bash_space_test.stdout!r} "
+        f"stderr={bash_space_test.stderr!r}"
+    )
 
 bash_test = subprocess.run(
     [

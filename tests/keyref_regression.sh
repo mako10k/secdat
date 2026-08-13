@@ -53,11 +53,61 @@ mkdir -p "$unregistered"
 "$bin_path" --dir "$root" set override_key parent >/dev/null
 "$bin_path" --dir "$child" set override_key child >/dev/null
 
+if "$bin_path" get "$child"/shared_key --stdout >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'absolute qualified KEYREF inherited a parent key'
+fi
+assert_contains_line "$(cat /tmp/secdat-keyref-test.err)" 'key not found: shared_key'
+
+if "$bin_path" --dir "$child" get ./shared_key --stdout >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'relative qualified KEYREF inherited a parent key'
+fi
+assert_contains_line "$(cat /tmp/secdat-keyref-test.err)" 'key not found: shared_key'
+
+relative_parent_value="$("$bin_path" --dir "$child" get ../shared_key --stdout)"
+assert_eq "$relative_parent_value" 'shared' 'relative parent KEYREF get'
+
+relative_domain_value="$("$bin_path" --domain "$child" get ../override_key --stdout)"
+assert_eq "$relative_domain_value" 'parent' 'relative KEYREF base from --domain'
+
+relative_cwd_value="$(cd "$child" && "$bin_path" get ../override_key --stdout)"
+assert_eq "$relative_cwd_value" 'parent' 'relative KEYREF base from cwd'
+
+"$bin_path" --dir "$root" set relative_move_key move-value >/dev/null
+"$bin_path" --dir "$child" mv ../relative_move_key ./relative_move_key >/dev/null
+relative_moved_value="$("$bin_path" --dir "$child" get ./relative_move_key --stdout)"
+assert_eq "$relative_moved_value" 'move-value' 'relative KEYREF mv'
+if "$bin_path" --dir "$child" exists ../relative_move_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'relative mv left the exact parent source in place'
+fi
+
+"$bin_path" --dir "$root" set exact_shadow parent-shadow >/dev/null
+"$bin_path" --dir "$child" set ./exact_shadow child-shadow >/dev/null
+assert_eq "$("$bin_path" --dir "$root" get ./exact_shadow --stdout)" 'parent-shadow' 'qualified child set preserved parent'
+assert_eq "$("$bin_path" --dir "$child" get ./exact_shadow --stdout)" 'child-shadow' 'qualified child set created local key'
+
+root_alias="$work_root/work/root-alias"
+ln -s "$root" "$root_alias"
+assert_eq "$("$bin_path" --dir "$child" get ../../root-alias/override_key --stdout)" 'parent' 'relative symlink alias to registered root'
+if "$bin_path" mv "$root"/override_key "$root_alias"/override_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'mv accepted two aliases for the same logical key slot'
+fi
+assert_contains_line "$(cat /tmp/secdat-keyref-test.err)" 'source and destination keys must differ'
+if "$bin_path" --dir "$child" get ../../root-alias/child/shared_key --stdout >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'qualified symlink alias inherited a parent key'
+fi
+
+broken_alias="$work_root/work/broken-alias"
+ln -s "$work_root/work/missing-domain" "$broken_alias"
+if "$bin_path" --dir "$child" get ../../broken-alias/shared_key --stdout >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'broken symlink qualifier was accepted'
+fi
+assert_contains_line "$(cat /tmp/secdat-keyref-test.err)" "failed to resolve directory: $child/../../broken-alias"
+
 domain_status_output="$(LANGUAGE=C "$bin_path" --dir "$child" domain status)"
 assert_contains_line "$domain_status_output" "resolved domain: $child"
 assert_contains_line "$domain_status_output" 'resolution source: --dir'
 assert_contains_line "$domain_status_output" 'store count: 1'
-assert_contains_line "$domain_status_output" 'visible key count: 5'
+assert_contains_line "$domain_status_output" 'visible key count: 7'
 assert_contains_line "$domain_status_output" 'key source: environment'
 assert_contains_line "$domain_status_output" 'effective state: unlocked'
 assert_contains_line "$domain_status_output" 'effective source: environment'
@@ -87,14 +137,14 @@ fi
 
 domain_long_output="$(LANGUAGE=C "$bin_path" --dir "$work_root/work" domain ls -l)"
 assert_contains_line "$domain_long_output" $'DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED'
-assert_contains_line "$domain_long_output" "$root"$'\tenvironment\tunlocked\t-\tenvironment\t3\t5\tabsent'
-assert_contains_line "$domain_long_output" "$child"$'\tenvironment\tunlocked\t-\tenvironment\t1\t5\tabsent'
+assert_contains_line "$domain_long_output" "$root"$'\tenvironment\tunlocked\t-\tenvironment\t3\t6\tabsent'
+assert_contains_line "$domain_long_output" "$child"$'\tenvironment\tunlocked\t-\tenvironment\t1\t7\tabsent'
 assert_contains_line "$domain_long_output" "$sibling"$'\tenvironment\tunlocked\t-\tenvironment\t1\t0\tabsent'
 
 domain_inherited_output="$(LANGUAGE=C "$bin_path" --dir "$child" domain ls -la --descendants)"
 assert_contains_line "$domain_inherited_output" $'DOMAIN\tKEY_SOURCE\tEFFECTIVE\tREMAINING\tSTATE_SOURCE\tSTORES\tVISIBLE\tWRAPPED'
-assert_contains_line "$domain_inherited_output" "$root"$'\tenvironment\tunlocked\t-\tenvironment\t3\t5\tabsent'
-assert_contains_line "$domain_inherited_output" "$child"$'\tenvironment\tunlocked\t-\tenvironment\t1\t5\tabsent'
+assert_contains_line "$domain_inherited_output" "$root"$'\tenvironment\tunlocked\t-\tenvironment\t3\t6\tabsent'
+assert_contains_line "$domain_inherited_output" "$child"$'\tenvironment\tunlocked\t-\tenvironment\t1\t7\tabsent'
 assert_contains_line "$domain_inherited_output" '*default*'$'\tenvironment\tunlocked\t-\tenvironment\t0\t0\tabsent'
 
 if ! "$bin_path" --dir "$root" exists prefix_one >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
@@ -131,6 +181,20 @@ assert_eq "$explicit_value" 'explicit_value' 'KEYREF set/get'
 
 implicit_get_value="$($bin_path --dir "$root" explicit_key:team --stdout)"
 assert_eq "$implicit_get_value" 'explicit_value' 'implicit get fallback for KEYREF'
+
+"$bin_path" --dir "$root" store create graph >/dev/null
+"$bin_path" --dir "$child" store create graph >/dev/null
+"$bin_path" --dir "$root" store migrate graph --to-format v2 >/dev/null
+"$bin_path" --dir "$child" store migrate graph --to-format v2 >/dev/null
+"$bin_path" --dir "$root" --store graph set V2_RELATIVE_MOVE graph-value >/dev/null
+if "$bin_path" --dir "$child" --store graph get ./V2_RELATIVE_MOVE --stdout >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'qualified v2 KEYREF inherited a parent entry'
+fi
+"$bin_path" --dir "$child" --store graph mv ../V2_RELATIVE_MOVE ./V2_RELATIVE_MOVE >/dev/null
+assert_eq "$("$bin_path" --dir "$child" --store graph get ./V2_RELATIVE_MOVE --stdout)" 'graph-value' 'relative v2 KEYREF mv'
+if "$bin_path" --dir "$child" --store graph exists ../V2_RELATIVE_MOVE >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'relative v2 mv left the exact parent source in place'
+fi
 
 "$bin_path" --dir "$root" SHORTHAND_ONE=one SHORTHAND_TWO=two=with=equals >/dev/null
 assert_eq "$($bin_path --dir "$root" get SHORTHAND_ONE --stdout)" 'one' 'implicit shorthand set first value'
@@ -170,7 +234,7 @@ fi
 if "$bin_path" cp "$root"/explicit_key:team "$unregistered"/default_copy:team >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'cp unexpectedly wrote to the default domain'
 fi
-assert_contains_line "$(cat /tmp/secdat-keyref-test.err)" 'writes to the default domain are not supported'
+assert_contains_line "$(cat /tmp/secdat-keyref-test.err)" "domain not found for: $unregistered"
 
 canonical_output="$($bin_path --dir "$root" ls --canonical)"
 assert_contains_line "$canonical_output" "$root/other_key:default"
@@ -200,6 +264,13 @@ if ! "$bin_path" --dir "$root" rm --ignore-missing missing_key >/tmp/secdat-keyr
     fail 'rm --ignore-missing failed for a missing key'
 fi
 
+if "$bin_path" --dir "$child" rm ./other_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'qualified rm searched or masked the parent domain'
+fi
+if ! "$bin_path" --dir "$child" exists other_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'failed qualified rm changed inherited visibility'
+fi
+
 if ! "$bin_path" --dir "$root" rm --ignore-missing prefix_one >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'rm --ignore-missing failed for an existing key'
 fi
@@ -221,6 +292,13 @@ assert_contains_line "$(cat /tmp/secdat-keyref-test.err)" 'writes to the default
 
 overridden_output="$($bin_path --dir "$child" list --overridden)"
 assert_contains_line "$overridden_output" 'override_key'
+
+if "$bin_path" --dir "$child" mask ./shared_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'qualified mask searched the parent domain'
+fi
+if ! "$bin_path" --dir "$child" exists shared_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
+    fail 'failed qualified mask changed inherited visibility'
+fi
 
 if ! "$bin_path" --dir "$child" mask shared_key >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then
     fail 'mask failed for inherited key'

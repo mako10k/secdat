@@ -1,6 +1,6 @@
 _secdat_complete()
 {
-    local cur bin output mode candidates offset
+    local cur bin output mode candidates offset candidate existing duplicate
 
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -50,7 +50,26 @@ _secdat_complete()
             ;;
     esac
 
-    COMPREPLY=( $(compgen -W "$candidates" -- "$cur") )
+    while IFS= read -r candidate; do
+        if [[ -n $candidate && $candidate == "$cur"* ]]; then
+            COMPREPLY+=("$candidate")
+        fi
+    done <<<"$candidates"
+    if [[ $cur == */* ]]; then
+        while IFS= read -r candidate; do
+            candidate="${candidate%/}/"
+            duplicate=0
+            for existing in "${COMPREPLY[@]}"; do
+                if [[ $existing == "$candidate" ]]; then
+                    duplicate=1
+                    break
+                fi
+            done
+            if (( ! duplicate )); then
+                COMPREPLY+=("$candidate")
+            fi
+        done < <(compgen -d -- "$cur")
+    fi
 
     return 0
 }

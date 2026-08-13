@@ -834,6 +834,48 @@ static void secdat_cli_completion_print_keys(
     (void)secdat_print_completion_keys(dir, domain, store, current, append_equals);
 }
 
+static void secdat_cli_completion_print_destination_key(
+    int argc,
+    char **argv,
+    const char *source,
+    const char *current
+)
+{
+    const char *dir = NULL;
+    const char *domain = NULL;
+    const char *store = NULL;
+    int index;
+
+    for (index = 0; index + 1 < argc; index += 1) {
+        const char *token = argv[index];
+
+        if (strcmp(token, "--dir") == 0 || strcmp(token, "-d") == 0) {
+            if (index + 1 < argc - 1) {
+                dir = argv[index + 1];
+            }
+            index += 1;
+        } else if (strcmp(token, "--domain") == 0) {
+            if (index + 1 < argc - 1) {
+                domain = argv[index + 1];
+            }
+            index += 1;
+        } else if (strcmp(token, "--store") == 0 || strcmp(token, "-s") == 0) {
+            if (index + 1 < argc - 1) {
+                store = argv[index + 1];
+            }
+            index += 1;
+        }
+    }
+
+    (void)secdat_print_completion_destination_key(
+        dir,
+        domain,
+        store,
+        source,
+        current
+    );
+}
+
 static void secdat_cli_completion_print_top_level_commands(const char *current)
 {
     char previous[64] = "";
@@ -1146,6 +1188,57 @@ static int secdat_cli_completion_positional_count(int argc, char **argv, const c
     return count;
 }
 
+static const char *secdat_cli_completion_first_positional(
+    int argc,
+    char **argv,
+    const char *command,
+    const char *subcommand
+)
+{
+    int index;
+    int skipped_command = 0;
+    int skipped_subcommand = 0;
+
+    for (index = 0; index + 1 < argc; index += 1) {
+        const char *token = argv[index];
+
+        if (secdat_cli_completion_is_global_option_with_value(token)) {
+            index += 1;
+            continue;
+        }
+        if (strcmp(token, "--help") == 0 || strcmp(token, "-h") == 0
+            || strcmp(token, "--version") == 0 || strcmp(token, "-V") == 0) {
+            continue;
+        }
+        if (!skipped_command && command != NULL && strcmp(token, command) == 0) {
+            skipped_command = 1;
+            continue;
+        }
+        if (token[0] == '-') {
+            const char *option_mode = secdat_cli_completion_command_prev_option_mode(
+                command,
+                subcommand,
+                token
+            );
+            if ((strcmp(option_mode, "none") == 0
+                    || strcmp(option_mode, "dir") == 0
+                    || strcmp(option_mode, "file") == 0)
+                && index + 1 < argc - 1) {
+                index += 1;
+            }
+            continue;
+        }
+        if (command != NULL && secdat_cli_group_has_subcommands(command)
+            && !skipped_subcommand && subcommand != NULL
+            && strcmp(token, subcommand) == 0) {
+            skipped_subcommand = 1;
+            continue;
+        }
+        return token;
+    }
+    return NULL;
+}
+
 int secdat_cli_complete(int argc, char **argv)
 {
     static const char *const global_options[] = {
@@ -1258,6 +1351,8 @@ int secdat_cli_complete(int argc, char **argv)
     const char *current;
     const char *previous;
     const char *mode;
+    const char *source;
+    int positional_count;
     int delegate_offset = 0;
     int exec_command_index;
 
@@ -1310,9 +1405,32 @@ int secdat_cli_complete(int argc, char **argv)
         return 0;
     }
 
-    if (secdat_cli_completion_is_command_with_key_operand(command, subcommand)
-        && secdat_cli_completion_positional_count(argc, argv, command, subcommand) == 0) {
-        secdat_cli_completion_print_keys(argc, argv, current, 0);
+    positional_count = secdat_cli_completion_positional_count(
+        argc,
+        argv,
+        command,
+        subcommand
+    );
+    if (secdat_cli_completion_is_command_with_key_operand(command, subcommand)) {
+        if (positional_count == 0) {
+            secdat_cli_completion_print_keys(argc, argv, current, 0);
+        } else if (positional_count == 1
+            && (strcmp(command, "cp") == 0
+                || strcmp(command, "mv") == 0
+                || strcmp(command, "ln") == 0)) {
+            source = secdat_cli_completion_first_positional(
+                argc,
+                argv,
+                command,
+                subcommand
+            );
+            secdat_cli_completion_print_destination_key(
+                argc,
+                argv,
+                source,
+                current
+            );
+        }
     }
 
     if (strcmp(command, "ls") == 0) {
@@ -2326,7 +2444,8 @@ static void secdat_cli_print_concepts_detail(const char *program_name)
         secdat_cli_print_detail_line(_("  local lock: a local override that blocks reuse of an inherited unlock until the current domain unlocks or inherits again\n"));
         snprintf(buffer, sizeof(buffer), _("  local unlock: an authenticated master-key cache scoped to one domain branch; inspect availability with %s status and refresh it with %s unlock\n"), program_name, program_name);
         secdat_cli_print_detail_line(buffer);
-        secdat_cli_print_detail_line(_("  KEYREF: key lookup syntax is [/ABSOLUTE/DOMAIN/]KEY[:STORE]; when DOMAIN is present, the trailing slash before KEY is required\n"));
+        secdat_cli_print_detail_line(_("  KEYREF: [DOMAIN_PATH/]KEY[:STORE]; DOMAIN_PATH may be absolute or relative and selects only that exact registered domain\n"));
+        secdat_cli_print_detail_line(_("  relative KEYREF domains use --domain, then --dir, then the current working directory as their base; unqualified keys keep inherited lookup\n"));
     }
 }
 
@@ -2362,7 +2481,7 @@ static void secdat_cli_print_semantics(void)
     secdat_cli_print_detail_line(_("  DIR: base directory used for domain resolution; defaults to the current working directory\n"));
     secdat_cli_print_detail_line(_("  DOMAIN: directory-scoped configuration boundary used for inheritance and tombstones\n"));
     secdat_cli_print_detail_line(_("  STORE: domain-local namespace selected by --store; defaults to the default store\n"));
-    secdat_cli_print_detail_line(_("  KEY / KEYREF: logical secret name, optionally qualified as [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
+    secdat_cli_print_detail_line(_("  KEY / KEYREF: logical secret name, optionally qualified as [DOMAIN_PATH/]KEY[:STORE]; qualified lookup is exact-local\n"));
     secdat_cli_print_detail_line(_("  migration hints: v2-only errors suggest store migrate; set SECDAT_SUPPRESS_MIGRATION_HINTS=1 to hide those hints\n"));
 }
 
@@ -2571,7 +2690,7 @@ void secdat_cli_print_command_usage(const char *program_name, enum secdat_comman
         || command == SECDAT_COMMAND_EXISTS || command == SECDAT_COMMAND_ID || command == SECDAT_COMMAND_GET || command == SECDAT_COMMAND_SET
         || command == SECDAT_COMMAND_RM || command == SECDAT_COMMAND_MV || command == SECDAT_COMMAND_CP || command == SECDAT_COMMAND_LN) {
         printf(_("\n"));
-        secdat_cli_print_detail_line(_("  KEYREF syntax: [/ABSOLUTE/DOMAIN/]KEY[:STORE]\n"));
+        secdat_cli_print_detail_line(_("  KEYREF syntax: [DOMAIN_PATH/]KEY[:STORE] (absolute or relative; qualified lookup is exact-local)\n"));
     }
     secdat_cli_print_help_routes(program_name, target);
     secdat_cli_print_target_meaning(target);

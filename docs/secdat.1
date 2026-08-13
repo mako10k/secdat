@@ -1,4 +1,4 @@
-.TH SECDAT 1 "2026-08-13" "secdat 0.6.1" "User Commands"
+.TH SECDAT 1 "2026-08-13" "secdat 0.7.0" "User Commands"
 .SH NAME
 secdat \- minimal local secret store with domain and store scoping
 .SH SYNOPSIS
@@ -18,11 +18,17 @@ as an explicit end-of-options marker.
 
 Key arguments use the canonical KEYREF syntax:
 
-.B [/ABSOLUTE/DOMAIN/]KEY[:STORE]
+.B [DOMAIN_PATH/]KEY[:STORE]
 
-When the domain qualifier is present, the trailing slash before
-.B KEY
-is required. When the qualifiers are omitted,
+The optional domain path may be absolute or relative and must include the trailing slash before
+.B KEY .
+Relative paths use
+.B --domain ,
+then
+.B --dir ,
+then the current working directory as their base. A path-qualified KEYREF searches only that exact registered domain and does not fall back to a same-name parent key. An unqualified KEYREF keeps normal inherited lookup. Domain paths use the same canonical real-path and registered-root identity validation as
+.B --dir .
+When the qualifiers are omitted,
 .B --domain ,
 .B --dir
 and
@@ -695,7 +701,7 @@ installs it for automatic loading as
 .B secdat
 under the system bash-completion directory. The installed script asks
 .B secdat __completion --bash
-for the current command and option surface instead of duplicating a static command table, which keeps bash completion aligned with new CLI additions while preserving the normal fallback that treats unknown leading operands as keys. Automatic loading still depends on bash-completion being installed and initialized by the shell, and in-tree or custom-prefix testing still needs
+for the current command and option surface instead of duplicating a static command table, which keeps bash completion aligned with new CLI additions while preserving the normal fallback that treats unknown leading operands as keys. Qualified KEYREF completion resolves absolute and relative domain paths with the same base rules as command execution, lists exact-local key and store candidates, and carries a source key name into an available qualified cp, mv, or ln destination. Automatic loading still depends on bash-completion being installed and initialized by the shell, and in-tree or custom-prefix testing still needs
 .B secdat
 to resolve
 .B libsecdat .
