@@ -604,6 +604,26 @@ struct secdat_mutation_stage_context {
 
 static struct secdat_mutation_stage_context secdat_mutation_stage;
 
+struct secdat_prepared_state_file {
+    char path[PATH_MAX];
+    unsigned char *before_data;
+    size_t before_length;
+    unsigned char *after_data;
+    size_t after_length;
+    int before_exists;
+    int after_exists;
+};
+
+struct secdat_prepared_write_set {
+    struct secdat_prepared_state_file *files;
+    size_t count;
+    size_t capacity;
+    int active;
+    int project_reads;
+};
+
+static struct secdat_prepared_write_set secdat_prepared_write_set;
+
 static const char *secdat_mask_warning_policy_name(
     enum secdat_mask_warning_policy policy
 )
@@ -4720,6 +4740,37 @@ static int secdat_read_file(const char *path, unsigned char **data, size_t *leng
     FILE *stream;
     long size;
     unsigned char *buffer;
+    size_t prepared_index;
+
+    if (secdat_prepared_write_set.project_reads) {
+        for (prepared_index = 0;
+             prepared_index < secdat_prepared_write_set.count;
+             prepared_index += 1) {
+            const struct secdat_prepared_state_file *prepared =
+                &secdat_prepared_write_set.files[prepared_index];
+
+            if (strcmp(prepared->path, path) != 0) {
+                continue;
+            }
+            if (!prepared->after_exists) {
+                fprintf(stderr, _("failed to open file: %s\n"), path);
+                return 1;
+            }
+            buffer = malloc(
+                prepared->after_length == 0 ? 1 : prepared->after_length
+            );
+            if (buffer == NULL) {
+                fprintf(stderr, _("out of memory\n"));
+                return 1;
+            }
+            if (prepared->after_length > 0) {
+                memcpy(buffer, prepared->after_data, prepared->after_length);
+            }
+            *data = buffer;
+            *length = prepared->after_length;
+            return 0;
+        }
+    }
 
     stream = fopen(path, "rb");
     if (stream == NULL) {
@@ -12702,6 +12753,8 @@ static int secdat_collect_directory_keys(const char *directory_path, const char 
     size_t name_length;
     char encoded_name[NAME_MAX + 1];
     char *decoded_name = NULL;
+    size_t prepared_index;
+    size_t directory_length = strlen(directory_path);
     int status = 0;
 
     directory = opendir(directory_path);
@@ -12741,6 +12794,53 @@ static int secdat_collect_directory_keys(const char *directory_path, const char 
     }
 
     closedir(directory);
+    if (status == 0 && secdat_prepared_write_set.project_reads) {
+        for (prepared_index = 0;
+             prepared_index < secdat_prepared_write_set.count;
+             prepared_index += 1) {
+            const struct secdat_prepared_state_file *prepared =
+                &secdat_prepared_write_set.files[prepared_index];
+            const char *basename;
+
+            if (!prepared->after_exists
+                || strncmp(
+                    prepared->path,
+                    directory_path,
+                    directory_length
+                ) != 0
+                || prepared->path[directory_length] != '/') {
+                continue;
+            }
+            basename = prepared->path + directory_length + 1;
+            if (strchr(basename, '/') != NULL) {
+                continue;
+            }
+            name_length = strlen(basename);
+            if (name_length <= suffix_length
+                || strcmp(
+                    basename + name_length - suffix_length,
+                    suffix
+                ) != 0
+                || name_length - suffix_length > NAME_MAX) {
+                continue;
+            }
+            memcpy(encoded_name, basename, name_length - suffix_length);
+            encoded_name[name_length - suffix_length] = '\0';
+            if (secdat_unescape_component(encoded_name, &decoded_name) != 0) {
+                status = 1;
+                break;
+            }
+            if (!secdat_key_list_contains(keys, decoded_name)
+                && secdat_key_list_append(keys, decoded_name) != 0) {
+                free(decoded_name);
+                decoded_name = NULL;
+                status = 1;
+                break;
+            }
+            free(decoded_name);
+            decoded_name = NULL;
+        }
+    }
     return status;
 }
 
@@ -17013,6 +17113,130 @@ static int secdat_transaction_read_target(
     return 0;
 }
 
+static void secdat_prepared_write_set_reset(
+    struct secdat_prepared_write_set *write_set
+)
+{
+    size_t index;
+
+    for (index = 0; index < write_set->count; index += 1) {
+        secdat_secure_clear(
+            write_set->files[index].before_data,
+            write_set->files[index].before_length
+        );
+        free(write_set->files[index].before_data);
+        secdat_secure_clear(
+            write_set->files[index].after_data,
+            write_set->files[index].after_length
+        );
+        free(write_set->files[index].after_data);
+    }
+    free(write_set->files);
+    memset(write_set, 0, sizeof(*write_set));
+}
+
+static int secdat_prepared_write_set_record(
+    struct secdat_prepared_write_set *write_set,
+    const char *path,
+    const unsigned char *after_data,
+    size_t after_length,
+    int after_exists
+)
+{
+    struct secdat_prepared_state_file *file = NULL;
+    struct secdat_prepared_state_file *resized;
+    unsigned char *replacement = NULL;
+    size_t index;
+
+    for (index = 0; index < write_set->count; index += 1) {
+        if (strcmp(write_set->files[index].path, path) == 0) {
+            file = &write_set->files[index];
+            break;
+        }
+    }
+    if (file == NULL) {
+        if (write_set->count == write_set->capacity) {
+            size_t next_capacity = write_set->capacity == 0
+                ? 8
+                : write_set->capacity * 2;
+
+            resized = realloc(
+                write_set->files,
+                next_capacity * sizeof(*resized)
+            );
+            if (resized == NULL) {
+                fprintf(stderr, _("out of memory\n"));
+                return 1;
+            }
+            write_set->files = resized;
+            write_set->capacity = next_capacity;
+        }
+        file = &write_set->files[write_set->count];
+        memset(file, 0, sizeof(*file));
+        if (secdat_copy_string(file->path, sizeof(file->path), path) != 0
+            || secdat_transaction_read_target(
+                path,
+                &file->before_data,
+                &file->before_length,
+                &file->before_exists
+            ) != 0) {
+            secdat_secure_clear(file->before_data, file->before_length);
+            free(file->before_data);
+            memset(file, 0, sizeof(*file));
+            return 1;
+        }
+        write_set->count += 1;
+    }
+    if (after_exists) {
+        replacement = malloc(after_length == 0 ? 1 : after_length);
+        if (replacement == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        if (after_length > 0) {
+            memcpy(replacement, after_data, after_length);
+        }
+    }
+    secdat_secure_clear(file->after_data, file->after_length);
+    free(file->after_data);
+    file->after_data = replacement;
+    file->after_length = after_exists ? after_length : 0;
+    file->after_exists = after_exists;
+    return 0;
+}
+
+static int secdat_prepared_write_or_apply(
+    const char *path,
+    const unsigned char *data,
+    size_t length
+)
+{
+    if (!secdat_prepared_write_set.active) {
+        return secdat_atomic_write_file(path, data, length);
+    }
+    return secdat_prepared_write_set_record(
+        &secdat_prepared_write_set,
+        path,
+        data,
+        length,
+        1
+    );
+}
+
+static int secdat_prepared_remove_or_apply(const char *path)
+{
+    if (!secdat_prepared_write_set.active) {
+        return secdat_remove_if_exists(path);
+    }
+    return secdat_prepared_write_set_record(
+        &secdat_prepared_write_set,
+        path,
+        NULL,
+        0,
+        0
+    );
+}
+
 static int secdat_transaction_open_child_directory(
     int parent_fd,
     const char *name
@@ -17676,6 +17900,64 @@ error:
     secdat_secure_clear(target.after_data, target.after_length);
     free(target.after_data);
     return 1;
+}
+
+static int secdat_transaction_append_prepared_write_set(
+    struct secdat_transaction *transaction,
+    const struct secdat_prepared_write_set *write_set,
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    size_t *changed_file_count
+)
+{
+    char state_dir[PATH_MAX];
+    size_t state_dir_length;
+    size_t index;
+
+    *changed_file_count = 0;
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
+        return 1;
+    }
+    state_dir_length = strlen(state_dir);
+    for (index = 0; index < write_set->count; index += 1) {
+        const struct secdat_prepared_state_file *file =
+            &write_set->files[index];
+        int unchanged = file->before_exists == file->after_exists
+            && (!file->before_exists
+                || (file->before_length == file->after_length
+                    && (file->before_length == 0
+                        || CRYPTO_memcmp(
+                            file->before_data,
+                            file->after_data,
+                            file->before_length
+                        ) == 0)));
+
+        if (unchanged) {
+            continue;
+        }
+        if (strncmp(file->path, state_dir, state_dir_length) != 0
+            || file->path[state_dir_length] != '/') {
+            fprintf(stderr, _("prepared write is outside the state directory\n"));
+            return 1;
+        }
+        if (secdat_transaction_append_target(
+                transaction,
+                SECDAT_TRANSACTION_ARTIFACT_STATE_FILE,
+                owner_domain_id,
+                owner_store_name,
+                file->path + state_dir_length + 1,
+                file->before_data,
+                file->before_length,
+                file->before_exists,
+                file->after_data,
+                file->after_length,
+                file->after_exists
+            ) != 0) {
+            return 1;
+        }
+        *changed_file_count += 1;
+    }
+    return 0;
 }
 
 static void secdat_transaction_fault_inject(const char *boundary)
@@ -21289,7 +21571,11 @@ static int secdat_write_v2_domain_entry_file(
         fprintf(stderr, _("secret metadata is too large\n"));
         goto cleanup;
     }
-    status = secdat_atomic_write_file(path_out, (const unsigned char *)payload, (size_t)written);
+    status = secdat_prepared_write_or_apply(
+        path_out,
+        (const unsigned char *)payload,
+        (size_t)written
+    );
 
 cleanup:
     if (payload != NULL) {
@@ -21364,7 +21650,11 @@ static int secdat_write_v2_secret_object_file_with_inject(
     }
     header_length = (size_t)written;
     if (payload == NULL) {
-        return secdat_atomic_write_file(path_out, (const unsigned char *)header, header_length);
+        return secdat_prepared_write_or_apply(
+            path_out,
+            (const unsigned char *)header,
+            header_length
+        );
     }
     if (payload_length > SIZE_MAX - header_length) {
         fprintf(stderr, _("secret metadata is too large\n"));
@@ -21380,7 +21670,11 @@ static int secdat_write_v2_secret_object_file_with_inject(
     if (payload_length > 0) {
         memcpy(file_payload + header_length, payload, payload_length);
     }
-    written = secdat_atomic_write_file(path_out, file_payload, file_payload_length);
+    written = secdat_prepared_write_or_apply(
+        path_out,
+        file_payload,
+        file_payload_length
+    );
     secdat_secure_clear(file_payload, file_payload_length);
     free(file_payload);
     return written;
@@ -21641,7 +21935,7 @@ static int secdat_store_v2_plaintext_with_attrs(
     free(encrypted_key_probe);
     encrypted_key_probe = NULL;
 
-    if (secdat_remove_if_exists(tombstone_path) != 0
+    if (secdat_prepared_remove_or_apply(tombstone_path) != 0
         || secdat_write_v2_secret_object_file_with_inject(
             secret_objects_dir,
             secret_id,
@@ -21669,7 +21963,7 @@ static int secdat_store_v2_plaintext_with_attrs(
         ) != 0) {
         goto cleanup;
     }
-    if (secdat_remove_if_exists(value_path) != 0) {
+    if (secdat_prepared_remove_or_apply(value_path) != 0) {
         goto cleanup;
     }
     status = 0;
@@ -31655,7 +31949,7 @@ static int secdat_mutation_reconcile_mask_slot(
                 sizeof(payload),
                 &payload_length
             ) != 0
-            || secdat_atomic_write_file(
+            || secdat_prepared_write_or_apply(
                 tombstone_path,
                 payload,
                 payload_length
@@ -31663,7 +31957,7 @@ static int secdat_mutation_reconcile_mask_slot(
             goto cleanup;
         }
     } else if (restore_legacy && original_tombstone_exists) {
-        if (secdat_atomic_write_file(
+        if (secdat_prepared_write_or_apply(
                 tombstone_path,
                 original_tombstone,
                 original_tombstone_length
@@ -31673,7 +31967,7 @@ static int secdat_mutation_reconcile_mask_slot(
     } else if (slot->operation == SECDAT_MUTATION_SLOT_REMOVE
         && secdat_file_exists(tombstone_path)) {
         /* rm of an inherited key intentionally creates this source mask. */
-    } else if (secdat_remove_if_exists(tombstone_path) != 0) {
+    } else if (secdat_prepared_remove_or_apply(tombstone_path) != 0) {
         goto cleanup;
     }
     status = 0;
@@ -31884,6 +32178,127 @@ cleanup:
     free(tombstone_payload);
     secdat_mask_view_list_free(&before);
     secdat_mask_view_list_free(&after);
+    secdat_domain_chain_free(&chain);
+    (void)direct_hit_count;
+    return status;
+}
+
+static int secdat_mutation_collect_scoped_write_impacts(
+    struct secdat_mutation_plan *plan,
+    const struct secdat_mutation_slot *slot,
+    int *hard_error
+)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_mask_view_list before = {0};
+    char tombstone_path[PATH_MAX];
+    char compatibility_target[64];
+    unsigned char *tombstone_payload = NULL;
+    size_t tombstone_payload_length = 0;
+    size_t direct_hit_count = 0;
+    size_t index;
+    int tombstone_is_compatibility = 0;
+    int tombstone_exists = 0;
+    int slot_hard_error = 0;
+    int status = 1;
+
+    if (secdat_domain_chain_from_id(slot->domain_id, &chain) != 0
+        || secdat_analyze_mask_impacts(
+            &chain,
+            slot->store_name,
+            slot->key,
+            1,
+            &before,
+            &direct_hit_count
+        ) != 0
+        || secdat_build_tombstone_path(
+            slot->domain_id,
+            slot->store_name,
+            slot->key,
+            tombstone_path,
+            sizeof(tombstone_path)
+        ) != 0
+        || secdat_read_v2_compat_tombstone(
+            tombstone_path,
+            &tombstone_is_compatibility,
+            compatibility_target,
+            &tombstone_payload,
+            &tombstone_payload_length
+        ) != 0) {
+        goto cleanup;
+    }
+    tombstone_exists = secdat_file_exists(tombstone_path);
+    for (index = 0; index < before.count; index += 1) {
+        const struct secdat_mask_view *view = &before.items[index];
+
+        if (strcmp(view->key, slot->key) == 0
+            && view->record_kind == SECDAT_MASK_RECORD_LEGACY
+            && view->resolution == SECDAT_MASK_RESOLUTION_AMBIGUOUS) {
+            if (secdat_mutation_plan_append_row(
+                    plan,
+                    slot,
+                    view,
+                    SECDAT_MUTATION_IMPACT_LEGACY_AMBIGUOUS,
+                    NULL
+                ) != 0) {
+                goto cleanup;
+            }
+            slot_hard_error = 1;
+        }
+    }
+    if (slot_hard_error) {
+        *hard_error = 1;
+        status = 0;
+        goto cleanup;
+    }
+    if (secdat_mutation_reconcile_mask_slot(
+            slot,
+            &before,
+            tombstone_payload,
+            tombstone_payload_length,
+            tombstone_exists,
+            tombstone_is_compatibility ? compatibility_target : ""
+        ) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < before.count; index += 1) {
+        const struct secdat_mask_view *before_view = &before.items[index];
+        struct secdat_mask_view after_view;
+
+        if (strcmp(before_view->key, slot->key) != 0) {
+            continue;
+        }
+        after_view = *before_view;
+        if (after_view.state != SECDAT_MASK_STATE_ORPHANED) {
+            after_view.state = SECDAT_MASK_STATE_DORMANT;
+        }
+        if (secdat_mutation_plan_append_row(
+                plan,
+                slot,
+                before_view,
+                SECDAT_MUTATION_IMPACT_DIRECT_HIT,
+                &after_view
+            ) != 0) {
+            goto cleanup;
+        }
+        if (before_view->state == SECDAT_MASK_STATE_ACTIVE
+            && after_view.state == SECDAT_MASK_STATE_DORMANT
+            && secdat_mutation_plan_append_row(
+                plan,
+                slot,
+                before_view,
+                SECDAT_MUTATION_IMPACT_BECAME_DORMANT,
+                &after_view
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    status = 0;
+
+cleanup:
+    secdat_secure_clear(tombstone_payload, tombstone_payload_length);
+    free(tombstone_payload);
+    secdat_mask_view_list_free(&before);
     secdat_domain_chain_free(&chain);
     (void)direct_hit_count;
     return status;
@@ -32157,6 +32572,105 @@ static void secdat_mutation_emit_warning(
     );
 }
 
+static int secdat_run_scoped_set_mutation(
+    const struct secdat_cli *filtered,
+    struct secdat_mutation_plan *plan,
+    const struct secdat_domain_chain *owner_chain
+)
+{
+    struct secdat_transaction transaction;
+    int inner_status;
+    int hard_error = 0;
+    int committed = 0;
+    int status = 1;
+    size_t index;
+
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
+    secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    secdat_mutation_slot_list_free(&secdat_mutation_stage.slots);
+    if (secdat_transaction_begin(
+            &transaction,
+            plan->operation,
+            owner_chain->ids[0],
+            filtered->store
+        ) != 0) {
+        goto cleanup;
+    }
+
+    secdat_prepared_write_set.active = 1;
+    secdat_prepared_write_set.project_reads = 1;
+    secdat_mutation_stage.active = 1;
+    secdat_mutation_stage.saw_overlay = 0;
+    inner_status = secdat_dispatch_command(filtered);
+    secdat_mutation_stage.active = 0;
+    secdat_prepared_write_set.active = 0;
+    secdat_prepared_write_set.project_reads = 0;
+    plan->slots = secdat_mutation_stage.slots;
+    memset(&secdat_mutation_stage.slots, 0, sizeof(secdat_mutation_stage.slots));
+    if (inner_status != 0) {
+        status = inner_status;
+        goto cleanup;
+    }
+    secdat_prepared_write_set.active = 1;
+    for (index = 0; index < plan->slots.count; index += 1) {
+        if (plan->slots.items[index].operation != SECDAT_MUTATION_SLOT_WRITE
+            || secdat_mutation_collect_scoped_write_impacts(
+                plan,
+                &plan->slots.items[index],
+                &hard_error
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    secdat_prepared_write_set.active = 0;
+    if (secdat_transaction_append_prepared_write_set(
+            &transaction,
+            &secdat_prepared_write_set,
+            owner_chain->ids[0],
+            filtered->store,
+            &plan->changed_file_count
+        ) != 0) {
+        goto cleanup;
+    }
+    plan->rejected = hard_error
+        || (plan->policy.action == SECDAT_MUTATION_MASK_REJECT
+            && plan->row_count > 0);
+    if (plan->rejected || plan->policy.dry_run) {
+        if (secdat_print_mutation_plan(plan, 0) != 0) {
+            goto cleanup;
+        }
+        if (plan->rejected && !plan->policy.json) {
+            fputs(
+                hard_error
+                    ? _("ambiguous legacy mask blocks this mutation\n")
+                    : _("mask interaction rejected before mutation\n"),
+                stderr
+            );
+        }
+        status = plan->rejected ? 1 : 0;
+        goto cleanup;
+    }
+    if (transaction.target_count > 0
+        && secdat_transaction_commit(&transaction) != 0) {
+        goto cleanup;
+    }
+    committed = 1;
+    if (secdat_print_mutation_plan(plan, committed) != 0) {
+        goto cleanup;
+    }
+    secdat_mutation_emit_warning(plan);
+    status = 0;
+
+cleanup:
+    secdat_mutation_stage.active = 0;
+    secdat_prepared_write_set.active = 0;
+    secdat_prepared_write_set.project_reads = 0;
+    secdat_transaction_reset(&transaction);
+    secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    return status;
+}
+
 static int secdat_run_planned_mutation(const struct secdat_cli *cli)
 {
     struct secdat_cli filtered;
@@ -32241,6 +32755,14 @@ static int secdat_run_planned_mutation(const struct secdat_cli *cli)
                 _("mask mutation planning requires store format v2\n")
             );
         }
+        goto cleanup;
+    }
+    if (cli->command == SECDAT_COMMAND_SET) {
+        status = secdat_run_scoped_set_mutation(
+            &filtered,
+            &plan,
+            &owner_chain
+        );
         goto cleanup;
     }
     if (secdat_state_dir(source_state, sizeof(source_state)) != 0

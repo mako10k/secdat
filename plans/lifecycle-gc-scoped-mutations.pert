@@ -115,13 +115,14 @@ task T_SCOPED_TRAVERSAL_IMPLEMENT M_SCAN_DESIGNED -> M_SCAN_IMPLEMENTED:
   title "Implement scoped foreground mutation traversal"
   description "Implement ADR 0009's recovery-first immutable prepared-operation model, bounded guards, coalesced exact writes, and operation-specific target phases. Route set first, then cp/ln/rm/load/multi-key, ADR 0006 mv, attr/meta/mask/relation, and bounded container operations; build and validate the guarded hash-committed reverse dependency index, hidden-name transition closure, and CONTAINER_TREE recovery. Keep the named temporary actual-reference scan only on destructive paths until ADR 0008. Add unrelated-domain sentinels, visit/open counters, scale receipts, index generation/corruption, hidden-state fail-closed, batch, and transaction/container fault coverage. No writer may fall back to stage clone/diff or a registered-domain scan."
   duration 34p
+  status active
   priority 50
   requires:
     CODEX 1
     REVIEW 1
   owner "codex"
   tags [performance, transaction, implementation]
-  source "https://github.com/mako10k/secdat/issues/231"
+  source "https://github.com/mako10k/secdat/issues/235"
 
 task T_COMBINED_ACCEPTANCE M_METADATA_IMPLEMENTED -> M_ACCEPTED:
   title "Run combined lifecycle, GC, and scoped-traversal acceptance"
@@ -161,3 +162,10 @@ work_event SCOPED_TRAVERSAL_DESIGN_ACCEPTED_20260813:
   task T_SCOPED_TRAVERSAL_DESIGN
   kind finish
   occurred_at 2026-08-13T16:14:00+09:00
+
+work_event SCOPED_TRAVERSAL_IMPLEMENT_START_20260813:
+  model 1
+  task T_SCOPED_TRAVERSAL_IMPLEMENT
+  kind start
+  occurred_at 2026-08-13T16:16:00+09:00
+  planned_value 34p
