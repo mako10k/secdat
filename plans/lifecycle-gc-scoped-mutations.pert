@@ -1,0 +1,130 @@
+# Existing .pert plans should normally be maintained through perttool commands; direct DSL editing bypasses goal/DAG owner-confirmation checks.
+project SECDAT_LIFECYCLE_PERFORMANCE:
+  version 6
+  title "secdat lifecycle metadata, deferred GC, and scoped mutations"
+  description "Design-first plan for GitHub Issue #231. Complete timestamp/display, deferred-agent-GC, and scoped-traversal contracts before implementation. Planning does not authorize implementation, release, or publication."
+  as_of 2026-08-13
+  duration_unit point
+  velocity 5p/1d
+  finish M_ACCEPTED
+  goal_owner user
+  goal_delegates [codex]
+  dag_owner user
+  dag_delegates [codex]
+
+milestone NOW:
+  title "Planning issue #231 recorded"
+  state reached
+
+resource CODEX:
+  title "Codex design and implementation capacity"
+  capacity 1
+
+resource REVIEW:
+  title "Static and acceptance review capacity"
+  capacity 1
+
+milestone M_METADATA_DESIGNED:
+  title "Lifecycle metadata and display contract accepted"
+
+milestone M_GC_DESIGNED:
+  title "Deferred agent GC contract accepted"
+
+milestone M_SCAN_DESIGNED:
+  title "Scoped traversal and write-set contract accepted"
+
+milestone M_METADATA_IMPLEMENTED:
+  title "Lifecycle metadata and display implementation accepted"
+
+milestone M_GC_IMPLEMENTED:
+  title "Deferred agent GC implementation accepted"
+
+milestone M_SCAN_IMPLEMENTED:
+  title "Scoped foreground traversal implementation accepted"
+
+milestone M_ACCEPTED:
+  title "Combined lifecycle and performance acceptance complete"
+
+task T_METADATA_DISPLAY_DESIGN NOW -> M_METADATA_DESIGNED:
+  title "Design lifecycle metadata and display surfaces"
+  description "Child issue first. Define system-owned entry/object/searchable-metadata/GC timestamps and exact set/cp/ln/mv/rm/meta/refcount/fsck semantics. Decide migration-compatible disk fields and ls text/long/JSON options, including an explicit timestamps surface; define SDK, docs, completion, catalog, and FUSE relevance. Filesystem mtime and ctime are not authority."
+  duration 5p
+  priority 100
+  requires:
+    CODEX 1
+    REVIEW 1
+  owner "codex"
+  tags [metadata, cli-contract, design]
+  source "https://github.com/mako10k/secdat/issues/231"
+
+task T_DEFERRED_GC_DESIGN M_METADATA_DESIGNED -> M_GC_DESIGNED:
+  title "Design persistent deferred GC through the session agent"
+  description "Child issue first. Define foreground namespace commit plus persistent gc_candidate enqueue, agent startup discovery, batching/debounce, retry, recovery ordering, stale-candidate cancellation, and authoritative zero-reference verification before deletion. Cached refcount and queue state are hints only. Preserve explicit fsck and gc recovery paths and define the residual secret-retention policy."
+  duration 5p
+  priority 90
+  requires:
+    CODEX 1
+    REVIEW 1
+  owner "codex"
+  tags [gc, agent, design]
+  source "https://github.com/mako10k/secdat/issues/231"
+
+task T_SCOPED_TRAVERSAL_DESIGN M_GC_DESIGNED -> M_SCAN_DESIGNED:
+  title "Design scoped mutation traversal and direct write sets"
+  description "Child issue first. Specify source/destination domain-chain, object, mask, metadata, transaction, load, and multi-key dependency closures. Remove whole-state clone/diff and synchronous global actual-refcount scans from foreground operations using direct before/after journal targets or scoped lazy copy-on-write. Preserve shared-link set semantics, mask fail-closed behavior, dry-run/commit plan identity, batch atomicity, and restart recovery."
+  duration 8p
+  priority 80
+  requires:
+    CODEX 1
+    REVIEW 1
+  owner "codex"
+  tags [performance, transaction, design]
+  source "https://github.com/mako10k/secdat/issues/231"
+
+task T_METADATA_DISPLAY_IMPLEMENT M_SCAN_DESIGNED -> M_METADATA_IMPLEMENTED:
+  title "Implement lifecycle metadata and display surfaces"
+  description "Implement the accepted additive disk contract, compatibility reads, operation-specific timestamp transitions, ls text/long/JSON and SDK surfaces, migration behavior, docs, completion, catalogs, and focused tests. Refcount repair and GC checks must not change value_updated_at; ln/mv/cp must preserve or create identities exactly as designed."
+  duration 8p
+  priority 70
+  requires:
+    CODEX 1
+    REVIEW 1
+  owner "codex"
+  tags [metadata, cli, implementation]
+  source "https://github.com/mako10k/secdat/issues/231"
+
+task T_DEFERRED_GC_IMPLEMENT M_METADATA_IMPLEMENTED -> M_GC_IMPLEMENTED:
+  title "Implement persistent agent-driven deferred GC"
+  description "Implement transaction-bound candidate enqueue, session-agent queue discovery and batched sweep, authoritative zero-reference validation, retry/cancellation, crash and restart handling, and manual fsck/gc interoperability. Foreground rm and replacement must not physically delete objects or perform a global reference scan."
+  duration 13p
+  priority 60
+  requires:
+    CODEX 1
+    REVIEW 1
+  owner "codex"
+  tags [gc, agent, implementation]
+  source "https://github.com/mako10k/secdat/issues/231"
+
+task T_SCOPED_TRAVERSAL_IMPLEMENT M_GC_IMPLEMENTED -> M_SCAN_IMPLEMENTED:
+  title "Implement scoped foreground mutation traversal"
+  description "Replace the global mutation stage clone/diff with the accepted direct or scoped write-set mechanism for set, cp, ln, rm, load, and multi-key writes. Remove synchronous registered-domain reference scans. Add unrelated-domain sentinels, visit-count instrumentation or equivalent structural checks, scale regressions, mask tests, hidden-state fail-closed cases, and transaction fault/recovery coverage."
+  duration 21p
+  priority 50
+  requires:
+    CODEX 1
+    REVIEW 1
+  owner "codex"
+  tags [performance, transaction, implementation]
+  source "https://github.com/mako10k/secdat/issues/231"
+
+task T_COMBINED_ACCEPTANCE M_SCAN_IMPLEMENTED -> M_ACCEPTED:
+  title "Run combined lifecycle, GC, and scoped-traversal acceptance"
+  description "Complete static review before the final gates, freeze one exact candidate, and record focused regressions, unrelated-domain isolation, scale evidence, agent restart and transaction fault recovery, v1/v2 compatibility, SDK and optional FUSE relevance, catalogs, make check, and required distcheck receipts. Any tracked-tree change invalidates final receipts. Commit, push, issue closure, release, and installation remain separately authorized."
+  duration 5p
+  priority 10
+  requires:
+    CODEX 1
+    REVIEW 1
+  owner "codex"
+  tags [acceptance, review, verification]
+  source "https://github.com/mako10k/secdat/issues/231"
