@@ -26,6 +26,7 @@ resource REVIEW:
 
 milestone M_METADATA_DESIGNED:
   title "Lifecycle metadata and display contract accepted"
+  state reached
 
 milestone M_GC_DESIGNED:
   title "Deferred agent GC contract accepted"
@@ -49,13 +50,14 @@ task T_METADATA_DISPLAY_DESIGN NOW -> M_METADATA_DESIGNED:
   title "Design lifecycle metadata and display surfaces"
   description "Child issue first. Define system-owned entry/object/searchable-metadata/GC timestamps and exact set/cp/ln/mv/rm/meta/refcount/fsck semantics. Decide migration-compatible disk fields and ls text/long/JSON options, including an explicit timestamps surface; define SDK, docs, completion, catalog, and FUSE relevance. Filesystem mtime and ctime are not authority."
   duration 5p
+  status done
   priority 100
   requires:
     CODEX 1
     REVIEW 1
   owner "codex"
   tags [metadata, cli-contract, design]
-  source "https://github.com/mako10k/secdat/issues/231"
+  source "https://github.com/mako10k/secdat/issues/232"
 
 task T_DEFERRED_GC_DESIGN M_METADATA_DESIGNED -> M_GC_DESIGNED:
   title "Design persistent deferred GC through the session agent"
@@ -81,9 +83,9 @@ task T_SCOPED_TRAVERSAL_DESIGN M_GC_DESIGNED -> M_SCAN_DESIGNED:
   tags [performance, transaction, design]
   source "https://github.com/mako10k/secdat/issues/231"
 
-task T_METADATA_DISPLAY_IMPLEMENT M_SCAN_DESIGNED -> M_METADATA_IMPLEMENTED:
+task T_METADATA_DISPLAY_IMPLEMENT M_GC_IMPLEMENTED -> M_METADATA_IMPLEMENTED:
   title "Implement lifecycle metadata and display surfaces"
-  description "Implement the accepted additive disk contract, compatibility reads, operation-specific timestamp transitions, ls text/long/JSON and SDK surfaces, migration behavior, docs, completion, catalogs, and focused tests. Refcount repair and GC checks must not change value_updated_at; ln/mv/cp must preserve or create identities exactly as designed."
+  description "After global clone/diff and synchronous reference scans are removed, implement the accepted identity-keyed lifecycle sidecars, operation-specific timestamp transitions, opt-in ls text/long/JSON and additive SDK surfaces, migration behavior, docs, completion, catalogs, fsck/GC integration, and focused tests. Refcount repair and GC checks must not change value_updated_at; ln/mv/cp must preserve or create identities exactly as designed."
   duration 8p
   priority 70
   requires:
@@ -93,9 +95,9 @@ task T_METADATA_DISPLAY_IMPLEMENT M_SCAN_DESIGNED -> M_METADATA_IMPLEMENTED:
   tags [metadata, cli, implementation]
   source "https://github.com/mako10k/secdat/issues/231"
 
-task T_DEFERRED_GC_IMPLEMENT M_METADATA_IMPLEMENTED -> M_GC_IMPLEMENTED:
+task T_DEFERRED_GC_IMPLEMENT M_SCAN_IMPLEMENTED -> M_GC_IMPLEMENTED:
   title "Implement persistent agent-driven deferred GC"
-  description "Implement transaction-bound candidate enqueue, session-agent queue discovery and batched sweep, authoritative zero-reference validation, retry/cancellation, crash and restart handling, and manual fsck/gc interoperability. Foreground rm and replacement must not physically delete objects or perform a global reference scan."
+  description "After scoped transaction write sets exist, implement transaction-bound candidate enqueue, session-agent queue discovery and batched sweep, authoritative zero-reference validation, retry/cancellation, crash and restart handling, and manual fsck/gc interoperability. Foreground rm and replacement must not physically delete objects or perform a registered-domain reference scan."
   duration 13p
   priority 60
   requires:
@@ -105,9 +107,9 @@ task T_DEFERRED_GC_IMPLEMENT M_METADATA_IMPLEMENTED -> M_GC_IMPLEMENTED:
   tags [gc, agent, implementation]
   source "https://github.com/mako10k/secdat/issues/231"
 
-task T_SCOPED_TRAVERSAL_IMPLEMENT M_GC_IMPLEMENTED -> M_SCAN_IMPLEMENTED:
+task T_SCOPED_TRAVERSAL_IMPLEMENT M_SCAN_DESIGNED -> M_SCAN_IMPLEMENTED:
   title "Implement scoped foreground mutation traversal"
-  description "Replace the global mutation stage clone/diff with the accepted direct or scoped write-set mechanism for set, cp, ln, rm, load, and multi-key writes. Remove synchronous registered-domain reference scans. Add unrelated-domain sentinels, visit-count instrumentation or equivalent structural checks, scale regressions, mask tests, hidden-state fail-closed cases, and transaction fault/recovery coverage."
+  description "Replace the global mutation stage clone/diff with the accepted direct or scoped write-set mechanism first, before file-adding lifecycle/GC features. Cover set, cp, ln, rm, load, and multi-key writes; keep any temporary synchronous authoritative refcount verification confined to destructive paths until deferred GC lands. Add unrelated-domain sentinels, visit-count instrumentation or equivalent structural checks, scale regressions, mask tests, hidden-state fail-closed cases, and transaction fault/recovery coverage."
   duration 21p
   priority 50
   requires:
@@ -117,7 +119,7 @@ task T_SCOPED_TRAVERSAL_IMPLEMENT M_GC_IMPLEMENTED -> M_SCAN_IMPLEMENTED:
   tags [performance, transaction, implementation]
   source "https://github.com/mako10k/secdat/issues/231"
 
-task T_COMBINED_ACCEPTANCE M_SCAN_IMPLEMENTED -> M_ACCEPTED:
+task T_COMBINED_ACCEPTANCE M_METADATA_IMPLEMENTED -> M_ACCEPTED:
   title "Run combined lifecycle, GC, and scoped-traversal acceptance"
   description "Complete static review before the final gates, freeze one exact candidate, and record focused regressions, unrelated-domain isolation, scale evidence, agent restart and transaction fault recovery, v1/v2 compatibility, SDK and optional FUSE relevance, catalogs, make check, and required distcheck receipts. Any tracked-tree change invalidates final receipts. Commit, push, issue closure, release, and installation remain separately authorized."
   duration 5p
@@ -128,3 +130,9 @@ task T_COMBINED_ACCEPTANCE M_SCAN_IMPLEMENTED -> M_ACCEPTED:
   owner "codex"
   tags [acceptance, review, verification]
   source "https://github.com/mako10k/secdat/issues/231"
+
+work_event EVT_METADATA_DISPLAY_DESIGN_ACCEPTED:
+  model 1
+  task T_METADATA_DISPLAY_DESIGN
+  kind finish
+  occurred_at 2026-08-13T06:01:33+00:00
