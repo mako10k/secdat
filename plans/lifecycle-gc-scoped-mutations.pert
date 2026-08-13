@@ -30,6 +30,7 @@ milestone M_METADATA_DESIGNED:
 
 milestone M_GC_DESIGNED:
   title "Deferred agent GC contract accepted"
+  state reached
 
 milestone M_SCAN_DESIGNED:
   title "Scoped traversal and write-set contract accepted"
@@ -63,13 +64,14 @@ task T_DEFERRED_GC_DESIGN M_METADATA_DESIGNED -> M_GC_DESIGNED:
   title "Design persistent deferred GC through the session agent"
   description "Child issue first. Define foreground namespace commit plus persistent gc_candidate enqueue, agent startup discovery, batching/debounce, retry, recovery ordering, stale-candidate cancellation, and authoritative zero-reference verification before deletion. Cached refcount and queue state are hints only. Preserve explicit fsck and gc recovery paths and define the residual secret-retention policy."
   duration 5p
+  status done
   priority 90
   requires:
     CODEX 1
     REVIEW 1
   owner "codex"
   tags [gc, agent, design]
-  source "https://github.com/mako10k/secdat/issues/231"
+  source "https://github.com/mako10k/secdat/issues/233"
 
 task T_SCOPED_TRAVERSAL_DESIGN M_GC_DESIGNED -> M_SCAN_DESIGNED:
   title "Design scoped mutation traversal and direct write sets"
@@ -136,3 +138,11 @@ work_event EVT_METADATA_DISPLAY_DESIGN_ACCEPTED:
   task T_METADATA_DISPLAY_DESIGN
   kind finish
   occurred_at 2026-08-13T06:01:33+00:00
+
+work_event GC_DESIGN_ACCEPTED_20260813:
+  model 1
+  task T_DEFERRED_GC_DESIGN
+  kind finish
+  occurred_at 2026-08-13T12:00:00+09:00
+  active_time 4h
+  effort 4ph
