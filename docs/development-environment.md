@@ -31,6 +31,18 @@ sudo ./scripts/bootstrap-system.sh --profile dev --install --assume-yes
 
 The script auto-detects Debian-family and Amazon Linux-family systems from `/etc/os-release`.
 
+`make check` also requires the language-package analyzers `jscpd` 4.0.7 and
+`lizard` 1.23.0. Install them in an isolated user or toolchain environment;
+for example:
+
+```sh
+npm install --global jscpd@4.0.7
+pipx install lizard==1.23.0
+```
+
+The bootstrap script installs the Node.js, npm, Python, and venv prerequisites
+in the `dev` profile, but does not mutate global npm or Python package state.
+
 ## Debian-family packages
 
 `build` installs:
@@ -164,6 +176,8 @@ The following non-AI tools are included in the `dev` profile because they make A
 - `ripgrep`: fast repository search for narrowing implementation surfaces and validation targets
 - `jq`: inspection of JSON from `gh`, editor tooling, and API responses
 - `shellcheck`: static checking for shell scripts such as `autogen.sh` and test/bootstrap scripts
+- `jscpd`: strict copy/paste detection for bounded authored production files
+- `lizard`: cyclomatic-complexity coverage for all authored production files, including large C translation units
 - `gdb` and `strace`: runtime debugging when a generated fix needs verification beyond compilation
 
 ## Validation
@@ -175,3 +189,10 @@ Typical development validation after bootstrap:
 make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
 make check
 ```
+
+The static-analysis portion of `make check` fails closed when either pinned
+tool version is unavailable. jscpd rejects duplication at 0.34% or higher with
+a 20-line/200-token clone floor and a 5,000-line per-file cost bound. lizard
+analyzes the full production set with CCN 15, function length 1000, argument
+count 10, and a ratcheted budget of 171 existing warnings. Reducing either
+baseline is welcome; increasing it requires explicit review.

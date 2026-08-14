@@ -99,11 +99,34 @@ fi
 grep -Eq '^EXTRA_DIST = .*tests/gettext_catalog_regression\.sh' \
     "$source_root/Makefile.am" ||
     fail "gettext catalog regression is not distributed"
+grep -Eq '^EXTRA_DIST = .*tests/static_analysis_contract_regression\.sh' \
+    "$source_root/Makefile.am" ||
+    fail "static analysis contract regression is not distributed"
+grep -Eq '^EXTRA_DIST = .*tests/static_analysis_regression\.sh' \
+    "$source_root/Makefile.am" ||
+    fail "static analysis regression is not distributed"
 check_local_recipe=$(sed -n '/^check-local:/,/^pkgconfigdir =/p' \
     "$source_root/Makefile.am")
 grep -Fq 'bash $(srcdir)/tests/gettext_catalog_regression.sh' \
     <<<"$check_local_recipe" ||
     fail "make check does not run the gettext catalog regression"
+grep -Fq 'bash $(srcdir)/tests/static_analysis_contract_regression.sh' \
+    <<<"$check_local_recipe" ||
+    fail "make check does not run the static analysis contract regression"
+grep -Fq 'bash $(srcdir)/tests/static_analysis_regression.sh' \
+    <<<"$check_local_recipe" ||
+    fail "make check does not run the static analysis regression"
+static_analysis_script="$source_root/tests/static_analysis_regression.sh"
+grep -Fq 'jscpd_expected_version="${JSCPD_EXPECTED_VERSION:-4.0.7}"' \
+    "$static_analysis_script" ||
+    fail "jscpd version is not pinned"
+grep -Fq 'lizard_expected_version="${LIZARD_EXPECTED_VERSION:-1.23.0}"' \
+    "$static_analysis_script" ||
+    fail "lizard version is not pinned"
+grep -Fq 'jscpd_duplication_limit="0.34"' "$static_analysis_script" ||
+    fail "jscpd duplication ceiling is not pinned"
+grep -Fq 'lizard_warning_budget=171' "$static_analysis_script" ||
+    fail "lizard warning budget is not pinned"
 grep -Fq "candidate_commit=\$(git rev-parse --verify 'HEAD^{commit}')" "$release_workflow" ||
     fail "release workflow does not freeze the candidate commit"
 grep -Fq "candidate_tree=\$(git rev-parse --verify 'HEAD^{tree}')" "$release_workflow" ||
