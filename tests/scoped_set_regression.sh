@@ -11,6 +11,7 @@ export XDG_DATA_HOME="$work_root/data"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
 python3 - "$bin_path" "$work_root" <<'PY'
+import json
 import os
 import subprocess
 import sys
@@ -140,10 +141,33 @@ if crashed.returncode != 86:
         f"rc={crashed.returncode} stdout={crashed.stdout!r} "
         f"stderr={crashed.stderr!r}"
     )
+transaction_root = Path(env["XDG_DATA_HOME"]) / "secdat" / "transactions"
+pending = sorted(path for path in transaction_root.iterdir() if path.name != "lock")
+if len(pending) != 1:
+    fail(f"expected one pending scoped transaction: {pending!r}")
+journal_lines = (pending[0] / "journal").read_text(encoding="utf-8").splitlines()
+if len(journal_lines) != 2:
+    fail(f"invalid scoped transaction envelope: {journal_lines!r}")
+manifest = json.loads(journal_lines[1])
+writes = manifest.get("writes")
+if (
+    manifest.get("version") != 2
+    or manifest.get("guards") != []
+    or not isinstance(writes, list)
+    or not writes
+    or [(write.get("phase"), write.get("name")) for write in writes]
+    != sorted((write.get("phase"), write.get("name")) for write in writes)
+    or any(
+        write.get("phase") != 30
+        or write.get("role") != "primary-record"
+        or write.get("sensitive") is not True
+        for write in writes
+    )
+):
+    fail(f"scoped set did not persist canonical phased writes: {manifest!r}")
 if expect_ok([bin_path, "--dir", str(target), "get", "SCOPED"]) != "recovered":
     fail("scoped set recovery did not roll forward")
 
-transaction_root = Path(env["XDG_DATA_HOME"]) / "secdat" / "transactions"
 leftovers = sorted(path.name for path in transaction_root.iterdir() if path.name != "lock")
 if leftovers:
     fail(f"transaction recovery left artifacts: {leftovers!r}")

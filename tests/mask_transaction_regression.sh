@@ -249,9 +249,11 @@ keys = [
     "FAULT_TARGET",
     "FAULT_COMMITTED",
     "FAULT_DEPENDENCY",
+    "FAULT_DEPENDENCY_V1",
     "FAULT_UNMASK",
     "FAULT_TAMPER",
     "FAULT_NUL",
+    "FAULT_PHASE",
     "CONCURRENT_MASK",
     "CONCURRENT_UNMASK",
     "REBIND",
@@ -509,9 +511,9 @@ transactions_root = Path(env["XDG_DATA_HOME"]) / "secdat" / "transactions"
 if sorted(path.name for path in transactions_root.iterdir()) != ["lock"]:
     fail(f"completed transactions were not cleaned: {list(transactions_root.iterdir())!r}")
 
-# A COMMITTING transaction treats its source domain entry as a validation-only
-# dependency. If that dependency changes, recovery verifies the full frontier
-# and writes none of the canonical mask or compatibility tombstone targets.
+# Manifest v2 persists source observations as validation-only guards, separate
+# from replayable writes. COMMITTING recovery does not reevaluate those guards;
+# it rolls the exact write frontier forward and preserves later guard changes.
 dependency_entry = entry_for_key(parent_store, "FAULT_DEPENDENCY")
 dependency_path = parent_store / "domain-ent" / f"{dependency_entry}.dent"
 dependency_mask, dependency_tombstone = mask_paths(
@@ -527,6 +529,33 @@ if rc != 86:
         "validation dependency setup did not stop at committing: "
         f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
     )
+pending = [path for path in transactions_root.iterdir() if path.name != "lock"]
+if len(pending) != 1:
+    fail(f"expected one v2 dependency transaction: {pending!r}")
+dependency_journal = pending[0] / "journal"
+dependency_payload = dependency_journal.read_text(encoding="utf-8").splitlines()
+if len(dependency_payload) != 2:
+    fail(f"invalid v2 dependency journal envelope: {dependency_payload!r}")
+dependency_manifest = json.loads(dependency_payload[1])
+if (
+    dependency_manifest.get("version") != 2
+    or set(dependency_manifest) != {
+        "version",
+        "operation_id",
+        "command",
+        "owner_domain_id",
+        "owner_store",
+        "state",
+        "guards",
+        "writes",
+    }
+    or len(dependency_manifest["guards"]) != 1
+    or dependency_manifest["guards"][0].get("type") != "exact-file"
+    or dependency_manifest["guards"][0].get("role") != "exact-file"
+    or not dependency_manifest["writes"]
+    or any(write.get("phase") != 30 for write in dependency_manifest["writes"])
+):
+    fail(f"v2 guard/write manifest was not canonical: {dependency_manifest!r}")
 dependency_original = dependency_path.read_text(encoding="utf-8")
 dependency_path.write_text(
     dependency_original.replace(
@@ -540,23 +569,88 @@ rc, stdout, stderr = run(
     [bin_path, "--dir", str(child), "status", "--quiet"]
 )
 if (
-    rc == 0
-    or "transaction target changed during recovery" not in stderr
-    or dependency_mask.exists()
-    or dependency_tombstone.exists()
+    rc != 0
+    or stdout != ""
+    or stderr != ""
+    or not dependency_mask.exists()
+    or not dependency_tombstone.exists()
+    or "bulk_select_entry=include\n"
+    not in dependency_path.read_text(encoding="utf-8")
 ):
     fail(
-        "changed validation dependency did not stop all recovery writes: "
+        "v2 recovery reevaluated a guard after COMMITTING: "
         f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
     )
 dependency_path.write_text(dependency_original, encoding="utf-8")
 dependency_path.chmod(0o600)
-expect_ok([bin_path, "--dir", str(child), "status", "--quiet"])
 assert_mask_state(
     dependency_mask,
     dependency_tombstone,
     (True, True),
-    "restored validation dependency recovery",
+    "v2 committed dependency recovery",
+)
+
+# A version-1 journal remains recoverable with its legacy validation target
+# semantics. Changing that target after COMMITTING blocks every write until the
+# exact before-image is restored.
+legacy_dependency_entry = entry_for_key(parent_store, "FAULT_DEPENDENCY_V1")
+legacy_dependency_path = (
+    parent_store / "domain-ent" / f"{legacy_dependency_entry}.dent"
+)
+legacy_dependency_mask, legacy_dependency_tombstone = mask_paths(
+    child_store, legacy_dependency_entry, "FAULT_DEPENDENCY_V1"
+)
+fault_env = {
+    **env,
+    "SECDAT_TEST_TRANSACTION_CRASH_AFTER": "committing",
+    "SECDAT_TEST_TRANSACTION_MANIFEST_VERSION": "1",
+}
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "mask", "FAULT_DEPENDENCY_V1"],
+    run_env=fault_env,
+)
+if rc != 86:
+    fail(
+        "v1 compatibility setup did not stop at committing: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+pending = [path for path in transactions_root.iterdir() if path.name != "lock"]
+if len(pending) != 1:
+    fail(f"expected one v1 dependency transaction: {pending!r}")
+legacy_payload = (pending[0] / "journal").read_text(encoding="utf-8").splitlines()
+legacy_manifest = json.loads(legacy_payload[1])
+if legacy_manifest.get("version") != 1 or "targets" not in legacy_manifest:
+    fail(f"legacy v1 journal was not emitted: {legacy_manifest!r}")
+legacy_dependency_original = legacy_dependency_path.read_text(encoding="utf-8")
+legacy_dependency_path.write_text(
+    legacy_dependency_original.replace(
+        "bulk_select_entry=exclude\n",
+        "bulk_select_entry=include\n",
+    ),
+    encoding="utf-8",
+)
+legacy_dependency_path.chmod(0o600)
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "status", "--quiet"]
+)
+if (
+    rc == 0
+    or "transaction target changed during recovery" not in stderr
+    or legacy_dependency_mask.exists()
+    or legacy_dependency_tombstone.exists()
+):
+    fail(
+        "v1 validation target compatibility did not fail closed: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+legacy_dependency_path.write_text(legacy_dependency_original, encoding="utf-8")
+legacy_dependency_path.chmod(0o600)
+expect_ok([bin_path, "--dir", str(child), "status", "--quiet"])
+assert_mask_state(
+    legacy_dependency_mask,
+    legacy_dependency_tombstone,
+    (True, True),
+    "restored v1 validation dependency recovery",
 )
 
 # Unmask uses the same journal. A crash after removing the canonical record
@@ -1441,6 +1535,53 @@ assert_mask_state(
     nul_tombstone,
     (True, True),
     "embedded-NUL journal restored recovery",
+)
+
+# A journal cannot relabel a primary record into the dependency-root phase.
+# Recovery rejects role/phase drift before applying any replayable write.
+phase_entry = entry_for_key(parent_store, "FAULT_PHASE")
+phase_mask, phase_tombstone = mask_paths(child_store, phase_entry, "FAULT_PHASE")
+fault_env = {**env, "SECDAT_TEST_TRANSACTION_CRASH_AFTER": "committing"}
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "mask", "FAULT_PHASE"],
+    run_env=fault_env,
+)
+if rc != 86:
+    fail(
+        "phase validation setup did not stop at committing: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+pending = [path for path in transactions_root.iterdir() if path.name != "lock"]
+if len(pending) != 1:
+    fail(f"expected one phase-test transaction: {pending!r}")
+phase_journal = pending[0] / "journal"
+phase_original = phase_journal.read_text(encoding="utf-8")
+phase_journal.write_text(
+    phase_original.replace('"phase":30', '"phase":40', 1),
+    encoding="utf-8",
+)
+phase_journal.chmod(0o600)
+rc, stdout, stderr = run(
+    [bin_path, "--dir", str(child), "status", "--quiet"]
+)
+if (
+    rc == 0
+    or "invalid transaction journal" not in stderr
+    or phase_mask.exists()
+    or phase_tombstone.exists()
+):
+    fail(
+        "transaction role/phase drift was accepted: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+phase_journal.write_text(phase_original, encoding="utf-8")
+phase_journal.chmod(0o600)
+expect_ok([bin_path, "--dir", str(child), "status", "--quiet"])
+assert_mask_state(
+    phase_mask,
+    phase_tombstone,
+    (True, True),
+    "role/phase journal restored recovery",
 )
 
 # Recovery resolves every target below the trusted state root with
