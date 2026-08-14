@@ -1423,7 +1423,7 @@ includedir=$source_root/src
 
 Name: libsecdat
 Description: C SDK for secdat secret access and session control
-Version: 0.7.0
+Version: 0.8.0
 Libs: -L\${libdir} -Wl,-rpath,\${libdir} -lsecdat
 Libs.private: $sdk_private_link_flags_text
 Cflags: -I\${includedir} -I$build_root/src
