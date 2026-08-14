@@ -1,4 +1,4 @@
-.TH SECDAT 1 "2026-08-14" "secdat 0.8.0" "User Commands"
+.TH SECDAT 1 "2026-08-14" "secdat 0.9.0" "User Commands"
 .SH NAME
 secdat \- minimal local secret store with domain and store scoping
 .SH SYNOPSIS
@@ -348,12 +348,20 @@ and
 .B --no-warn-mask
 change warnings only, never state, success, or exit status.
 
-Canonical mask and compatibility-tombstone changes use UUID-named journals
+Persistent v2 changes use UUID-named journals
 under
 .BR $XDG_DATA_HOME/secdat/transactions .
-Startup discards validated pre-commit journals or rolls committing journals
-forward before normal command resolution, so later command views observe an
-all-before or all-after result.
+The command-wide mutation lock covers recovery, plan construction, and commit.
+Recovery discards validated pre-commit journals or rolls committing journals
+forward, so later command views observe an all-before or all-after result.
+Normal key, mask, relation, store, and domain mutations use bounded exact write
+sets instead of copying the store tree. Until deferred GC is implemented,
+local removal, destination replacement, and overwrite retain the documented
+synchronous actual-reference scan before deleting an old object; ordinary
+non-destructive writers do not scan unrelated registered domains. Store/domain
+create and delete journal only a validated empty container tree. Moves preserve
+v2 entry and secret UUIDs, and topology changes rotate the reference epoch
+before publication or source removal.
 
 Persisted v2
 .BR set ,

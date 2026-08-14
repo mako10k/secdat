@@ -447,6 +447,14 @@ rc, stdout, stderr = run(
 )
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"move source set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(
+    [
+        bin_path, "--dir", str(move_source_domain), "fsck", "--format", "v2",
+        "--dependency-index", "--repair",
+    ]
+)
+if rc != 0 or stderr != "":
+    fail(f"domain move dependency index setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 move_source_domain.rmdir()
 
 rc, stdout, stderr = run([bin_path, "--dir", str(move_destination_domain), "domain", "move", "--from", str(move_source_domain)])

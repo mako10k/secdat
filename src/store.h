@@ -56,6 +56,26 @@ int secdat_collect_registered_domain_status_summary(const char *registered_root,
 int secdat_collect_user_global_status_summary(struct secdat_domain_status_summary *summary);
 int secdat_require_writable_session_access(const char *dir_override, const char *command_name);
 int secdat_require_writable_registered_domain_access(const char *registered_root, const char *command_name);
+int secdat_transactional_domain_create(
+	const char *domain_id,
+	const char *registry_path,
+	const char *root_text,
+	const char *identity_text
+);
+int secdat_transactional_domain_delete(
+	const char *domain_id,
+	const char *registry_path,
+	const char *root_text
+);
+int secdat_transactional_domain_move(
+	const char *domain_id,
+	const char *source_root,
+	const char *destination_root,
+	const char *source_registry_path,
+	const char *destination_registry_path,
+	const char *identity_text,
+	int same_root
+);
 const char *secdat_key_source_json_name(enum secdat_key_source_type source);
 const char *secdat_effective_source_json_name(enum secdat_effective_source_type source);
 const char *secdat_effective_state_json_name(enum secdat_effective_source_type source);

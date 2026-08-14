@@ -78,6 +78,11 @@
 #define SECDAT_TRANSACTION_MAX_TARGETS 4096
 #define SECDAT_TRANSACTION_MAX_MANIFEST_BYTES (64U * 1024U * 1024U)
 #define SECDAT_TRANSACTION_MAX_BLOB_BYTES (256U * 1024U * 1024U)
+#define SECDAT_TYPED_DIRECTORY_MAX_RECORDS 4096U
+#define SECDAT_TYPED_DIRECTORY_MAX_BYTES (16U * 1024U * 1024U)
+#define SECDAT_CONTAINER_MAX_DIRECTORIES 64U
+#define SECDAT_CONTAINER_MAX_ITEMS 128U
+#define SECDAT_CONTAINER_MAX_DEPTH 4U
 #define SECDAT_SHA256_HEX_LENGTH 64
 #define SECDAT_DEPENDENCY_NODE_MAX_BYTES (16U * 1024U)
 #define SECDAT_DEPENDENCY_MAX_RECORDS 65536U
@@ -340,6 +345,9 @@ struct secdat_dependency_update_plan {
     int active;
 };
 
+static struct secdat_dependency_update_plan *
+    secdat_active_dependency_update_plan;
+
 struct secdat_dependency_tree_update_result {
     char root[SECDAT_SHA256_HEX_LENGTH + 1];
     int has_root;
@@ -536,21 +544,39 @@ enum secdat_transaction_artifact_kind {
     SECDAT_TRANSACTION_ARTIFACT_TOMBSTONE,
     SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY,
     SECDAT_TRANSACTION_ARTIFACT_STATE_FILE,
+    SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE,
 };
 
 enum secdat_transaction_target_role {
     SECDAT_TRANSACTION_ROLE_EXACT_FILE_GUARD = 0,
+    SECDAT_TRANSACTION_ROLE_TYPED_DIRECTORY_GUARD,
     SECDAT_TRANSACTION_ROLE_REFERENCE_EPOCH,
     SECDAT_TRANSACTION_ROLE_DEPENDENCY_NODE,
     SECDAT_TRANSACTION_ROLE_PRIMARY_RECORD,
+    SECDAT_TRANSACTION_ROLE_SOURCE_REMOVAL,
     SECDAT_TRANSACTION_ROLE_DEPENDENCY_ROOT,
+    SECDAT_TRANSACTION_ROLE_CONTAINER_PUBLISH,
+    SECDAT_TRANSACTION_ROLE_REGISTRY_PUBLISH,
+    SECDAT_TRANSACTION_ROLE_REGISTRY_REMOVAL,
+    SECDAT_TRANSACTION_ROLE_CONTAINER_REMOVAL,
+    SECDAT_TRANSACTION_ROLE_ROOT_METADATA,
+    SECDAT_TRANSACTION_ROLE_DESTINATION_REGISTRY,
+    SECDAT_TRANSACTION_ROLE_SOURCE_REGISTRY,
 };
 
 enum secdat_transaction_write_phase {
     SECDAT_TRANSACTION_PHASE_REFERENCE_EPOCH = 10,
     SECDAT_TRANSACTION_PHASE_DEPENDENCY_NODE = 20,
     SECDAT_TRANSACTION_PHASE_PRIMARY_RECORD = 30,
+    SECDAT_TRANSACTION_PHASE_SOURCE_REMOVAL = 31,
     SECDAT_TRANSACTION_PHASE_DEPENDENCY_ROOT = 40,
+    SECDAT_TRANSACTION_PHASE_CONTAINER_PUBLISH = 50,
+    SECDAT_TRANSACTION_PHASE_REGISTRY_PUBLISH = 60,
+    SECDAT_TRANSACTION_PHASE_REGISTRY_REMOVAL = 50,
+    SECDAT_TRANSACTION_PHASE_CONTAINER_REMOVAL = 60,
+    SECDAT_TRANSACTION_PHASE_ROOT_METADATA = 50,
+    SECDAT_TRANSACTION_PHASE_DESTINATION_REGISTRY = 60,
+    SECDAT_TRANSACTION_PHASE_SOURCE_REGISTRY = 70,
 };
 
 struct secdat_transaction_target {
@@ -571,6 +597,9 @@ struct secdat_transaction_target {
     int after_exists;
     int is_guard;
     int sensitive;
+    char container_root_text[PATH_MAX];
+    char container_identity_text[128];
+    char container_journal_path[PATH_MAX];
 };
 
 struct secdat_transaction {
@@ -704,14 +733,26 @@ struct secdat_prepared_state_file {
     size_t after_length;
     int before_exists;
     int after_exists;
+    int observed;
+};
+
+struct secdat_prepared_directory_guard {
+    char path[PATH_MAX];
+    char digest[SECDAT_SHA256_HEX_LENGTH + 1];
+    int exists;
 };
 
 struct secdat_prepared_write_set {
     struct secdat_prepared_state_file *files;
     size_t count;
     size_t capacity;
+    struct secdat_prepared_directory_guard *directories;
+    size_t directory_count;
+    size_t directory_capacity;
     int active;
+    int observe_reads;
     int project_reads;
+    int failed;
 };
 
 static struct secdat_prepared_write_set secdat_prepared_write_set;
@@ -1150,6 +1191,10 @@ static int secdat_dependency_index_relation_lookup(
     size_t relation_id_size,
     int *found
 );
+static int secdat_relation_contains_keyref(
+    const struct secdat_relation_info *relation,
+    const char *canonical_keyref
+);
 static int secdat_dependency_index_mask_lookup(
     const char *target_entry_id,
     int *found
@@ -1169,6 +1214,38 @@ static int secdat_update_v2_secret_refcount(
 );
 static int secdat_atomic_write_file(const char *path, const unsigned char *data, size_t length);
 static int secdat_remove_if_exists(const char *path);
+static int secdat_transaction_read_target(
+    const char *path,
+    unsigned char **data,
+    size_t *length,
+    int *exists,
+    size_t max_length
+);
+static int secdat_sha256_hex(
+    const unsigned char *data,
+    size_t length,
+    char digest_hex[SECDAT_SHA256_HEX_LENGTH + 1]
+);
+static int secdat_prepared_write_set_observe(
+    struct secdat_prepared_write_set *write_set,
+    const char *path,
+    const unsigned char *data,
+    size_t length,
+    int exists
+);
+static int secdat_prepared_path_is_state_file(const char *path);
+static int secdat_state_dir(char *buffer, size_t size);
+static int secdat_prepared_write_set_record(
+    struct secdat_prepared_write_set *write_set,
+    const char *path,
+    const unsigned char *after_data,
+    size_t after_length,
+    int after_exists
+);
+static int secdat_prepared_directory_guard_record(
+    struct secdat_prepared_write_set *write_set,
+    const char *path
+);
 static int secdat_recover_transactions(void);
 static int secdat_transaction_ensure_root(char *root, size_t root_size);
 static int secdat_transaction_open_lock(const char *root);
@@ -4313,7 +4390,7 @@ static int secdat_store_root(const char *domain_id, const char *store_name, char
 static int secdat_store_entries_dir(const char *domain_id, const char *store_name, char *buffer, size_t size)
 {
     char store_root[PATH_MAX];
-    int status;
+    int status = 1;
 
     status = secdat_store_root(domain_id, store_name, store_root, sizeof(store_root));
     if (status != 0) {
@@ -4783,12 +4860,56 @@ static int secdat_write_secret_attrs(
     return secdat_atomic_write_file(metadata_path, (const unsigned char *)payload, (size_t)written);
 }
 
+static int secdat_prepared_ensure_directory(
+    const char *path,
+    int *handled
+)
+{
+    struct stat status;
+    int is_state_path;
+
+    *handled = 0;
+    if (!secdat_prepared_write_set.active) {
+        return 0;
+    }
+    is_state_path = secdat_prepared_path_is_state_file(path);
+    if (is_state_path < 0) {
+        secdat_prepared_write_set.failed = 1;
+        return 1;
+    }
+    if (!is_state_path) {
+        return 0;
+    }
+    *handled = 1;
+    if (lstat(path, &status) != 0) {
+        if (errno == ENOENT) {
+            return 0;
+        }
+        secdat_prepared_write_set.failed = 1;
+        return 1;
+    }
+    if (!S_ISDIR(status.st_mode) || (status.st_mode & 022) != 0) {
+        secdat_prepared_write_set.failed = 1;
+        fprintf(stderr, _("not a directory: %s\n"), path);
+        return 1;
+    }
+    return 0;
+}
+
 static int secdat_ensure_directory(const char *path, mode_t mode)
 {
     struct stat status;
     char partial[PATH_MAX];
     size_t index;
     size_t length;
+    int handled = 0;
+
+    if (secdat_prepared_ensure_directory(path, &handled) != 0) {
+        return 1;
+    }
+    if (handled) {
+        return 0;
+    }
 
     length = strlen(path);
     if (length == 0 || length >= sizeof(partial)) {
@@ -4847,15 +4968,116 @@ static int secdat_ensure_store_dirs(const char *domain_id, const char *store_nam
     return secdat_ensure_directory(tombstones_dir, 0700);
 }
 
+static int secdat_prepared_path_is_state_file(const char *path)
+{
+    char state_dir[PATH_MAX];
+    size_t state_dir_length;
+
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
+        return -1;
+    }
+    state_dir_length = strlen(state_dir);
+    return strncmp(path, state_dir, state_dir_length) == 0
+        && path[state_dir_length] == '/';
+}
+
+static int secdat_projected_file_exists(const char *path)
+{
+    size_t index;
+
+    if (!secdat_prepared_write_set.project_reads) {
+        return -1;
+    }
+    for (index = 0; index < secdat_prepared_write_set.count; index += 1) {
+        const struct secdat_prepared_state_file *prepared =
+            &secdat_prepared_write_set.files[index];
+
+        if (strcmp(prepared->path, path) == 0) {
+            return prepared->after_exists;
+        }
+    }
+    return -1;
+}
+
+static int secdat_observed_file_exists(const char *path)
+{
+    struct stat status;
+    unsigned char *data = NULL;
+    size_t length = 0;
+    int exists = 0;
+    int is_state_file = secdat_prepared_path_is_state_file(path);
+
+    if (is_state_file < 0) {
+        secdat_prepared_write_set.failed = 1;
+        return 0;
+    }
+    if (!is_state_file) {
+        return stat(path, &status) == 0 && S_ISREG(status.st_mode);
+    }
+    if (lstat(path, &status) == 0) {
+        if (!S_ISREG(status.st_mode)) {
+            if (!S_ISDIR(status.st_mode)) {
+                secdat_prepared_write_set.failed = 1;
+            }
+            return 0;
+        }
+        if ((status.st_mode & 077) != 0) {
+            secdat_prepared_write_set.failed = 1;
+            return 1;
+        }
+    } else if (errno != ENOENT) {
+        secdat_prepared_write_set.failed = 1;
+        return 0;
+    }
+    if (secdat_transaction_read_target(
+            path,
+            &data,
+            &length,
+            &exists,
+            SECDAT_TRANSACTION_MAX_BLOB_BYTES
+        ) != 0
+        || secdat_prepared_write_set_observe(
+            &secdat_prepared_write_set,
+            path,
+            data,
+            length,
+            exists
+        ) != 0) {
+        secdat_secure_clear(data, length);
+        free(data);
+        secdat_prepared_write_set.failed = 1;
+        return 0;
+    }
+    secdat_secure_clear(data, length);
+    free(data);
+    return exists;
+}
+
 static int secdat_file_exists(const char *path)
 {
     struct stat status;
+    int projected = secdat_projected_file_exists(path);
 
+    if (projected >= 0) {
+        return projected;
+    }
+    if (secdat_prepared_write_set.observe_reads) {
+        return secdat_observed_file_exists(path);
+    }
     return stat(path, &status) == 0 && S_ISREG(status.st_mode);
 }
 
 static int secdat_remove_if_exists(const char *path)
 {
+    if (secdat_prepared_write_set.active) {
+        return secdat_prepared_write_set_record(
+            &secdat_prepared_write_set,
+            path,
+            NULL,
+            0,
+            0
+        );
+    }
     if (unlink(path) == 0 || errno == ENOENT) {
         return 0;
     }
@@ -4881,6 +5103,16 @@ static int secdat_atomic_write_file(const char *path, const unsigned char *data,
     size_t offset;
     ssize_t written;
     char *slash;
+
+    if (secdat_prepared_write_set.active) {
+        return secdat_prepared_write_set_record(
+            &secdat_prepared_write_set,
+            path,
+            data,
+            length,
+            1
+        );
+    }
 
     slash = strrchr(path, '/');
     if (slash == NULL) {
@@ -5021,6 +5253,24 @@ static int secdat_read_file(const char *path, unsigned char **data, size_t *leng
     }
 
     fclose(stream);
+    if (secdat_prepared_write_set.observe_reads) {
+        int is_state_file = secdat_prepared_path_is_state_file(path);
+
+        if (is_state_file < 0
+            || (is_state_file
+                && secdat_prepared_write_set_observe(
+                    &secdat_prepared_write_set,
+                    path,
+                    buffer,
+                    (size_t)size,
+                    1
+                ) != 0)) {
+            secdat_secure_clear(buffer, (size_t)size);
+            free(buffer);
+            secdat_prepared_write_set.failed = 1;
+            return 1;
+        }
+    }
     *data = buffer;
     *length = (size_t)size;
     return 0;
@@ -8956,6 +9206,8 @@ cleanup:
     free(key);
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
+    plaintext = NULL;
+    plaintext_length = 0;
     fclose(stream);
     return status;
 }
@@ -12970,6 +13222,15 @@ static int secdat_collect_directory_keys(const char *directory_path, const char 
     size_t directory_length = strlen(directory_path);
     int status = 0;
 
+    if (secdat_prepared_write_set.observe_reads
+        && secdat_prepared_directory_guard_record(
+            &secdat_prepared_write_set,
+            directory_path
+        ) != 0) {
+        secdat_prepared_write_set.failed = 1;
+        return 1;
+    }
+
     directory = opendir(directory_path);
     if (directory == NULL) {
         if (errno == ENOENT) {
@@ -13015,8 +13276,7 @@ static int secdat_collect_directory_keys(const char *directory_path, const char 
                 &secdat_prepared_write_set.files[prepared_index];
             const char *basename;
 
-            if (!prepared->after_exists
-                || strncmp(
+            if (strncmp(
                     prepared->path,
                     directory_path,
                     directory_length
@@ -13043,12 +13303,33 @@ static int secdat_collect_directory_keys(const char *directory_path, const char 
                 status = 1;
                 break;
             }
-            if (!secdat_key_list_contains(keys, decoded_name)
-                && secdat_key_list_append(keys, decoded_name) != 0) {
-                free(decoded_name);
-                decoded_name = NULL;
-                status = 1;
-                break;
+            if (prepared->after_exists) {
+                if (!secdat_key_list_contains(keys, decoded_name)
+                    && secdat_key_list_append(keys, decoded_name) != 0) {
+                    free(decoded_name);
+                    decoded_name = NULL;
+                    status = 1;
+                    break;
+                }
+            } else {
+                size_t key_index;
+
+                for (key_index = 0; key_index < keys->count; key_index += 1) {
+                    if (strcmp(keys->items[key_index], decoded_name) != 0) {
+                        continue;
+                    }
+                    free(keys->items[key_index]);
+                    if (key_index + 1 < keys->count) {
+                        memmove(
+                            &keys->items[key_index],
+                            &keys->items[key_index + 1],
+                            (keys->count - key_index - 1)
+                                * sizeof(*keys->items)
+                        );
+                    }
+                    keys->count -= 1;
+                    break;
+                }
             }
             free(decoded_name);
             decoded_name = NULL;
@@ -16285,14 +16566,74 @@ static int secdat_read_relation(const char *domain_id, const char *store_name, c
     return secdat_relation_read_path(relation_path, relation_id, relation, quiet);
 }
 
-static int secdat_write_relation(const char *domain_id, const char *store_name, const struct secdat_relation_info *relation)
+static int secdat_encode_relation_header(
+    const struct secdat_relation_info *relation,
+    char **payload,
+    size_t *used,
+    size_t *capacity
+)
 {
-    char relation_path[PATH_MAX];
+    return secdat_text_append(payload, used, capacity, secdat_relation_magic) != 0
+        || secdat_text_append(payload, used, capacity, "\nrelation_id=") != 0
+        || secdat_text_append(payload, used, capacity, relation->relation_id) != 0
+        || secdat_text_append(payload, used, capacity, "\nkind=") != 0
+        || secdat_text_append(payload, used, capacity, relation->kind) != 0
+        || secdat_text_append(payload, used, capacity, "\n") != 0;
+}
+
+static int secdat_encode_relation_member(
+    const struct secdat_relation_member *member,
+    char **payload,
+    size_t *used,
+    size_t *capacity
+)
+{
+    char *escaped_keyref = NULL;
+    int result;
+
+    result = secdat_escape_component(member->keyref, &escaped_keyref) != 0
+        || secdat_text_append(payload, used, capacity, "member=") != 0
+        || secdat_text_append(payload, used, capacity, member->role) != 0
+        || secdat_text_append(payload, used, capacity, "\t") != 0
+        || secdat_text_append(payload, used, capacity, escaped_keyref) != 0
+        || secdat_text_append(payload, used, capacity, "\n") != 0;
+    free(escaped_keyref);
+    return result;
+}
+
+static int secdat_encode_relation_field(
+    const char *name,
+    const char *value,
+    char **payload,
+    size_t *used,
+    size_t *capacity
+)
+{
+    char *escaped_value = NULL;
+    int result;
+
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+    result = secdat_escape_component(value, &escaped_value) != 0
+        || secdat_text_append(payload, used, capacity, name) != 0
+        || secdat_text_append(payload, used, capacity, "=") != 0
+        || secdat_text_append(payload, used, capacity, escaped_value) != 0
+        || secdat_text_append(payload, used, capacity, "\n") != 0;
+    free(escaped_value);
+    return result;
+}
+
+static int secdat_encode_relation(
+    const struct secdat_relation_info *relation,
+    unsigned char **data,
+    size_t *length
+)
+{
     char *payload = NULL;
     size_t used = 0;
     size_t capacity = 0;
     size_t index;
-    int status = 1;
 
     if (relation == NULL || !secdat_relation_id_is_valid(relation->relation_id)
         || relation->kind == NULL || !secdat_metadata_token_is_valid(relation->kind)
@@ -16300,55 +16641,46 @@ static int secdat_write_relation(const char *domain_id, const char *store_name, 
         fprintf(stderr, _("invalid relation metadata\n"));
         return 1;
     }
-    if (secdat_build_relation_path(domain_id, store_name, relation->relation_id, relation_path, sizeof(relation_path)) != 0
-        || secdat_ensure_relations_dir(domain_id, store_name) != 0
-        || secdat_text_append(&payload, &used, &capacity, secdat_relation_magic) != 0
-        || secdat_text_append(&payload, &used, &capacity, "\nrelation_id=") != 0
-        || secdat_text_append(&payload, &used, &capacity, relation->relation_id) != 0
-        || secdat_text_append(&payload, &used, &capacity, "\nkind=") != 0
-        || secdat_text_append(&payload, &used, &capacity, relation->kind) != 0
-        || secdat_text_append(&payload, &used, &capacity, "\n") != 0) {
-        goto cleanup;
+    *data = NULL;
+    *length = 0;
+    if (secdat_encode_relation_header(
+            relation,
+            &payload,
+            &used,
+            &capacity
+        ) != 0) {
+        free(payload);
+        return 1;
     }
     for (index = 0; index < relation->member_count; index += 1) {
-        char *escaped_keyref = NULL;
-
-        if (secdat_escape_component(relation->members[index].keyref, &escaped_keyref) != 0
-            || secdat_text_append(&payload, &used, &capacity, "member=") != 0
-            || secdat_text_append(&payload, &used, &capacity, relation->members[index].role) != 0
-            || secdat_text_append(&payload, &used, &capacity, "\t") != 0
-            || secdat_text_append(&payload, &used, &capacity, escaped_keyref) != 0
-            || secdat_text_append(&payload, &used, &capacity, "\n") != 0) {
-            free(escaped_keyref);
-            goto cleanup;
+        if (secdat_encode_relation_member(
+                &relation->members[index],
+                &payload,
+                &used,
+                &capacity
+            ) != 0) {
+            free(payload);
+            return 1;
         }
-        free(escaped_keyref);
     }
-#define SECDAT_WRITE_RELATION_FIELD(name, value) \
-    do { \
-        if ((value) != NULL && (value)[0] != '\0') { \
-            char *escaped_value = NULL; \
-            if (secdat_escape_component((value), &escaped_value) != 0 \
-                || secdat_text_append(&payload, &used, &capacity, (name)) != 0 \
-                || secdat_text_append(&payload, &used, &capacity, "=") != 0 \
-                || secdat_text_append(&payload, &used, &capacity, escaped_value) != 0 \
-                || secdat_text_append(&payload, &used, &capacity, "\n") != 0) { \
-                free(escaped_value); \
-                goto cleanup; \
-            } \
-            free(escaped_value); \
-        } \
-    } while (0)
-    SECDAT_WRITE_RELATION_FIELD("security", relation->security);
-    SECDAT_WRITE_RELATION_FIELD("exposure", relation->exposure);
-    SECDAT_WRITE_RELATION_FIELD("impact", relation->impact);
-    SECDAT_WRITE_RELATION_FIELD("note", relation->note);
-#undef SECDAT_WRITE_RELATION_FIELD
-    status = secdat_atomic_write_file(relation_path, (const unsigned char *)payload, used);
-
-cleanup:
-    free(payload);
-    return status;
+    if (secdat_encode_relation_field(
+            "security", relation->security, &payload, &used, &capacity
+        ) != 0
+        || secdat_encode_relation_field(
+            "exposure", relation->exposure, &payload, &used, &capacity
+        ) != 0
+        || secdat_encode_relation_field(
+            "impact", relation->impact, &payload, &used, &capacity
+        ) != 0
+        || secdat_encode_relation_field(
+            "note", relation->note, &payload, &used, &capacity
+        ) != 0) {
+        free(payload);
+        return 1;
+    }
+    *data = (unsigned char *)payload;
+    *length = used;
+    return 0;
 }
 
 static int secdat_reject_hidden_v2_plaintext_auxiliary_refs(const char *domain_id, const char *store_name, const char *key)
@@ -17133,6 +17465,8 @@ static const char *secdat_transaction_artifact_kind_name(
         return "domain-entry";
     case SECDAT_TRANSACTION_ARTIFACT_STATE_FILE:
         return "state-file";
+    case SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE:
+        return "container-tree";
     default:
         return NULL;
     }
@@ -17151,6 +17485,8 @@ static int secdat_transaction_parse_artifact_kind(
         *kind = SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY;
     } else if (strcmp(value, "state-file") == 0) {
         *kind = SECDAT_TRANSACTION_ARTIFACT_STATE_FILE;
+    } else if (strcmp(value, "container-tree") == 0) {
+        *kind = SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE;
     } else {
         return 1;
     }
@@ -17164,17 +17500,47 @@ static const char *secdat_transaction_role_name(
     switch (role) {
     case SECDAT_TRANSACTION_ROLE_EXACT_FILE_GUARD:
         return "exact-file";
+    case SECDAT_TRANSACTION_ROLE_TYPED_DIRECTORY_GUARD:
+        return "typed-directory";
     case SECDAT_TRANSACTION_ROLE_REFERENCE_EPOCH:
         return "reference-epoch";
     case SECDAT_TRANSACTION_ROLE_DEPENDENCY_NODE:
         return "dependency-node";
     case SECDAT_TRANSACTION_ROLE_PRIMARY_RECORD:
         return "primary-record";
+    case SECDAT_TRANSACTION_ROLE_SOURCE_REMOVAL:
+        return "source-removal";
     case SECDAT_TRANSACTION_ROLE_DEPENDENCY_ROOT:
         return "dependency-root";
+    case SECDAT_TRANSACTION_ROLE_CONTAINER_PUBLISH:
+        return "container-publish";
+    case SECDAT_TRANSACTION_ROLE_REGISTRY_PUBLISH:
+        return "registry-publish";
+    case SECDAT_TRANSACTION_ROLE_REGISTRY_REMOVAL:
+        return "registry-removal";
+    case SECDAT_TRANSACTION_ROLE_CONTAINER_REMOVAL:
+        return "container-removal";
+    case SECDAT_TRANSACTION_ROLE_ROOT_METADATA:
+        return "root-metadata";
+    case SECDAT_TRANSACTION_ROLE_DESTINATION_REGISTRY:
+        return "destination-registry";
+    case SECDAT_TRANSACTION_ROLE_SOURCE_REGISTRY:
+        return "source-registry";
     default:
         return NULL;
     }
+}
+
+static int secdat_transaction_name_has_suffix(
+    const char *name,
+    const char *suffix
+)
+{
+    size_t name_length = strlen(name);
+    size_t suffix_length = strlen(suffix);
+
+    return name_length > suffix_length
+        && strcmp(name + name_length - suffix_length, suffix) == 0;
 }
 
 static int secdat_transaction_parse_role(
@@ -17184,14 +17550,32 @@ static int secdat_transaction_parse_role(
 {
     if (strcmp(value, "exact-file") == 0) {
         *role = SECDAT_TRANSACTION_ROLE_EXACT_FILE_GUARD;
+    } else if (strcmp(value, "typed-directory") == 0) {
+        *role = SECDAT_TRANSACTION_ROLE_TYPED_DIRECTORY_GUARD;
     } else if (strcmp(value, "reference-epoch") == 0) {
         *role = SECDAT_TRANSACTION_ROLE_REFERENCE_EPOCH;
     } else if (strcmp(value, "dependency-node") == 0) {
         *role = SECDAT_TRANSACTION_ROLE_DEPENDENCY_NODE;
     } else if (strcmp(value, "primary-record") == 0) {
         *role = SECDAT_TRANSACTION_ROLE_PRIMARY_RECORD;
+    } else if (strcmp(value, "source-removal") == 0) {
+        *role = SECDAT_TRANSACTION_ROLE_SOURCE_REMOVAL;
     } else if (strcmp(value, "dependency-root") == 0) {
         *role = SECDAT_TRANSACTION_ROLE_DEPENDENCY_ROOT;
+    } else if (strcmp(value, "container-publish") == 0) {
+        *role = SECDAT_TRANSACTION_ROLE_CONTAINER_PUBLISH;
+    } else if (strcmp(value, "registry-publish") == 0) {
+        *role = SECDAT_TRANSACTION_ROLE_REGISTRY_PUBLISH;
+    } else if (strcmp(value, "registry-removal") == 0) {
+        *role = SECDAT_TRANSACTION_ROLE_REGISTRY_REMOVAL;
+    } else if (strcmp(value, "container-removal") == 0) {
+        *role = SECDAT_TRANSACTION_ROLE_CONTAINER_REMOVAL;
+    } else if (strcmp(value, "root-metadata") == 0) {
+        *role = SECDAT_TRANSACTION_ROLE_ROOT_METADATA;
+    } else if (strcmp(value, "destination-registry") == 0) {
+        *role = SECDAT_TRANSACTION_ROLE_DESTINATION_REGISTRY;
+    } else if (strcmp(value, "source-registry") == 0) {
+        *role = SECDAT_TRANSACTION_ROLE_SOURCE_REGISTRY;
     } else {
         return 1;
     }
@@ -17229,31 +17613,53 @@ static int secdat_transaction_role_phase_is_valid(
     int is_guard
 )
 {
+    static const unsigned int expected_phases[] = {
+        0,
+        0,
+        SECDAT_TRANSACTION_PHASE_REFERENCE_EPOCH,
+        SECDAT_TRANSACTION_PHASE_DEPENDENCY_NODE,
+        SECDAT_TRANSACTION_PHASE_PRIMARY_RECORD,
+        SECDAT_TRANSACTION_PHASE_SOURCE_REMOVAL,
+        SECDAT_TRANSACTION_PHASE_DEPENDENCY_ROOT,
+        SECDAT_TRANSACTION_PHASE_CONTAINER_PUBLISH,
+        SECDAT_TRANSACTION_PHASE_REGISTRY_PUBLISH,
+        SECDAT_TRANSACTION_PHASE_REGISTRY_REMOVAL,
+        SECDAT_TRANSACTION_PHASE_CONTAINER_REMOVAL,
+        SECDAT_TRANSACTION_PHASE_ROOT_METADATA,
+        SECDAT_TRANSACTION_PHASE_DESTINATION_REGISTRY,
+        SECDAT_TRANSACTION_PHASE_SOURCE_REGISTRY,
+    };
+    size_t role_index = (size_t)role;
+
+    if (role < SECDAT_TRANSACTION_ROLE_EXACT_FILE_GUARD
+        || role_index >= sizeof(expected_phases) / sizeof(expected_phases[0])) {
+        return 0;
+    }
     if (is_guard) {
-        return role == SECDAT_TRANSACTION_ROLE_EXACT_FILE_GUARD
+        return (role == SECDAT_TRANSACTION_ROLE_EXACT_FILE_GUARD
+                || role == SECDAT_TRANSACTION_ROLE_TYPED_DIRECTORY_GUARD)
             && phase == 0;
     }
-    return (role == SECDAT_TRANSACTION_ROLE_REFERENCE_EPOCH
-            && phase == SECDAT_TRANSACTION_PHASE_REFERENCE_EPOCH)
-        || (role == SECDAT_TRANSACTION_ROLE_DEPENDENCY_NODE
-            && phase == SECDAT_TRANSACTION_PHASE_DEPENDENCY_NODE)
-        || (role == SECDAT_TRANSACTION_ROLE_PRIMARY_RECORD
-            && phase == SECDAT_TRANSACTION_PHASE_PRIMARY_RECORD)
-        || (role == SECDAT_TRANSACTION_ROLE_DEPENDENCY_ROOT
-            && phase == SECDAT_TRANSACTION_PHASE_DEPENDENCY_ROOT);
+    return role >= SECDAT_TRANSACTION_ROLE_REFERENCE_EPOCH
+        && phase == expected_phases[role_index];
 }
 
 static int secdat_transaction_command_is_valid(const char *value)
 {
-    return strcmp(value, "mask") == 0
-        || strcmp(value, "unmask") == 0
-        || strcmp(value, "mask-rebind") == 0
-        || strcmp(value, "set") == 0
-        || strcmp(value, "cp") == 0
-        || strcmp(value, "ln") == 0
-        || strcmp(value, "rm") == 0
-        || strcmp(value, "load") == 0
-        || strcmp(value, "mv") == 0;
+    static const char *const commands[] = {
+        "mask", "unmask", "mask-rebind", "set", "cp", "ln", "rm",
+        "load", "mv", "relation-set", "relation-rm", "attr", "meta set",
+        "meta unset", "meta mark-leaked", "store-create", "store-delete",
+        "domain-create", "domain-delete", "domain-move",
+    };
+    size_t index;
+
+    for (index = 0; index < sizeof(commands) / sizeof(commands[0]); index += 1) {
+        if (strcmp(value, commands[index]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static int secdat_sha256_hex(
@@ -17509,6 +17915,46 @@ static int secdat_transaction_state_file_name_is_valid(const char *name)
     return 1;
 }
 
+static int secdat_transaction_state_target_path(
+    const char *name,
+    char *path,
+    size_t path_size
+)
+{
+    char state_dir[PATH_MAX];
+
+    if (!secdat_transaction_state_file_name_is_valid(name)
+        || secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
+        return 1;
+    }
+    return snprintf(path, path_size, "%s/%s", state_dir, name)
+        >= (int)path_size;
+}
+
+static int secdat_transaction_container_target_path(
+    const char *domain_id,
+    const char *store_name,
+    const char *name,
+    char *path,
+    size_t path_size
+)
+{
+    if (strcmp(name, "empty-store-v1") == 0
+        || strcmp(name, "empty-store-v2") == 0) {
+        return secdat_store_root(
+            domain_id,
+            store_name,
+            path,
+            path_size
+        );
+    }
+    if (strcmp(name, "empty-domain-v1") == 0
+        && strcmp(store_name, "default") == 0) {
+        return secdat_domain_data_root(domain_id, path, path_size);
+    }
+    return 1;
+}
+
 static int secdat_transaction_target_path(
     enum secdat_transaction_artifact_kind kind,
     const char *domain_id,
@@ -17525,36 +17971,42 @@ static int secdat_transaction_target_path(
     }
     switch (kind) {
     case SECDAT_TRANSACTION_ARTIFACT_MASK:
-        if (!secdat_uuid_is_valid(name)) {
-            return 1;
-        }
-        return secdat_build_v2_mask_path(domain_id, store_name, name, path, path_size);
+        return !secdat_uuid_is_valid(name)
+            || secdat_build_v2_mask_path(
+                domain_id,
+                store_name,
+                name,
+                path,
+                path_size
+            ) != 0;
     case SECDAT_TRANSACTION_ARTIFACT_TOMBSTONE:
-        if (!secdat_is_valid_env_name(name)) {
-            return 1;
-        }
-        return secdat_build_tombstone_path(domain_id, store_name, name, path, path_size);
+        return !secdat_is_valid_env_name(name)
+            || secdat_build_tombstone_path(
+                domain_id,
+                store_name,
+                name,
+                path,
+                path_size
+            ) != 0;
     case SECDAT_TRANSACTION_ARTIFACT_DOMAIN_ENTRY:
-        if (!secdat_uuid_is_valid(name)) {
-            return 1;
-        }
-        return secdat_build_v2_domain_entry_path(
+        return !secdat_uuid_is_valid(name)
+            || secdat_build_v2_domain_entry_path(
+                domain_id,
+                store_name,
+                name,
+                path,
+                path_size
+            ) != 0;
+    case SECDAT_TRANSACTION_ARTIFACT_STATE_FILE:
+        return secdat_transaction_state_target_path(name, path, path_size);
+    case SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE:
+        return secdat_transaction_container_target_path(
             domain_id,
             store_name,
             name,
             path,
             path_size
         );
-    case SECDAT_TRANSACTION_ARTIFACT_STATE_FILE: {
-        char state_dir[PATH_MAX];
-
-        if (!secdat_transaction_state_file_name_is_valid(name)
-            || secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
-            return 1;
-        }
-        return snprintf(path, path_size, "%s/%s", state_dir, name)
-            >= (int)path_size;
-    }
     default:
         return 1;
     }
@@ -17632,6 +18084,1100 @@ static int secdat_transaction_read_target(
     return 0;
 }
 
+struct secdat_container_item {
+    char relative_path[PATH_MAX];
+    int is_directory;
+    mode_t mode;
+    size_t size;
+    char digest[SECDAT_SHA256_HEX_LENGTH + 1];
+};
+
+struct secdat_container_inventory {
+    struct secdat_container_item items[SECDAT_CONTAINER_MAX_ITEMS];
+    size_t count;
+    size_t directory_count;
+};
+
+static int secdat_container_expect_directory(const char *path)
+{
+    struct stat status;
+
+    return lstat(path, &status) != 0
+        || !S_ISDIR(status.st_mode)
+        || (status.st_mode & 07777) != 0700;
+}
+
+static int secdat_container_expect_empty_directory(const char *path)
+{
+    DIR *directory;
+    struct dirent *entry;
+    int result = 0;
+
+    if (secdat_container_expect_directory(path) != 0) {
+        return 1;
+    }
+    directory = opendir(path);
+    if (directory == NULL) {
+        return 1;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") != 0
+            && strcmp(entry->d_name, "..") != 0) {
+            result = 1;
+            break;
+        }
+    }
+    if (closedir(directory) != 0) {
+        result = 1;
+    }
+    return result;
+}
+
+static int secdat_container_optional_empty_directory(
+    const char *root,
+    const char *name
+)
+{
+    char path[PATH_MAX];
+    struct stat status;
+
+    if (secdat_join_path(path, sizeof(path), root, name) != 0) {
+        return 1;
+    }
+    if (lstat(path, &status) != 0) {
+        return errno == ENOENT ? 0 : 1;
+    }
+    return secdat_container_expect_empty_directory(path);
+}
+
+static int secdat_container_read_admin_file(
+    const char *path,
+    unsigned char **data,
+    size_t *length,
+    int *exists
+)
+{
+    return secdat_transaction_read_target(
+        path,
+        data,
+        length,
+        exists,
+        SECDAT_METADATA_TEXT_FILE_MAX
+    );
+}
+
+static int secdat_container_file_equals(
+    const char *path,
+    const unsigned char *expected,
+    size_t expected_length,
+    int required
+)
+{
+    unsigned char *data = NULL;
+    size_t length = 0;
+    int exists = 0;
+    int result;
+
+    result = secdat_container_read_admin_file(path, &data, &length, &exists);
+    if (result == 0) {
+        result = (!exists && required)
+            || (exists
+                && (length != expected_length
+                    || CRYPTO_memcmp(data, expected, length) != 0));
+    }
+    free(data);
+    return result;
+}
+
+static int secdat_container_name_index(
+    const char *name,
+    const char *const *names,
+    size_t count,
+    size_t *matched_index
+)
+{
+    size_t index;
+
+    for (index = 0; index < count; index += 1) {
+        if (strcmp(name, names[index]) == 0) {
+            *matched_index = index;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_container_record_root_name(
+    const char *name,
+    const char *const *allowed,
+    size_t allowed_count,
+    const char *const *required,
+    size_t required_count,
+    unsigned char *seen
+)
+{
+    size_t index;
+
+    if (!secdat_container_name_index(
+            name,
+            allowed,
+            allowed_count,
+            &index
+        )) {
+        return 1;
+    }
+    if (secdat_container_name_index(
+            name,
+            required,
+            required_count,
+            &index
+        )) {
+        seen[index] = 1;
+    }
+    return 0;
+}
+
+static int secdat_container_all_required_names_seen(
+    const unsigned char *seen,
+    size_t count
+)
+{
+    size_t index;
+
+    for (index = 0; index < count; index += 1) {
+        if (!seen[index]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int secdat_container_root_names_are_exact(
+    const char *path,
+    const char *const *allowed,
+    size_t allowed_count,
+    const char *const *required,
+    size_t required_count
+)
+{
+    unsigned char *seen = NULL;
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int result = 1;
+
+    if (secdat_container_expect_directory(path) != 0) {
+        return 1;
+    }
+    seen = calloc(required_count == 0 ? 1 : required_count, 1);
+    directory = opendir(path);
+    if (seen == NULL || directory == NULL) {
+        goto cleanup;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (secdat_container_record_root_name(
+                entry->d_name,
+                allowed,
+                allowed_count,
+                required,
+                required_count,
+                seen
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    if (!secdat_container_all_required_names_seen(seen, required_count)) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    if (directory != NULL && closedir(directory) != 0) {
+        result = 1;
+    }
+    free(seen);
+    return result;
+}
+
+static int secdat_container_validate_common_store_directories(const char *root)
+{
+    char path[PATH_MAX];
+
+    return secdat_join_path(path, sizeof(path), root, "entries") != 0
+        || secdat_container_expect_empty_directory(path) != 0
+        || secdat_join_path(path, sizeof(path), root, "tombstones") != 0
+        || secdat_container_expect_empty_directory(path) != 0
+        || secdat_container_optional_empty_directory(root, "key-meta") != 0
+        || secdat_container_optional_empty_directory(root, "relations") != 0;
+}
+
+static int secdat_container_validate_v2_store_directories(const char *root)
+{
+    static const unsigned char format_v2[] =
+        "SECDATSTORE1\nformat=v2\nstate=ready\n";
+    static const char *const objects_allowed[] = {"secret"};
+    char path[PATH_MAX];
+    char objects_path[PATH_MAX];
+    char secret_path[PATH_MAX];
+
+    return secdat_join_path(path, sizeof(path), root, "domain-ent") != 0
+        || secdat_container_expect_empty_directory(path) != 0
+        || secdat_join_path(objects_path, sizeof(objects_path), root, "objects") != 0
+        || secdat_container_root_names_are_exact(
+            objects_path,
+            objects_allowed,
+            sizeof(objects_allowed) / sizeof(objects_allowed[0]),
+            objects_allowed,
+            sizeof(objects_allowed) / sizeof(objects_allowed[0])
+        ) != 0
+        || secdat_join_path(secret_path, sizeof(secret_path), objects_path, "secret") != 0
+        || secdat_container_expect_empty_directory(secret_path) != 0
+        || secdat_container_optional_empty_directory(root, "masks") != 0
+        || secdat_join_path(path, sizeof(path), root, "format") != 0
+        || secdat_container_file_equals(
+            path,
+            format_v2,
+            sizeof(format_v2) - 1,
+            1
+        ) != 0;
+}
+
+static int secdat_container_validate_empty_store(
+    const char *root,
+    const char *schema
+)
+{
+    static const unsigned char format_v1[] =
+        "SECDATSTORE1\nformat=v1\nstate=ready\n";
+    static const char *const v1_allowed[] = {
+        "entries", "tombstones", "key-meta", "relations", "format",
+    };
+    static const char *const v1_required[] = {"entries", "tombstones"};
+    static const char *const v2_allowed[] = {
+        "entries", "tombstones", "domain-ent", "objects", "key-meta",
+        "relations", "masks", "format",
+    };
+    static const char *const v2_required[] = {
+        "entries", "tombstones", "domain-ent", "objects", "key-meta",
+        "relations", "format",
+    };
+    char path[PATH_MAX];
+    const char *const *allowed;
+    const char *const *required;
+    size_t allowed_count;
+    size_t required_count;
+    int is_v2 = strcmp(schema, "empty-store-v2") == 0;
+
+    if (!is_v2 && strcmp(schema, "empty-store-v1") != 0) {
+        return 1;
+    }
+    allowed = is_v2 ? v2_allowed : v1_allowed;
+    allowed_count = is_v2
+        ? sizeof(v2_allowed) / sizeof(v2_allowed[0])
+        : sizeof(v1_allowed) / sizeof(v1_allowed[0]);
+    required = is_v2 ? v2_required : v1_required;
+    required_count = is_v2
+        ? sizeof(v2_required) / sizeof(v2_required[0])
+        : sizeof(v1_required) / sizeof(v1_required[0]);
+    if (secdat_container_root_names_are_exact(
+            root,
+            allowed,
+            allowed_count,
+            required,
+            required_count
+        ) != 0
+        || secdat_container_validate_common_store_directories(root) != 0) {
+        return 1;
+    }
+    if (!is_v2) {
+        if (secdat_join_path(path, sizeof(path), root, "format") != 0) {
+            return 1;
+        }
+        return secdat_container_file_equals(
+            path,
+            format_v1,
+            sizeof(format_v1) - 1,
+            0
+        );
+    }
+    return secdat_container_validate_v2_store_directories(root);
+}
+
+static int secdat_container_detect_store_schema(
+    const char *root,
+    const char **schema
+)
+{
+    static const unsigned char format_v1[] =
+        "SECDATSTORE1\nformat=v1\nstate=ready\n";
+    static const unsigned char format_v2[] =
+        "SECDATSTORE1\nformat=v2\nstate=ready\n";
+    char format_path[PATH_MAX];
+    unsigned char *data = NULL;
+    size_t length = 0;
+    int exists = 0;
+    int result = 1;
+
+    if (secdat_join_path(format_path, sizeof(format_path), root, "format") != 0
+        || secdat_container_read_admin_file(
+            format_path,
+            &data,
+            &length,
+            &exists
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!exists
+        || (length == sizeof(format_v1) - 1
+            && CRYPTO_memcmp(data, format_v1, length) == 0)) {
+        *schema = "empty-store-v1";
+        result = 0;
+    } else if (length == sizeof(format_v2) - 1
+        && CRYPTO_memcmp(data, format_v2, length) == 0) {
+        *schema = "empty-store-v2";
+        result = 0;
+    }
+
+cleanup:
+    free(data);
+    return result;
+}
+
+static int secdat_container_validate_domain_directories(
+    const char *root,
+    char *stores_path,
+    size_t stores_path_size
+)
+{
+    static const char *const root_allowed[] = {"meta", "stores"};
+    static const char *const meta_allowed[] = {"root", "root-identity"};
+    char meta_path[PATH_MAX];
+
+    return secdat_container_root_names_are_exact(
+            root,
+            root_allowed,
+            sizeof(root_allowed) / sizeof(root_allowed[0]),
+            root_allowed,
+            sizeof(root_allowed) / sizeof(root_allowed[0])
+        ) != 0
+        || secdat_join_path(meta_path, sizeof(meta_path), root, "meta") != 0
+        || secdat_container_root_names_are_exact(
+            meta_path,
+            meta_allowed,
+            sizeof(meta_allowed) / sizeof(meta_allowed[0]),
+            meta_allowed,
+            sizeof(meta_allowed) / sizeof(meta_allowed[0])
+        ) != 0
+        || secdat_join_path(
+            stores_path,
+            stores_path_size,
+            root,
+            "stores"
+        ) != 0
+        || secdat_container_expect_directory(stores_path) != 0;
+}
+
+static int secdat_container_validate_named_store(
+    const char *stores_path,
+    const char *name,
+    int *found_default
+)
+{
+    char store_path[PATH_MAX];
+    const char *schema = NULL;
+
+    if (strcmp(name, "default") == 0) {
+        *found_default = 1;
+    }
+    return strchr(name, '/') != NULL
+        || strcmp(name, ".") == 0
+        || strcmp(name, "..") == 0
+        || secdat_join_path(
+            store_path,
+            sizeof(store_path),
+            stores_path,
+            name
+        ) != 0
+        || secdat_container_detect_store_schema(store_path, &schema) != 0
+        || secdat_container_validate_empty_store(store_path, schema) != 0;
+}
+
+static int secdat_container_validate_empty_domain(const char *root)
+{
+    char stores_path[PATH_MAX];
+    DIR *stores = NULL;
+    struct dirent *entry;
+    int found_default = 0;
+    int result = 1;
+
+    if (secdat_container_validate_domain_directories(
+            root,
+            stores_path,
+            sizeof(stores_path)
+        ) != 0) {
+        return 1;
+    }
+    stores = opendir(stores_path);
+    if (stores == NULL) {
+        return 1;
+    }
+    while ((entry = readdir(stores)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (secdat_container_validate_named_store(
+                stores_path,
+                entry->d_name,
+                &found_default
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    result = found_default ? 0 : 1;
+
+cleanup:
+    if (closedir(stores) != 0) {
+        result = 1;
+    }
+    return result;
+}
+
+static int secdat_container_validate_schema(
+    const char *schema,
+    const char *root
+)
+{
+    if (strcmp(schema, "empty-store-v1") == 0
+        || strcmp(schema, "empty-store-v2") == 0) {
+        return secdat_container_validate_empty_store(root, schema);
+    }
+    if (strcmp(schema, "empty-domain-v1") == 0) {
+        return secdat_container_validate_empty_domain(root);
+    }
+    return 1;
+}
+
+static int secdat_container_item_compare(const void *left, const void *right)
+{
+    const struct secdat_container_item *left_item = left;
+    const struct secdat_container_item *right_item = right;
+
+    return strcmp(left_item->relative_path, right_item->relative_path);
+}
+
+static int secdat_container_encode_inventory(
+    const char *schema,
+    struct secdat_container_inventory *inventory,
+    unsigned char **payload,
+    size_t *payload_length
+)
+{
+    struct secdat_byte_buffer buffer = {0};
+    char line[PATH_MAX + 128];
+    size_t index;
+    int written;
+    int result = 1;
+
+    *payload = NULL;
+    *payload_length = 0;
+    qsort(
+        inventory->items,
+        inventory->count,
+        sizeof(*inventory->items),
+        secdat_container_item_compare
+    );
+    written = snprintf(
+        line,
+        sizeof(line),
+        "SECDATCONTAINERTREE1\nschema=%s\n",
+        schema
+    );
+    if (written < 0
+        || (size_t)written >= sizeof(line)
+        || secdat_byte_buffer_append(
+            &buffer,
+            (const unsigned char *)line,
+            (size_t)written
+        ) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < inventory->count; index += 1) {
+        const struct secdat_container_item *item = &inventory->items[index];
+
+        written = item->is_directory
+            ? snprintf(
+                line,
+                sizeof(line),
+                "dir=%s\t0700\n",
+                item->relative_path
+            )
+            : snprintf(
+                line,
+                sizeof(line),
+                "file=%s\t0600\t%zu\t%s\n",
+                item->relative_path,
+                item->size,
+                item->digest
+            );
+        if (written < 0
+            || (size_t)written >= sizeof(line)
+            || secdat_byte_buffer_append(
+                &buffer,
+                (const unsigned char *)line,
+                (size_t)written
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    *payload = buffer.data;
+    *payload_length = buffer.length;
+    memset(&buffer, 0, sizeof(buffer));
+    result = 0;
+
+cleanup:
+    secdat_byte_buffer_clear(&buffer);
+    return result;
+}
+
+static int secdat_container_collect_inventory(
+    const char *root,
+    const char *relative,
+    unsigned int depth,
+    struct secdat_container_inventory *inventory
+)
+{
+    char path[PATH_MAX];
+    struct stat status;
+    struct secdat_container_item *item;
+    DIR *directory = NULL;
+    struct dirent *entry;
+    struct secdat_key_list names = {0};
+    size_t index;
+    int result = 1;
+
+    if (depth > SECDAT_CONTAINER_MAX_DEPTH
+        || inventory->count >= SECDAT_CONTAINER_MAX_ITEMS
+        || (relative[0] == '\0'
+            ? secdat_copy_string(path, sizeof(path), root)
+            : secdat_join_path(path, sizeof(path), root, relative)) != 0
+        || lstat(path, &status) != 0
+        || !S_ISDIR(status.st_mode)
+        || (status.st_mode & 07777) != 0700
+        || inventory->directory_count >= SECDAT_CONTAINER_MAX_DIRECTORIES) {
+        goto cleanup;
+    }
+    item = &inventory->items[inventory->count++];
+    memset(item, 0, sizeof(*item));
+    item->is_directory = 1;
+    item->mode = 0700;
+    if (secdat_copy_string(
+            item->relative_path,
+            sizeof(item->relative_path),
+            relative[0] == '\0' ? "." : relative
+        ) != 0) {
+        goto cleanup;
+    }
+    inventory->directory_count += 1;
+    directory = opendir(path);
+    if (directory == NULL) {
+        goto cleanup;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (secdat_key_list_append(&names, entry->d_name) != 0) {
+            goto cleanup;
+        }
+    }
+    if (closedir(directory) != 0) {
+        directory = NULL;
+        goto cleanup;
+    }
+    directory = NULL;
+    if (names.count > 1) {
+        qsort(
+            names.items,
+            names.count,
+            sizeof(*names.items),
+            secdat_compare_strings
+        );
+    }
+    for (index = 0; index < names.count; index += 1) {
+        char child_relative[PATH_MAX];
+        char child_path[PATH_MAX];
+
+        if ((relative[0] == '\0'
+                ? secdat_copy_string(
+                    child_relative,
+                    sizeof(child_relative),
+                    names.items[index]
+                )
+                : snprintf(
+                    child_relative,
+                    sizeof(child_relative),
+                    "%s/%s",
+                    relative,
+                    names.items[index]
+                ) >= (int)sizeof(child_relative))
+            || secdat_join_path(
+                child_path,
+                sizeof(child_path),
+                root,
+                child_relative
+            ) != 0
+            || lstat(child_path, &status) != 0) {
+            goto cleanup;
+        }
+        if (S_ISDIR(status.st_mode)) {
+            if (secdat_container_collect_inventory(
+                    root,
+                    child_relative,
+                    depth + 1,
+                    inventory
+                ) != 0) {
+                goto cleanup;
+            }
+            continue;
+        }
+        if (!S_ISREG(status.st_mode)
+            || (status.st_mode & 07777) != 0600
+            || status.st_size < 0
+            || (uintmax_t)status.st_size > SECDAT_METADATA_TEXT_FILE_MAX
+            || inventory->count >= SECDAT_CONTAINER_MAX_ITEMS) {
+            goto cleanup;
+        }
+        item = &inventory->items[inventory->count++];
+        memset(item, 0, sizeof(*item));
+        item->mode = 0600;
+        item->size = (size_t)status.st_size;
+        if (secdat_copy_string(
+                item->relative_path,
+                sizeof(item->relative_path),
+                child_relative
+            ) != 0) {
+            goto cleanup;
+        }
+        {
+            unsigned char *data = NULL;
+            size_t length = 0;
+            int exists = 0;
+
+            if (secdat_container_read_admin_file(
+                    child_path,
+                    &data,
+                    &length,
+                    &exists
+                ) != 0
+                || !exists
+                || length != item->size
+                || secdat_sha256_hex(data, length, item->digest) != 0) {
+                free(data);
+                goto cleanup;
+            }
+            free(data);
+        }
+    }
+    result = 0;
+
+cleanup:
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    secdat_key_list_free(&names);
+    return result;
+}
+
+static int secdat_container_manifest(
+    const char *schema,
+    const char *root,
+    unsigned char **payload,
+    size_t *payload_length
+)
+{
+    struct secdat_container_inventory inventory = {0};
+    int result = 1;
+
+    *payload = NULL;
+    *payload_length = 0;
+    if (secdat_container_validate_schema(schema, root) != 0
+        || secdat_container_collect_inventory(
+            root,
+            "",
+            0,
+            &inventory
+        ) != 0) {
+        fprintf(stderr, _("container tree does not match schema: %s\n"), schema);
+        goto cleanup;
+    }
+    result = secdat_container_encode_inventory(
+        schema,
+        &inventory,
+        payload,
+        payload_length
+    );
+
+cleanup:
+    return result;
+}
+
+static int secdat_container_template_add_directory(
+    struct secdat_container_inventory *inventory,
+    const char *relative
+)
+{
+    struct secdat_container_item *item;
+
+    if (inventory->count >= SECDAT_CONTAINER_MAX_ITEMS
+        || inventory->directory_count >= SECDAT_CONTAINER_MAX_DIRECTORIES) {
+        return 1;
+    }
+    item = &inventory->items[inventory->count++];
+    memset(item, 0, sizeof(*item));
+    item->is_directory = 1;
+    item->mode = 0700;
+    inventory->directory_count += 1;
+    return secdat_copy_string(
+        item->relative_path,
+        sizeof(item->relative_path),
+        relative
+    );
+}
+
+static int secdat_container_template_add_file(
+    struct secdat_container_inventory *inventory,
+    const char *relative,
+    const char *content
+)
+{
+    struct secdat_container_item *item;
+
+    if (inventory->count >= SECDAT_CONTAINER_MAX_ITEMS) {
+        return 1;
+    }
+    item = &inventory->items[inventory->count++];
+    memset(item, 0, sizeof(*item));
+    item->mode = 0600;
+    item->size = strlen(content);
+    return secdat_copy_string(
+            item->relative_path,
+            sizeof(item->relative_path),
+            relative
+        ) != 0
+        || secdat_sha256_hex(
+            (const unsigned char *)content,
+            item->size,
+            item->digest
+        ) != 0;
+}
+
+static int secdat_container_create_manifest(
+    const char *schema,
+    const char *root_text,
+    const char *identity_text,
+    unsigned char **payload,
+    size_t *payload_length
+)
+{
+    struct secdat_container_inventory inventory = {0};
+
+    if (secdat_container_template_add_directory(&inventory, ".") != 0) {
+        return 1;
+    }
+    if (strcmp(schema, "empty-store-v1") == 0) {
+        if (secdat_container_template_add_directory(
+                &inventory,
+                "entries"
+            ) != 0
+            || secdat_container_template_add_directory(
+                &inventory,
+                "tombstones"
+            ) != 0) {
+            return 1;
+        }
+    } else if (strcmp(schema, "empty-domain-v1") == 0
+        && root_text != NULL
+        && identity_text != NULL) {
+        if (secdat_container_template_add_directory(&inventory, "meta") != 0
+            || secdat_container_template_add_file(
+                &inventory,
+                "meta/root",
+                root_text
+            ) != 0
+            || secdat_container_template_add_file(
+                &inventory,
+                "meta/root-identity",
+                identity_text
+            ) != 0
+            || secdat_container_template_add_directory(
+                &inventory,
+                "stores"
+            ) != 0
+            || secdat_container_template_add_directory(
+                &inventory,
+                "stores/default"
+            ) != 0
+            || secdat_container_template_add_directory(
+                &inventory,
+                "stores/default/entries"
+            ) != 0
+            || secdat_container_template_add_directory(
+                &inventory,
+                "stores/default/tombstones"
+            ) != 0) {
+            return 1;
+        }
+    } else {
+        return 1;
+    }
+    return secdat_container_encode_inventory(
+        schema,
+        &inventory,
+        payload,
+        payload_length
+    );
+}
+
+static int secdat_container_write_admin_file(
+    const char *root,
+    const char *relative,
+    const char *content
+)
+{
+    char path[PATH_MAX];
+
+    return secdat_join_path(path, sizeof(path), root, relative) != 0
+        || secdat_atomic_write_file(
+            path,
+            (const unsigned char *)content,
+            strlen(content)
+        ) != 0;
+}
+
+static int secdat_container_create_directories(
+    const char *root,
+    const char *const *directories,
+    size_t directory_count
+)
+{
+    char path[PATH_MAX];
+    size_t index;
+
+    for (index = 0; index < directory_count; index += 1) {
+        if (secdat_join_path(
+                path,
+                sizeof(path),
+                root,
+                directories[index]
+            ) != 0
+            || mkdir(path, 0700) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_container_fsync_directories(
+    const char *root,
+    const char *const *directories,
+    size_t directory_count
+)
+{
+    char path[PATH_MAX];
+    size_t index;
+
+    for (index = 0; index < directory_count; index += 1) {
+        if (secdat_join_path(
+                path,
+                sizeof(path),
+                root,
+                directories[index]
+            ) != 0
+            || secdat_fsync_directory(path) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_container_create_store_v1_tree(const char *root)
+{
+    static const char *const directories[] = {"entries", "tombstones"};
+
+    return secdat_container_create_directories(
+            root,
+            directories,
+            sizeof(directories) / sizeof(directories[0])
+        ) != 0
+        || secdat_container_fsync_directories(
+            root,
+            directories,
+            sizeof(directories) / sizeof(directories[0])
+        ) != 0;
+}
+
+static int secdat_container_create_domain_v1_tree(
+    const struct secdat_transaction_target *target
+)
+{
+    static const char *const create_order[] = {
+        "meta",
+        "stores",
+        "stores/default",
+        "stores/default/entries",
+        "stores/default/tombstones",
+    };
+    static const char *const fsync_order[] = {
+        "stores/default/entries",
+        "stores/default/tombstones",
+        "stores/default",
+        "stores",
+        "meta",
+    };
+
+    return secdat_container_create_directories(
+            target->container_journal_path,
+            create_order,
+            sizeof(create_order) / sizeof(create_order[0])
+        ) != 0
+        || secdat_container_write_admin_file(
+            target->container_journal_path,
+            "meta/root",
+            target->container_root_text
+        ) != 0
+        || secdat_container_write_admin_file(
+            target->container_journal_path,
+            "meta/root-identity",
+            target->container_identity_text
+        ) != 0
+        || secdat_container_fsync_directories(
+            target->container_journal_path,
+            fsync_order,
+            sizeof(fsync_order) / sizeof(fsync_order[0])
+        ) != 0;
+}
+
+static int secdat_container_verify_create_tree(
+    const struct secdat_transaction_target *target
+)
+{
+    unsigned char *manifest = NULL;
+    size_t manifest_length = 0;
+    char digest[SECDAT_SHA256_HEX_LENGTH + 1];
+    int result;
+
+    result = secdat_fsync_directory(target->container_journal_path) != 0
+        || secdat_container_manifest(
+            target->name,
+            target->container_journal_path,
+            &manifest,
+            &manifest_length
+        ) != 0
+        || secdat_sha256_hex(manifest, manifest_length, digest) != 0
+        || manifest_length != target->after_length
+        || strcmp(digest, target->after_digest) != 0
+        || CRYPTO_memcmp(
+            manifest,
+            target->after_data,
+            manifest_length
+        ) != 0
+        || secdat_fsync_parent_directory(
+            target->container_journal_path
+        ) != 0;
+    free(manifest);
+    return result;
+}
+
+static int secdat_container_build_create_tree(
+    const struct secdat_transaction_target *target
+)
+{
+    int result;
+
+    if (target->container_journal_path[0] == '\0'
+        || mkdir(target->container_journal_path, 0700) != 0) {
+        return 1;
+    }
+    if (strcmp(target->name, "empty-store-v1") == 0) {
+        result = secdat_container_create_store_v1_tree(
+            target->container_journal_path
+        );
+    } else if (strcmp(target->name, "empty-domain-v1") == 0) {
+        result = secdat_container_create_domain_v1_tree(target);
+    } else {
+        return 1;
+    }
+    return result != 0 || secdat_container_verify_create_tree(target) != 0;
+}
+
+static int secdat_container_remove_verified_tree(
+    const char *schema,
+    const char *path,
+    const char *expected_digest
+)
+{
+    struct secdat_container_inventory inventory = {0};
+    unsigned char *manifest = NULL;
+    size_t manifest_length = 0;
+    char digest[SECDAT_SHA256_HEX_LENGTH + 1];
+    size_t index;
+    int result = 1;
+
+    if (secdat_container_manifest(
+            schema,
+            path,
+            &manifest,
+            &manifest_length
+        ) != 0
+        || secdat_sha256_hex(manifest, manifest_length, digest) != 0
+        || strcmp(digest, expected_digest) != 0
+        || secdat_container_collect_inventory(
+            path,
+            "",
+            0,
+            &inventory
+        ) != 0) {
+        goto cleanup;
+    }
+    qsort(
+        inventory.items,
+        inventory.count,
+        sizeof(*inventory.items),
+        secdat_container_item_compare
+    );
+    for (index = inventory.count; index > 0; index -= 1) {
+        const struct secdat_container_item *item = &inventory.items[index - 1];
+        char item_path[PATH_MAX];
+
+        if ((strcmp(item->relative_path, ".") == 0
+                ? secdat_copy_string(item_path, sizeof(item_path), path)
+                : secdat_join_path(
+                    item_path,
+                    sizeof(item_path),
+                    path,
+                    item->relative_path
+                )) != 0
+            || (item->is_directory
+                ? rmdir(item_path)
+                : unlink(item_path)) != 0) {
+            goto cleanup;
+        }
+    }
+    if (secdat_fsync_parent_directory(path) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(manifest);
+    return result;
+}
+
 static void secdat_prepared_write_set_reset(
     struct secdat_prepared_write_set *write_set
 )
@@ -17651,7 +19197,341 @@ static void secdat_prepared_write_set_reset(
         free(write_set->files[index].after_data);
     }
     free(write_set->files);
+    free(write_set->directories);
     memset(write_set, 0, sizeof(*write_set));
+}
+
+static int secdat_prepared_write_set_has_path(
+    const struct secdat_prepared_write_set *write_set,
+    const char *path
+)
+{
+    size_t index;
+
+    for (index = 0; index < write_set->count; index += 1) {
+        if (strcmp(write_set->files[index].path, path) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_prepared_write_set_reserve_file(
+    struct secdat_prepared_write_set *write_set
+)
+{
+    struct secdat_prepared_state_file *resized;
+    size_t next_capacity;
+
+    if (write_set->count < write_set->capacity) {
+        return 0;
+    }
+    next_capacity = write_set->capacity == 0
+        ? 8
+        : write_set->capacity * 2;
+    resized = realloc(
+        write_set->files,
+        next_capacity * sizeof(*resized)
+    );
+    if (resized == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    write_set->files = resized;
+    write_set->capacity = next_capacity;
+    return 0;
+}
+
+static int secdat_copy_observed_file_data(
+    const unsigned char *data,
+    size_t length,
+    int exists,
+    unsigned char **before_copy,
+    unsigned char **after_copy
+)
+{
+    if (!exists) {
+        return 0;
+    }
+    *before_copy = malloc(length == 0 ? 1 : length);
+    *after_copy = malloc(length == 0 ? 1 : length);
+    if (*before_copy == NULL || *after_copy == NULL) {
+        free(*before_copy);
+        free(*after_copy);
+        *before_copy = NULL;
+        *after_copy = NULL;
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    if (length > 0) {
+        memcpy(*before_copy, data, length);
+        memcpy(*after_copy, data, length);
+    }
+    return 0;
+}
+
+static int secdat_prepared_write_set_observe(
+    struct secdat_prepared_write_set *write_set,
+    const char *path,
+    const unsigned char *data,
+    size_t length,
+    int exists
+)
+{
+    struct secdat_prepared_state_file *file;
+    unsigned char *before_copy = NULL;
+    unsigned char *after_copy = NULL;
+    int is_state_file = secdat_prepared_path_is_state_file(path);
+
+    if (is_state_file <= 0) {
+        return is_state_file < 0;
+    }
+
+    if (secdat_prepared_write_set_has_path(write_set, path)) {
+        return 0;
+    }
+    if (secdat_prepared_write_set_reserve_file(write_set) != 0
+        || secdat_copy_observed_file_data(
+            data,
+            length,
+            exists,
+            &before_copy,
+            &after_copy
+        ) != 0) {
+        return 1;
+    }
+    file = &write_set->files[write_set->count];
+    memset(file, 0, sizeof(*file));
+    if (secdat_copy_string(file->path, sizeof(file->path), path) != 0) {
+        secdat_secure_clear(before_copy, length);
+        free(before_copy);
+        secdat_secure_clear(after_copy, length);
+        free(after_copy);
+        return 1;
+    }
+    file->before_data = before_copy;
+    file->before_length = exists ? length : 0;
+    file->after_data = after_copy;
+    file->after_length = exists ? length : 0;
+    file->before_exists = exists;
+    file->after_exists = exists;
+    file->observed = 1;
+    write_set->count += 1;
+    return 0;
+}
+
+static void secdat_prepared_inventory_encode_u64(
+    uint64_t value,
+    unsigned char encoded[8]
+)
+{
+    size_t index;
+
+    for (index = 0; index < 8; index += 1) {
+        encoded[7 - index] = (unsigned char)(value >> (index * 8));
+    }
+}
+
+static int secdat_prepared_directory_inventory(
+    const char *path,
+    char digest[SECDAT_SHA256_HEX_LENGTH + 1],
+    int *exists
+)
+{
+    static const unsigned char magic[] = "SECDATTYPEDDIR1\n";
+    struct secdat_key_list names = {0};
+    EVP_MD_CTX *context = NULL;
+    unsigned char raw_digest[EVP_MAX_MD_SIZE];
+    unsigned int raw_length = 0;
+    int descriptor = -1;
+    DIR *directory = NULL;
+    struct dirent *entry;
+    size_t index;
+    size_t total_bytes = 0;
+    int result = 1;
+    static const char hex[] = "0123456789abcdef";
+
+    *exists = 0;
+    digest[0] = '\0';
+    descriptor = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+    if (descriptor < 0) {
+        if (errno == ENOENT) {
+            return 0;
+        }
+        fprintf(stderr, _("failed to inspect typed directory: %s\n"), path);
+        return 1;
+    }
+    directory = fdopendir(descriptor);
+    if (directory == NULL) {
+        close(descriptor);
+        fprintf(stderr, _("failed to inspect typed directory: %s\n"), path);
+        return 1;
+    }
+    descriptor = -1;
+    while ((entry = readdir(directory)) != NULL) {
+        struct stat status;
+
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (names.count >= SECDAT_TYPED_DIRECTORY_MAX_RECORDS
+            || fstatat(
+                dirfd(directory),
+                entry->d_name,
+                &status,
+                AT_SYMLINK_NOFOLLOW
+            ) != 0
+            || !S_ISREG(status.st_mode)
+            || (status.st_mode & 077) != 0
+            || secdat_key_list_append(&names, entry->d_name) != 0) {
+            fprintf(stderr, _("invalid typed directory: %s\n"), path);
+            goto cleanup;
+        }
+    }
+    if (names.count > 1) {
+        qsort(
+            names.items,
+            names.count,
+            sizeof(*names.items),
+            secdat_compare_strings
+        );
+    }
+    context = EVP_MD_CTX_new();
+    if (context == NULL
+        || EVP_DigestInit_ex(context, EVP_sha256(), NULL) != 1
+        || EVP_DigestUpdate(context, magic, sizeof(magic) - 1) != 1) {
+        goto cleanup;
+    }
+    for (index = 0; index < names.count; index += 1) {
+        unsigned char encoded[8];
+        unsigned char buffer[32768];
+        size_t name_length = strlen(names.items[index]);
+        size_t file_length = 0;
+        struct stat status;
+        int file_descriptor = openat(
+            dirfd(directory),
+            names.items[index],
+            O_RDONLY | O_CLOEXEC | O_NOFOLLOW
+        );
+
+        if (file_descriptor < 0
+            || fstat(file_descriptor, &status) != 0
+            || !S_ISREG(status.st_mode)
+            || (status.st_mode & 077) != 0
+            || status.st_size < 0
+            || (uintmax_t)status.st_size
+                > SECDAT_TYPED_DIRECTORY_MAX_BYTES - total_bytes) {
+            if (file_descriptor >= 0) {
+                close(file_descriptor);
+            }
+            goto cleanup;
+        }
+        secdat_prepared_inventory_encode_u64((uint64_t)name_length, encoded);
+        if (EVP_DigestUpdate(context, encoded, sizeof(encoded)) != 1
+            || EVP_DigestUpdate(context, names.items[index], name_length) != 1) {
+            close(file_descriptor);
+            goto cleanup;
+        }
+        secdat_prepared_inventory_encode_u64((uint64_t)status.st_size, encoded);
+        if (EVP_DigestUpdate(context, encoded, sizeof(encoded)) != 1) {
+            close(file_descriptor);
+            goto cleanup;
+        }
+        for (;;) {
+            ssize_t count = read(file_descriptor, buffer, sizeof(buffer));
+
+            if (count < 0 && errno == EINTR) {
+                continue;
+            }
+            if (count < 0
+                || (size_t)count > SECDAT_TYPED_DIRECTORY_MAX_BYTES - total_bytes
+                || (size_t)count > SIZE_MAX - file_length) {
+                close(file_descriptor);
+                goto cleanup;
+            }
+            if (count == 0) {
+                break;
+            }
+            if (EVP_DigestUpdate(context, buffer, (size_t)count) != 1) {
+                close(file_descriptor);
+                goto cleanup;
+            }
+            file_length += (size_t)count;
+            total_bytes += (size_t)count;
+        }
+        if (file_length != (size_t)status.st_size
+            || close(file_descriptor) != 0) {
+            goto cleanup;
+        }
+    }
+    if (EVP_DigestFinal_ex(context, raw_digest, &raw_length) != 1
+        || raw_length != 32) {
+        goto cleanup;
+    }
+    for (index = 0; index < raw_length; index += 1) {
+        digest[index * 2] = hex[raw_digest[index] >> 4];
+        digest[index * 2 + 1] = hex[raw_digest[index] & 0x0f];
+    }
+    digest[SECDAT_SHA256_HEX_LENGTH] = '\0';
+    *exists = 1;
+    result = 0;
+
+cleanup:
+    EVP_MD_CTX_free(context);
+    secdat_secure_clear(raw_digest, sizeof(raw_digest));
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    secdat_key_list_free(&names);
+    if (result != 0) {
+        fprintf(stderr, _("failed to inspect typed directory: %s\n"), path);
+    }
+    return result;
+}
+
+static int secdat_prepared_directory_guard_record(
+    struct secdat_prepared_write_set *write_set,
+    const char *path
+)
+{
+    struct secdat_prepared_directory_guard *resized;
+    struct secdat_prepared_directory_guard *guard;
+    size_t index;
+
+    for (index = 0; index < write_set->directory_count; index += 1) {
+        if (strcmp(write_set->directories[index].path, path) == 0) {
+            return 0;
+        }
+    }
+    if (write_set->directory_count == write_set->directory_capacity) {
+        size_t next_capacity = write_set->directory_capacity == 0
+            ? 4
+            : write_set->directory_capacity * 2;
+
+        resized = realloc(
+            write_set->directories,
+            next_capacity * sizeof(*resized)
+        );
+        if (resized == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        write_set->directories = resized;
+        write_set->directory_capacity = next_capacity;
+    }
+    guard = &write_set->directories[write_set->directory_count];
+    memset(guard, 0, sizeof(*guard));
+    if (secdat_copy_string(guard->path, sizeof(guard->path), path) != 0
+        || secdat_prepared_directory_inventory(
+            path,
+            guard->digest,
+            &guard->exists
+        ) != 0) {
+        return 1;
+    }
+    write_set->directory_count += 1;
+    return 0;
 }
 
 static int secdat_prepared_write_set_record(
@@ -18016,6 +19896,27 @@ static int secdat_transaction_read_live_target(
     *data = NULL;
     *length = 0;
     *exists = 0;
+    if (target->kind == SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE) {
+        if (lstat(target->path, &status) != 0) {
+            if (errno == ENOENT) {
+                return 0;
+            }
+            fprintf(stderr, _("failed to read transaction target\n"));
+            return 1;
+        }
+        if (!S_ISDIR(status.st_mode)
+            || secdat_container_manifest(
+                target->name,
+                target->path,
+                data,
+                length
+            ) != 0) {
+            fprintf(stderr, _("failed to read transaction target\n"));
+            return 1;
+        }
+        *exists = 1;
+        return 0;
+    }
     if (target->kind == SECDAT_TRANSACTION_ARTIFACT_STATE_FILE) {
         parent_fd = secdat_transaction_open_state_file_parent(
             target,
@@ -18108,6 +20009,91 @@ static int secdat_transaction_target_matches(
     int status = 1;
 
     *matches = 0;
+    if (target->kind == SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE) {
+        unsigned char *live_data = NULL;
+        unsigned char *journal_data = NULL;
+        size_t live_length = 0;
+        size_t journal_length = 0;
+        int live_exists = 0;
+        int journal_exists = 0;
+        char live_digest[SECDAT_SHA256_HEX_LENGTH + 1] = "";
+        char journal_digest[SECDAT_SHA256_HEX_LENGTH + 1] = "";
+        const char *journal_expected = target->before_exists
+            ? target->before_digest
+            : target->after_digest;
+
+        if (target->container_journal_path[0] == '\0'
+            || secdat_transaction_read_live_target(
+                target,
+                &live_data,
+                &live_length,
+                &live_exists
+            ) != 0) {
+            goto container_cleanup;
+        }
+        {
+            struct stat journal_status;
+
+            if (lstat(target->container_journal_path, &journal_status) == 0) {
+                if (!S_ISDIR(journal_status.st_mode)
+                    || secdat_container_manifest(
+                        target->name,
+                        target->container_journal_path,
+                        &journal_data,
+                        &journal_length
+                    ) != 0) {
+                    goto container_cleanup;
+                }
+                journal_exists = 1;
+            } else if (errno != ENOENT) {
+                goto container_cleanup;
+            }
+        }
+        if ((live_exists
+                && secdat_sha256_hex(
+                    live_data,
+                    live_length,
+                    live_digest
+                ) != 0)
+            || (journal_exists
+                && secdat_sha256_hex(
+                    journal_data,
+                    journal_length,
+                    journal_digest
+                ) != 0)) {
+            goto container_cleanup;
+        }
+        *matches = expected_exists
+            ? live_exists
+                && !journal_exists
+                && strcmp(live_digest, expected_digest) == 0
+            : !live_exists
+                && journal_exists
+                && strcmp(journal_digest, journal_expected) == 0;
+        status = 0;
+
+container_cleanup:
+        free(live_data);
+        free(journal_data);
+        return status;
+    }
+    if (target->is_guard
+        && target->role == SECDAT_TRANSACTION_ROLE_TYPED_DIRECTORY_GUARD) {
+        int inventory_exists = 0;
+
+        if (after
+            || secdat_prepared_directory_inventory(
+                target->path,
+                digest,
+                &inventory_exists
+            ) != 0) {
+            return 1;
+        }
+        *matches = inventory_exists == target->before_exists
+            && (!inventory_exists
+                || strcmp(digest, target->before_digest) == 0);
+        return 0;
+    }
     if (secdat_transaction_read_live_target(
             target,
             &data,
@@ -18153,6 +20139,33 @@ static int secdat_transaction_blob_path(
         after ? "after" : "before",
         index
     ) >= (int)path_size;
+}
+
+static int secdat_transaction_assign_container_journal_paths(
+    struct secdat_transaction *transaction
+)
+{
+    size_t index;
+
+    for (index = 0; index < transaction->target_count; index += 1) {
+        struct secdat_transaction_target *target =
+            &transaction->targets[index];
+
+        if (target->kind != SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE) {
+            continue;
+        }
+        if (snprintf(
+                target->container_journal_path,
+                sizeof(target->container_journal_path),
+                "%s/tree.%s.%04zu",
+                transaction->operation_dir,
+                target->after_exists ? "after" : "before",
+                index
+            ) >= (int)sizeof(target->container_journal_path)) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static int secdat_transaction_target_has_blob(
@@ -18294,7 +20307,12 @@ static int secdat_transaction_write_manifest(struct secdat_transaction *transact
                 goto cleanup;
             }
             if (target->is_guard) {
-                if (json_object_set_new(item, "type", json_string("exact-file")) != 0
+                const char *guard_type = target->role
+                    == SECDAT_TRANSACTION_ROLE_TYPED_DIRECTORY_GUARD
+                        ? "typed-directory"
+                        : "exact-file";
+
+                if (json_object_set_new(item, "type", json_string(guard_type)) != 0
                     || json_object_set_new(
                         item,
                         "expected",
@@ -18573,6 +20591,474 @@ error:
     return 1;
 }
 
+static int secdat_transaction_append_container_tree(
+    struct secdat_transaction *transaction,
+    const char *domain_id,
+    const char *store_name,
+    const char *schema,
+    int create,
+    const char *root_text,
+    const char *identity_text
+)
+{
+    unsigned char *manifest = NULL;
+    size_t manifest_length = 0;
+    char path[PATH_MAX];
+    struct secdat_transaction_target *target;
+    int result = 1;
+
+    if (transaction->manifest_version != 2
+        || secdat_transaction_target_path(
+            SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE,
+            domain_id,
+            store_name,
+            schema,
+            path,
+            sizeof(path)
+        ) != 0) {
+        return 1;
+    }
+    if (create) {
+        if (secdat_container_create_manifest(
+                schema,
+                root_text,
+                identity_text,
+                &manifest,
+                &manifest_length
+            ) != 0
+            || secdat_transaction_append_target(
+                transaction,
+                0,
+                SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE,
+                domain_id,
+                store_name,
+                schema,
+                NULL,
+                0,
+                0,
+                manifest,
+                manifest_length,
+                1
+            ) != 0) {
+            goto cleanup;
+        }
+    } else if (secdat_container_manifest(
+            schema,
+            path,
+            &manifest,
+            &manifest_length
+        ) != 0
+        || secdat_transaction_append_target(
+            transaction,
+            0,
+            SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE,
+            domain_id,
+            store_name,
+            schema,
+            manifest,
+            manifest_length,
+            1,
+            NULL,
+            0,
+            0
+        ) != 0) {
+        goto cleanup;
+    }
+    target = &transaction->targets[transaction->target_count - 1];
+    target->sensitive = 0;
+    if (create) {
+        target->role = SECDAT_TRANSACTION_ROLE_CONTAINER_PUBLISH;
+        target->phase = SECDAT_TRANSACTION_PHASE_CONTAINER_PUBLISH;
+    } else {
+        target->role = SECDAT_TRANSACTION_ROLE_CONTAINER_REMOVAL;
+        target->phase = SECDAT_TRANSACTION_PHASE_CONTAINER_REMOVAL;
+    }
+    if ((root_text != NULL
+            && secdat_copy_string(
+                target->container_root_text,
+                sizeof(target->container_root_text),
+                root_text
+            ) != 0)
+        || (identity_text != NULL
+            && secdat_copy_string(
+                target->container_identity_text,
+                sizeof(target->container_identity_text),
+                identity_text
+            ) != 0)) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(manifest);
+    return result;
+}
+
+static int secdat_transaction_append_reference_epoch(
+    struct secdat_transaction *transaction,
+    const char *domain_id,
+    const char *store_name
+)
+{
+    char state_dir[PATH_MAX];
+    char epoch_path[PATH_MAX];
+    char epoch_id[64];
+    char payload[128];
+    unsigned char *before_data = NULL;
+    size_t before_length = 0;
+    size_t payload_length;
+    int before_exists = 0;
+    int written;
+    int result = 1;
+
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || secdat_join_path(
+            epoch_path,
+            sizeof(epoch_path),
+            state_dir,
+            "gc/reference-epoch"
+        ) != 0
+        || secdat_transaction_read_target(
+            epoch_path,
+            &before_data,
+            &before_length,
+            &before_exists,
+            128
+        ) != 0
+        || secdat_generate_uuid_v4(epoch_id, sizeof(epoch_id)) != 0) {
+        goto cleanup;
+    }
+    written = snprintf(
+        payload,
+        sizeof(payload),
+        "SECDATREFEPOCH1\nreference_epoch=%s\n",
+        epoch_id
+    );
+    if (written < 0 || (size_t)written >= sizeof(payload)) {
+        goto cleanup;
+    }
+    payload_length = (size_t)written;
+    if (secdat_transaction_append_target(
+            transaction,
+            0,
+            SECDAT_TRANSACTION_ARTIFACT_STATE_FILE,
+            domain_id,
+            store_name,
+            "gc/reference-epoch",
+            before_data,
+            before_length,
+            before_exists,
+            (const unsigned char *)payload,
+            payload_length,
+            1
+        ) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(before_data);
+    return result;
+}
+
+static int secdat_transaction_append_registry_target(
+    struct secdat_transaction *transaction,
+    const char *domain_id,
+    const char *registry_path,
+    int create
+)
+{
+    char state_dir[PATH_MAX];
+    size_t state_dir_length;
+    unsigned char *before_data = NULL;
+    size_t before_length = 0;
+    int before_exists = 0;
+    struct secdat_transaction_target *target;
+    int result = 1;
+
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
+        return 1;
+    }
+    state_dir_length = strlen(state_dir);
+    if (strncmp(registry_path, state_dir, state_dir_length) != 0
+        || registry_path[state_dir_length] != '/'
+        || secdat_transaction_read_target(
+            registry_path,
+            &before_data,
+            &before_length,
+            &before_exists,
+            PATH_MAX
+        ) != 0
+        || (create && before_exists)
+        || (!create
+            && (!before_exists
+                || before_length != strlen(domain_id)
+                || CRYPTO_memcmp(
+                    before_data,
+                    domain_id,
+                    before_length
+                ) != 0))
+        || secdat_transaction_append_target(
+            transaction,
+            0,
+            SECDAT_TRANSACTION_ARTIFACT_STATE_FILE,
+            domain_id,
+            "default",
+            registry_path + state_dir_length + 1,
+            before_data,
+            before_length,
+            before_exists,
+            (const unsigned char *)domain_id,
+            strlen(domain_id),
+            create
+        ) != 0) {
+        goto cleanup;
+    }
+    target = &transaction->targets[transaction->target_count - 1];
+    target->sensitive = 0;
+    if (create) {
+        target->role = SECDAT_TRANSACTION_ROLE_REGISTRY_PUBLISH;
+        target->phase = SECDAT_TRANSACTION_PHASE_REGISTRY_PUBLISH;
+    } else {
+        target->role = SECDAT_TRANSACTION_ROLE_REGISTRY_REMOVAL;
+        target->phase = SECDAT_TRANSACTION_PHASE_REGISTRY_REMOVAL;
+    }
+    result = 0;
+
+cleanup:
+    free(before_data);
+    return result;
+}
+
+static int secdat_transaction_target_path_is_unique(
+    const struct secdat_transaction *transaction,
+    const char *path
+)
+{
+    size_t index;
+
+    for (index = 0; index < transaction->target_count; index += 1) {
+        if (strcmp(transaction->targets[index].path, path) == 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int secdat_transaction_reserve_target(
+    struct secdat_transaction *transaction
+)
+{
+    struct secdat_transaction_target *resized;
+    size_t next_capacity;
+
+    if (transaction->target_count < transaction->target_capacity) {
+        return 0;
+    }
+    next_capacity = transaction->target_capacity == 0
+        ? 4
+        : transaction->target_capacity * 2;
+    resized = realloc(
+        transaction->targets,
+        next_capacity * sizeof(*resized)
+    );
+    if (resized == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    transaction->targets = resized;
+    transaction->target_capacity = next_capacity;
+    return 0;
+}
+
+static int secdat_prepare_typed_directory_guard(
+    struct secdat_transaction_target *target,
+    const char *domain_id,
+    const char *store_name,
+    const char *name,
+    const char *expected_digest,
+    int expected_exists
+)
+{
+    char live_digest[SECDAT_SHA256_HEX_LENGTH + 1];
+    int live_exists = 0;
+
+    memset(target, 0, sizeof(*target));
+    target->kind = SECDAT_TRANSACTION_ARTIFACT_STATE_FILE;
+    target->role = SECDAT_TRANSACTION_ROLE_TYPED_DIRECTORY_GUARD;
+    target->is_guard = 1;
+    target->before_exists = expected_exists;
+    target->after_exists = expected_exists;
+    if (secdat_copy_string(
+            target->domain_id,
+            sizeof(target->domain_id),
+            domain_id
+        ) != 0
+        || secdat_copy_string(
+            target->store_name,
+            sizeof(target->store_name),
+            secdat_effective_store_name(store_name)
+        ) != 0
+        || secdat_copy_string(target->name, sizeof(target->name), name) != 0
+        || secdat_transaction_target_path(
+            target->kind,
+            target->domain_id,
+            target->store_name,
+            target->name,
+            target->path,
+            sizeof(target->path)
+        ) != 0
+        || secdat_prepared_directory_inventory(
+            target->path,
+            live_digest,
+            &live_exists
+        ) != 0
+        || live_exists != expected_exists
+        || (live_exists && strcmp(live_digest, expected_digest) != 0)) {
+        fprintf(stderr, _("transaction changed since plan\n"));
+        return 1;
+    }
+    if (!expected_exists) {
+        return 0;
+    }
+    return secdat_copy_string(
+            target->before_digest,
+            sizeof(target->before_digest),
+            expected_digest
+        ) != 0
+        || secdat_copy_string(
+            target->after_digest,
+            sizeof(target->after_digest),
+            expected_digest
+        ) != 0;
+}
+
+static int secdat_transaction_append_typed_directory_guard(
+    struct secdat_transaction *transaction,
+    const char *domain_id,
+    const char *store_name,
+    const char *name,
+    const char *expected_digest,
+    int expected_exists
+)
+{
+    struct secdat_transaction_target target;
+
+    if (transaction->manifest_version < 2
+        || transaction->target_count >= SECDAT_TRANSACTION_MAX_TARGETS) {
+        fprintf(stderr, _("typed directory guards require transaction manifest v2\n"));
+        return 1;
+    }
+    if (secdat_prepare_typed_directory_guard(
+            &target,
+            domain_id,
+            store_name,
+            name,
+            expected_digest,
+            expected_exists
+        ) != 0) {
+        return 1;
+    }
+    if (!secdat_transaction_target_path_is_unique(transaction, target.path)) {
+        fprintf(stderr, _("duplicate transaction target\n"));
+        return 1;
+    }
+    if (secdat_transaction_reserve_target(transaction) != 0) {
+        return 1;
+    }
+    transaction->targets[transaction->target_count] = target;
+    transaction->target_count += 1;
+    return 0;
+}
+
+static int secdat_prepared_file_is_unchanged(
+    const struct secdat_prepared_state_file *file
+)
+{
+    return file->before_exists == file->after_exists
+        && (!file->before_exists
+            || (file->before_length == file->after_length
+                && (file->before_length == 0
+                    || CRYPTO_memcmp(
+                        file->before_data,
+                        file->after_data,
+                        file->before_length
+                    ) == 0)));
+}
+
+static int secdat_transaction_append_prepared_guards(
+    struct secdat_transaction *transaction,
+    const struct secdat_prepared_write_set *write_set,
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *state_dir,
+    size_t state_dir_length
+)
+{
+    size_t index;
+
+    for (index = 0; index < write_set->directory_count; index += 1) {
+        const struct secdat_prepared_directory_guard *guard =
+            &write_set->directories[index];
+
+        if (strncmp(guard->path, state_dir, state_dir_length) != 0
+            || guard->path[state_dir_length] != '/'
+            || secdat_transaction_append_typed_directory_guard(
+                transaction,
+                owner_domain_id,
+                owner_store_name,
+                guard->path + state_dir_length + 1,
+                guard->digest,
+                guard->exists
+            ) != 0) {
+            fprintf(stderr, _("prepared guard is outside the state directory\n"));
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_transaction_append_prepared_file(
+    struct secdat_transaction *transaction,
+    const struct secdat_prepared_state_file *file,
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *state_dir,
+    size_t state_dir_length,
+    int *changed
+)
+{
+    int unchanged = secdat_prepared_file_is_unchanged(file);
+
+    *changed = 0;
+    if (strncmp(file->path, state_dir, state_dir_length) != 0
+        || file->path[state_dir_length] != '/') {
+        fprintf(stderr, _("prepared write is outside the state directory\n"));
+        return 1;
+    }
+    if (unchanged && !file->observed) {
+        return 0;
+    }
+    if (secdat_transaction_append_target(
+            transaction,
+            unchanged,
+            SECDAT_TRANSACTION_ARTIFACT_STATE_FILE,
+            owner_domain_id,
+            owner_store_name,
+            file->path + state_dir_length + 1,
+            file->before_data,
+            file->before_length,
+            file->before_exists,
+            file->after_data,
+            file->after_length,
+            file->after_exists
+        ) != 0) {
+        return 1;
+    }
+    *changed = !unchanged;
+    return 0;
+}
+
 static int secdat_transaction_append_prepared_write_set(
     struct secdat_transaction *transaction,
     const struct secdat_prepared_write_set *write_set,
@@ -18586,50 +21072,72 @@ static int secdat_transaction_append_prepared_write_set(
     size_t index;
 
     *changed_file_count = 0;
-    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
+    if (write_set->failed
+        || secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
         return 1;
     }
     state_dir_length = strlen(state_dir);
+    if (secdat_transaction_append_prepared_guards(
+            transaction,
+            write_set,
+            owner_domain_id,
+            owner_store_name,
+            state_dir,
+            state_dir_length
+        ) != 0) {
+        return 1;
+    }
     for (index = 0; index < write_set->count; index += 1) {
         const struct secdat_prepared_state_file *file =
             &write_set->files[index];
-        int unchanged = file->before_exists == file->after_exists
-            && (!file->before_exists
-                || (file->before_length == file->after_length
-                    && (file->before_length == 0
-                        || CRYPTO_memcmp(
-                            file->before_data,
-                            file->after_data,
-                            file->before_length
-                        ) == 0)));
+        int changed = 0;
 
-        if (unchanged) {
-            continue;
-        }
-        if (strncmp(file->path, state_dir, state_dir_length) != 0
-            || file->path[state_dir_length] != '/') {
-            fprintf(stderr, _("prepared write is outside the state directory\n"));
-            return 1;
-        }
-        if (secdat_transaction_append_target(
+        if (secdat_transaction_append_prepared_file(
                 transaction,
-                0,
-                SECDAT_TRANSACTION_ARTIFACT_STATE_FILE,
+                file,
                 owner_domain_id,
                 owner_store_name,
-                file->path + state_dir_length + 1,
-                file->before_data,
-                file->before_length,
-                file->before_exists,
-                file->after_data,
-                file->after_length,
-                file->after_exists
+                state_dir,
+                state_dir_length,
+                &changed
             ) != 0) {
             return 1;
         }
-        *changed_file_count += 1;
+        *changed_file_count += (size_t)changed;
     }
     return 0;
+}
+
+static int secdat_transaction_mark_source_removal(
+    struct secdat_transaction *transaction,
+    const char *source_path
+)
+{
+    size_t index;
+
+    for (index = 0; index < transaction->target_count; index += 1) {
+        struct secdat_transaction_target *target =
+            &transaction->targets[index];
+
+        if (target->is_guard || strcmp(target->path, source_path) != 0) {
+            continue;
+        }
+        if (target->kind != SECDAT_TRANSACTION_ARTIFACT_STATE_FILE
+            || !target->before_exists
+            || target->after_exists
+            || strstr(target->name, "/domain-ent/") == NULL
+            || !secdat_transaction_name_has_suffix(
+                target->name,
+                ".dent"
+            )) {
+            break;
+        }
+        target->role = SECDAT_TRANSACTION_ROLE_SOURCE_REMOVAL;
+        target->phase = SECDAT_TRANSACTION_PHASE_SOURCE_REMOVAL;
+        return 0;
+    }
+    fprintf(stderr, _("invalid move source removal target\n"));
+    return 1;
 }
 
 static void secdat_transaction_fault_inject(const char *boundary)
@@ -18972,9 +21480,19 @@ static int secdat_transaction_load_v2_targets(
             return 1;
         }
         if (is_guard) {
+            const char *guard_type;
+
             value = json_object_get(item, "type");
             if (!secdat_json_is_canonical_string(value)
-                || strcmp(json_string_value(value), "exact-file") != 0
+                || ((guard_type = json_string_value(value)) == NULL)
+                || ((strcmp(guard_type, "exact-file") == 0
+                        && target->role
+                            != SECDAT_TRANSACTION_ROLE_EXACT_FILE_GUARD)
+                    || (strcmp(guard_type, "typed-directory") == 0
+                        && target->role
+                            != SECDAT_TRANSACTION_ROLE_TYPED_DIRECTORY_GUARD)
+                    || (strcmp(guard_type, "exact-file") != 0
+                        && strcmp(guard_type, "typed-directory") != 0))
                 || secdat_transaction_parse_digest_value(
                     json_object_get(item, "expected"),
                     &target->before_exists,
@@ -19025,7 +21543,118 @@ static int secdat_transaction_load_v2_targets(
                 return 1;
             }
             secdat_transaction_assign_write_role(&expected_role);
-            if (expected_role.role != target->role
+            if (target->kind == SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE) {
+                int publishing = target->role
+                    == SECDAT_TRANSACTION_ROLE_CONTAINER_PUBLISH;
+                int removing = target->role
+                    == SECDAT_TRANSACTION_ROLE_CONTAINER_REMOVAL;
+                int domain_schema = strcmp(
+                    target->name,
+                    "empty-domain-v1"
+                ) == 0;
+
+                if (target->sensitive
+                    || (publishing
+                        && (!target->after_exists
+                            || target->before_exists
+                            || (domain_schema
+                                ? strcmp(
+                                    transaction->command,
+                                    "domain-create"
+                                ) != 0
+                                : strcmp(
+                                    transaction->command,
+                                    "store-create"
+                                ) != 0)))
+                    || (removing
+                        && (!target->before_exists
+                            || target->after_exists
+                            || (domain_schema
+                                ? strcmp(
+                                    transaction->command,
+                                    "domain-delete"
+                                ) != 0
+                                : strcmp(
+                                    transaction->command,
+                                    "store-delete"
+                                ) != 0)))
+                    || (!publishing && !removing)) {
+                    return 1;
+                }
+            } else if (target->role
+                    == SECDAT_TRANSACTION_ROLE_REGISTRY_PUBLISH
+                || target->role
+                    == SECDAT_TRANSACTION_ROLE_REGISTRY_REMOVAL) {
+                int publishing = target->role
+                    == SECDAT_TRANSACTION_ROLE_REGISTRY_PUBLISH;
+
+                if (target->kind != SECDAT_TRANSACTION_ARTIFACT_STATE_FILE
+                    || target->sensitive
+                    || strncmp(
+                        target->name,
+                        "domains/registry/by-root/",
+                        strlen("domains/registry/by-root/")
+                    ) != 0
+                    || (publishing
+                        ? strcmp(
+                            transaction->command,
+                            "domain-create"
+                        ) != 0
+                            || target->before_exists
+                            || !target->after_exists
+                        : strcmp(
+                            transaction->command,
+                            "domain-delete"
+                        ) != 0
+                            || !target->before_exists
+                            || target->after_exists)) {
+                    return 1;
+                }
+            } else if (target->role
+                    == SECDAT_TRANSACTION_ROLE_ROOT_METADATA
+                || target->role
+                    == SECDAT_TRANSACTION_ROLE_DESTINATION_REGISTRY
+                || target->role
+                    == SECDAT_TRANSACTION_ROLE_SOURCE_REGISTRY) {
+                int root_metadata = target->role
+                    == SECDAT_TRANSACTION_ROLE_ROOT_METADATA;
+                int destination_registry = target->role
+                    == SECDAT_TRANSACTION_ROLE_DESTINATION_REGISTRY;
+
+                if (strcmp(transaction->command, "domain-move") != 0
+                    || target->kind
+                        != SECDAT_TRANSACTION_ARTIFACT_STATE_FILE
+                    || target->sensitive
+                    || (root_metadata
+                        && (strstr(target->name, "/meta/root") == NULL
+                            || !target->before_exists
+                            || !target->after_exists))
+                    || (!root_metadata
+                        && (strncmp(
+                                target->name,
+                                "domains/registry/by-root/",
+                                strlen("domains/registry/by-root/")
+                            ) != 0
+                            || (destination_registry
+                                ? target->before_exists
+                                    || !target->after_exists
+                                : !target->before_exists
+                                    || target->after_exists)))) {
+                    return 1;
+                }
+            } else if (target->role == SECDAT_TRANSACTION_ROLE_SOURCE_REMOVAL) {
+                if (strcmp(transaction->command, "mv") != 0
+                    || target->kind
+                        != SECDAT_TRANSACTION_ARTIFACT_STATE_FILE
+                    || target->after_exists
+                    || strstr(target->name, "/domain-ent/") == NULL
+                    || !secdat_transaction_name_has_suffix(
+                        target->name,
+                        ".dent"
+                    )) {
+                    return 1;
+                }
+            } else if (expected_role.role != target->role
                 || expected_role.phase != target->phase) {
                 return 1;
             }
@@ -19098,7 +21727,7 @@ static int secdat_transaction_load_v2_targets(
                 + target->after_length;
         }
     }
-    return 0;
+    return secdat_transaction_assign_container_journal_paths(transaction);
 }
 
 static int secdat_transaction_load(
@@ -19237,6 +21866,14 @@ static int secdat_transaction_load(
             sizeof(transaction->command),
             json_string_value(value)
         ) != 0) {
+        goto cleanup;
+    }
+    if (transaction->manifest_version == 1
+        && (strcmp(transaction->command, "store-create") == 0
+            || strcmp(transaction->command, "store-delete") == 0
+            || strcmp(transaction->command, "domain-create") == 0
+            || strcmp(transaction->command, "domain-delete") == 0
+            || strcmp(transaction->command, "domain-move") == 0)) {
         goto cleanup;
     }
     value = json_object_get(root, "owner_domain_id");
@@ -19491,6 +22128,21 @@ static int secdat_transaction_directory_entry_allowed(
         return 1;
     }
     for (index = 0; index < transaction->target_count; index += 1) {
+        if (transaction->targets[index].kind
+                == SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE) {
+            snprintf(
+                expected,
+                sizeof(expected),
+                "tree.%s.%04zu",
+                transaction->targets[index].after_exists
+                    ? "after"
+                    : "before",
+                index
+            );
+            if (strcmp(name, expected) == 0) {
+                return 1;
+            }
+        }
         if (secdat_transaction_target_has_blob(
                 transaction,
                 &transaction->targets[index],
@@ -19607,6 +22259,75 @@ static int secdat_transaction_cleanup_temporary_files(
     return 0;
 }
 
+static int secdat_transaction_cleanup_container(
+    struct secdat_transaction_target *target
+)
+{
+    struct stat tree_status;
+
+    if (target->kind != SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE
+        || target->container_journal_path[0] == '\0') {
+        return 0;
+    }
+    if (lstat(target->container_journal_path, &tree_status) != 0) {
+        return errno == ENOENT ? 0 : 1;
+    }
+    if (!S_ISDIR(tree_status.st_mode)) {
+        return 1;
+    }
+    return secdat_container_remove_verified_tree(
+        target->name,
+        target->container_journal_path,
+        target->before_exists
+            ? target->before_digest
+            : target->after_digest
+    );
+}
+
+static int secdat_transaction_cleanup_blob(
+    const struct secdat_transaction *transaction,
+    const struct secdat_transaction_target *target,
+    size_t index,
+    int after
+)
+{
+    char path[PATH_MAX];
+
+    if (!secdat_transaction_target_has_blob(transaction, target, after)) {
+        return 0;
+    }
+    return secdat_transaction_blob_path(
+            transaction,
+            index,
+            after,
+            path,
+            sizeof(path)
+        ) != 0
+        || secdat_remove_if_exists(path) != 0;
+}
+
+static int secdat_transaction_cleanup_target_artifacts(
+    struct secdat_transaction *transaction,
+    size_t index
+)
+{
+    struct secdat_transaction_target *target = &transaction->targets[index];
+
+    return secdat_transaction_cleanup_container(target) != 0
+        || secdat_transaction_cleanup_blob(
+            transaction,
+            target,
+            index,
+            0
+        ) != 0
+        || secdat_transaction_cleanup_blob(
+            transaction,
+            target,
+            index,
+            1
+        ) != 0;
+}
+
 static int secdat_transaction_cleanup(struct secdat_transaction *transaction)
 {
     char path[PATH_MAX];
@@ -19619,34 +22340,10 @@ static int secdat_transaction_cleanup(struct secdat_transaction *transaction)
         return 1;
     }
     for (index = 0; index < transaction->target_count; index += 1) {
-        if (secdat_transaction_target_has_blob(
+        if (secdat_transaction_cleanup_target_artifacts(
                 transaction,
-                &transaction->targets[index],
-                0
-            )
-            && (secdat_transaction_blob_path(
-                    transaction,
-                    index,
-                    0,
-                    path,
-                    sizeof(path)
-                ) != 0
-                || secdat_remove_if_exists(path) != 0)) {
-            return 1;
-        }
-        if (secdat_transaction_target_has_blob(
-                transaction,
-                &transaction->targets[index],
-                1
-            )
-            && (secdat_transaction_blob_path(
-                    transaction,
-                    index,
-                    1,
-                    path,
-                    sizeof(path)
-                ) != 0
-                || secdat_remove_if_exists(path) != 0)) {
+                index
+            ) != 0) {
             return 1;
         }
     }
@@ -19677,6 +22374,67 @@ static int secdat_transaction_apply_target(
     int parent_missing = 0;
     size_t offset = 0;
     int result = 1;
+
+    if (target->kind == SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE) {
+        const char *source = target->after_exists
+            ? target->container_journal_path
+            : target->path;
+        const char *destination = target->after_exists
+            ? target->path
+            : target->container_journal_path;
+        const char *expected_digest = target->after_exists
+            ? target->after_digest
+            : target->before_digest;
+        unsigned char *manifest = NULL;
+        size_t manifest_length = 0;
+        char digest[SECDAT_SHA256_HEX_LENGTH + 1];
+        struct stat destination_status;
+
+        if (source[0] == '\0'
+            || destination[0] == '\0'
+            || secdat_container_manifest(
+                target->name,
+                source,
+                &manifest,
+                &manifest_length
+            ) != 0
+            || secdat_sha256_hex(
+                manifest,
+                manifest_length,
+                digest
+            ) != 0
+            || strcmp(digest, expected_digest) != 0
+            || (lstat(destination, &destination_status) == 0
+                || errno != ENOENT)) {
+            free(manifest);
+            fprintf(stderr, _("failed to apply transaction target\n"));
+            return 1;
+        }
+        free(manifest);
+#ifdef RENAME_NOREPLACE
+        if (renameat2(
+                AT_FDCWD,
+                source,
+                AT_FDCWD,
+                destination,
+                RENAME_NOREPLACE
+            ) != 0) {
+            fprintf(stderr, _("failed to apply transaction target\n"));
+            return 1;
+        }
+#else
+        if (rename(source, destination) != 0) {
+            fprintf(stderr, _("failed to apply transaction target\n"));
+            return 1;
+        }
+#endif
+        if (secdat_fsync_parent_directory(source) != 0
+            || secdat_fsync_parent_directory(destination) != 0) {
+            fprintf(stderr, _("failed to apply transaction target\n"));
+            return 1;
+        }
+        return 0;
+    }
 
     if (target->kind == SECDAT_TRANSACTION_ARTIFACT_STATE_FILE) {
         parent_fd = secdat_transaction_open_state_file_parent(
@@ -20020,7 +22778,8 @@ static int secdat_recover_transactions(void)
 {
     char transactions_root[PATH_MAX];
     struct stat status;
-    int lock_fd;
+    int lock_fd = -1;
+    int lock_owned = 0;
     int result;
 
     if (secdat_transaction_root_path(
@@ -20039,9 +22798,13 @@ static int secdat_recover_transactions(void)
     if (secdat_transaction_validate_directory(transactions_root) != 0) {
         return 1;
     }
-    lock_fd = secdat_transaction_open_lock(transactions_root);
-    if (lock_fd < 0) {
-        return 1;
+    if (secdat_command_transaction_lock_fd < 0
+        || secdat_command_transaction_lock_pid != getpid()) {
+        lock_fd = secdat_transaction_open_lock(transactions_root);
+        if (lock_fd < 0) {
+            return 1;
+        }
+        lock_owned = 1;
     }
     result = secdat_recover_transactions_locked(transactions_root);
     if (result == 0) {
@@ -20049,8 +22812,10 @@ static int secdat_recover_transactions(void)
             transactions_root
         );
     }
-    (void)flock(lock_fd, LOCK_UN);
-    close(lock_fd);
+    if (lock_owned) {
+        (void)flock(lock_fd, LOCK_UN);
+        close(lock_fd);
+    }
     return result;
 }
 
@@ -20131,7 +22896,8 @@ static int secdat_transaction_prepare(struct secdat_transaction *transaction)
             secdat_transaction_target_compare
         );
     }
-    if (transaction->target_count == 0
+    if (secdat_transaction_assign_container_journal_paths(transaction) != 0
+        || transaction->target_count == 0
         || mkdir(transaction->operation_dir, 0700) != 0
         || secdat_fsync_directory(transaction->transactions_root) != 0
         || secdat_transaction_write_manifest(transaction) != 0) {
@@ -20173,6 +22939,11 @@ static int secdat_transaction_prepare(struct secdat_transaction *transaction)
                         ? target->before_length
                         : target->after_length
                 ) != 0)) {
+            return 1;
+        }
+        if (target->kind == SECDAT_TRANSACTION_ARTIFACT_CONTAINER_TREE
+            && target->after_exists
+            && secdat_container_build_create_tree(target) != 0) {
             return 1;
         }
     }
@@ -20370,165 +23141,6 @@ static int secdat_mutation_stage_record_slot(
     );
 }
 
-static int secdat_mutation_copy_regular_file(
-    const char *source,
-    const char *destination
-)
-{
-    struct stat status;
-    unsigned char buffer[32768];
-    int source_fd = -1;
-    int destination_fd = -1;
-    int result = 1;
-
-    source_fd = open(source, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (source_fd < 0
-        || fstat(source_fd, &status) != 0
-        || !S_ISREG(status.st_mode)
-        || (status.st_mode & 022) != 0) {
-        goto cleanup;
-    }
-    destination_fd = open(
-        destination,
-        O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
-        0600
-    );
-    if (destination_fd < 0) {
-        goto cleanup;
-    }
-    for (;;) {
-        ssize_t count = read(source_fd, buffer, sizeof(buffer));
-        size_t offset = 0;
-
-        if (count < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            goto cleanup;
-        }
-        if (count == 0) {
-            break;
-        }
-        while (offset < (size_t)count) {
-            ssize_t written = write(
-                destination_fd,
-                buffer + offset,
-                (size_t)count - offset
-            );
-
-            if (written < 0 && errno == EINTR) {
-                continue;
-            }
-            if (written <= 0) {
-                goto cleanup;
-            }
-            offset += (size_t)written;
-        }
-    }
-    if (fsync(destination_fd) != 0) {
-        goto cleanup;
-    }
-    result = 0;
-
-cleanup:
-    if (destination_fd >= 0) {
-        close(destination_fd);
-    }
-    if (source_fd >= 0) {
-        close(source_fd);
-    }
-    if (result != 0) {
-        fprintf(stderr, _("failed to stage mutation state\n"));
-    }
-    return result;
-}
-
-static int secdat_mutation_clone_tree(
-    const char *source,
-    const char *destination,
-    int root
-)
-{
-    struct stat status;
-    DIR *directory = NULL;
-    struct dirent *entry;
-    int result = 1;
-
-    if (lstat(source, &status) != 0
-        || !S_ISDIR(status.st_mode)
-        || (status.st_mode & 022) != 0
-        || mkdir(destination, 0700) != 0) {
-        goto cleanup;
-    }
-    directory = opendir(source);
-    if (directory == NULL) {
-        goto cleanup;
-    }
-    while ((entry = readdir(directory)) != NULL) {
-        char source_path[PATH_MAX];
-        char destination_path[PATH_MAX];
-        struct stat child_status;
-
-        if (strcmp(entry->d_name, ".") == 0
-            || strcmp(entry->d_name, "..") == 0
-            || (root && strcmp(entry->d_name, "transactions") == 0)) {
-            continue;
-        }
-        if (snprintf(
-                source_path,
-                sizeof(source_path),
-                "%s/%s",
-                source,
-                entry->d_name
-            ) >= (int)sizeof(source_path)
-            || snprintf(
-                destination_path,
-                sizeof(destination_path),
-                "%s/%s",
-                destination,
-                entry->d_name
-            ) >= (int)sizeof(destination_path)
-            || lstat(source_path, &child_status) != 0) {
-            goto cleanup;
-        }
-        if (S_ISDIR(child_status.st_mode)) {
-            if (secdat_mutation_clone_tree(
-                    source_path,
-                    destination_path,
-                    0
-                ) != 0) {
-                goto cleanup;
-            }
-        } else if (S_ISREG(child_status.st_mode)) {
-            if (secdat_mutation_copy_regular_file(
-                    source_path,
-                    destination_path
-                ) != 0) {
-                goto cleanup;
-            }
-        } else {
-            fprintf(stderr, _("invalid mutation state file\n"));
-            goto cleanup;
-        }
-    }
-    if (closedir(directory) != 0
-        || secdat_fsync_directory(destination) != 0) {
-        directory = NULL;
-        goto cleanup;
-    }
-    directory = NULL;
-    result = 0;
-
-cleanup:
-    if (directory != NULL) {
-        closedir(directory);
-    }
-    if (result != 0) {
-        fprintf(stderr, _("failed to stage mutation state\n"));
-    }
-    return result;
-}
-
 static int secdat_mutation_remove_tree(const char *path)
 {
     struct stat status;
@@ -20647,296 +23259,6 @@ cleanup:
     if (directory != NULL) {
         closedir(directory);
     }
-    return result;
-}
-
-static int secdat_mutation_create_stage(
-    const char *source_state,
-    char *stage_data_home,
-    size_t stage_data_home_size,
-    char *stage_state,
-    size_t stage_state_size
-)
-{
-    char data_home[PATH_MAX];
-    char stage_id[64];
-    int stage_directory_created = 0;
-    int status = 1;
-
-    stage_data_home[0] = '\0';
-    stage_state[0] = '\0';
-    if (secdat_copy_string(data_home, sizeof(data_home), source_state) != 0) {
-        return 1;
-    }
-    secdat_parent_path(data_home);
-    if (secdat_generate_uuid_v4(stage_id, sizeof(stage_id)) != 0
-        || snprintf(
-            stage_data_home,
-            stage_data_home_size,
-            "%s/.secdat-stage.%s",
-            data_home,
-            stage_id
-        ) >= (int)stage_data_home_size
-        || snprintf(
-            stage_state,
-            stage_state_size,
-            "%s/secdat",
-            stage_data_home
-        ) >= (int)stage_state_size
-        || mkdir(stage_data_home, 0700) != 0) {
-        goto cleanup;
-    }
-    stage_directory_created = 1;
-    if (secdat_mutation_clone_tree(
-            source_state,
-            stage_state,
-            1
-        ) != 0
-        || secdat_fsync_directory(data_home) != 0) {
-        goto cleanup;
-    }
-    status = 0;
-
-cleanup:
-    if (status != 0 && stage_directory_created) {
-        (void)secdat_mutation_remove_tree(stage_data_home);
-        (void)secdat_fsync_directory(data_home);
-    }
-    return status;
-}
-
-static int secdat_mutation_remove_stage(const char *stage_data_home)
-{
-    return secdat_mutation_remove_tree(stage_data_home) != 0
-        || secdat_fsync_parent_directory(stage_data_home) != 0;
-}
-
-static int secdat_mutation_collect_state_files(
-    const char *root,
-    const char *relative,
-    struct secdat_key_list *files
-)
-{
-    char path[PATH_MAX];
-    struct stat status;
-    DIR *directory = NULL;
-    struct dirent *entry;
-    int result = 1;
-
-    if (relative[0] == '\0') {
-        if (secdat_copy_string(path, sizeof(path), root) != 0) {
-            return 1;
-        }
-    } else if (snprintf(path, sizeof(path), "%s/%s", root, relative)
-        >= (int)sizeof(path)) {
-        return 1;
-    }
-    if (lstat(path, &status) != 0) {
-        return errno == ENOENT ? 0 : 1;
-    }
-    if (S_ISREG(status.st_mode)) {
-        if (!secdat_transaction_state_file_name_is_valid(relative)) {
-            return 1;
-        }
-        return secdat_key_list_append(files, relative);
-    }
-    if (!S_ISDIR(status.st_mode) || (status.st_mode & 022) != 0) {
-        return 1;
-    }
-    directory = opendir(path);
-    if (directory == NULL) {
-        return 1;
-    }
-    while ((entry = readdir(directory)) != NULL) {
-        char child_relative[PATH_MAX];
-
-        if (strcmp(entry->d_name, ".") == 0
-            || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-        if (relative[0] == '\0') {
-            if (secdat_copy_string(
-                    child_relative,
-                    sizeof(child_relative),
-                    entry->d_name
-                ) != 0) {
-                goto cleanup;
-            }
-        } else if (snprintf(
-                child_relative,
-                sizeof(child_relative),
-                "%s/%s",
-                relative,
-                entry->d_name
-            ) >= (int)sizeof(child_relative)) {
-            goto cleanup;
-        }
-        if (secdat_mutation_collect_state_files(
-                root,
-                child_relative,
-                files
-            ) != 0) {
-            goto cleanup;
-        }
-    }
-    if (closedir(directory) != 0) {
-        directory = NULL;
-        goto cleanup;
-    }
-    directory = NULL;
-    result = 0;
-
-cleanup:
-    if (directory != NULL) {
-        closedir(directory);
-    }
-    return result;
-}
-
-static int secdat_mutation_read_snapshot_file(
-    const char *state_root,
-    const char *relative,
-    unsigned char **data,
-    size_t *length,
-    int *exists
-)
-{
-    char path[PATH_MAX];
-
-    if (!secdat_transaction_state_file_name_is_valid(relative)
-        || snprintf(path, sizeof(path), "%s/%s", state_root, relative)
-            >= (int)sizeof(path)) {
-        return 1;
-    }
-    return secdat_transaction_read_target(
-        path,
-        data,
-        length,
-        exists,
-        SECDAT_TRANSACTION_MAX_BLOB_BYTES
-    );
-}
-
-static int secdat_mutation_append_state_diff(
-    struct secdat_transaction *transaction,
-    const char *source_state,
-    const char *stage_state,
-    size_t *changed_file_count
-)
-{
-    struct secdat_key_list source_files = {0};
-    struct secdat_key_list stage_files = {0};
-    struct secdat_key_list all_files = {0};
-    size_t index;
-    int result = 1;
-
-    *changed_file_count = 0;
-    if (secdat_mutation_collect_state_files(
-            source_state,
-            "domains",
-            &source_files
-        ) != 0
-        || secdat_mutation_collect_state_files(
-            stage_state,
-            "domains",
-            &stage_files
-        ) != 0) {
-        goto cleanup;
-    }
-    for (index = 0; index < source_files.count; index += 1) {
-        if (secdat_key_list_append(&all_files, source_files.items[index]) != 0) {
-            goto cleanup;
-        }
-    }
-    for (index = 0; index < stage_files.count; index += 1) {
-        if (!secdat_key_list_contains(&all_files, stage_files.items[index])
-            && secdat_key_list_append(
-                &all_files,
-                stage_files.items[index]
-            ) != 0) {
-            goto cleanup;
-        }
-    }
-    if (all_files.count > 1) {
-        qsort(
-            all_files.items,
-            all_files.count,
-            sizeof(*all_files.items),
-            secdat_compare_strings
-        );
-    }
-    for (index = 0; index < all_files.count; index += 1) {
-        unsigned char *before_data = NULL;
-        unsigned char *after_data = NULL;
-        size_t before_length = 0;
-        size_t after_length = 0;
-        int before_exists = 0;
-        int after_exists = 0;
-        int changed;
-
-        if (secdat_mutation_read_snapshot_file(
-                source_state,
-                all_files.items[index],
-                &before_data,
-                &before_length,
-                &before_exists
-            ) != 0
-            || secdat_mutation_read_snapshot_file(
-                stage_state,
-                all_files.items[index],
-                &after_data,
-                &after_length,
-                &after_exists
-            ) != 0) {
-            secdat_secure_clear(before_data, before_length);
-            free(before_data);
-            secdat_secure_clear(after_data, after_length);
-            free(after_data);
-            goto cleanup;
-        }
-        changed = before_exists != after_exists
-            || (before_exists
-                && (before_length != after_length
-                    || CRYPTO_memcmp(
-                        before_data,
-                        after_data,
-                        before_length
-                    ) != 0));
-        if (changed
-            && secdat_transaction_append_target(
-                transaction,
-                0,
-                SECDAT_TRANSACTION_ARTIFACT_STATE_FILE,
-                transaction->owner_domain_id,
-                transaction->owner_store_name,
-                all_files.items[index],
-                before_data,
-                before_length,
-                before_exists,
-                after_data,
-                after_length,
-                after_exists
-            ) != 0) {
-            secdat_secure_clear(before_data, before_length);
-            free(before_data);
-            secdat_secure_clear(after_data, after_length);
-            free(after_data);
-            goto cleanup;
-        }
-        if (changed) {
-            *changed_file_count += 1;
-        }
-        secdat_secure_clear(before_data, before_length);
-        free(before_data);
-        secdat_secure_clear(after_data, after_length);
-        free(after_data);
-    }
-    result = 0;
-
-cleanup:
-    secdat_key_list_free(&source_files);
-    secdat_key_list_free(&stage_files);
-    secdat_key_list_free(&all_files);
     return result;
 }
 
@@ -22040,6 +24362,50 @@ static int secdat_dependency_relation_key(
     return secdat_dependency_hash_parts('\0', parts, 1, keyref_hash);
 }
 
+static _Thread_local struct {
+    int active;
+    int resolving;
+    char domain_id[PATH_MAX];
+    char source_root[PATH_MAX];
+    char destination_root[PATH_MAX];
+} secdat_domain_move_projection;
+
+static int secdat_domain_move_rewrite_keyref_root(
+    const char *canonical_keyref,
+    const char *from_root,
+    const char *to_root,
+    char *rewritten,
+    size_t rewritten_size,
+    int *matched
+)
+{
+    size_t from_length = strlen(from_root);
+    const char *suffix;
+    int written;
+
+    *matched = 0;
+    if (strcmp(from_root, "/") == 0) {
+        if (canonical_keyref[0] != '/' || canonical_keyref[1] == '\0') {
+            return 0;
+        }
+        suffix = canonical_keyref + 1;
+    } else {
+        if (strncmp(canonical_keyref, from_root, from_length) != 0
+            || canonical_keyref[from_length] != '/') {
+            return 0;
+        }
+        suffix = canonical_keyref + from_length + 1;
+    }
+    written = strcmp(to_root, "/") == 0
+        ? snprintf(rewritten, rewritten_size, "/%s", suffix)
+        : snprintf(rewritten, rewritten_size, "%s/%s", to_root, suffix);
+    if (written < 0 || (size_t)written >= rewritten_size) {
+        return 1;
+    }
+    *matched = 1;
+    return 0;
+}
+
 static int secdat_dependency_relation_keyref_validate(
     const char *canonical_keyref,
     const char *fallback_domain_id,
@@ -22057,6 +24423,46 @@ static int secdat_dependency_relation_keyref_validate(
     enum secdat_store_format format;
     int lookup_status;
     int result = 1;
+
+    if (secdat_domain_move_projection.active
+        && !secdat_domain_move_projection.resolving) {
+        char source_keyref[PATH_MAX * 2];
+        char projected_domain_id[PATH_MAX];
+        int matched = 0;
+
+        if (secdat_domain_move_rewrite_keyref_root(
+                canonical_keyref,
+                secdat_domain_move_projection.destination_root,
+                secdat_domain_move_projection.source_root,
+                source_keyref,
+                sizeof(source_keyref),
+                &matched
+            ) != 0) {
+            return 1;
+        }
+        if (matched) {
+            secdat_domain_move_projection.resolving = 1;
+            result = secdat_dependency_relation_keyref_validate(
+                source_keyref,
+                fallback_domain_id,
+                fallback_store,
+                projected_domain_id
+            );
+            secdat_domain_move_projection.resolving = 0;
+            if (result != 0
+                || strcmp(
+                    projected_domain_id,
+                    secdat_domain_move_projection.domain_id
+                ) != 0) {
+                return 1;
+            }
+            return secdat_copy_string(
+                domain_id,
+                PATH_MAX,
+                projected_domain_id
+            );
+        }
+    }
 
     if (secdat_domain_root_path(fallback_domain_id, fallback_root, sizeof(fallback_root)) != 0
         || secdat_parse_key_reference_internal(
@@ -23451,9 +25857,10 @@ static int secdat_dependency_mask_edge_object(
     return *object_out == NULL;
 }
 
-static int secdat_dependency_lookup_is_mask_group(
+static int secdat_dependency_lookup_is_group(
     json_t *lookup,
-    const char *target_entry_id
+    char expected_kind,
+    const char *expected_id
 )
 {
     const char *kind = json_string_value(json_object_get(lookup, "kind"));
@@ -23465,14 +25872,17 @@ static int secdat_dependency_lookup_is_mask_group(
     );
 
     return kind != NULL && strcmp(kind, "lookup") == 0
-        && lookup_kind != NULL && strcmp(lookup_kind, "M") == 0
-        && lookup_id != NULL && strcmp(lookup_id, target_entry_id) == 0;
+        && lookup_kind != NULL && lookup_kind[0] == expected_kind
+        && lookup_kind[1] == '\0'
+        && lookup_id != NULL && strcmp(lookup_id, expected_id) == 0;
 }
 
-static int secdat_dependency_mask_update_edges(
+static int secdat_dependency_group_update_edges(
     struct secdat_dependency_update_plan *plan,
     json_t *lookup,
     int lookup_found,
+    char lookup_kind,
+    const char *lookup_id,
     const char *edge_address,
     json_t *before_edge,
     json_t *after_edge,
@@ -23490,9 +25900,10 @@ static int secdat_dependency_mask_update_edges(
     if (lookup_found) {
         const char *root = json_string_value(json_object_get(lookup, "edges_root"));
 
-        if (!secdat_dependency_lookup_is_mask_group(
+        if (!secdat_dependency_lookup_is_group(
                 lookup,
-                json_string_value(json_object_get(lookup, "lookup_id"))
+                lookup_kind,
+                lookup_id
             )
             || secdat_copy_string(before_root, sizeof(before_root), root) != 0) {
             goto cleanup;
@@ -23533,15 +25944,17 @@ cleanup:
     return result;
 }
 
-static int secdat_dependency_mask_update_top(
+static int secdat_dependency_group_update_top(
     struct secdat_dependency_update_plan *plan,
-    const char *target_entry_id,
+    char lookup_kind,
+    const char *lookup_id,
     const char *lookup_address,
     const char *edges_root,
     int has_edges,
     int lookup_found
 )
 {
+    char lookup_kind_text[2] = {lookup_kind, '\0'};
     json_t *replacement = NULL;
     struct secdat_dependency_tree_update_result update = {0};
     int result = 1;
@@ -23552,8 +25965,8 @@ static int secdat_dependency_mask_update_top(
             "address", lookup_address,
             "edges_root", edges_root,
             "kind", "lookup",
-            "lookup_id", target_entry_id,
-            "lookup_kind", "M",
+            "lookup_id", lookup_id,
+            "lookup_kind", lookup_kind_text,
             "schema_version", 1
         );
         if (replacement == NULL) {
@@ -23629,17 +26042,18 @@ static int secdat_dependency_mask_edge_change_is_valid(
         || strcmp(before_address, after_address) == 0;
 }
 
-static int secdat_dependency_mask_group_lookup(
+static int secdat_dependency_group_lookup(
     struct secdat_dependency_update_plan *plan,
-    const char *record_id,
+    char lookup_kind,
+    const char *lookup_id,
     char lookup_address[SECDAT_SHA256_HEX_LENGTH + 1],
     json_t **lookup,
     int *found
 )
 {
     if (secdat_dependency_lookup_address(
-            'M',
-            record_id,
+            lookup_kind,
+            lookup_id,
             lookup_address
         ) != 0
         || secdat_dependency_tree_lookup_projected(
@@ -23651,7 +26065,124 @@ static int secdat_dependency_mask_group_lookup(
         ) != 0) {
         return 1;
     }
-    return *found && !secdat_dependency_lookup_is_mask_group(*lookup, record_id);
+    return *found
+        && !secdat_dependency_lookup_is_group(
+            *lookup,
+            lookup_kind,
+            lookup_id
+        );
+}
+
+static int secdat_dependency_collect_projected_edges(
+    struct secdat_dependency_update_plan *plan,
+    const char *root,
+    json_t *edges,
+    size_t depth
+)
+{
+    json_t *node = NULL;
+    const char *kind;
+    int result = 1;
+
+    if (depth > SECDAT_SHA256_HEX_LENGTH
+        || secdat_dependency_update_node_read(plan, root, &node) != 0) {
+        return 1;
+    }
+    kind = json_string_value(json_object_get(node, "kind"));
+    if (kind != NULL && strcmp(kind, "branch") == 0) {
+        json_t *slots = json_object_get(node, "slots");
+        size_t index;
+
+        for (index = 0; index < json_array_size(slots); index += 1) {
+            const char *child = json_string_value(json_object_get(
+                json_array_get(slots, index),
+                "child"
+            ));
+
+            if (child == NULL
+                || secdat_dependency_collect_projected_edges(
+                    plan,
+                    child,
+                    edges,
+                    depth + 1
+                ) != 0) {
+                goto cleanup;
+            }
+        }
+    } else if (kind == NULL || json_array_append(edges, node) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    json_decref(node);
+    return result;
+}
+
+static int secdat_dependency_update_plan_collect_group(
+    struct secdat_dependency_update_plan *plan,
+    char lookup_kind,
+    const char *lookup_id,
+    json_t **edges_out,
+    int *found
+)
+{
+    char lookup_address[SECDAT_SHA256_HEX_LENGTH + 1];
+    json_t *lookup = NULL;
+    json_t *edges = NULL;
+    const char *edges_root;
+    int result = 1;
+
+    *edges_out = NULL;
+    *found = 0;
+    if (!plan->active) {
+        fprintf(
+            stderr,
+            _("dependency index is incomplete; run fsck --format v2 --dependency-index --repair\n")
+        );
+        return 1;
+    }
+    if (secdat_dependency_group_lookup(
+            plan,
+            lookup_kind,
+            lookup_id,
+            lookup_address,
+            &lookup,
+            found
+        ) != 0) {
+        goto cleanup;
+    }
+    edges = json_array();
+    if (edges == NULL) {
+        goto cleanup;
+    }
+    if (*found) {
+        edges_root = json_string_value(json_object_get(lookup, "edges_root"));
+        if (edges_root == NULL
+            || secdat_dependency_collect_projected_edges(
+                plan,
+                edges_root,
+                edges,
+                0
+            ) != 0
+            || json_array_size(edges) == 0) {
+            goto cleanup;
+        }
+    }
+    *edges_out = edges;
+    edges = NULL;
+    result = 0;
+
+cleanup:
+    if (result != 0) {
+        fprintf(
+            stderr,
+            _("dependency index is corrupt; run fsck --format v2 --dependency-index --repair\n")
+        );
+    }
+    json_decref(edges);
+    json_decref(lookup);
+    return result;
 }
 
 static int secdat_dependency_update_plan_apply_mask(
@@ -23709,8 +26240,9 @@ static int secdat_dependency_update_plan_apply_mask(
             after_exists,
             after_address
         )
-        || secdat_dependency_mask_group_lookup(
+        || secdat_dependency_group_lookup(
             plan,
+            'M',
             record_id,
             lookup_address,
             &lookup,
@@ -23718,18 +26250,21 @@ static int secdat_dependency_update_plan_apply_mask(
         ) != 0) {
         goto cleanup;
     }
-    if (secdat_dependency_mask_update_edges(
+    if (secdat_dependency_group_update_edges(
             plan,
             lookup,
             lookup_found,
+            'M',
+            record_id,
             before_exists ? before_address : after_address,
             before_edge,
             after_edge,
             edges_root,
             &has_edges
         ) != 0
-        || secdat_dependency_mask_update_top(
+        || secdat_dependency_group_update_top(
             plan,
+            'M',
             record_id,
             lookup_address,
             edges_root,
@@ -23748,6 +26283,532 @@ cleanup:
         );
     }
     json_decref(lookup);
+    json_decref(before_edge);
+    json_decref(after_edge);
+    return result;
+}
+
+static int secdat_dependency_mask_edge_validate(
+    json_t *edge,
+    const char *target_entry_id,
+    size_t *edge_count
+);
+
+static int secdat_decrypt_v2_mask_last_known_key(
+    const char *mask_domain_id,
+    const struct secdat_v2_mask_record *record,
+    char *key,
+    size_t key_size
+);
+
+static int secdat_encode_v2_mask_record(
+    const char *mask_domain_id,
+    const struct secdat_v2_mask_record *record,
+    const char *key,
+    unsigned char **payload,
+    size_t *payload_length
+);
+
+static int secdat_encode_v2_compat_tombstone(
+    const char *target_entry_id,
+    unsigned char *payload,
+    size_t payload_size,
+    size_t *payload_length
+);
+
+static int secdat_read_v2_compat_tombstone(
+    const char *path,
+    int *is_compatibility,
+    char target_entry_id[64],
+    unsigned char **payload,
+    size_t *payload_length
+);
+
+static int secdat_dependency_update_entry_mask_visibility(
+    const char *target_entry_id,
+    enum secdat_key_visibility before_visibility,
+    enum secdat_key_visibility after_visibility
+)
+{
+    struct secdat_dependency_update_plan *dependency_plan =
+        secdat_active_dependency_update_plan;
+    json_t *edges = NULL;
+    int found = 0;
+    size_t index;
+    int result = 1;
+
+    if (before_visibility == after_visibility) {
+        return 0;
+    }
+    if (dependency_plan == NULL || !dependency_plan->active) {
+        fprintf(
+            stderr,
+            _("dependency index is incomplete; run fsck --format v2 --dependency-index --repair\n")
+        );
+        return 1;
+    }
+    if (secdat_dependency_update_plan_collect_group(
+            dependency_plan,
+            'M',
+            target_entry_id,
+            &edges,
+            &found
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!found) {
+        result = 0;
+        goto cleanup;
+    }
+    for (index = 0; index < json_array_size(edges); index += 1) {
+        json_t *edge = json_array_get(edges, index);
+        const char *mask_domain_id = json_string_value(
+            json_object_get(edge, "mask_domain_id")
+        );
+        const char *mask_store = json_string_value(
+            json_object_get(edge, "mask_store")
+        );
+        const char *record_id = json_string_value(
+            json_object_get(edge, "mask_record_id")
+        );
+        const char *primary_digest = json_string_value(
+            json_object_get(edge, "primary_digest")
+        );
+        struct secdat_v2_mask_record record;
+        char mask_path[PATH_MAX];
+        char tombstone_path[PATH_MAX];
+        char key[PATH_MAX];
+        char actual_digest[SECDAT_SHA256_HEX_LENGTH + 1];
+        char compatibility_target[64] = "";
+        unsigned char *before_data = NULL;
+        unsigned char *after_data = NULL;
+        unsigned char *tombstone_before = NULL;
+        unsigned char tombstone_after[128];
+        size_t before_length = 0;
+        size_t after_length = 0;
+        size_t tombstone_before_length = 0;
+        size_t tombstone_after_length = 0;
+        size_t edge_count = 0;
+        int tombstone_is_compatibility = 0;
+
+        if (mask_domain_id == NULL || mask_store == NULL
+            || record_id == NULL || primary_digest == NULL
+            || secdat_dependency_mask_edge_validate(
+                edge,
+                target_entry_id,
+                &edge_count
+            ) != 0
+            || edge_count != 1
+            || secdat_build_v2_mask_path(
+                mask_domain_id,
+                mask_store,
+                record_id,
+                mask_path,
+                sizeof(mask_path)
+            ) != 0
+            || secdat_read_file(
+                mask_path,
+                &before_data,
+                &before_length
+            ) != 0
+            || secdat_sha256_hex(
+                before_data,
+                before_length,
+                actual_digest
+            ) != 0
+            || strcmp(actual_digest, primary_digest) != 0
+            || secdat_read_v2_mask_record(
+                mask_path,
+                record_id,
+                &record
+            ) != 0
+            || record.key_visibility != before_visibility) {
+            free(before_data);
+            goto cleanup;
+        }
+        if (before_visibility == SECDAT_KEY_VISIBILITY_ALWAYS) {
+            if (!record.has_last_known_key
+                || secdat_copy_string(
+                    key,
+                    sizeof(key),
+                    record.last_known_key
+                ) != 0) {
+                free(before_data);
+                goto cleanup;
+            }
+        } else if (secdat_decrypt_v2_mask_last_known_key(
+                mask_domain_id,
+                &record,
+                key,
+                sizeof(key)
+            ) != 0) {
+            free(before_data);
+            goto cleanup;
+        }
+        if (secdat_build_tombstone_path(
+                mask_domain_id,
+                mask_store,
+                key,
+                tombstone_path,
+                sizeof(tombstone_path)
+            ) != 0
+            || secdat_read_v2_compat_tombstone(
+                tombstone_path,
+                &tombstone_is_compatibility,
+                compatibility_target,
+                &tombstone_before,
+                &tombstone_before_length
+            ) != 0) {
+            free(before_data);
+            free(tombstone_before);
+            goto cleanup;
+        }
+        if (tombstone_before_length > 0
+            && (!tombstone_is_compatibility
+                || strcmp(compatibility_target, target_entry_id) != 0)) {
+            fprintf(
+                stderr,
+                _("ambiguous legacy mask blocks key visibility transition: %s\n"),
+                key
+            );
+            free(before_data);
+            free(tombstone_before);
+            goto cleanup;
+        }
+        if (after_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED
+            && tombstone_before_length > 0) {
+            fprintf(
+                stderr,
+                _("hidden-name transition cannot preserve v1 rollback mask state: %s\n"),
+                key
+            );
+            free(before_data);
+            free(tombstone_before);
+            goto cleanup;
+        }
+        record.key_visibility = after_visibility;
+        if (secdat_encode_v2_mask_record(
+                mask_domain_id,
+                &record,
+                key,
+                &after_data,
+                &after_length
+            ) != 0
+            || secdat_atomic_write_file(
+                mask_path,
+                after_data,
+                after_length
+            ) != 0
+            || secdat_dependency_update_plan_apply_mask(
+                dependency_plan,
+                mask_domain_id,
+                mask_store,
+                record_id,
+                before_data,
+                before_length,
+                1,
+                after_data,
+                after_length,
+                1
+            ) != 0) {
+            free(before_data);
+            free(tombstone_before);
+            secdat_secure_clear(after_data, after_length);
+            free(after_data);
+            goto cleanup;
+        }
+        if (after_visibility == SECDAT_KEY_VISIBILITY_ALWAYS
+            && tombstone_before_length == 0
+            && (secdat_encode_v2_compat_tombstone(
+                    target_entry_id,
+                    tombstone_after,
+                    sizeof(tombstone_after),
+                    &tombstone_after_length
+                ) != 0
+                || secdat_atomic_write_file(
+                    tombstone_path,
+                    tombstone_after,
+                    tombstone_after_length
+                ) != 0)) {
+            free(before_data);
+            free(tombstone_before);
+            secdat_secure_clear(after_data, after_length);
+            free(after_data);
+            goto cleanup;
+        }
+        free(before_data);
+        free(tombstone_before);
+        secdat_secure_clear(after_data, after_length);
+        free(after_data);
+    }
+    result = 0;
+
+cleanup:
+    json_decref(edges);
+    return result;
+}
+
+static int secdat_dependency_relation_edge_object(
+    const char *domain_id,
+    const char *store_name,
+    const char *relation_id,
+    const char *canonical_keyref,
+    const unsigned char *primary_data,
+    size_t primary_length,
+    json_t **object_out,
+    char address[SECDAT_SHA256_HEX_LENGTH + 1],
+    char keyref_hash[SECDAT_SHA256_HEX_LENGTH + 1],
+    char referenced_domain_id[PATH_MAX]
+)
+{
+    const char *effective_store = secdat_effective_store_name(store_name);
+    const char *parts[4];
+    char primary_digest[SECDAT_SHA256_HEX_LENGTH + 1];
+
+    *object_out = NULL;
+    if (!secdat_domain_id_is_valid(domain_id)
+        || effective_store[0] == '\0'
+        || !secdat_relation_id_is_valid(relation_id)
+        || secdat_dependency_relation_key(canonical_keyref, keyref_hash) != 0
+        || secdat_dependency_relation_keyref_validate(
+            canonical_keyref,
+            domain_id,
+            effective_store,
+            referenced_domain_id
+        ) != 0
+        || secdat_sha256_hex(
+            primary_data,
+            primary_length,
+            primary_digest
+        ) != 0) {
+        return 1;
+    }
+    parts[0] = keyref_hash;
+    parts[1] = domain_id;
+    parts[2] = effective_store;
+    parts[3] = relation_id;
+    if (secdat_dependency_hash_parts('r', parts, 4, address) != 0) {
+        return 1;
+    }
+    *object_out = json_pack(
+        "{s:s,s:s,s:s,s:s,s:s,s:s,s:s,s:s,s:i}",
+        "address", address,
+        "keyref_hash", keyref_hash,
+        "kind", "relation-edge",
+        "primary_digest", primary_digest,
+        "referenced_domain_id", referenced_domain_id,
+        "relation_domain_id", domain_id,
+        "relation_id", relation_id,
+        "relation_store", effective_store,
+        "schema_version", 1
+    );
+    return *object_out == NULL;
+}
+
+static int secdat_dependency_optional_relation_edge(
+    const char *domain_id,
+    const char *store_name,
+    const char *relation_id,
+    const char *canonical_keyref,
+    const unsigned char *data,
+    size_t length,
+    int exists,
+    json_t **edge,
+    char address[SECDAT_SHA256_HEX_LENGTH + 1],
+    char keyref_hash[SECDAT_SHA256_HEX_LENGTH + 1],
+    char referenced_domain_id[PATH_MAX]
+)
+{
+    *edge = NULL;
+    address[0] = '\0';
+    keyref_hash[0] = '\0';
+    referenced_domain_id[0] = '\0';
+    if (!exists) {
+        return 0;
+    }
+    return secdat_dependency_relation_edge_object(
+        domain_id,
+        store_name,
+        relation_id,
+        canonical_keyref,
+        data,
+        length,
+        edge,
+        address,
+        keyref_hash,
+        referenced_domain_id
+    );
+}
+
+static int secdat_dependency_update_plan_apply_group_edge(
+    struct secdat_dependency_update_plan *plan,
+    char lookup_kind,
+    const char *lookup_id,
+    const char *edge_address,
+    json_t *before_edge,
+    json_t *after_edge
+)
+{
+    char lookup_address[SECDAT_SHA256_HEX_LENGTH + 1];
+    char edges_root[SECDAT_SHA256_HEX_LENGTH + 1];
+    json_t *lookup = NULL;
+    int lookup_found = 0;
+    int has_edges = 0;
+    int result = 1;
+
+    if (secdat_dependency_group_lookup(
+            plan,
+            lookup_kind,
+            lookup_id,
+            lookup_address,
+            &lookup,
+            &lookup_found
+        ) != 0
+        || secdat_dependency_group_update_edges(
+            plan,
+            lookup,
+            lookup_found,
+            lookup_kind,
+            lookup_id,
+            edge_address,
+            before_edge,
+            after_edge,
+            edges_root,
+            &has_edges
+        ) != 0
+        || secdat_dependency_group_update_top(
+            plan,
+            lookup_kind,
+            lookup_id,
+            lookup_address,
+            edges_root,
+            has_edges,
+            lookup_found
+        ) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    json_decref(lookup);
+    return result;
+}
+
+struct secdat_dependency_primary_image {
+    const unsigned char *data;
+    size_t length;
+    int exists;
+};
+
+static int secdat_dependency_relation_addresses_match(
+    const char *before_address,
+    const char *after_address,
+    const char *before_keyref_hash,
+    const char *after_keyref_hash,
+    const char *before_domain_id,
+    const char *after_domain_id
+)
+{
+    return strcmp(before_address, after_address) == 0
+        && strcmp(before_keyref_hash, after_keyref_hash) == 0
+        && strcmp(before_domain_id, after_domain_id) == 0;
+}
+
+static int secdat_dependency_update_plan_apply_relation(
+    struct secdat_dependency_update_plan *plan,
+    const char *domain_id,
+    const char *store_name,
+    const char *relation_id,
+    const char *canonical_keyref,
+    const struct secdat_dependency_primary_image *before,
+    const struct secdat_dependency_primary_image *after
+)
+{
+    char before_address[SECDAT_SHA256_HEX_LENGTH + 1];
+    char after_address[SECDAT_SHA256_HEX_LENGTH + 1];
+    char before_keyref_hash[SECDAT_SHA256_HEX_LENGTH + 1];
+    char after_keyref_hash[SECDAT_SHA256_HEX_LENGTH + 1];
+    char before_domain_id[PATH_MAX];
+    char after_domain_id[PATH_MAX];
+    json_t *before_edge = NULL;
+    json_t *after_edge = NULL;
+    const char *edge_address;
+    const char *keyref_hash;
+    const char *referenced_domain_id;
+    int result = 1;
+
+    if (!plan->active) {
+        return 0;
+    }
+    if ((!before->exists && !after->exists)
+        || secdat_dependency_optional_relation_edge(
+            domain_id,
+            store_name,
+            relation_id,
+            canonical_keyref,
+            before->data,
+            before->length,
+            before->exists,
+            &before_edge,
+            before_address,
+            before_keyref_hash,
+            before_domain_id
+        ) != 0
+        || secdat_dependency_optional_relation_edge(
+            domain_id,
+            store_name,
+            relation_id,
+            canonical_keyref,
+            after->data,
+            after->length,
+            after->exists,
+            &after_edge,
+            after_address,
+            after_keyref_hash,
+            after_domain_id
+        ) != 0
+        || (before->exists
+            && after->exists
+            && !secdat_dependency_relation_addresses_match(
+                before_address,
+                after_address,
+                before_keyref_hash,
+                after_keyref_hash,
+                before_domain_id,
+                after_domain_id
+            ))) {
+        goto cleanup;
+    }
+    edge_address = before->exists ? before_address : after_address;
+    keyref_hash = before->exists ? before_keyref_hash : after_keyref_hash;
+    referenced_domain_id = before->exists ? before_domain_id : after_domain_id;
+    if (secdat_dependency_update_plan_apply_group_edge(
+            plan,
+            'R',
+            keyref_hash,
+            edge_address,
+            before_edge,
+            after_edge
+        ) != 0
+        || secdat_dependency_update_plan_apply_group_edge(
+            plan,
+            'D',
+            referenced_domain_id,
+            edge_address,
+            before_edge,
+            after_edge
+        ) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    if (result != 0) {
+        fprintf(
+            stderr,
+            _("dependency index is corrupt; run fsck --format v2 --dependency-index --repair\n")
+        );
+    }
     json_decref(before_edge);
     json_decref(after_edge);
     return result;
@@ -26185,7 +29246,6 @@ static int secdat_update_v2_secret_attrs(
     size_t payload_length = 0;
     int has_payload = 0;
     int key_matches = 0;
-    int mask_dependency_found = 0;
     int status = 1;
 
     if (secdat_v2_domain_entries_dir(domain_id, store_name, domain_entries_dir, sizeof(domain_entries_dir)) != 0
@@ -26215,22 +29275,6 @@ static int secdat_update_v2_secret_attrs(
         fprintf(stderr, _("secret object excludes bulk select: %s\n"), key);
         goto cleanup;
     }
-    if (attrs->key_visibility != domain_entry.key_visibility
-        && (secdat_dependency_index_mask_lookup(
-                entry->entry_id,
-                &mask_dependency_found
-            ) != 0
-            || mask_dependency_found)) {
-        if (mask_dependency_found) {
-            fprintf(
-                stderr,
-                _("key_visibility=%s cannot be used while identity masks reference entry: %s\n"),
-                secdat_key_visibility_name(attrs->key_visibility),
-                key
-            );
-        }
-        goto cleanup;
-    }
     if (attrs->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
         if (secdat_reject_hidden_v2_plaintext_auxiliary_refs(domain_id, store_name, key) != 0
             || secdat_v2_encrypt_domain_entry_key(domain_id, key, &encrypted_key_probe) != 0) {
@@ -26238,6 +29282,14 @@ static int secdat_update_v2_secret_attrs(
         }
         free(encrypted_key_probe);
         encrypted_key_probe = NULL;
+    }
+    if (attrs->key_visibility != domain_entry.key_visibility
+        && secdat_dependency_update_entry_mask_visibility(
+            entry->entry_id,
+            domain_entry.key_visibility,
+            attrs->key_visibility
+        ) != 0) {
+        goto cleanup;
     }
     if (attrs->value_access == SECDAT_VALUE_ACCESS_UNLOCKED) {
         if (domain_entry.has_wrapped_object_key) {
@@ -26322,7 +29374,6 @@ static int secdat_store_v2_plaintext_with_attrs(
     int refcount_present = 1;
     size_t refcount = 1;
     int lookup_status;
-    int mask_dependency_found = 0;
     int status = 1;
 
     if (attrs != NULL) {
@@ -26401,23 +29452,6 @@ static int secdat_store_v2_plaintext_with_attrs(
         || secdat_encode_v2_value_for_storage(object_key_ptr, plaintext, plaintext_length, unsafe_store, &encrypted, &encrypted_length) != 0) {
         goto cleanup;
     }
-    if (lookup_status == 0
-        && write_attrs.key_visibility != entry.key_visibility
-        && (secdat_dependency_index_mask_lookup(
-                entry.entry_id,
-                &mask_dependency_found
-            ) != 0
-            || mask_dependency_found)) {
-        if (mask_dependency_found) {
-            fprintf(
-                stderr,
-                _("key_visibility=%s cannot be used while identity masks reference entry: %s\n"),
-                secdat_key_visibility_name(write_attrs.key_visibility),
-                key
-            );
-        }
-        goto cleanup;
-    }
     if (write_attrs.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED
         && (secdat_reject_hidden_v2_plaintext_auxiliary_refs(domain_id, store_name, key) != 0
             || secdat_v2_encrypt_domain_entry_key(domain_id, key, &encrypted_key_probe) != 0)) {
@@ -26425,6 +29459,15 @@ static int secdat_store_v2_plaintext_with_attrs(
     }
     free(encrypted_key_probe);
     encrypted_key_probe = NULL;
+    if (lookup_status == 0
+        && write_attrs.key_visibility != entry.key_visibility
+        && secdat_dependency_update_entry_mask_visibility(
+            entry.entry_id,
+            entry.key_visibility,
+            write_attrs.key_visibility
+        ) != 0) {
+        goto cleanup;
+    }
 
     if (secdat_prepared_remove_or_apply(tombstone_path) != 0
         || secdat_write_v2_secret_object_file_with_inject(
@@ -26548,7 +29591,9 @@ static int secdat_fsck_check_v2_masks(
     struct stat directory_status;
     struct secdat_key_list target_entry_ids = {0};
     struct secdat_mask_view_list views = {0};
+    struct secdat_mask_view_list canonical_views = {0};
     struct secdat_v2_mask_record record;
+    size_t canonical_view_count = 0;
     size_t index;
     int status = 1;
 
@@ -26656,13 +29701,23 @@ static int secdat_fsck_check_v2_masks(
                 views.items[0].orphan_reason
             );
         }
+        if (views.count == 1
+            && secdat_mask_view_list_append(
+                &canonical_views,
+                &views.items[0]
+            ) != 0) {
+            goto cleanup;
+        }
     }
 
     secdat_mask_view_list_free(&views);
+    views = canonical_views;
+    memset(&canonical_views, 0, sizeof(canonical_views));
+    canonical_view_count = views.count;
     if (secdat_collect_legacy_mask_views(chain, store_name, &views) != 0) {
         goto cleanup;
     }
-    for (index = 0; index < views.count; index += 1) {
+    for (index = canonical_view_count; index < views.count; index += 1) {
         if (options->orphaned
             && views.items[index].state_unknown
             && (views.items[index].state_candidates
@@ -26698,6 +29753,7 @@ static int secdat_fsck_check_v2_masks(
 cleanup:
     secdat_key_list_free(&target_entry_ids);
     secdat_mask_view_list_free(&views);
+    secdat_mask_view_list_free(&canonical_views);
     return status;
 }
 
@@ -28063,6 +31119,9 @@ static int secdat_command_meta_mark_leaked(const struct secdat_cli *cli)
     if (status != 0) {
         return status;
     }
+    if (secdat_prepared_write_set.active) {
+        return 0;
+    }
     return secdat_print_relation_refresh_suggestions(cli, cli->argv[0]);
 }
 
@@ -28169,6 +31228,181 @@ cleanup:
     return status;
 }
 
+static int secdat_relation_collect_distinct_keyrefs(
+    const struct secdat_relation_info *relation,
+    struct secdat_key_list *keyrefs
+)
+{
+    size_t index;
+
+    if (relation == NULL) {
+        return 0;
+    }
+    for (index = 0; index < relation->member_count; index += 1) {
+        const char *keyref = relation->members[index].keyref;
+
+        if (!secdat_key_list_contains(keyrefs, keyref)
+            && secdat_key_list_append(keyrefs, keyref) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_commit_relation_change(
+    const char *command,
+    const char *domain_id,
+    const char *store_name,
+    const char *relation_id,
+    const struct secdat_relation_info *after_relation,
+    int require_existing
+)
+{
+    struct secdat_transaction transaction;
+    struct secdat_dependency_update_plan dependency_plan;
+    struct secdat_relation_info before_relation = {0};
+    struct secdat_key_list keyrefs = {0};
+    char relation_path[PATH_MAX];
+    unsigned char *before_data = NULL;
+    unsigned char *after_data = NULL;
+    size_t before_length = 0;
+    size_t after_length = 0;
+    size_t changed_file_count = 0;
+    int before_exists = 0;
+    size_t index;
+    int result = 1;
+
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
+    memset(&dependency_plan, 0, sizeof(dependency_plan));
+    if (secdat_build_relation_path(
+            domain_id,
+            store_name,
+            relation_id,
+            relation_path,
+            sizeof(relation_path)
+        ) != 0
+        || secdat_transaction_begin(
+            &transaction,
+            command,
+            domain_id,
+            store_name
+        ) != 0
+        || secdat_transaction_read_target(
+            relation_path,
+            &before_data,
+            &before_length,
+            &before_exists,
+            SECDAT_METADATA_TEXT_FILE_MAX
+        ) != 0) {
+        goto cleanup;
+    }
+    if (require_existing && !before_exists) {
+        fprintf(stderr, _("relation not found: %s\n"), relation_id);
+        goto cleanup;
+    }
+    if (before_exists
+        && secdat_relation_read_path(
+            relation_path,
+            relation_id,
+            &before_relation,
+            0
+        ) != 0) {
+        goto cleanup;
+    }
+    if (after_relation != NULL
+        && secdat_encode_relation(
+            after_relation,
+            &after_data,
+            &after_length
+        ) != 0) {
+        goto cleanup;
+    }
+    if (secdat_dependency_update_plan_begin(
+            &dependency_plan,
+            &transaction
+        ) != 0
+        || secdat_relation_collect_distinct_keyrefs(
+            before_exists ? &before_relation : NULL,
+            &keyrefs
+        ) != 0
+        || secdat_relation_collect_distinct_keyrefs(
+            after_relation,
+            &keyrefs
+        ) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < keyrefs.count; index += 1) {
+        const char *keyref = keyrefs.items[index];
+        int has_before = before_exists
+            && secdat_relation_contains_keyref(&before_relation, keyref);
+        int has_after = after_relation != NULL
+            && secdat_relation_contains_keyref(after_relation, keyref);
+
+        if (secdat_dependency_update_plan_apply_relation(
+                &dependency_plan,
+                domain_id,
+                store_name,
+                relation_id,
+                keyref,
+                &(const struct secdat_dependency_primary_image){
+                    before_data,
+                    before_length,
+                    has_before,
+                },
+                &(const struct secdat_dependency_primary_image){
+                    after_data,
+                    after_length,
+                    has_after,
+                }
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    secdat_prepared_write_set.active = 1;
+    if (secdat_prepared_write_set_record(
+            &secdat_prepared_write_set,
+            relation_path,
+            after_data,
+            after_length,
+            after_relation != NULL
+        ) != 0) {
+        goto cleanup;
+    }
+    secdat_prepared_write_set.active = 0;
+    secdat_prepared_write_set.observe_reads = 0;
+    if (secdat_transaction_append_prepared_write_set(
+            &transaction,
+            &secdat_prepared_write_set,
+            domain_id,
+            store_name,
+            &changed_file_count
+        ) != 0
+        || secdat_dependency_update_plan_append(
+            &transaction,
+            &dependency_plan
+        ) != 0
+        || secdat_transaction_commit(&transaction) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    secdat_prepared_write_set.active = 0;
+    secdat_prepared_write_set.observe_reads = 0;
+    secdat_prepared_write_set.project_reads = 0;
+    secdat_secure_clear(before_data, before_length);
+    free(before_data);
+    secdat_secure_clear(after_data, after_length);
+    free(after_data);
+    secdat_key_list_free(&keyrefs);
+    secdat_relation_info_reset(&before_relation);
+    secdat_dependency_update_plan_reset(&dependency_plan);
+    secdat_transaction_reset(&transaction);
+    (void)changed_file_count;
+    return result;
+}
+
 static int secdat_command_relation_set(const struct secdat_cli *cli)
 {
     static const struct option long_options[] = {
@@ -28188,8 +31422,10 @@ static int secdat_command_relation_set(const struct secdat_cli *cli)
     int option;
     int status = 1;
 
+    secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    secdat_prepared_write_set.observe_reads = 1;
     if (secdat_relation_set_string(&relation.kind, "custom") != 0) {
-        return 1;
+        goto cleanup;
     }
     secdat_prepare_option_argv(cli, "relation set", &argc, argv);
     secdat_reset_getopt_state();
@@ -28321,12 +31557,17 @@ static int secdat_command_relation_set(const struct secdat_cli *cli)
         || secdat_require_writable_domain_chain(&chain) != 0) {
         goto cleanup;
     }
-    if (secdat_dependency_index_invalidate() != 0) {
-        goto cleanup;
-    }
-    status = secdat_write_relation(current_domain_id, cli->store, &relation);
+    status = secdat_commit_relation_change(
+        "relation-set",
+        current_domain_id,
+        cli->store,
+        relation.relation_id,
+        &relation,
+        0
+    );
 
 cleanup:
+    secdat_prepared_write_set_reset(&secdat_prepared_write_set);
     secdat_relation_info_reset(&relation);
     secdat_domain_chain_free(&chain);
     return status;
@@ -28795,20 +32036,128 @@ cleanup:
     return status;
 }
 
-static int secdat_print_relation_refresh_suggestions(const struct secdat_cli *cli, const char *raw_keyref)
+static int secdat_collect_indexed_relation_refresh_edge(
+    json_t *edge,
+    const char *canonical_keyref,
+    const char *keyref_hash,
+    struct secdat_relation_refresh_suggestion_rows *suggestions
+)
 {
-    struct secdat_relation_refresh_suggestion_rows suggestions = {0};
+    const char *domain_id = json_string_value(
+        json_object_get(edge, "relation_domain_id")
+    );
+    const char *store_name = json_string_value(
+        json_object_get(edge, "relation_store")
+    );
+    const char *relation_id = json_string_value(
+        json_object_get(edge, "relation_id")
+    );
+    struct secdat_relation_info relation = {0};
+    char first_relation_id[PATH_MAX] = "";
+    size_t edge_count = 0;
+    int result;
+
+    result = domain_id == NULL
+        || store_name == NULL
+        || relation_id == NULL
+        || secdat_dependency_relation_edge_validate(
+            edge,
+            canonical_keyref,
+            keyref_hash,
+            first_relation_id,
+            sizeof(first_relation_id),
+            &edge_count
+        ) != 0
+        || edge_count != 1
+        || strcmp(first_relation_id, relation_id) != 0
+        || secdat_read_relation(
+            domain_id,
+            store_name,
+            relation_id,
+            &relation,
+            1
+        ) != 0
+        || secdat_collect_relation_refresh_suggestions_for_relation(
+            &relation,
+            canonical_keyref,
+            suggestions
+        ) != 0;
+    secdat_relation_info_reset(&relation);
+    return result;
+}
+
+static int secdat_collect_relation_refresh_suggestions_indexed(
+    const char *raw_keyref,
+    const char *fallback_dir,
+    const char *fallback_store,
+    struct secdat_dependency_update_plan *dependency_plan,
+    struct secdat_relation_refresh_suggestion_rows *suggestions
+)
+{
+    char canonical_keyref[PATH_MAX * 2];
+    char keyref_hash[SECDAT_SHA256_HEX_LENGTH + 1];
+    json_t *edges = NULL;
+    int found = 0;
+    size_t index;
+    int result = 1;
+
+    memset(suggestions, 0, sizeof(*suggestions));
+    if (dependency_plan == NULL
+        || !dependency_plan->active
+        || secdat_canonicalize_existing_keyref(
+            raw_keyref,
+            fallback_dir,
+            fallback_store,
+            canonical_keyref,
+            sizeof(canonical_keyref)
+        ) != 0
+        || secdat_dependency_relation_key(
+            canonical_keyref,
+            keyref_hash
+        ) != 0
+        || secdat_dependency_update_plan_collect_group(
+            dependency_plan,
+            'R',
+            keyref_hash,
+            &edges,
+            &found
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!found) {
+        result = 0;
+        goto cleanup;
+    }
+    for (index = 0; index < json_array_size(edges); index += 1) {
+        json_t *edge = json_array_get(edges, index);
+        if (secdat_collect_indexed_relation_refresh_edge(
+                edge,
+                canonical_keyref,
+                keyref_hash,
+                suggestions
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    result = 0;
+
+cleanup:
+    if (result != 0) {
+        secdat_relation_refresh_suggestion_rows_free(suggestions);
+    }
+    json_decref(edges);
+    return result;
+}
+
+static void secdat_render_relation_refresh_suggestions(
+    const struct secdat_relation_refresh_suggestion_rows *suggestions
+)
+{
     size_t index;
 
-    if (secdat_collect_relation_refresh_suggestions(
-            raw_keyref,
-            secdat_cli_domain_base(cli),
-            cli->store,
-            &suggestions) != 0) {
-        return 1;
-    }
-    for (index = 0; index < suggestions.count; index += 1) {
-        const struct secdat_relation_refresh_suggestion_row *suggestion = &suggestions.items[index];
+    for (index = 0; index < suggestions->count; index += 1) {
+        const struct secdat_relation_refresh_suggestion_row *suggestion =
+            &suggestions->items[index];
 
         printf(
             "%s\t%s\t%s\t%s\t%s\t%s\n",
@@ -28820,6 +32169,20 @@ static int secdat_print_relation_refresh_suggestions(const struct secdat_cli *cl
             suggestion->reason
         );
     }
+}
+
+static int secdat_print_relation_refresh_suggestions(const struct secdat_cli *cli, const char *raw_keyref)
+{
+    struct secdat_relation_refresh_suggestion_rows suggestions = {0};
+
+    if (secdat_collect_relation_refresh_suggestions(
+            raw_keyref,
+            secdat_cli_domain_base(cli),
+            cli->store,
+            &suggestions) != 0) {
+        return 1;
+    }
+    secdat_render_relation_refresh_suggestions(&suggestions);
     secdat_relation_refresh_suggestion_rows_free(&suggestions);
     return 0;
 }
@@ -29405,7 +32768,6 @@ static int secdat_command_relation_rm(const struct secdat_cli *cli)
 {
     struct secdat_domain_chain chain = {0};
     char current_domain_id[PATH_MAX];
-    char relation_path[PATH_MAX];
     int status = 1;
 
     if (cli->argc != 1) {
@@ -29417,6 +32779,8 @@ static int secdat_command_relation_rm(const struct secdat_cli *cli)
         fprintf(stderr, _("invalid relation id: %s\n"), cli->argv[0]);
         return 2;
     }
+    secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    secdat_prepared_write_set.observe_reads = 1;
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0
         || secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
         goto cleanup;
@@ -29426,20 +32790,20 @@ static int secdat_command_relation_rm(const struct secdat_cli *cli)
         goto cleanup;
     }
     if (secdat_require_mutable_session_chain(&chain, "relation rm") != 0
-        || secdat_require_writable_domain_chain(&chain) != 0
-        || secdat_build_relation_path(current_domain_id, cli->store, cli->argv[0], relation_path, sizeof(relation_path)) != 0) {
+        || secdat_require_writable_domain_chain(&chain) != 0) {
         goto cleanup;
     }
-    if (!secdat_file_exists(relation_path)) {
-        fprintf(stderr, _("relation not found: %s\n"), cli->argv[0]);
-        goto cleanup;
-    }
-    if (secdat_dependency_index_invalidate() != 0) {
-        goto cleanup;
-    }
-    status = secdat_remove_if_exists(relation_path);
+    status = secdat_commit_relation_change(
+        "relation-rm",
+        current_domain_id,
+        cli->store,
+        cli->argv[0],
+        NULL,
+        1
+    );
 
 cleanup:
+    secdat_prepared_write_set_reset(&secdat_prepared_write_set);
     secdat_domain_chain_free(&chain);
     return status;
 }
@@ -30792,7 +34156,7 @@ static int secdat_remove_v2_local_key(const char *domain_id, const char *store_n
         object_is_valid = 1;
     }
 
-    if (unlink(entry_path) != 0) {
+    if (secdat_prepared_remove_or_apply(entry_path) != 0) {
         fprintf(stderr, _("failed to remove key: %s\n"), key);
         return 1;
     }
@@ -30948,7 +34312,7 @@ static int secdat_remove_key_in_chain(const struct secdat_domain_chain *chain, c
     }
 
     if (secdat_file_exists(entry_path)) {
-        if (unlink(entry_path) != 0) {
+        if (secdat_prepared_remove_or_apply(entry_path) != 0) {
             fprintf(stderr, _("failed to remove key: %s\n"), key);
             return 1;
         }
@@ -32819,7 +36183,6 @@ static int secdat_link_v2_key(
         destination_attr_entry != NULL && destination_attr_entry->from_v2
             ? destination_attr_entry
             : source_entry;
-    size_t references = 0;
     int status = 1;
     int entry_written = 0;
 
@@ -32831,13 +36194,6 @@ static int secdat_link_v2_key(
         || secdat_build_v2_secret_object_path(object_domain_id, object_store_name, source_entry->secret_id, object_path, sizeof(object_path)) != 0
         || secdat_read_v2_secret_object_info(object_path, source_entry->secret_id, &object) != 0) {
         fprintf(stderr, _("invalid v2 secret object: %s\n"), source_entry->secret_id);
-        return 1;
-    }
-    if (secdat_count_v2_secret_references_to_object(object_domain_id, object_store_name, source_entry->secret_id, &references) != 0) {
-        return 1;
-    }
-    if (references == 0) {
-        fprintf(stderr, _("invalid v2 domain entry: %s\n"), source_entry->entry_id);
         return 1;
     }
     if (secdat_generate_uuid_v4(entry_id, sizeof(entry_id)) != 0
@@ -32885,7 +36241,13 @@ static int secdat_link_v2_key(
     entry_written = 1;
 
     if (object.refcount_present
-        && secdat_update_v2_secret_refcount(object_domain_id, object_store_name, source_entry->secret_id, references + 1) != 0) {
+        && (object.refcount == SIZE_MAX
+            || secdat_update_v2_secret_refcount(
+                object_domain_id,
+                object_store_name,
+                source_entry->secret_id,
+                object.refcount + 1
+            ) != 0)) {
         goto cleanup;
     }
     if (secdat_remove_if_exists(tombstone_path) != 0
@@ -33016,7 +36378,7 @@ static int secdat_remove_replaced_v2_entry(
     if (secdat_read_v2_secret_object_info(object_path, entry->secret_id, &object) == 0) {
         object_is_valid = 1;
     }
-    if (unlink(entry_path) != 0) {
+    if (secdat_prepared_remove_or_apply(entry_path) != 0) {
         fprintf(stderr, _("failed to remove key: %s\n"), key);
         return 1;
     }
@@ -33377,6 +36739,1435 @@ static int secdat_command_cp(const struct secdat_cli *cli)
     return status;
 }
 
+struct secdat_move_relation_update {
+    char domain_id[PATH_MAX];
+    char store_name[PATH_MAX];
+    char relation_id[PATH_MAX];
+    char path[PATH_MAX];
+    unsigned char *before_data;
+    size_t before_length;
+    unsigned char *after_data;
+    size_t after_length;
+    struct secdat_key_list before_keyrefs;
+    struct secdat_key_list after_keyrefs;
+};
+
+struct secdat_move_relation_update_list {
+    struct secdat_move_relation_update *items;
+    size_t count;
+    size_t capacity;
+};
+
+static void secdat_move_relation_update_list_reset(
+    struct secdat_move_relation_update_list *list
+)
+{
+    size_t index;
+
+    for (index = 0; index < list->count; index += 1) {
+        secdat_secure_clear(
+            list->items[index].before_data,
+            list->items[index].before_length
+        );
+        free(list->items[index].before_data);
+        secdat_secure_clear(
+            list->items[index].after_data,
+            list->items[index].after_length
+        );
+        free(list->items[index].after_data);
+        secdat_key_list_free(&list->items[index].before_keyrefs);
+        secdat_key_list_free(&list->items[index].after_keyrefs);
+    }
+    free(list->items);
+    memset(list, 0, sizeof(*list));
+}
+
+static int secdat_move_relation_update_list_append(
+    struct secdat_move_relation_update_list *list,
+    struct secdat_move_relation_update *update
+)
+{
+    struct secdat_move_relation_update *resized;
+    size_t next_capacity;
+
+    if (list->count >= SECDAT_DEPENDENCY_MAX_RECORDS) {
+        fprintf(stderr, _("too many move relation dependencies\n"));
+        return 1;
+    }
+    if (list->count == list->capacity) {
+        next_capacity = list->capacity == 0 ? 4 : list->capacity * 2;
+        resized = realloc(list->items, next_capacity * sizeof(*resized));
+        if (resized == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        list->items = resized;
+        list->capacity = next_capacity;
+    }
+    list->items[list->count] = *update;
+    list->count += 1;
+    memset(update, 0, sizeof(*update));
+    return 0;
+}
+
+static int secdat_move_build_canonical_keyref(
+    const char *domain_id,
+    const char *store_name,
+    const char *key,
+    char *canonical_keyref,
+    size_t canonical_keyref_size
+)
+{
+    char domain_root[PATH_MAX];
+
+    return secdat_domain_root_path(
+            domain_id,
+            domain_root,
+            sizeof(domain_root)
+        ) != 0
+        || secdat_format_canonical_key(
+            canonical_keyref,
+            canonical_keyref_size,
+            key,
+            domain_root,
+            secdat_effective_store_name(store_name),
+            1,
+            1
+        ) != 0;
+}
+
+static int secdat_move_prepare_relation_updates(
+    struct secdat_dependency_update_plan *dependency_plan,
+    const char *old_keyref,
+    const char *new_keyref,
+    struct secdat_move_relation_update_list *updates
+)
+{
+    char old_keyref_hash[SECDAT_SHA256_HEX_LENGTH + 1];
+    json_t *edges = NULL;
+    int found = 0;
+    size_t index;
+    int result = 1;
+
+    if (strcmp(old_keyref, new_keyref) == 0) {
+        return 0;
+    }
+    if (secdat_dependency_relation_key(old_keyref, old_keyref_hash) != 0
+        || secdat_dependency_update_plan_collect_group(
+            dependency_plan,
+            'R',
+            old_keyref_hash,
+            &edges,
+            &found
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!found) {
+        result = 0;
+        goto cleanup;
+    }
+    for (index = 0; index < json_array_size(edges); index += 1) {
+        json_t *edge = json_array_get(edges, index);
+        const char *domain_id = json_string_value(
+            json_object_get(edge, "relation_domain_id")
+        );
+        const char *store_name = json_string_value(
+            json_object_get(edge, "relation_store")
+        );
+        const char *relation_id = json_string_value(
+            json_object_get(edge, "relation_id")
+        );
+        struct secdat_move_relation_update update;
+        struct secdat_relation_info relation = {0};
+        char first_relation_id[PATH_MAX] = "";
+        size_t edge_count = 0;
+        size_t member_index;
+
+        memset(&update, 0, sizeof(update));
+        if (domain_id == NULL || store_name == NULL || relation_id == NULL
+            || secdat_dependency_relation_edge_validate(
+                edge,
+                old_keyref,
+                old_keyref_hash,
+                first_relation_id,
+                sizeof(first_relation_id),
+                &edge_count
+            ) != 0
+            || edge_count != 1
+            || strcmp(first_relation_id, relation_id) != 0
+            || secdat_copy_string(
+                update.domain_id,
+                sizeof(update.domain_id),
+                domain_id
+            ) != 0
+            || secdat_copy_string(
+                update.store_name,
+                sizeof(update.store_name),
+                store_name
+            ) != 0
+            || secdat_copy_string(
+                update.relation_id,
+                sizeof(update.relation_id),
+                relation_id
+            ) != 0
+            || secdat_build_relation_path(
+                domain_id,
+                store_name,
+                relation_id,
+                update.path,
+                sizeof(update.path)
+            ) != 0
+            || secdat_read_file(
+                update.path,
+                &update.before_data,
+                &update.before_length
+            ) != 0
+            || secdat_relation_read_path(
+                update.path,
+                relation_id,
+                &relation,
+                1
+            ) != 0) {
+            secdat_relation_info_reset(&relation);
+            secdat_secure_clear(update.before_data, update.before_length);
+            free(update.before_data);
+            goto cleanup;
+        }
+        for (member_index = 0;
+             member_index < relation.member_count;
+             member_index += 1) {
+            char *replacement;
+
+            if (secdat_key_list_append(
+                    &update.before_keyrefs,
+                    relation.members[member_index].keyref
+                ) != 0) {
+                secdat_relation_info_reset(&relation);
+                secdat_secure_clear(
+                    update.before_data,
+                    update.before_length
+                );
+                free(update.before_data);
+                secdat_key_list_free(&update.before_keyrefs);
+                goto cleanup;
+            }
+            if (strcmp(
+                    relation.members[member_index].keyref,
+                    old_keyref
+                ) != 0) {
+                continue;
+            }
+            replacement = strdup(new_keyref);
+            if (replacement == NULL) {
+                fprintf(stderr, _("out of memory\n"));
+                secdat_relation_info_reset(&relation);
+                secdat_secure_clear(
+                    update.before_data,
+                    update.before_length
+                );
+                free(update.before_data);
+                secdat_key_list_free(&update.before_keyrefs);
+                goto cleanup;
+            }
+            free(relation.members[member_index].keyref);
+            relation.members[member_index].keyref = replacement;
+        }
+        for (member_index = 0;
+             member_index < relation.member_count;
+             member_index += 1) {
+            if (secdat_key_list_append(
+                    &update.after_keyrefs,
+                    relation.members[member_index].keyref
+                ) != 0) {
+                secdat_relation_info_reset(&relation);
+                secdat_secure_clear(
+                    update.before_data,
+                    update.before_length
+                );
+                free(update.before_data);
+                secdat_key_list_free(&update.before_keyrefs);
+                secdat_key_list_free(&update.after_keyrefs);
+                goto cleanup;
+            }
+        }
+        if (secdat_encode_relation(
+                &relation,
+                &update.after_data,
+                &update.after_length
+            ) != 0
+        ) {
+            secdat_relation_info_reset(&relation);
+            secdat_secure_clear(update.before_data, update.before_length);
+            free(update.before_data);
+            secdat_secure_clear(update.after_data, update.after_length);
+            free(update.after_data);
+            secdat_key_list_free(&update.before_keyrefs);
+            secdat_key_list_free(&update.after_keyrefs);
+            goto cleanup;
+        }
+        for (member_index = 0;
+             member_index < update.before_keyrefs.count;
+             member_index += 1) {
+            if (secdat_dependency_update_plan_apply_relation(
+                    dependency_plan,
+                    domain_id,
+                    store_name,
+                    relation_id,
+                    update.before_keyrefs.items[member_index],
+                    &(const struct secdat_dependency_primary_image){
+                        update.before_data,
+                        update.before_length,
+                        1,
+                    },
+                    &(const struct secdat_dependency_primary_image){0}
+                ) != 0) {
+                secdat_relation_info_reset(&relation);
+                secdat_secure_clear(
+                    update.before_data,
+                    update.before_length
+                );
+                free(update.before_data);
+                secdat_secure_clear(
+                    update.after_data,
+                    update.after_length
+                );
+                free(update.after_data);
+                secdat_key_list_free(&update.before_keyrefs);
+                secdat_key_list_free(&update.after_keyrefs);
+                goto cleanup;
+            }
+        }
+        if (secdat_move_relation_update_list_append(
+                updates,
+                &update
+            ) != 0) {
+            secdat_relation_info_reset(&relation);
+            secdat_secure_clear(update.before_data, update.before_length);
+            free(update.before_data);
+            secdat_secure_clear(update.after_data, update.after_length);
+            free(update.after_data);
+            secdat_key_list_free(&update.before_keyrefs);
+            secdat_key_list_free(&update.after_keyrefs);
+            goto cleanup;
+        }
+        secdat_relation_info_reset(&relation);
+    }
+    result = 0;
+
+cleanup:
+    json_decref(edges);
+    return result;
+}
+
+static int secdat_move_apply_relation_updates(
+    struct secdat_dependency_update_plan *dependency_plan,
+    const struct secdat_move_relation_update_list *updates
+)
+{
+    size_t index;
+
+    for (index = 0; index < updates->count; index += 1) {
+        const struct secdat_move_relation_update *update =
+            &updates->items[index];
+
+        size_t keyref_index;
+
+        if (secdat_atomic_write_file(
+                update->path,
+                update->after_data,
+                update->after_length
+            ) != 0) {
+            return 1;
+        }
+        for (keyref_index = 0;
+             keyref_index < update->after_keyrefs.count;
+             keyref_index += 1) {
+            if (secdat_dependency_update_plan_apply_relation(
+                    dependency_plan,
+                    update->domain_id,
+                    update->store_name,
+                    update->relation_id,
+                    update->after_keyrefs.items[keyref_index],
+                    &(const struct secdat_dependency_primary_image){0},
+                    &(const struct secdat_dependency_primary_image){
+                        update->after_data,
+                        update->after_length,
+                        1,
+                    }
+                ) != 0) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int secdat_domain_move_relation_update_exists(
+    const struct secdat_move_relation_update_list *updates,
+    const char *domain_id,
+    const char *store_name,
+    const char *relation_id
+)
+{
+    size_t index;
+
+    for (index = 0; index < updates->count; index += 1) {
+        if (strcmp(updates->items[index].domain_id, domain_id) == 0
+            && strcmp(
+                updates->items[index].store_name,
+                store_name
+            ) == 0
+            && strcmp(
+                updates->items[index].relation_id,
+                relation_id
+            ) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void secdat_domain_move_relation_update_discard(
+    struct secdat_move_relation_update *update
+)
+{
+    secdat_secure_clear(update->before_data, update->before_length);
+    free(update->before_data);
+    secdat_secure_clear(update->after_data, update->after_length);
+    free(update->after_data);
+    secdat_key_list_free(&update->before_keyrefs);
+    secdat_key_list_free(&update->after_keyrefs);
+    memset(update, 0, sizeof(*update));
+}
+
+static int secdat_domain_move_prepare_relation_updates(
+    struct secdat_dependency_update_plan *dependency_plan,
+    const char *moved_domain_id,
+    const char *source_root,
+    const char *destination_root,
+    struct secdat_move_relation_update_list *updates
+)
+{
+    json_t *edges = NULL;
+    int found = 0;
+    size_t edge_index;
+    int result = 1;
+
+    if (secdat_dependency_update_plan_collect_group(
+            dependency_plan,
+            'D',
+            moved_domain_id,
+            &edges,
+            &found
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!found) {
+        result = 0;
+        goto cleanup;
+    }
+    for (edge_index = 0;
+         edge_index < json_array_size(edges);
+         edge_index += 1) {
+        json_t *edge = json_array_get(edges, edge_index);
+        const char *relation_domain = json_string_value(
+            json_object_get(edge, "relation_domain_id")
+        );
+        const char *relation_store = json_string_value(
+            json_object_get(edge, "relation_store")
+        );
+        const char *relation_id = json_string_value(
+            json_object_get(edge, "relation_id")
+        );
+        struct secdat_move_relation_update update;
+        struct secdat_relation_info relation = {0};
+        struct secdat_key_list expected_hashes = {0};
+        struct secdat_key_list seen_hashes = {0};
+        char actual_digest[SECDAT_SHA256_HEX_LENGTH + 1];
+        size_t index;
+
+        memset(&update, 0, sizeof(update));
+        if (relation_domain == NULL
+            || relation_store == NULL
+            || relation_id == NULL) {
+            goto relation_error;
+        }
+        if (secdat_domain_move_relation_update_exists(
+                updates,
+                relation_domain,
+                relation_store,
+                relation_id
+            )) {
+            continue;
+        }
+        for (index = 0; index < json_array_size(edges); index += 1) {
+            json_t *candidate = json_array_get(edges, index);
+            const char *candidate_domain = json_string_value(
+                json_object_get(candidate, "relation_domain_id")
+            );
+            const char *candidate_store = json_string_value(
+                json_object_get(candidate, "relation_store")
+            );
+            const char *candidate_id = json_string_value(
+                json_object_get(candidate, "relation_id")
+            );
+            const char *candidate_referenced = json_string_value(
+                json_object_get(candidate, "referenced_domain_id")
+            );
+            const char *candidate_hash = json_string_value(
+                json_object_get(candidate, "keyref_hash")
+            );
+
+            if (candidate_domain == NULL
+                || candidate_store == NULL
+                || candidate_id == NULL
+                || candidate_referenced == NULL
+                || candidate_hash == NULL
+                || strcmp(candidate_referenced, moved_domain_id) != 0) {
+                goto relation_error;
+            }
+            if (strcmp(candidate_domain, relation_domain) == 0
+                && strcmp(candidate_store, relation_store) == 0
+                && strcmp(candidate_id, relation_id) == 0
+                && secdat_key_list_append(
+                    &expected_hashes,
+                    candidate_hash
+                ) != 0) {
+                goto relation_error;
+            }
+        }
+        if (expected_hashes.count == 0
+            || secdat_copy_string(
+                update.domain_id,
+                sizeof(update.domain_id),
+                relation_domain
+            ) != 0
+            || secdat_copy_string(
+                update.store_name,
+                sizeof(update.store_name),
+                relation_store
+            ) != 0
+            || secdat_copy_string(
+                update.relation_id,
+                sizeof(update.relation_id),
+                relation_id
+            ) != 0
+            || secdat_build_relation_path(
+                relation_domain,
+                relation_store,
+                relation_id,
+                update.path,
+                sizeof(update.path)
+            ) != 0
+            || secdat_read_file(
+                update.path,
+                &update.before_data,
+                &update.before_length
+            ) != 0
+            || secdat_sha256_hex(
+                update.before_data,
+                update.before_length,
+                actual_digest
+            ) != 0
+            || secdat_relation_read_path(
+                update.path,
+                relation_id,
+                &relation,
+                1
+            ) != 0) {
+            goto relation_error;
+        }
+        for (index = 0; index < json_array_size(edges); index += 1) {
+            json_t *candidate = json_array_get(edges, index);
+            const char *candidate_domain = json_string_value(
+                json_object_get(candidate, "relation_domain_id")
+            );
+            const char *candidate_store = json_string_value(
+                json_object_get(candidate, "relation_store")
+            );
+            const char *candidate_id = json_string_value(
+                json_object_get(candidate, "relation_id")
+            );
+            const char *candidate_digest = json_string_value(
+                json_object_get(candidate, "primary_digest")
+            );
+
+            if (strcmp(candidate_domain, relation_domain) == 0
+                && strcmp(candidate_store, relation_store) == 0
+                && strcmp(candidate_id, relation_id) == 0
+                && (candidate_digest == NULL
+                    || strcmp(candidate_digest, actual_digest) != 0)) {
+                goto relation_error;
+            }
+        }
+        for (index = 0; index < relation.member_count; index += 1) {
+            const char *before_keyref = relation.members[index].keyref;
+            char referenced_domain[PATH_MAX];
+
+            if (!secdat_key_list_contains(
+                    &update.before_keyrefs,
+                    before_keyref
+                )
+                && secdat_key_list_append(
+                    &update.before_keyrefs,
+                    before_keyref
+                ) != 0) {
+                goto relation_error;
+            }
+            if (secdat_dependency_relation_keyref_validate(
+                    before_keyref,
+                    relation_domain,
+                    relation_store,
+                    referenced_domain
+                ) != 0) {
+                goto relation_error;
+            }
+            if (strcmp(referenced_domain, moved_domain_id) == 0) {
+                char rewritten[PATH_MAX * 2];
+                char keyref_hash[SECDAT_SHA256_HEX_LENGTH + 1];
+                char *replacement;
+                int matched = 0;
+
+                if (secdat_dependency_relation_key(
+                        before_keyref,
+                        keyref_hash
+                    ) != 0
+                    || !secdat_key_list_contains(
+                        &expected_hashes,
+                        keyref_hash
+                    )
+                    || (!secdat_key_list_contains(
+                            &seen_hashes,
+                            keyref_hash
+                        )
+                        && secdat_key_list_append(
+                            &seen_hashes,
+                            keyref_hash
+                        ) != 0)
+                    || secdat_domain_move_rewrite_keyref_root(
+                        before_keyref,
+                        source_root,
+                        destination_root,
+                        rewritten,
+                        sizeof(rewritten),
+                        &matched
+                    ) != 0
+                    || !matched
+                    || (replacement = strdup(rewritten)) == NULL) {
+                    goto relation_error;
+                }
+                free(relation.members[index].keyref);
+                relation.members[index].keyref = replacement;
+            }
+        }
+        if (seen_hashes.count != expected_hashes.count) {
+            goto relation_error;
+        }
+        for (index = 0; index < relation.member_count; index += 1) {
+            if (!secdat_key_list_contains(
+                    &update.after_keyrefs,
+                    relation.members[index].keyref
+                )
+                && secdat_key_list_append(
+                    &update.after_keyrefs,
+                    relation.members[index].keyref
+                ) != 0) {
+                goto relation_error;
+            }
+        }
+        if (secdat_encode_relation(
+                &relation,
+                &update.after_data,
+                &update.after_length
+            ) != 0) {
+            goto relation_error;
+        }
+        for (index = 0; index < update.before_keyrefs.count; index += 1) {
+            if (secdat_dependency_update_plan_apply_relation(
+                    dependency_plan,
+                    relation_domain,
+                    relation_store,
+                    relation_id,
+                    update.before_keyrefs.items[index],
+                    &(const struct secdat_dependency_primary_image){
+                        update.before_data,
+                        update.before_length,
+                        1,
+                    },
+                    &(const struct secdat_dependency_primary_image){0}
+                ) != 0) {
+                goto relation_error;
+            }
+        }
+        if (secdat_move_relation_update_list_append(
+                updates,
+                &update
+            ) != 0) {
+            goto relation_error;
+        }
+        secdat_relation_info_reset(&relation);
+        secdat_key_list_free(&expected_hashes);
+        secdat_key_list_free(&seen_hashes);
+        continue;
+
+relation_error:
+        secdat_relation_info_reset(&relation);
+        secdat_key_list_free(&expected_hashes);
+        secdat_key_list_free(&seen_hashes);
+        secdat_domain_move_relation_update_discard(&update);
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    json_decref(edges);
+    return result;
+}
+
+static int secdat_move_update_mask_dependencies(
+    struct secdat_dependency_update_plan *dependency_plan,
+    const char *target_entry_id,
+    const char *destination_domain_id,
+    const char *destination_store_name,
+    const char *destination_key
+)
+{
+    json_t *edges = NULL;
+    int found = 0;
+    size_t index;
+    int result = 1;
+
+    if (secdat_dependency_update_plan_collect_group(
+            dependency_plan,
+            'M',
+            target_entry_id,
+            &edges,
+            &found
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!found) {
+        result = 0;
+        goto cleanup;
+    }
+    for (index = 0; index < json_array_size(edges); index += 1) {
+        json_t *edge = json_array_get(edges, index);
+        const char *mask_domain_id = json_string_value(
+            json_object_get(edge, "mask_domain_id")
+        );
+        const char *mask_store = json_string_value(
+            json_object_get(edge, "mask_store")
+        );
+        const char *record_id = json_string_value(
+            json_object_get(edge, "mask_record_id")
+        );
+        const char *primary_digest = json_string_value(
+            json_object_get(edge, "primary_digest")
+        );
+        struct secdat_v2_mask_record record;
+        char mask_path[PATH_MAX];
+        char actual_digest[SECDAT_SHA256_HEX_LENGTH + 1];
+        char old_key[PATH_MAX];
+        char old_tombstone_path[PATH_MAX];
+        char new_tombstone_path[PATH_MAX];
+        unsigned char *before_data = NULL;
+        unsigned char *after_data = NULL;
+        size_t before_length = 0;
+        size_t after_length = 0;
+        size_t edge_count = 0;
+
+        if (mask_domain_id == NULL || mask_store == NULL
+            || record_id == NULL || primary_digest == NULL
+            || secdat_dependency_mask_edge_validate(
+                edge,
+                target_entry_id,
+                &edge_count
+            ) != 0
+            || edge_count != 1
+            || secdat_build_v2_mask_path(
+                mask_domain_id,
+                mask_store,
+                record_id,
+                mask_path,
+                sizeof(mask_path)
+            ) != 0
+            || secdat_read_file(
+                mask_path,
+                &before_data,
+                &before_length
+            ) != 0
+            || secdat_sha256_hex(
+                before_data,
+                before_length,
+                actual_digest
+            ) != 0
+            || strcmp(actual_digest, primary_digest) != 0
+            || secdat_read_v2_mask_record(
+                mask_path,
+                record_id,
+                &record
+            ) != 0) {
+            free(before_data);
+            goto cleanup;
+        }
+        if (record.key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS) {
+            if (!record.has_last_known_key
+                || secdat_copy_string(
+                    old_key,
+                    sizeof(old_key),
+                    record.last_known_key
+                ) != 0) {
+                free(before_data);
+                goto cleanup;
+            }
+        } else if (secdat_decrypt_v2_mask_last_known_key(
+                mask_domain_id,
+                &record,
+                old_key,
+                sizeof(old_key)
+            ) != 0) {
+            free(before_data);
+            goto cleanup;
+        }
+        if (secdat_copy_string(
+                record.last_known_target_domain,
+                sizeof(record.last_known_target_domain),
+                destination_domain_id
+            ) != 0
+            || secdat_copy_string(
+                record.last_known_target_store,
+                sizeof(record.last_known_target_store),
+                secdat_effective_store_name(destination_store_name)
+            ) != 0
+            || secdat_encode_v2_mask_record(
+                mask_domain_id,
+                &record,
+                destination_key,
+                &after_data,
+                &after_length
+            ) != 0
+            || secdat_atomic_write_file(
+                mask_path,
+                after_data,
+                after_length
+            ) != 0
+            || secdat_dependency_update_plan_apply_mask(
+                dependency_plan,
+                mask_domain_id,
+                mask_store,
+                record_id,
+                before_data,
+                before_length,
+                1,
+                after_data,
+                after_length,
+                1
+            ) != 0) {
+            free(before_data);
+            secdat_secure_clear(after_data, after_length);
+            free(after_data);
+            goto cleanup;
+        }
+        if (record.key_visibility == SECDAT_KEY_VISIBILITY_ALWAYS
+            && strcmp(old_key, destination_key) != 0) {
+            int old_is_compatibility = 0;
+            int new_is_compatibility = 0;
+            char old_target_entry_id[64] = "";
+            char new_target_entry_id[64] = "";
+            unsigned char *old_payload = NULL;
+            unsigned char *new_payload = NULL;
+            unsigned char tombstone_payload[128];
+            size_t old_payload_length = 0;
+            size_t new_payload_length = 0;
+            size_t tombstone_payload_length = 0;
+
+            if (secdat_build_tombstone_path(
+                    mask_domain_id,
+                    mask_store,
+                    old_key,
+                    old_tombstone_path,
+                    sizeof(old_tombstone_path)
+                ) != 0
+                || secdat_build_tombstone_path(
+                    mask_domain_id,
+                    mask_store,
+                    destination_key,
+                    new_tombstone_path,
+                    sizeof(new_tombstone_path)
+                ) != 0
+                || secdat_read_v2_compat_tombstone(
+                    old_tombstone_path,
+                    &old_is_compatibility,
+                    old_target_entry_id,
+                    &old_payload,
+                    &old_payload_length
+                ) != 0
+                || !old_is_compatibility
+                || strcmp(old_target_entry_id, target_entry_id) != 0
+                || secdat_read_v2_compat_tombstone(
+                    new_tombstone_path,
+                    &new_is_compatibility,
+                    new_target_entry_id,
+                    &new_payload,
+                    &new_payload_length
+                ) != 0
+                || (new_payload_length > 0
+                    && (!new_is_compatibility
+                        || strcmp(
+                            new_target_entry_id,
+                            target_entry_id
+                        ) != 0))
+                || secdat_encode_v2_compat_tombstone(
+                    target_entry_id,
+                    tombstone_payload,
+                    sizeof(tombstone_payload),
+                    &tombstone_payload_length
+                ) != 0
+                || secdat_remove_if_exists(old_tombstone_path) != 0
+                || secdat_atomic_write_file(
+                    new_tombstone_path,
+                    tombstone_payload,
+                    tombstone_payload_length
+                ) != 0) {
+                free(old_payload);
+                free(new_payload);
+                free(before_data);
+                secdat_secure_clear(after_data, after_length);
+                free(after_data);
+                goto cleanup;
+            }
+            free(old_payload);
+            free(new_payload);
+        }
+        free(before_data);
+        secdat_secure_clear(after_data, after_length);
+        free(after_data);
+    }
+    result = 0;
+
+cleanup:
+    json_decref(edges);
+    return result;
+}
+
+static int secdat_move_apply_source_mask_plan(
+    const struct secdat_mask_write_plan *mask_plan,
+    struct secdat_dependency_update_plan *dependency_plan
+)
+{
+    char mask_path[PATH_MAX];
+    char tombstone_path[PATH_MAX];
+
+    if (mask_plan->no_op) {
+        return 0;
+    }
+    if (mask_plan->write_mask) {
+        if (secdat_build_v2_mask_path(
+                mask_plan->mask_domain_id,
+                mask_plan->store_name,
+                mask_plan->record.target_entry_id,
+                mask_path,
+                sizeof(mask_path)
+            ) != 0
+            || secdat_atomic_write_file(
+                mask_path,
+                mask_plan->record_payload,
+                mask_plan->record_payload_length
+            ) != 0
+            || secdat_dependency_update_plan_apply_mask(
+                dependency_plan,
+                mask_plan->mask_domain_id,
+                mask_plan->store_name,
+                mask_plan->record.target_entry_id,
+                NULL,
+                0,
+                0,
+                mask_plan->record_payload,
+                mask_plan->record_payload_length,
+                1
+            ) != 0) {
+            return 1;
+        }
+    }
+    if (mask_plan->write_tombstone
+        && (secdat_build_tombstone_path(
+                mask_plan->mask_domain_id,
+                mask_plan->store_name,
+                mask_plan->key,
+                tombstone_path,
+                sizeof(tombstone_path)
+            ) != 0
+            || secdat_atomic_write_file(
+                tombstone_path,
+                mask_plan->tombstone_payload,
+                mask_plan->tombstone_payload_length
+            ) != 0)) {
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_move_v2_entry(
+    const struct secdat_key_reference *source_reference,
+    const struct secdat_domain_chain *source_chain,
+    const struct secdat_key_reference *destination_reference,
+    const struct secdat_domain_chain *destination_chain
+)
+{
+    struct secdat_transaction transaction;
+    struct secdat_dependency_update_plan dependency_plan;
+    struct secdat_move_relation_update_list relation_updates = {0};
+    struct secdat_effective_entry source_entry = {0};
+    struct secdat_effective_entry destination_entry = {0};
+    struct secdat_metadata_list metadata = {0};
+    struct secdat_mask_write_plan source_mask_plan;
+    struct secdat_v2_secret_object_info object;
+    struct secdat_secret_attrs attrs;
+    unsigned char object_key[SECDAT_V2_OBJECT_KEY_LEN];
+    const unsigned char *object_key_ptr = NULL;
+    const char *source_domain_id;
+    const char *destination_domain_id;
+    const char *object_domain_id;
+    const char *object_store_name;
+    char source_entries_dir[PATH_MAX];
+    char destination_entries_dir[PATH_MAX];
+    char source_entry_path[PATH_MAX];
+    char destination_entry_path[PATH_MAX];
+    char source_legacy_path[PATH_MAX];
+    char destination_legacy_path[PATH_MAX];
+    unsigned char *legacy_value = NULL;
+    size_t legacy_value_length = 0;
+    char old_keyref[PATH_MAX * 2];
+    char new_keyref[PATH_MAX * 2];
+    char destination_entry_id[64];
+    enum secdat_store_format source_format;
+    enum secdat_store_format destination_format;
+    int source_is_local;
+    int same_namespace;
+    int need_source_mask = 0;
+    int unsafe_store = 0;
+    int status = 1;
+    size_t changed_file_count = 0;
+
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
+    memset(&dependency_plan, 0, sizeof(dependency_plan));
+    memset(&source_mask_plan, 0, sizeof(source_mask_plan));
+    if (source_chain->count == 0 || destination_chain->count == 0) {
+        return 1;
+    }
+    destination_domain_id = destination_chain->ids[0];
+    secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    if (secdat_transaction_begin(
+            &transaction,
+            "mv",
+            destination_domain_id,
+            destination_reference->store_value
+        ) != 0) {
+        goto cleanup;
+    }
+    secdat_prepared_write_set.active = 1;
+    secdat_prepared_write_set.observe_reads = 1;
+    secdat_prepared_write_set.project_reads = 1;
+    if (secdat_resolve_effective_entry(
+            source_chain,
+            source_reference->store_value,
+            source_reference->key,
+            0,
+            &source_entry
+        ) != 0
+        || !source_entry.from_v2
+        || source_entry.resolved_index >= source_chain->count
+        || secdat_resolve_effective_entry(
+            destination_chain,
+            destination_reference->store_value,
+            destination_reference->key,
+            0,
+            &destination_entry
+        ) == 0) {
+        if (destination_entry.found) {
+            fprintf(
+                stderr,
+                _("destination key already exists: %s\n"),
+                destination_reference->key
+            );
+        } else if (!source_entry.found) {
+            fprintf(stderr, _("key not found: %s\n"), source_reference->key);
+        } else {
+            fprintf(stderr, _("mv requires v2 source and destination stores\n"));
+        }
+        goto cleanup;
+    }
+    source_domain_id = source_chain->ids[source_entry.resolved_index];
+    source_is_local = source_entry.resolved_index == 0;
+    same_namespace = source_is_local
+        && strcmp(source_domain_id, destination_domain_id) == 0
+        && strcmp(
+            secdat_effective_store_name(source_reference->store_value),
+            secdat_effective_store_name(destination_reference->store_value)
+        ) == 0;
+    if (secdat_read_store_format(
+            source_domain_id,
+            source_reference->store_value,
+            &source_format
+        ) != 0
+        || secdat_read_store_format(
+            destination_domain_id,
+            destination_reference->store_value,
+            &destination_format
+        ) != 0
+        || source_format != SECDAT_STORE_FORMAT_V2
+        || destination_format != SECDAT_STORE_FORMAT_V2
+        || secdat_dependency_update_plan_begin(
+            &dependency_plan,
+            &transaction
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!dependency_plan.active) {
+        fprintf(
+            stderr,
+            _("dependency index is incomplete; run fsck --format v2 --dependency-index --repair\n")
+        );
+        goto cleanup;
+    }
+    object_domain_id = source_entry.object_domain[0] == '\0'
+        ? source_domain_id
+        : source_entry.object_domain;
+    object_store_name = source_entry.object_store[0] == '\0'
+        ? secdat_effective_store_name(source_reference->store_value)
+        : secdat_effective_entry_object_store(&source_entry);
+    if (secdat_load_v2_secret_attrs(
+            source_domain_id,
+            source_reference->store_value,
+            &source_entry,
+            &attrs,
+            &unsafe_store
+        ) != 0
+        || secdat_v2_domain_entries_dir(
+            source_domain_id,
+            source_reference->store_value,
+            source_entries_dir,
+            sizeof(source_entries_dir)
+        ) != 0
+        || secdat_v2_domain_entries_dir(
+            destination_domain_id,
+            destination_reference->store_value,
+            destination_entries_dir,
+            sizeof(destination_entries_dir)
+        ) != 0
+        || secdat_build_v2_domain_entry_path(
+            source_domain_id,
+            source_reference->store_value,
+            source_entry.entry_id,
+            source_entry_path,
+            sizeof(source_entry_path)
+        ) != 0
+        || secdat_build_entry_path(
+            source_domain_id,
+            source_reference->store_value,
+            source_reference->key,
+            source_legacy_path,
+            sizeof(source_legacy_path)
+        ) != 0
+        || secdat_build_entry_path(
+            destination_domain_id,
+            destination_reference->store_value,
+            destination_reference->key,
+            destination_legacy_path,
+            sizeof(destination_legacy_path)
+        ) != 0) {
+        goto cleanup;
+    }
+    if (secdat_file_exists(source_legacy_path)) {
+        if (secdat_read_file(
+                source_legacy_path,
+                &legacy_value,
+                &legacy_value_length
+            ) != 0) {
+            goto cleanup;
+        }
+        if (!same_namespace) {
+            fprintf(
+                stderr,
+                _("mv requires normalized v2 object value storage across namespaces\n")
+            );
+            goto cleanup;
+        }
+    }
+    if (attrs.value_access == SECDAT_VALUE_ACCESS_UNLOCKED) {
+        if (secdat_unwrap_v2_effective_object_key(
+                source_chain,
+                &source_entry,
+                object_key
+            ) != 0) {
+            fprintf(
+                stderr,
+                _("invalid v2 domain entry: %s\n"),
+                source_entry.entry_id
+            );
+            goto cleanup;
+        }
+        object_key_ptr = object_key;
+    }
+    if (attrs.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED
+        && secdat_reject_hidden_v2_plaintext_auxiliary_refs(
+            destination_domain_id,
+            destination_reference->store_value,
+            destination_reference->key
+        ) != 0) {
+        goto cleanup;
+    }
+    if (secdat_read_key_metadata(
+            source_domain_id,
+            source_reference->store_value,
+            source_reference->key,
+            &metadata,
+            0
+        ) != 0
+        || (attrs.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED
+            && metadata.count > 0)) {
+        if (attrs.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED
+            && metadata.count > 0) {
+            fprintf(
+                stderr,
+                _("key metadata cannot be preserved for hidden v2 key: %s\n"),
+                destination_reference->key
+            );
+        }
+        goto cleanup;
+    }
+    if (source_is_local
+        && (secdat_move_build_canonical_keyref(
+                source_domain_id,
+                source_reference->store_value,
+                source_reference->key,
+                old_keyref,
+                sizeof(old_keyref)
+            ) != 0
+            || secdat_move_build_canonical_keyref(
+                destination_domain_id,
+                destination_reference->store_value,
+                destination_reference->key,
+                new_keyref,
+                sizeof(new_keyref)
+            ) != 0
+            || secdat_move_prepare_relation_updates(
+                &dependency_plan,
+                old_keyref,
+                new_keyref,
+                &relation_updates
+            ) != 0)) {
+        goto cleanup;
+    }
+    if (source_is_local) {
+        struct secdat_domain_chain parent_chain;
+
+        parent_chain.ids = source_chain->ids + 1;
+        parent_chain.count = source_chain->count - 1;
+        parent_chain.lookup_count = secdat_domain_chain_lookup_count(
+            source_chain
+        ) > 0
+            ? secdat_domain_chain_lookup_count(source_chain) - 1
+            : 0;
+        parent_chain.current_path[0] = '\0';
+        if (parent_chain.lookup_count > 0
+            && secdat_resolve_effective_entry(
+                &parent_chain,
+                source_reference->store_value,
+                source_reference->key,
+                0,
+                &destination_entry
+            ) == 0) {
+            need_source_mask = 1;
+        }
+        secdat_effective_entry_reset(&destination_entry);
+    } else {
+        need_source_mask = 1;
+    }
+    if (need_source_mask
+        && secdat_prepare_canonical_mask_write_plan(
+            source_chain,
+            source_reference->store_value,
+            source_reference->key,
+            0,
+            &source_mask_plan
+        ) != 0) {
+        goto cleanup;
+    }
+    if (source_is_local) {
+        if (secdat_copy_string(
+                destination_entry_id,
+                sizeof(destination_entry_id),
+                source_entry.entry_id
+            ) != 0) {
+            goto cleanup;
+        }
+    } else if (secdat_generate_uuid_v4(
+            destination_entry_id,
+            sizeof(destination_entry_id)
+        ) != 0) {
+        goto cleanup;
+    }
+    if (secdat_write_v2_domain_entry_file(
+            destination_domain_id,
+            destination_entries_dir,
+            destination_entry_id,
+            source_entry.secret_id,
+            object_domain_id,
+            object_store_name,
+            destination_reference->key,
+            &attrs,
+            object_key_ptr,
+            destination_entry_path,
+            sizeof(destination_entry_path)
+        ) != 0) {
+        goto cleanup;
+    }
+    if (source_is_local && !same_namespace
+        && secdat_prepared_remove_or_apply(source_entry_path) != 0) {
+        goto cleanup;
+    }
+    if (!source_is_local) {
+        char object_path[PATH_MAX];
+
+        if (secdat_build_v2_secret_object_path(
+                object_domain_id,
+                object_store_name,
+                source_entry.secret_id,
+                object_path,
+                sizeof(object_path)
+            ) != 0
+            || secdat_read_v2_secret_object_info(
+                object_path,
+                source_entry.secret_id,
+                &object
+            ) != 0
+            || (object.refcount_present
+                && (object.refcount == SIZE_MAX
+                    || secdat_update_v2_secret_refcount(
+                        object_domain_id,
+                        object_store_name,
+                        source_entry.secret_id,
+                        object.refcount + 1
+                    ) != 0))) {
+            goto cleanup;
+        }
+    }
+    if (metadata.count > 0
+        && secdat_write_key_metadata(
+            destination_domain_id,
+            destination_reference->store_value,
+            destination_reference->key,
+            &metadata
+        ) != 0) {
+        goto cleanup;
+    }
+    if (source_is_local
+        && strcmp(
+            source_reference->key,
+            destination_reference->key
+        ) != 0
+        && secdat_write_key_metadata(
+            source_domain_id,
+            source_reference->store_value,
+            source_reference->key,
+            NULL
+        ) != 0) {
+        goto cleanup;
+    }
+    if ((legacy_value != NULL
+            && (secdat_atomic_write_file(
+                    destination_legacy_path,
+                    legacy_value,
+                    legacy_value_length
+                ) != 0
+                || secdat_remove_if_exists(source_legacy_path) != 0))
+        || (legacy_value == NULL
+            && secdat_remove_if_exists(destination_legacy_path) != 0)
+        || secdat_remove_secret_attrs(
+            destination_domain_id,
+            destination_reference->store_value,
+            destination_reference->key
+        ) != 0
+        || (source_is_local
+            && secdat_remove_secret_attrs(
+                source_domain_id,
+                source_reference->store_value,
+                source_reference->key
+            ) != 0)
+        || (source_is_local
+            && secdat_move_apply_relation_updates(
+                &dependency_plan,
+                &relation_updates
+            ) != 0)
+        || (source_is_local
+            && secdat_move_update_mask_dependencies(
+                &dependency_plan,
+                source_entry.entry_id,
+                destination_domain_id,
+                destination_reference->store_value,
+                destination_reference->key
+            ) != 0)
+        || (need_source_mask
+            && secdat_move_apply_source_mask_plan(
+                &source_mask_plan,
+                &dependency_plan
+            ) != 0)) {
+        goto cleanup;
+    }
+    secdat_prepared_write_set.project_reads = 0;
+    secdat_prepared_write_set.active = 0;
+    secdat_prepared_write_set.observe_reads = 0;
+    if ((!same_namespace
+            && secdat_transaction_append_reference_epoch(
+                &transaction,
+                destination_domain_id,
+                destination_reference->store_value
+            ) != 0)
+        || secdat_transaction_append_prepared_write_set(
+            &transaction,
+            &secdat_prepared_write_set,
+            destination_domain_id,
+            destination_reference->store_value,
+            &changed_file_count
+        ) != 0
+        || (source_is_local && !same_namespace
+            && secdat_transaction_mark_source_removal(
+                &transaction,
+                source_entry_path
+            ) != 0)
+        || secdat_dependency_update_plan_append(
+            &transaction,
+            &dependency_plan
+        ) != 0
+        || secdat_transaction_commit(&transaction) != 0) {
+        goto cleanup;
+    }
+    (void)unsafe_store;
+    (void)changed_file_count;
+    status = 0;
+
+cleanup:
+    secdat_prepared_write_set.active = 0;
+    secdat_prepared_write_set.observe_reads = 0;
+    secdat_prepared_write_set.project_reads = 0;
+    if (object_key_ptr != NULL) {
+        secdat_secure_clear(object_key, sizeof(object_key));
+    }
+    secdat_secure_clear(legacy_value, legacy_value_length);
+    free(legacy_value);
+    secdat_mask_write_plan_reset(&source_mask_plan);
+    secdat_metadata_list_free(&metadata);
+    secdat_effective_entry_reset(&source_entry);
+    secdat_effective_entry_reset(&destination_entry);
+    secdat_move_relation_update_list_reset(&relation_updates);
+    secdat_dependency_update_plan_reset(&dependency_plan);
+    secdat_transaction_reset(&transaction);
+    secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    return status;
+}
+
 static int secdat_command_mv(const struct secdat_cli *cli)
 {
     struct secdat_key_reference source_reference;
@@ -33390,8 +38181,9 @@ static int secdat_command_mv(const struct secdat_cli *cli)
     struct secdat_secret_attrs attrs;
     struct secdat_effective_entry source_entry = {0};
     struct secdat_metadata_list metadata = {0};
+    enum secdat_store_format destination_format;
     int unsafe_store = 0;
-    int status;
+    int status = 1;
 
     if (cli->argc != 2) {
         fprintf(stderr, _("invalid arguments for mv\n"));
@@ -33457,22 +38249,65 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         return 1;
     }
 
-    if (secdat_resolve_effective_entry(&source_chain, source_reference.store_value, source_reference.key, 0, &source_entry) != 0
-        || secdat_load_resolved_secret_attrs(&source_chain, source_reference.store_value, source_reference.key, &attrs, &unsafe_store) != 0
-        || secdat_load_resolved_plaintext(&source_chain, source_reference.store_value, source_reference.key, &plaintext, &plaintext_length, NULL, &unsafe_store, NULL, NULL) != 0) {
-        secdat_effective_entry_reset(&source_entry);
-        secdat_domain_chain_free(&source_chain);
-        secdat_domain_chain_free(&destination_chain);
-        return 1;
+    if (secdat_resolve_effective_entry(
+            &source_chain,
+            source_reference.store_value,
+            source_reference.key,
+            0,
+            &source_entry
+        ) != 0) {
+        goto cleanup;
     }
     if (source_entry.ephemeral) {
         fprintf(stderr, _("mv is not supported for an ephemeral secret: %s\n"), source_reference.key);
-        secdat_effective_entry_reset(&source_entry);
-        secdat_domain_chain_free(&source_chain);
-        secdat_domain_chain_free(&destination_chain);
-        secdat_secure_clear(plaintext, plaintext_length);
-        free(plaintext);
-        return 1;
+        goto cleanup;
+    }
+    if (secdat_read_store_format(
+            destination_domain_id,
+            destination_reference.store_value,
+            &destination_format
+        ) != 0) {
+        goto cleanup;
+    }
+    if (source_entry.from_v2) {
+        if (destination_format != SECDAT_STORE_FORMAT_V2) {
+            fprintf(stderr, _("mv requires v2 source and destination stores\n"));
+            goto cleanup;
+        }
+        status = secdat_move_v2_entry(
+            &source_reference,
+            &source_chain,
+            &destination_reference,
+            &destination_chain
+        );
+        goto cleanup;
+    }
+    if (destination_format == SECDAT_STORE_FORMAT_V2) {
+        fprintf(
+            stderr,
+            _("mv requires matching source and destination store formats\n")
+        );
+        goto cleanup;
+    }
+    if (secdat_load_resolved_secret_attrs(
+            &source_chain,
+            source_reference.store_value,
+            source_reference.key,
+            &attrs,
+            &unsafe_store
+        ) != 0
+        || secdat_load_resolved_plaintext(
+            &source_chain,
+            source_reference.store_value,
+            source_reference.key,
+            &plaintext,
+            &plaintext_length,
+            NULL,
+            &unsafe_store,
+            NULL,
+            NULL
+        ) != 0) {
+        goto cleanup;
     }
     if (!source_entry.from_overlay
         && secdat_read_key_metadata(
@@ -33481,23 +38316,11 @@ static int secdat_command_mv(const struct secdat_cli *cli)
             source_reference.key,
             &metadata,
             0) != 0) {
-        secdat_effective_entry_reset(&source_entry);
-        secdat_metadata_list_free(&metadata);
-        secdat_domain_chain_free(&source_chain);
-        secdat_domain_chain_free(&destination_chain);
-        secdat_secure_clear(plaintext, plaintext_length);
-            free(plaintext);
-            return 1;
+        goto cleanup;
     }
     if (attrs.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED && metadata.count > 0) {
         fprintf(stderr, _("key metadata cannot be preserved for hidden v2 key: %s\n"), destination_reference.key);
-        secdat_effective_entry_reset(&source_entry);
-        secdat_metadata_list_free(&metadata);
-        secdat_domain_chain_free(&source_chain);
-        secdat_domain_chain_free(&destination_chain);
-        secdat_secure_clear(plaintext, plaintext_length);
-        free(plaintext);
-        return 1;
+        goto cleanup;
     }
 
     status = secdat_store_plaintext_attrs_for_chain(&destination_chain, destination_domain_id, destination_reference.store_value, destination_reference.key, plaintext, plaintext_length, unsafe_store, &attrs);
@@ -33506,12 +38329,10 @@ static int secdat_command_mv(const struct secdat_cli *cli)
     }
     secdat_secure_clear(plaintext, plaintext_length);
     free(plaintext);
+    plaintext = NULL;
+    plaintext_length = 0;
     if (status != 0) {
-        secdat_effective_entry_reset(&source_entry);
-        secdat_metadata_list_free(&metadata);
-        secdat_domain_chain_free(&source_chain);
-        secdat_domain_chain_free(&destination_chain);
-        return status;
+        goto cleanup;
     }
 
     status = secdat_remove_key_in_chain(&source_chain, source_reference.store_value, source_reference.key, 0);
@@ -33519,6 +38340,9 @@ static int secdat_command_mv(const struct secdat_cli *cli)
         (void)secdat_remove_key_in_chain(&destination_chain, destination_reference.store_value, destination_reference.key, 1);
     }
 
+cleanup:
+    secdat_secure_clear(plaintext, plaintext_length);
+    free(plaintext);
     secdat_effective_entry_reset(&source_entry);
     secdat_metadata_list_free(&metadata);
     secdat_domain_chain_free(&source_chain);
@@ -35008,14 +39832,438 @@ static int secdat_store_command_finalize_migration(const struct secdat_cli *cli)
     return status;
 }
 
+static int secdat_transaction_mark_domain_move_roles(
+    struct secdat_transaction *transaction,
+    const char *root_file,
+    const char *identity_file,
+    const char *source_registry_path,
+    const char *destination_registry_path,
+    int same_root
+)
+{
+    size_t index;
+    int saw_identity = 0;
+    int saw_root = same_root;
+    int saw_source = same_root;
+
+    for (index = 0; index < transaction->target_count; index += 1) {
+        struct secdat_transaction_target *target =
+            &transaction->targets[index];
+
+        if (target->is_guard) {
+            continue;
+        }
+        if (strcmp(target->path, identity_file) == 0
+            || (!same_root && strcmp(target->path, root_file) == 0)) {
+            target->role = SECDAT_TRANSACTION_ROLE_ROOT_METADATA;
+            target->phase = SECDAT_TRANSACTION_PHASE_ROOT_METADATA;
+            target->sensitive = 0;
+            if (strcmp(target->path, identity_file) == 0) {
+                saw_identity = 1;
+            } else {
+                saw_root = 1;
+            }
+        } else if (!same_root
+            && strcmp(target->path, destination_registry_path) == 0) {
+            target->role = SECDAT_TRANSACTION_ROLE_DESTINATION_REGISTRY;
+            target->phase = SECDAT_TRANSACTION_PHASE_DESTINATION_REGISTRY;
+            target->sensitive = 0;
+        } else if (!same_root
+            && strcmp(target->path, source_registry_path) == 0) {
+            target->role = SECDAT_TRANSACTION_ROLE_SOURCE_REGISTRY;
+            target->phase = SECDAT_TRANSACTION_PHASE_SOURCE_REGISTRY;
+            target->sensitive = 0;
+            saw_source = 1;
+        }
+    }
+    return !saw_identity || !saw_root || !saw_source;
+}
+
+static int secdat_prepare_domain_move_projection(
+    const char *domain_id,
+    const char *source_root,
+    const char *destination_root
+)
+{
+    if (secdat_copy_string(
+            secdat_domain_move_projection.domain_id,
+            sizeof(secdat_domain_move_projection.domain_id),
+            domain_id
+        ) != 0
+        || secdat_copy_string(
+            secdat_domain_move_projection.source_root,
+            sizeof(secdat_domain_move_projection.source_root),
+            source_root
+        ) != 0
+        || secdat_copy_string(
+            secdat_domain_move_projection.destination_root,
+            sizeof(secdat_domain_move_projection.destination_root),
+            destination_root
+        ) != 0) {
+        return 1;
+    }
+    secdat_domain_move_projection.active = 1;
+    return 0;
+}
+
+static int secdat_prepare_domain_move_dependencies(
+    struct secdat_transaction *transaction,
+    struct secdat_dependency_update_plan *dependency_plan,
+    struct secdat_move_relation_update_list *relation_updates,
+    const char *domain_id,
+    const char *source_root,
+    const char *destination_root
+)
+{
+    return secdat_transaction_append_reference_epoch(
+            transaction,
+            domain_id,
+            "default"
+        ) != 0
+        || secdat_dependency_update_plan_begin(
+            dependency_plan,
+            transaction
+        ) != 0
+        || secdat_domain_move_prepare_relation_updates(
+            dependency_plan,
+            domain_id,
+            source_root,
+            destination_root,
+            relation_updates
+        ) != 0
+        || secdat_move_apply_relation_updates(
+            dependency_plan,
+            relation_updates
+        ) != 0;
+}
+
+static int secdat_prepare_domain_move_files(
+    const char *root_file,
+    const char *destination_root,
+    const char *identity_file,
+    const char *identity_text,
+    const char *destination_registry_path,
+    const char *domain_id,
+    const char *source_registry_path
+)
+{
+    return secdat_atomic_write_file(
+            root_file,
+            (const unsigned char *)destination_root,
+            strlen(destination_root)
+        ) != 0
+        || secdat_atomic_write_file(
+            identity_file,
+            (const unsigned char *)identity_text,
+            strlen(identity_text)
+        ) != 0
+        || secdat_atomic_write_file(
+            destination_registry_path,
+            (const unsigned char *)domain_id,
+            strlen(domain_id)
+        ) != 0
+        || secdat_remove_if_exists(source_registry_path) != 0;
+}
+
+static int secdat_begin_domain_move_transaction(
+    struct secdat_transaction *transaction,
+    const char *domain_id,
+    char *root_file,
+    char *identity_file
+)
+{
+    char domain_data_root[PATH_MAX];
+
+    return secdat_domain_data_root(
+            domain_id,
+            domain_data_root,
+            sizeof(domain_data_root)
+        ) != 0
+        || secdat_join_path(
+            root_file,
+            PATH_MAX,
+            domain_data_root,
+            "meta/root"
+        ) != 0
+        || secdat_join_path(
+            identity_file,
+            PATH_MAX,
+            domain_data_root,
+            "meta/root-identity"
+        ) != 0
+        || secdat_transaction_begin(
+            transaction,
+            "domain-move",
+            domain_id,
+            "default"
+        ) != 0;
+}
+
+int secdat_transactional_domain_move(
+    const char *domain_id,
+    const char *source_root,
+    const char *destination_root,
+    const char *source_registry_path,
+    const char *destination_registry_path,
+    const char *identity_text,
+    int same_root
+)
+{
+    struct secdat_transaction transaction;
+    struct secdat_dependency_update_plan dependency_plan;
+    struct secdat_move_relation_update_list relation_updates = {0};
+    char root_file[PATH_MAX];
+    char identity_file[PATH_MAX];
+    size_t changed_file_count = 0;
+    int result = 1;
+
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
+    memset(&dependency_plan, 0, sizeof(dependency_plan));
+    secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    if (secdat_begin_domain_move_transaction(
+            &transaction,
+            domain_id,
+            root_file,
+            identity_file
+        ) != 0) {
+        goto cleanup;
+    }
+    secdat_prepared_write_set.active = 1;
+    secdat_prepared_write_set.observe_reads = 1;
+    secdat_prepared_write_set.project_reads = 1;
+    if (same_root) {
+        if (secdat_atomic_write_file(
+                identity_file,
+                (const unsigned char *)identity_text,
+                strlen(identity_text)
+            ) != 0) {
+            goto cleanup;
+        }
+    } else {
+        if (secdat_prepare_domain_move_projection(
+                domain_id,
+                source_root,
+                destination_root
+            ) != 0
+            || secdat_prepare_domain_move_dependencies(
+                &transaction,
+                &dependency_plan,
+                &relation_updates,
+                domain_id,
+                source_root,
+                destination_root
+            ) != 0
+            || secdat_prepare_domain_move_files(
+                root_file,
+                destination_root,
+                identity_file,
+                identity_text,
+                destination_registry_path,
+                domain_id,
+                source_registry_path
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    secdat_prepared_write_set.active = 0;
+    secdat_prepared_write_set.observe_reads = 0;
+    secdat_prepared_write_set.project_reads = 0;
+    if (secdat_transaction_append_prepared_write_set(
+            &transaction,
+            &secdat_prepared_write_set,
+            domain_id,
+            "default",
+            &changed_file_count
+        ) != 0) {
+        goto cleanup;
+    }
+    if (same_root && changed_file_count == 0) {
+        result = 0;
+        goto cleanup;
+    }
+    if ((!same_root
+            && secdat_dependency_update_plan_append(
+                &transaction,
+                &dependency_plan
+            ) != 0)
+        || secdat_transaction_mark_domain_move_roles(
+            &transaction,
+            root_file,
+            identity_file,
+            source_registry_path,
+            destination_registry_path,
+            same_root
+        ) != 0
+        || secdat_transaction_commit(&transaction) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    secdat_prepared_write_set.active = 0;
+    secdat_prepared_write_set.observe_reads = 0;
+    secdat_prepared_write_set.project_reads = 0;
+    memset(&secdat_domain_move_projection, 0, sizeof(secdat_domain_move_projection));
+    secdat_move_relation_update_list_reset(&relation_updates);
+    secdat_dependency_update_plan_reset(&dependency_plan);
+    secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    secdat_transaction_reset(&transaction);
+    (void)changed_file_count;
+    return result;
+}
+
+static int secdat_ensure_container_parent(const char *path)
+{
+    char parent[PATH_MAX];
+    char *separator;
+
+    if (secdat_copy_string(parent, sizeof(parent), path) != 0
+        || (separator = strrchr(parent, '/')) == NULL
+        || separator == parent) {
+        return 1;
+    }
+    *separator = '\0';
+    return secdat_ensure_directory(parent, 0700);
+}
+
+int secdat_transactional_domain_create(
+    const char *domain_id,
+    const char *registry_path,
+    const char *root_text,
+    const char *identity_text
+)
+{
+    struct secdat_transaction transaction;
+    char domain_root[PATH_MAX];
+    int result = 1;
+
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
+    if (secdat_domain_data_root(
+            domain_id,
+            domain_root,
+            sizeof(domain_root)
+        ) != 0
+        || secdat_transaction_begin(
+            &transaction,
+            "domain-create",
+            domain_id,
+            "default"
+        ) != 0
+        || secdat_ensure_container_parent(domain_root) != 0
+        || secdat_ensure_container_parent(registry_path) != 0
+        || secdat_transaction_append_reference_epoch(
+            &transaction,
+            domain_id,
+            "default"
+        ) != 0
+        || secdat_transaction_append_container_tree(
+            &transaction,
+            domain_id,
+            "default",
+            "empty-domain-v1",
+            1,
+            root_text,
+            identity_text
+        ) != 0
+        || secdat_transaction_append_registry_target(
+            &transaction,
+            domain_id,
+            registry_path,
+            1
+        ) != 0
+        || secdat_transaction_commit(&transaction) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    secdat_transaction_reset(&transaction);
+    return result;
+}
+
+int secdat_transactional_domain_delete(
+    const char *domain_id,
+    const char *registry_path,
+    const char *root_text
+)
+{
+    struct secdat_transaction transaction;
+    char domain_root[PATH_MAX];
+    char recorded_root_path[PATH_MAX];
+    int result = 1;
+
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
+    if (secdat_domain_data_root(
+            domain_id,
+            domain_root,
+            sizeof(domain_root)
+        ) != 0
+        || secdat_join_path(
+            recorded_root_path,
+            sizeof(recorded_root_path),
+            domain_root,
+            "meta/root"
+        ) != 0
+        || secdat_container_file_equals(
+            recorded_root_path,
+            (const unsigned char *)root_text,
+            strlen(root_text),
+            1
+        ) != 0
+        || secdat_container_validate_empty_domain(domain_root) != 0) {
+        fprintf(stderr, _("domain is not empty: %s\n"), root_text);
+        goto cleanup;
+    }
+    if (secdat_transaction_begin(
+            &transaction,
+            "domain-delete",
+            domain_id,
+            "default"
+        ) != 0
+        || secdat_transaction_append_reference_epoch(
+            &transaction,
+            domain_id,
+            "default"
+        ) != 0
+        || secdat_transaction_append_registry_target(
+            &transaction,
+            domain_id,
+            registry_path,
+            0
+        ) != 0
+        || secdat_transaction_append_container_tree(
+            &transaction,
+            domain_id,
+            "default",
+            "empty-domain-v1",
+            0,
+            NULL,
+            NULL
+        ) != 0
+        || secdat_transaction_commit(&transaction) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    secdat_transaction_reset(&transaction);
+    return result;
+}
+
 static int secdat_store_command_create(const struct secdat_cli *cli)
 {
     char current_domain_id[PATH_MAX];
     struct secdat_domain_chain chain = {0};
+    struct secdat_transaction transaction;
     char store_root[PATH_MAX];
-    char entries_dir[PATH_MAX];
-    char tombstones_dir[PATH_MAX];
     struct stat status;
+    int result = 1;
+
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
 
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         fprintf(stderr, _("--store is not valid with store commands\n"));
@@ -35056,41 +40304,51 @@ static int secdat_store_command_create(const struct secdat_cli *cli)
         fprintf(stderr, _("store already exists: %s\n"), cli->argv[0]);
         return 1;
     }
-    if (secdat_join_path(entries_dir, sizeof(entries_dir), store_root, "entries") != 0) {
-        secdat_domain_chain_free(&chain);
-        return 1;
+    if (errno != ENOENT
+        || secdat_transaction_begin(
+            &transaction,
+            "store-create",
+            current_domain_id,
+            cli->argv[0]
+        ) != 0
+        || secdat_transaction_append_reference_epoch(
+            &transaction,
+            current_domain_id,
+            cli->argv[0]
+        ) != 0
+        || secdat_transaction_append_container_tree(
+            &transaction,
+            current_domain_id,
+            cli->argv[0],
+            "empty-store-v1",
+            1,
+            NULL,
+            NULL
+        ) != 0
+        || secdat_transaction_commit(&transaction) != 0) {
+        goto cleanup;
     }
-    if (secdat_join_path(tombstones_dir, sizeof(tombstones_dir), store_root, "tombstones") != 0) {
-        secdat_domain_chain_free(&chain);
-        return 1;
-    }
-    if (secdat_ensure_directory(entries_dir, 0700) != 0) {
-        secdat_domain_chain_free(&chain);
-        return 1;
-    }
+    result = 0;
+
+cleanup:
     secdat_domain_chain_free(&chain);
-    return secdat_ensure_directory(tombstones_dir, 0700);
+    secdat_transaction_reset(&transaction);
+    return result;
 }
 
 static int secdat_store_command_delete(const struct secdat_cli *cli)
 {
     char current_domain_id[PATH_MAX];
     struct secdat_domain_chain chain = {0};
+    struct secdat_transaction transaction;
     char store_root[PATH_MAX];
-    char entries_dir[PATH_MAX];
-    char tombstones_dir[PATH_MAX];
-    char format_path[PATH_MAX];
-    char domain_entries_dir[PATH_MAX];
-    char objects_dir[PATH_MAX];
-    char secret_objects_dir[PATH_MAX];
-    char key_metadata_dir[PATH_MAX];
-    char relations_dir[PATH_MAX];
     struct stat store_status;
     enum secdat_store_format format;
-    int contains_only;
-    const char *v1_store_names[] = {"entries", "tombstones", "key-meta", "relations", "format"};
-    const char *v2_store_names[] = {"entries", "tombstones", "domain-ent", "objects", "key-meta", "relations", "format"};
-    const char *v2_objects_names[] = {"secret"};
+    const char *schema;
+    int result = 1;
+
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
 
     if (secdat_domain_resolve_current(secdat_cli_domain_base(cli), current_domain_id, sizeof(current_domain_id)) != 0) {
         fprintf(stderr, _("--store is not valid with store commands\n"));
@@ -35131,14 +40389,6 @@ static int secdat_store_command_delete(const struct secdat_cli *cli)
         fprintf(stderr, _("store not found: %s\n"), cli->argv[0]);
         return 1;
     }
-    if (secdat_join_path(entries_dir, sizeof(entries_dir), store_root, "entries") != 0) {
-        secdat_domain_chain_free(&chain);
-        return 1;
-    }
-    if (secdat_join_path(tombstones_dir, sizeof(tombstones_dir), store_root, "tombstones") != 0) {
-        secdat_domain_chain_free(&chain);
-        return 1;
-    }
     if (secdat_read_store_format(current_domain_id, cli->argv[0], &format) != 0) {
         secdat_domain_chain_free(&chain);
         return 1;
@@ -35148,88 +40398,42 @@ static int secdat_store_command_delete(const struct secdat_cli *cli)
         fprintf(stderr, _("invalid store format marker\n"));
         return 1;
     }
-
-    if (secdat_key_metadata_dir(current_domain_id, cli->argv[0], key_metadata_dir, sizeof(key_metadata_dir)) != 0
-        || secdat_relations_dir(current_domain_id, cli->argv[0], relations_dir, sizeof(relations_dir)) != 0) {
-        secdat_domain_chain_free(&chain);
-        return 1;
-    }
-
-    if (format == SECDAT_STORE_FORMAT_V2) {
-        if (secdat_store_format_path(current_domain_id, cli->argv[0], format_path, sizeof(format_path)) != 0
-            || secdat_v2_domain_entries_dir(current_domain_id, cli->argv[0], domain_entries_dir, sizeof(domain_entries_dir)) != 0
-            || secdat_v2_objects_dir(current_domain_id, cli->argv[0], objects_dir, sizeof(objects_dir)) != 0
-            || secdat_v2_secret_objects_dir(current_domain_id, cli->argv[0], secret_objects_dir, sizeof(secret_objects_dir)) != 0
-            || secdat_directory_contains_only_names(objects_dir, v2_objects_names, sizeof(v2_objects_names) / sizeof(v2_objects_names[0]), &contains_only) != 0) {
-            secdat_domain_chain_free(&chain);
-            return 1;
-        }
-        if (!contains_only
-            || !secdat_directory_is_empty(entries_dir)
-            || !secdat_directory_is_empty(tombstones_dir)
-            || !secdat_directory_is_empty(domain_entries_dir)
-            || !secdat_directory_is_empty(secret_objects_dir)
-            || !secdat_directory_is_empty(key_metadata_dir)
-            || !secdat_directory_is_empty(relations_dir)) {
-            secdat_domain_chain_free(&chain);
-            fprintf(stderr, _("store is not empty: %s\n"), cli->argv[0]);
-            return 1;
-        }
-        if (secdat_directory_contains_only_names(store_root, v2_store_names, sizeof(v2_store_names) / sizeof(v2_store_names[0]), &contains_only) != 0) {
-            secdat_domain_chain_free(&chain);
-            return 1;
-        }
-        if (!contains_only) {
-            secdat_domain_chain_free(&chain);
-            fprintf(stderr, _("store is not empty: %s\n"), cli->argv[0]);
-            return 1;
-        }
-        if (secdat_remove_directory_if_exists(entries_dir) != 0
-            || secdat_remove_directory_if_exists(tombstones_dir) != 0
-            || secdat_remove_directory_if_exists(domain_entries_dir) != 0
-            || secdat_remove_directory_if_exists(secret_objects_dir) != 0
-            || secdat_remove_directory_if_exists(objects_dir) != 0
-            || secdat_remove_directory_if_exists(key_metadata_dir) != 0
-            || secdat_remove_directory_if_exists(relations_dir) != 0
-            || secdat_remove_if_exists(format_path) != 0
-            || secdat_remove_directory_if_exists(store_root) != 0) {
-            secdat_domain_chain_free(&chain);
-            return 1;
-        }
-        secdat_domain_chain_free(&chain);
-        return 0;
-    }
-
-    if (!secdat_directory_is_empty(entries_dir)
-        || !secdat_directory_is_empty(tombstones_dir)
-        || !secdat_directory_is_empty(key_metadata_dir)
-        || !secdat_directory_is_empty(relations_dir)) {
-        secdat_domain_chain_free(&chain);
+    schema = format == SECDAT_STORE_FORMAT_V2
+        ? "empty-store-v2"
+        : "empty-store-v1";
+    if (secdat_container_validate_empty_store(store_root, schema) != 0) {
         fprintf(stderr, _("store is not empty: %s\n"), cli->argv[0]);
-        return 1;
+        goto cleanup;
     }
-    if (secdat_directory_contains_only_names(store_root, v1_store_names, sizeof(v1_store_names) / sizeof(v1_store_names[0]), &contains_only) != 0) {
-        secdat_domain_chain_free(&chain);
-        return 1;
+    if (secdat_transaction_begin(
+            &transaction,
+            "store-delete",
+            current_domain_id,
+            cli->argv[0]
+        ) != 0
+        || secdat_transaction_append_reference_epoch(
+            &transaction,
+            current_domain_id,
+            cli->argv[0]
+        ) != 0
+        || secdat_transaction_append_container_tree(
+            &transaction,
+            current_domain_id,
+            cli->argv[0],
+            schema,
+            0,
+            NULL,
+            NULL
+        ) != 0
+        || secdat_transaction_commit(&transaction) != 0) {
+        goto cleanup;
     }
-    if (!contains_only) {
-        secdat_domain_chain_free(&chain);
-        fprintf(stderr, _("store is not empty: %s\n"), cli->argv[0]);
-        return 1;
-    }
-    if (secdat_store_format_path(current_domain_id, cli->argv[0], format_path, sizeof(format_path)) != 0
-        || secdat_remove_directory_if_exists(entries_dir) != 0
-        || secdat_remove_directory_if_exists(tombstones_dir) != 0
-        || secdat_remove_directory_if_exists(key_metadata_dir) != 0
-        || secdat_remove_directory_if_exists(relations_dir) != 0
-        || secdat_remove_if_exists(format_path) != 0
-        || secdat_remove_directory_if_exists(store_root) != 0) {
-        secdat_domain_chain_free(&chain);
-        return 1;
-    }
+    result = 0;
 
+cleanup:
     secdat_domain_chain_free(&chain);
-    return 0;
+    secdat_transaction_reset(&transaction);
+    return result;
 }
 
 static int secdat_plaintext_to_env_value(
@@ -36139,6 +41343,10 @@ static int secdat_command_uses_mutation_plan(
     case SECDAT_COMMAND_LN:
     case SECDAT_COMMAND_RM:
     case SECDAT_COMMAND_LOAD:
+    case SECDAT_COMMAND_ATTR:
+    case SECDAT_COMMAND_META_SET:
+    case SECDAT_COMMAND_META_UNSET:
+    case SECDAT_COMMAND_META_MARK_LEAKED:
         return 1;
     default:
         return 0;
@@ -36651,9 +41859,6 @@ cleanup:
 static int secdat_mutation_collect_slot_impacts(
     struct secdat_mutation_plan *plan,
     const struct secdat_mutation_slot *slot,
-    const char *source_data_home,
-    int source_data_home_was_set,
-    const char *stage_data_home,
     int *hard_error
 )
 {
@@ -36672,13 +41877,9 @@ static int secdat_mutation_collect_slot_impacts(
     int slot_hard_error = 0;
     int status = 1;
 
-    if (source_data_home_was_set) {
-        if (setenv("XDG_DATA_HOME", source_data_home, 1) != 0) {
-            goto cleanup;
-        }
-    } else if (unsetenv("XDG_DATA_HOME") != 0) {
-        goto cleanup;
-    }
+    secdat_prepared_write_set.active = 1;
+    secdat_prepared_write_set.observe_reads = 1;
+    secdat_prepared_write_set.project_reads = 0;
     if (secdat_domain_chain_from_id(slot->domain_id, &chain) != 0
         || secdat_analyze_mask_impacts(
             &chain,
@@ -36731,8 +41932,8 @@ static int secdat_mutation_collect_slot_impacts(
         goto cleanup;
     }
     secdat_domain_chain_free(&chain);
-    if (setenv("XDG_DATA_HOME", stage_data_home, 1) != 0
-        || secdat_mutation_reconcile_mask_slot(
+    secdat_prepared_write_set.project_reads = 1;
+    if (secdat_mutation_reconcile_mask_slot(
             slot,
             &before,
             tombstone_payload,
@@ -36836,11 +42037,7 @@ static int secdat_mutation_collect_slot_impacts(
     status = 0;
 
 cleanup:
-    if (source_data_home_was_set) {
-        (void)setenv("XDG_DATA_HOME", source_data_home, 1);
-    } else {
-        (void)unsetenv("XDG_DATA_HOME");
-    }
+    secdat_prepared_write_set.project_reads = 0;
     secdat_secure_clear(
         tombstone_payload,
         tombstone_payload_length
@@ -36859,119 +42056,7 @@ static int secdat_mutation_collect_scoped_write_impacts(
     int *hard_error
 )
 {
-    struct secdat_domain_chain chain = {0};
-    struct secdat_mask_view_list before = {0};
-    char tombstone_path[PATH_MAX];
-    char compatibility_target[64];
-    unsigned char *tombstone_payload = NULL;
-    size_t tombstone_payload_length = 0;
-    size_t direct_hit_count = 0;
-    size_t index;
-    int tombstone_is_compatibility = 0;
-    int tombstone_exists = 0;
-    int slot_hard_error = 0;
-    int status = 1;
-
-    if (secdat_domain_chain_from_id(slot->domain_id, &chain) != 0
-        || secdat_analyze_mask_impacts(
-            &chain,
-            slot->store_name,
-            slot->key,
-            1,
-            &before,
-            &direct_hit_count
-        ) != 0
-        || secdat_build_tombstone_path(
-            slot->domain_id,
-            slot->store_name,
-            slot->key,
-            tombstone_path,
-            sizeof(tombstone_path)
-        ) != 0
-        || secdat_read_v2_compat_tombstone(
-            tombstone_path,
-            &tombstone_is_compatibility,
-            compatibility_target,
-            &tombstone_payload,
-            &tombstone_payload_length
-        ) != 0) {
-        goto cleanup;
-    }
-    tombstone_exists = secdat_file_exists(tombstone_path);
-    for (index = 0; index < before.count; index += 1) {
-        const struct secdat_mask_view *view = &before.items[index];
-
-        if (strcmp(view->key, slot->key) == 0
-            && view->record_kind == SECDAT_MASK_RECORD_LEGACY
-            && view->resolution == SECDAT_MASK_RESOLUTION_AMBIGUOUS) {
-            if (secdat_mutation_plan_append_row(
-                    plan,
-                    slot,
-                    view,
-                    SECDAT_MUTATION_IMPACT_LEGACY_AMBIGUOUS,
-                    NULL
-                ) != 0) {
-                goto cleanup;
-            }
-            slot_hard_error = 1;
-        }
-    }
-    if (slot_hard_error) {
-        *hard_error = 1;
-        status = 0;
-        goto cleanup;
-    }
-    if (secdat_mutation_reconcile_mask_slot(
-            slot,
-            &before,
-            tombstone_payload,
-            tombstone_payload_length,
-            tombstone_exists,
-            tombstone_is_compatibility ? compatibility_target : ""
-        ) != 0) {
-        goto cleanup;
-    }
-    for (index = 0; index < before.count; index += 1) {
-        const struct secdat_mask_view *before_view = &before.items[index];
-        struct secdat_mask_view after_view;
-
-        if (strcmp(before_view->key, slot->key) != 0) {
-            continue;
-        }
-        after_view = *before_view;
-        if (after_view.state != SECDAT_MASK_STATE_ORPHANED) {
-            after_view.state = SECDAT_MASK_STATE_DORMANT;
-        }
-        if (secdat_mutation_plan_append_row(
-                plan,
-                slot,
-                before_view,
-                SECDAT_MUTATION_IMPACT_DIRECT_HIT,
-                &after_view
-            ) != 0) {
-            goto cleanup;
-        }
-        if (before_view->state == SECDAT_MASK_STATE_ACTIVE
-            && after_view.state == SECDAT_MASK_STATE_DORMANT
-            && secdat_mutation_plan_append_row(
-                plan,
-                slot,
-                before_view,
-                SECDAT_MUTATION_IMPACT_BECAME_DORMANT,
-                &after_view
-            ) != 0) {
-            goto cleanup;
-        }
-    }
-    status = 0;
-
-cleanup:
-    secdat_secure_clear(tombstone_payload, tombstone_payload_length);
-    free(tombstone_payload);
-    secdat_mask_view_list_free(&before);
-    secdat_domain_chain_free(&chain);
-    (void)direct_hit_count;
-    return status;
+    return secdat_mutation_collect_slot_impacts(plan, slot, hard_error);
 }
 
 static int secdat_print_mutation_plan(
@@ -37242,21 +42327,175 @@ static void secdat_mutation_emit_warning(
     );
 }
 
-static int secdat_run_scoped_set_mutation(
+static int secdat_prepared_write_set_changes_reference_graph(
+    const struct secdat_prepared_write_set *write_set
+)
+{
+    size_t index;
+
+    for (index = 0; index < write_set->count; index += 1) {
+        const struct secdat_prepared_state_file *file =
+            &write_set->files[index];
+
+        if (file->before_exists != file->after_exists
+            && strstr(file->path, "/domain-ent/") != NULL
+            && secdat_transaction_name_has_suffix(file->path, ".dent")) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_execute_scoped_builder(
+    const struct secdat_cli *filtered,
+    struct secdat_mutation_plan *plan,
+    struct secdat_dependency_update_plan *dependency_plan,
+    struct secdat_relation_refresh_suggestion_rows *refresh_suggestions,
+    int *inner_status,
+    int *hard_error
+)
+{
+    size_t index;
+
+    secdat_active_dependency_update_plan = dependency_plan;
+    secdat_prepared_write_set.active = 1;
+    secdat_prepared_write_set.observe_reads = 1;
+    secdat_prepared_write_set.project_reads = 1;
+    secdat_mutation_stage.active = 1;
+    secdat_mutation_stage.saw_overlay = 0;
+    *inner_status = secdat_dispatch_command(filtered);
+    secdat_mutation_stage.active = 0;
+    secdat_prepared_write_set.project_reads = 0;
+    plan->slots = secdat_mutation_stage.slots;
+    memset(&secdat_mutation_stage.slots, 0, sizeof(secdat_mutation_stage.slots));
+    if (*inner_status != 0) {
+        return 1;
+    }
+    if (filtered->command == SECDAT_COMMAND_META_MARK_LEAKED
+        && secdat_collect_relation_refresh_suggestions_indexed(
+            filtered->argv[0],
+            secdat_cli_domain_base(filtered),
+            filtered->store,
+            dependency_plan,
+            refresh_suggestions
+        ) != 0) {
+        return 1;
+    }
+    for (index = 0; index < plan->slots.count; index += 1) {
+        if (secdat_mutation_collect_scoped_write_impacts(
+                plan,
+                &plan->slots.items[index],
+                hard_error
+            ) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_prepare_scoped_transaction(
+    struct secdat_transaction *transaction,
+    const struct secdat_cli *filtered,
+    struct secdat_mutation_plan *plan,
+    const struct secdat_domain_chain *owner_chain,
+    int *rotates_reference_epoch,
+    int hard_error
+)
+{
+    secdat_prepared_write_set.active = 0;
+    secdat_prepared_write_set.observe_reads = 0;
+    if (secdat_transaction_append_prepared_write_set(
+            transaction,
+            &secdat_prepared_write_set,
+            owner_chain->ids[0],
+            filtered->store,
+            &plan->changed_file_count
+        ) != 0) {
+        return 1;
+    }
+    *rotates_reference_epoch =
+        secdat_prepared_write_set_changes_reference_graph(
+            &secdat_prepared_write_set
+        );
+    if (*rotates_reference_epoch) {
+        plan->changed_file_count += 1;
+    }
+    plan->rejected = hard_error
+        || (plan->policy.action == SECDAT_MUTATION_MASK_REJECT
+            && plan->row_count > 0);
+    return 0;
+}
+
+static int secdat_render_scoped_precommit(
+    struct secdat_mutation_plan *plan,
+    int hard_error,
+    int *status
+)
+{
+    if (!plan->rejected && !plan->policy.dry_run) {
+        return 0;
+    }
+    if (secdat_print_mutation_plan(plan, 0) != 0) {
+        return -1;
+    }
+    if (plan->rejected && !plan->policy.json) {
+        fputs(
+            hard_error
+                ? _("ambiguous legacy mask blocks this mutation\n")
+                : _("mask interaction rejected before mutation\n"),
+            stderr
+        );
+    }
+    *status = plan->rejected ? 1 : 0;
+    return 1;
+}
+
+static int secdat_commit_scoped_transaction(
+    struct secdat_transaction *transaction,
+    struct secdat_dependency_update_plan *dependency_plan,
+    const struct secdat_domain_chain *owner_chain,
+    const struct secdat_cli *filtered,
+    struct secdat_mutation_plan *plan,
+    int rotates_reference_epoch
+)
+{
+    if ((rotates_reference_epoch
+            && secdat_transaction_append_reference_epoch(
+                transaction,
+                owner_chain->ids[0],
+                filtered->store
+            ) != 0)
+        || secdat_dependency_update_plan_append(
+            transaction,
+            dependency_plan
+        ) != 0) {
+        return 1;
+    }
+    if (transaction->target_count > 0
+        && secdat_transaction_commit(transaction) != 0) {
+        return 1;
+    }
+    return secdat_print_mutation_plan(plan, 1);
+}
+
+static int secdat_run_scoped_mutation(
     const struct secdat_cli *filtered,
     struct secdat_mutation_plan *plan,
     const struct secdat_domain_chain *owner_chain
 )
 {
     struct secdat_transaction transaction;
+    struct secdat_dependency_update_plan dependency_plan;
+    struct secdat_relation_refresh_suggestion_rows refresh_suggestions = {0};
     int inner_status;
     int hard_error = 0;
-    int committed = 0;
+    int rotates_reference_epoch = 0;
+    int precommit_status;
     int status = 1;
-    size_t index;
 
     memset(&transaction, 0, sizeof(transaction));
     transaction.lock_fd = -1;
+    memset(&dependency_plan, 0, sizeof(dependency_plan));
     secdat_prepared_write_set_reset(&secdat_prepared_write_set);
     secdat_mutation_slot_list_free(&secdat_mutation_stage.slots);
     if (secdat_transaction_begin(
@@ -37267,76 +42506,69 @@ static int secdat_run_scoped_set_mutation(
         ) != 0) {
         goto cleanup;
     }
-
-    secdat_prepared_write_set.active = 1;
-    secdat_prepared_write_set.project_reads = 1;
-    secdat_mutation_stage.active = 1;
-    secdat_mutation_stage.saw_overlay = 0;
-    inner_status = secdat_dispatch_command(filtered);
-    secdat_mutation_stage.active = 0;
-    secdat_prepared_write_set.active = 0;
-    secdat_prepared_write_set.project_reads = 0;
-    plan->slots = secdat_mutation_stage.slots;
-    memset(&secdat_mutation_stage.slots, 0, sizeof(secdat_mutation_stage.slots));
-    if (inner_status != 0) {
-        status = inner_status;
-        goto cleanup;
-    }
-    secdat_prepared_write_set.active = 1;
-    for (index = 0; index < plan->slots.count; index += 1) {
-        if (plan->slots.items[index].operation != SECDAT_MUTATION_SLOT_WRITE
-            || secdat_mutation_collect_scoped_write_impacts(
-                plan,
-                &plan->slots.items[index],
-                &hard_error
-            ) != 0) {
-            goto cleanup;
-        }
-    }
-    secdat_prepared_write_set.active = 0;
-    if (secdat_transaction_append_prepared_write_set(
-            &transaction,
-            &secdat_prepared_write_set,
-            owner_chain->ids[0],
-            filtered->store,
-            &plan->changed_file_count
+    if (secdat_dependency_update_plan_begin(
+            &dependency_plan,
+            &transaction
         ) != 0) {
         goto cleanup;
     }
-    plan->rejected = hard_error
-        || (plan->policy.action == SECDAT_MUTATION_MASK_REJECT
-            && plan->row_count > 0);
-    if (plan->rejected || plan->policy.dry_run) {
-        if (secdat_print_mutation_plan(plan, 0) != 0) {
-            goto cleanup;
-        }
-        if (plan->rejected && !plan->policy.json) {
-            fputs(
-                hard_error
-                    ? _("ambiguous legacy mask blocks this mutation\n")
-                    : _("mask interaction rejected before mutation\n"),
-                stderr
-            );
-        }
-        status = plan->rejected ? 1 : 0;
+    if (secdat_execute_scoped_builder(
+            filtered,
+            plan,
+            &dependency_plan,
+            &refresh_suggestions,
+            &inner_status,
+            &hard_error
+        ) != 0) {
+        status = inner_status == 0 ? 1 : inner_status;
         goto cleanup;
     }
-    if (transaction.target_count > 0
-        && secdat_transaction_commit(&transaction) != 0) {
+    if (secdat_prepare_scoped_transaction(
+            &transaction,
+            filtered,
+            plan,
+            owner_chain,
+            &rotates_reference_epoch,
+            hard_error
+        ) != 0) {
         goto cleanup;
     }
-    committed = 1;
-    if (secdat_print_mutation_plan(plan, committed) != 0) {
+    precommit_status = secdat_render_scoped_precommit(
+        plan,
+        hard_error,
+        &status
+    );
+    if (precommit_status < 0) {
         goto cleanup;
+    }
+    if (precommit_status > 0) {
+        goto cleanup;
+    }
+    if (secdat_commit_scoped_transaction(
+            &transaction,
+            &dependency_plan,
+            owner_chain,
+            filtered,
+            plan,
+            rotates_reference_epoch
+        ) != 0) {
+        goto cleanup;
+    }
+    if (filtered->command == SECDAT_COMMAND_META_MARK_LEAKED) {
+        secdat_render_relation_refresh_suggestions(&refresh_suggestions);
     }
     secdat_mutation_emit_warning(plan);
     status = 0;
 
 cleanup:
+    secdat_active_dependency_update_plan = NULL;
     secdat_mutation_stage.active = 0;
     secdat_prepared_write_set.active = 0;
+    secdat_prepared_write_set.observe_reads = 0;
     secdat_prepared_write_set.project_reads = 0;
     secdat_transaction_reset(&transaction);
+    secdat_dependency_update_plan_reset(&dependency_plan);
+    secdat_relation_refresh_suggestion_rows_free(&refresh_suggestions);
     secdat_prepared_write_set_reset(&secdat_prepared_write_set);
     return status;
 }
@@ -37346,25 +42578,11 @@ static int secdat_run_planned_mutation(const struct secdat_cli *cli)
     struct secdat_cli filtered;
     struct secdat_mutation_plan plan;
     struct secdat_domain_chain owner_chain = {0};
-    struct secdat_transaction transaction;
     char **filtered_argv = NULL;
-    char source_state[PATH_MAX];
-    char stage_data_home[PATH_MAX] = "";
-    char stage_state[PATH_MAX] = "";
-    char *source_data_home = NULL;
-    const char *configured_data_home;
-    int source_data_home_was_set = 0;
-    int stage_created = 0;
-    int inner_status;
-    int hard_error = 0;
-    int committed = 0;
     int status = 1;
     enum secdat_store_format owner_format;
-    size_t index;
 
     memset(&plan, 0, sizeof(plan));
-    memset(&transaction, 0, sizeof(transaction));
-    transaction.lock_fd = -1;
     status = secdat_parse_mutation_policy_options(
         cli,
         &filtered,
@@ -37427,142 +42645,12 @@ static int secdat_run_planned_mutation(const struct secdat_cli *cli)
         }
         goto cleanup;
     }
-    if (cli->command == SECDAT_COMMAND_SET) {
-        status = secdat_run_scoped_set_mutation(
-            &filtered,
-            &plan,
-            &owner_chain
-        );
-        goto cleanup;
-    }
-    if (secdat_state_dir(source_state, sizeof(source_state)) != 0
-        || secdat_transaction_begin(
-            &transaction,
-            plan.operation,
-            owner_chain.ids[0],
-            cli->store
-        ) != 0
-        || secdat_mutation_create_stage(
-            source_state,
-            stage_data_home,
-            sizeof(stage_data_home),
-            stage_state,
-            sizeof(stage_state)
-        ) != 0) {
-        goto cleanup;
-    }
-    stage_created = 1;
-    configured_data_home = getenv("XDG_DATA_HOME");
-    source_data_home_was_set = configured_data_home != NULL;
-    if (source_data_home_was_set) {
-        source_data_home = strdup(configured_data_home);
-        if (source_data_home == NULL) {
-            fprintf(stderr, _("out of memory\n"));
-            goto cleanup;
-        }
-    }
-    if (setenv("XDG_DATA_HOME", stage_data_home, 1) != 0) {
-        goto cleanup;
-    }
-    secdat_mutation_slot_list_free(&secdat_mutation_stage.slots);
-    secdat_mutation_stage.active = 1;
-    secdat_mutation_stage.saw_overlay = 0;
-    inner_status = secdat_dispatch_command(&filtered);
-    secdat_mutation_stage.active = 0;
-    plan.slots = secdat_mutation_stage.slots;
-    memset(&secdat_mutation_stage.slots, 0, sizeof(secdat_mutation_stage.slots));
-    if (source_data_home_was_set) {
-        (void)setenv("XDG_DATA_HOME", source_data_home, 1);
-    } else {
-        (void)unsetenv("XDG_DATA_HOME");
-    }
-    if (inner_status != 0) {
-        if (secdat_mutation_stage.saw_overlay
-            && !secdat_mutation_policy_was_requested(&plan.policy)) {
-            status = secdat_dispatch_command(cli);
-        } else {
-            status = inner_status;
-        }
-        goto cleanup;
-    }
-    for (index = 0; index < plan.slots.count; index += 1) {
-        if (secdat_mutation_collect_slot_impacts(
-                &plan,
-                &plan.slots.items[index],
-                source_data_home,
-                source_data_home_was_set,
-                stage_data_home,
-                &hard_error
-            ) != 0) {
-            goto cleanup;
-        }
-    }
-    if (source_data_home_was_set) {
-        if (setenv("XDG_DATA_HOME", source_data_home, 1) != 0) {
-            goto cleanup;
-        }
-    } else if (unsetenv("XDG_DATA_HOME") != 0) {
-        goto cleanup;
-    }
-    if (secdat_mutation_append_state_diff(
-            &transaction,
-            source_state,
-            stage_state,
-            &plan.changed_file_count
-        ) != 0) {
-        goto cleanup;
-    }
-    plan.rejected = hard_error
-        || (plan.policy.action == SECDAT_MUTATION_MASK_REJECT
-            && plan.row_count > 0);
-    if (stage_created) {
-        if (secdat_mutation_remove_stage(stage_data_home) != 0) {
-            goto cleanup;
-        }
-        stage_created = 0;
-    }
-    if (plan.rejected || plan.policy.dry_run) {
-        if (secdat_print_mutation_plan(&plan, 0) != 0) {
-            goto cleanup;
-        }
-        if (plan.rejected && !plan.policy.json) {
-            fputs(
-                hard_error
-                    ? _("ambiguous legacy mask blocks this mutation\n")
-                    : _("mask interaction rejected before mutation\n"),
-                stderr
-            );
-        }
-        status = plan.rejected ? 1 : 0;
-        goto cleanup;
-    }
-    if (transaction.target_count > 0
-        && secdat_transaction_commit(&transaction) != 0) {
-        goto cleanup;
-    }
-    committed = 1;
-    if (secdat_print_mutation_plan(&plan, committed) != 0) {
-        goto cleanup;
-    }
-    secdat_mutation_emit_warning(&plan);
-    status = 0;
+    status = secdat_run_scoped_mutation(&filtered, &plan, &owner_chain);
 
 cleanup:
     secdat_mutation_stage.active = 0;
-    if (source_data_home_was_set) {
-        if (source_data_home != NULL) {
-            (void)setenv("XDG_DATA_HOME", source_data_home, 1);
-        }
-    } else {
-        (void)unsetenv("XDG_DATA_HOME");
-    }
-    if (stage_created) {
-        (void)secdat_mutation_remove_stage(stage_data_home);
-    }
-    free(source_data_home);
     free(filtered_argv);
     secdat_domain_chain_free(&owner_chain);
-    secdat_transaction_reset(&transaction);
     secdat_mutation_plan_reset(&plan);
     return status;
 }
@@ -37667,6 +42755,7 @@ int secdat_run_command(const struct secdat_cli *cli)
 {
     char exact_domain_root[PATH_MAX];
     int lock_owned;
+    int lock_required;
     int status;
 
     if (cli->dir != NULL && cli->domain != NULL) {
@@ -37681,14 +42770,20 @@ int secdat_run_command(const struct secdat_cli *cli)
         ) != 0) {
         return 1;
     }
-    if (secdat_recover_transactions() != 0) {
-        fprintf(stderr, _("failed to recover pending transactions\n"));
-        return 1;
-    }
-    if (!secdat_command_requires_transaction_lock(cli->command)) {
+    lock_required = secdat_command_requires_transaction_lock(cli->command);
+    if (!lock_required) {
+        if (secdat_recover_transactions() != 0) {
+            fprintf(stderr, _("failed to recover pending transactions\n"));
+            return 1;
+        }
         return secdat_dispatch_command(cli);
     }
     if (secdat_mutation_lock_acquire(&lock_owned) != 0) {
+        return 1;
+    }
+    if (secdat_recover_transactions() != 0) {
+        fprintf(stderr, _("failed to recover pending transactions\n"));
+        secdat_mutation_lock_release(lock_owned);
         return 1;
     }
     if (secdat_cli_requests_ephemeral_mutation(cli)) {

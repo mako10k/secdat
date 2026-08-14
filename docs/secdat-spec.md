@@ -319,15 +319,28 @@ to legacy semantics.
 - when a local override remains after unmask, the default post-commit warning explains the deferred exposure risk; `--mask-warnings=default|on|off`, `--warn-mask`, and `--no-warn-mask` affect only warnings
 - v1 stores and volatile overlays retain their legacy single-name tombstone behavior and do not accept v2 plan/rebind/chain options
 
-Canonical mask and compatibility-tombstone updates use
-`$XDG_DATA_HOME/secdat/transactions/`. Each 0700 operation directory is named
-by UUID and contains a `SECDATTXN1` version-1 manifest plus 0600 before/after
-blobs. A global advisory lock serializes commit and recovery. States are
-`staging`, `prepared`, `committing`, and `committed`: startup discards validated
-staging/prepared operations, rolls committing operations forward, verifies
-committed after-images, and then removes the journal. Target paths are rebuilt
-from validated domain/store/artifact identifiers, and before-image digests are
-revalidated so changed-since-plan state fails before live mutation.
+Persistent v2 mutations use `$XDG_DATA_HOME/secdat/transactions/`. Each 0700
+operation directory is named by UUID and contains a `SECDATTXN1` version-2
+manifest plus bounded 0600 before/after blobs; version-1 manifests remain
+readable for recovery. A global advisory lock serializes recovery, planning,
+and commit. States are `staging`, `prepared`, `committing`, and `committed`:
+recovery discards validated pre-commit operations, rolls committing operations
+forward, verifies committed after-images, and then removes the journal. Target
+paths are rebuilt from validated domain/store/artifact identifiers, and exact
+before-image guards are revalidated so changed-since-plan state fails before
+live mutation.
+
+Normal v2 `set`, `cp`, `ln`, `rm`, `load`, `attr`, `meta`, `relation`, `mask`,
+`unmask`, and `mv` writers derive direct guarded write sets. They do not clone
+the complete store tree or diff a generic staging tree. Dependency-index
+updates replace only affected Merkle paths. Until ADR 0008 deferred GC is
+implemented, local `rm`, destination replacement, and overwrite retain the
+named synchronous actual-reference scan before old-object deletion; ordinary
+non-destructive writers do not scan unrelated registered domains. Store/domain
+create and delete use the narrowly allowlisted
+`CONTAINER_TREE` artifact only for a validated empty canonical skeleton.
+Topology changes durably rotate the reference epoch before publication or
+source removal.
 
 #### FR-4 Key Removal
 
@@ -345,6 +358,7 @@ revalidated so changed-since-plan state fails before live mutation.
 - it is an error if `SRC_KEYREF` and `DST_KEYREF` identify the same canonical domain/key/store slot, including through different symlink aliases
 - for an unqualified source only, if `SRC_KEYREF` is inherited from a parent domain, the source name is hidden with a tombstone in the resolved source current domain after the destination is materialized
 - `mv` preserves the source entry storage mode, including plaintext-at-rest entries created with `set --unsafe`
+- `mv` preserves both the v2 entry UUID and secret UUID; a cross-domain/store move publishes the destination before removing the source and rotates the reference epoch before source removal
 - `mv` preserves searchable key metadata on the destination and removes local searchable key metadata from a removed local source
 
 #### FR-6 Key Copy
@@ -649,6 +663,7 @@ revalidated so changed-since-plan state fails before live mutation.
 - creating a store that already exists in the current domain is an error
 - `secdat [--dir DIR] store delete STORE` deletes a store from the resolved current domain
 - deleting a store fails if the store still contains local entries or tombstones
+- store create/delete are recoverable `CONTAINER_TREE` transactions over an exact canonical empty skeleton and rotate the reference epoch before publishing or unpublishing the namespace
 - `secdat [--dir DIR] store ls` lists store names defined in the resolved current domain
 - `secdat [--dir DIR] store ls PATTERN` and `secdat [--dir DIR] store ls --pattern PATTERN` are equivalent
 - `secdat [--dir DIR] store migrate STORE --to-format v2 --dry-run` validates one v1 store and reports the v2 migration plan without writing v2 files
@@ -679,6 +694,7 @@ revalidated so changed-since-plan state fails before live mutation.
 - `domain move` requires `OLD_ROOT` to be an explicit registered root path; this remains usable when that old directory no longer exists
 - `domain move --from OLD_ROOT --to OLD_ROOT` or an equivalent current-directory refresh requires `--allow-same-root`, and refreshes root identity metadata for the recreated directory
 - `domain move` fails if the destination root is already registered to a different domain
+- domain create/delete/move publish registry, root identity, container, dependency, and reference-epoch changes as one guarded recoverable transaction; move preserves the domain ID
 - `secdat domain ls` without `--dir` uses the current working directory as the listing scope
 - `secdat domain ls PATTERN` and `secdat domain ls --pattern PATTERN` are equivalent
 - `secdat --dir DIR domain ls` restricts the listing scope to ancestor domains of `DIR`, the domain rooted at `DIR` itself, and descendant domains under `DIR`

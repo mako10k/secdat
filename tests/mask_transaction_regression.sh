@@ -133,6 +133,45 @@ def run_while_mask_plan_paused(planned_args, concurrent_args, context):
         )
 
 
+def run_mask_plan_with_direct_change(planned_args, changed_path, context):
+    controller, worker_socket = socket.socketpair()
+    planned_env = {
+        **env,
+        "SECDAT_TEST_MASK_PLAN_SYNC_FD": str(worker_socket.fileno()),
+    }
+    original = changed_path.read_bytes()
+    planned = subprocess.Popen(
+        planned_args,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=planned_env,
+        pass_fds=(worker_socket.fileno(),),
+    )
+    worker_socket.close()
+    controller.settimeout(10)
+    if controller.recv(1) != b"R":
+        planned.kill()
+        fail(f"{context} did not reach its prepared plan")
+    changed_path.write_bytes(original + b"\n")
+    changed_path.chmod(0o600)
+    controller.sendall(b"G")
+    controller.close()
+    planned_stdout, planned_stderr = planned.communicate(timeout=10)
+    changed_path.write_bytes(original)
+    changed_path.chmod(0o600)
+    if (
+        planned.returncode == 0
+        or planned_stdout != ""
+        or "transaction changed since plan" not in planned_stderr
+    ):
+        fail(
+            f"{context} did not fail closed: "
+            f"planned=({planned.returncode}, {planned_stdout!r}, "
+            f"{planned_stderr!r})"
+        )
+
+
 def create_domain(domain):
     expect_ok([bin_path, "--dir", str(domain), "domain", "create"])
 
@@ -270,6 +309,7 @@ keys = [
     "FAULT_PHASE",
     "CONCURRENT_MASK",
     "CONCURRENT_UNMASK",
+    "DIRECT_CHANGE_GUARD",
     "REBIND",
     "CHAIN_A",
     "CHAIN_B",
@@ -306,6 +346,26 @@ set_key(parent, "MIXED_REMAINING", "parent-hidden", hidden=True)
 root_id, root_store = domain_store(root)
 parent_id, parent_store = domain_store(parent)
 child_id, child_store = domain_store(child)
+
+# A raw writer does not participate in the command lock. Its relevant-file
+# change after immutable preparation must be detected before COMMITTING, with
+# none of the planned mask effects published.
+direct_entry = entry_for_key(parent_store, "DIRECT_CHANGE_GUARD")
+direct_entry_path = parent_store / "domain-ent" / f"{direct_entry}.dent"
+direct_mask, direct_tombstone = mask_paths(
+    child_store, direct_entry, "DIRECT_CHANGE_GUARD"
+)
+run_mask_plan_with_direct_change(
+    [bin_path, "--dir", str(child), "mask", "DIRECT_CHANGE_GUARD"],
+    direct_entry_path,
+    "direct relevant-file guard change",
+)
+assert_mask_state(
+    direct_mask,
+    direct_tombstone,
+    (False, False),
+    "direct relevant-file guard change",
+)
 
 # Canonical creation, dual-write compatibility, stable plan schema, and
 # idempotent repeat.

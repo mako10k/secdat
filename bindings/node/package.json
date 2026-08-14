@@ -1,6 +1,6 @@
 {
   "name": "secdat-sdk-node",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Node.js N-API bindings for libsecdat",
   "gypfile": true,
   "main": "index.js",

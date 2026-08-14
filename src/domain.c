@@ -942,73 +942,6 @@ static int secdat_verify_domain_root_identity(const char *root_path, const char 
     return mismatch ? 1 : 0;
 }
 
-static int secdat_atomic_write_text_file(const char *path, const char *value)
-{
-    char temporary_path[PATH_MAX];
-    int file_descriptor;
-    FILE *stream;
-    char *slash;
-    size_t prefix_length;
-
-    slash = strrchr(path, '/');
-    if (slash == NULL) {
-        fprintf(stderr, _("invalid path: %s\n"), path);
-        return 1;
-    }
-
-    prefix_length = (size_t)(slash - path);
-    if (prefix_length + strlen("/.tmp.XXXXXX") + 1 >= sizeof(temporary_path)) {
-        fprintf(stderr, _("path is too long\n"));
-        return 1;
-    }
-
-    memcpy(temporary_path, path, prefix_length);
-    temporary_path[prefix_length] = '\0';
-    strcat(temporary_path, "/.tmp.XXXXXX");
-
-    file_descriptor = mkstemp(temporary_path);
-    if (file_descriptor < 0) {
-        fprintf(stderr, _("failed to create temporary file for: %s\n"), path);
-        return 1;
-    }
-
-    if (fchmod(file_descriptor, 0600) != 0) {
-        fprintf(stderr, _("failed to set permissions on: %s\n"), temporary_path);
-        close(file_descriptor);
-        unlink(temporary_path);
-        return 1;
-    }
-
-    stream = fdopen(file_descriptor, "wb");
-    if (stream == NULL) {
-        close(file_descriptor);
-        unlink(temporary_path);
-        fprintf(stderr, _("failed to open temporary stream for: %s\n"), path);
-        return 1;
-    }
-
-    if (fputs(value, stream) == EOF || fflush(stream) != 0 || fsync(file_descriptor) != 0) {
-        fclose(stream);
-        unlink(temporary_path);
-        fprintf(stderr, _("failed to write file: %s\n"), path);
-        return 1;
-    }
-
-    if (fclose(stream) != 0) {
-        unlink(temporary_path);
-        fprintf(stderr, _("failed to close file: %s\n"), path);
-        return 1;
-    }
-
-    if (rename(temporary_path, path) != 0) {
-        unlink(temporary_path);
-        fprintf(stderr, _("failed to rename file into place: %s\n"), path);
-        return 1;
-    }
-
-    return 0;
-}
-
 static int secdat_canonicalize_directory(const char *input, char *buffer, size_t size)
 {
     const char *resolved_input = input == NULL ? "." : input;
@@ -1351,60 +1284,6 @@ static int secdat_generate_domain_id(char *buffer, size_t size)
         snprintf(buffer + (index * 2), 3, "%02x", raw[index]);
     }
     buffer[SECDAT_DOMAIN_ID_LEN] = '\0';
-    return 0;
-}
-
-static int secdat_remove_tree(const char *path)
-{
-    DIR *directory;
-    struct dirent *entry;
-    char child_path[PATH_MAX];
-    struct stat status;
-
-    directory = opendir(path);
-    if (directory == NULL) {
-        if (errno == ENOENT) {
-            return 0;
-        }
-        fprintf(stderr, _("failed to open directory: %s\n"), path);
-        return 1;
-    }
-
-    while ((entry = readdir(directory)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-
-        if (snprintf(child_path, sizeof(child_path), "%s/%s", path, entry->d_name) >= (int)sizeof(child_path)) {
-            closedir(directory);
-            fprintf(stderr, _("path is too long\n"));
-            return 1;
-        }
-
-        if (lstat(child_path, &status) != 0) {
-            closedir(directory);
-            fprintf(stderr, _("failed to stat path: %s\n"), child_path);
-            return 1;
-        }
-
-        if (S_ISDIR(status.st_mode)) {
-            if (secdat_remove_tree(child_path) != 0) {
-                closedir(directory);
-                return 1;
-            }
-        } else if (unlink(child_path) != 0) {
-            closedir(directory);
-            fprintf(stderr, _("failed to remove file: %s\n"), child_path);
-            return 1;
-        }
-    }
-
-    closedir(directory);
-    if (rmdir(path) != 0) {
-        fprintf(stderr, _("failed to remove directory: %s\n"), path);
-        return 1;
-    }
-
     return 0;
 }
 
@@ -1755,38 +1634,11 @@ int secdat_domain_store_root(const char *domain_id, const char *store_name, char
     return 0;
 }
 
-static int secdat_domain_create_default_store(const char *domain_id)
-{
-    char store_root[PATH_MAX];
-    char entries_dir[PATH_MAX];
-    char tombstones_dir[PATH_MAX];
-
-    if (secdat_domain_store_root(domain_id, NULL, store_root, sizeof(store_root)) != 0) {
-        return 1;
-    }
-    if (secdat_join_path(entries_dir, sizeof(entries_dir), store_root, "entries") != 0) {
-        return 1;
-    }
-    if (secdat_join_path(tombstones_dir, sizeof(tombstones_dir), store_root, "tombstones") != 0) {
-        return 1;
-    }
-
-    if (secdat_ensure_directory(entries_dir, 0700) != 0) {
-        return 1;
-    }
-    return secdat_ensure_directory(tombstones_dir, 0700);
-}
-
 static int secdat_domain_command_create(const struct secdat_cli *cli)
 {
     char root_path[PATH_MAX];
-    char registry_dir[PATH_MAX];
     char registry_path[PATH_MAX];
     char domain_id[SECDAT_DOMAIN_ID_LEN + 1];
-    char domain_root[PATH_MAX];
-    char meta_dir[PATH_MAX];
-    char root_file[PATH_MAX];
-    char identity_file[PATH_MAX];
     char identity_text[128];
     struct secdat_domain_identity identity;
     struct stat root_status;
@@ -1830,38 +1682,12 @@ static int secdat_domain_command_create(const struct secdat_cli *cli)
     if (secdat_registry_path_for_root(root_path, registry_path, sizeof(registry_path)) != 0) {
         return 1;
     }
-    if (secdat_registry_dir(registry_dir, sizeof(registry_dir)) != 0) {
-        return 1;
-    }
-    if (secdat_domain_root_for_id(domain_id, domain_root, sizeof(domain_root)) != 0) {
-        return 1;
-    }
-    if (secdat_join_path(meta_dir, sizeof(meta_dir), domain_root, "meta") != 0) {
-        return 1;
-    }
-    if (secdat_join_path(root_file, sizeof(root_file), meta_dir, "root") != 0) {
-        return 1;
-    }
-    if (secdat_join_path(identity_file, sizeof(identity_file), meta_dir, "root-identity") != 0) {
-        return 1;
-    }
-
-    if (secdat_ensure_directory(registry_dir, 0700) != 0) {
-        return 1;
-    }
-    if (secdat_ensure_directory(meta_dir, 0700) != 0) {
-        return 1;
-    }
-    if (secdat_domain_create_default_store(domain_id) != 0) {
-        return 1;
-    }
-    if (secdat_atomic_write_text_file(root_file, root_path) != 0) {
-        return 1;
-    }
-    if (secdat_atomic_write_text_file(identity_file, identity_text) != 0) {
-        return 1;
-    }
-    return secdat_atomic_write_text_file(registry_path, domain_id);
+    return secdat_transactional_domain_create(
+        domain_id,
+        registry_path,
+        root_path,
+        identity_text
+    );
 }
 
 static int secdat_domain_command_delete(const struct secdat_cli *cli)
@@ -1869,7 +1695,6 @@ static int secdat_domain_command_delete(const struct secdat_cli *cli)
     char root_path[PATH_MAX];
     char domain_id[PATH_MAX];
     char registry_path[PATH_MAX];
-    char domain_root[PATH_MAX];
     struct secdat_string_list roots = {0};
     size_t index;
 
@@ -1909,16 +1734,11 @@ static int secdat_domain_command_delete(const struct secdat_cli *cli)
     if (secdat_registry_path_for_root(root_path, registry_path, sizeof(registry_path)) != 0) {
         return 1;
     }
-    if (unlink(registry_path) != 0) {
-        fprintf(stderr, _("failed to remove file: %s\n"), registry_path);
-        return 1;
-    }
-
-    if (secdat_domain_root_for_id(domain_id, domain_root, sizeof(domain_root)) != 0) {
-        return 1;
-    }
-
-    return secdat_remove_tree(domain_root);
+    return secdat_transactional_domain_delete(
+        domain_id,
+        registry_path,
+        root_path
+    );
 }
 
 static int secdat_domain_command_move(const struct secdat_cli *cli)
@@ -1942,8 +1762,6 @@ static int secdat_domain_command_move(const struct secdat_cli *cli)
     char destination_domain_id[PATH_MAX];
     char source_registry_path[PATH_MAX];
     char destination_registry_path[PATH_MAX];
-    char root_file[PATH_MAX];
-    char identity_file[PATH_MAX];
     char identity_text[128];
     struct secdat_domain_identity identity;
     struct stat destination_status;
@@ -2028,29 +1846,18 @@ static int secdat_domain_command_move(const struct secdat_cli *cli)
     }
 
     if (secdat_registry_path_for_root(source_root, source_registry_path, sizeof(source_registry_path)) != 0
-        || secdat_registry_path_for_root(destination_root, destination_registry_path, sizeof(destination_registry_path)) != 0
-        || secdat_domain_meta_file_for_id(source_domain_id, "root", root_file, sizeof(root_file)) != 0
-        || secdat_domain_meta_file_for_id(source_domain_id, "root-identity", identity_file, sizeof(identity_file)) != 0) {
+        || secdat_registry_path_for_root(destination_root, destination_registry_path, sizeof(destination_registry_path)) != 0) {
         return 1;
     }
-
-    if (!same_root && lookup_status == 1) {
-        if (secdat_atomic_write_text_file(destination_registry_path, source_domain_id) != 0) {
-            return 1;
-        }
-    }
-    if (secdat_atomic_write_text_file(root_file, destination_root) != 0) {
-        return 1;
-    }
-    if (secdat_atomic_write_text_file(identity_file, identity_text) != 0) {
-        return 1;
-    }
-    if (!same_root && unlink(source_registry_path) != 0 && errno != ENOENT) {
-        fprintf(stderr, _("failed to remove file: %s\n"), source_registry_path);
-        return 1;
-    }
-
-    return 0;
+    return secdat_transactional_domain_move(
+        source_domain_id,
+        source_root,
+        destination_root,
+        source_registry_path,
+        destination_registry_path,
+        identity_text,
+        same_root
+    );
 }
 
 static int secdat_collect_inherited_domain_roots(

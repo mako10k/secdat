@@ -286,26 +286,54 @@ require_ok(
     "relation rm",
     "",
 )
-incomplete = run(
-    "--dir", str(root), "--store", "app", "attr", "--key-visibility", "unlocked", "ALPHA"
+if "state=complete\n" not in state_path.read_text(encoding="utf-8"):
+    fail("relation rm writer did not preserve a complete dependency index")
+require_ok(
+    run("--dir", str(root), "fsck", "--format", "v2", "--dependency-index"),
+    "incremental relation dependency removal",
+    "ok\n",
 )
-if incomplete.returncode == 0 or "dependency index is incomplete" not in incomplete.stderr:
-    fail(f"building state did not fail hidden transition closed: {incomplete}")
-
-mask_only_rebuild = run(
-    "--dir", str(root), "fsck", "--format", "v2", "--dependency-index", "--repair"
-)
-require_ok(mask_only_rebuild, "mask-only rebuild")
-if mask_only_rebuild.stdout != "rebuilt-dependency-index\tglobal\tlookups=1 edges=1\n":
-    fail(f"mask-only dependency index mismatch: {mask_only_rebuild.stdout!r}")
 mask_blocked = run(
     "--dir", str(root), "--store", "app", "attr", "--key-visibility", "unlocked", "ALPHA"
 )
 if (
     mask_blocked.returncode == 0
-    or "identity masks reference entry: ALPHA" not in mask_blocked.stderr
+    or "hidden-name transition cannot preserve v1 rollback mask state: ALPHA"
+    not in mask_blocked.stderr
 ):
-    fail(f"exact M lookup did not block hidden transition: {mask_blocked}")
+    fail(f"v1 rollback state did not block hidden transition: {mask_blocked}")
+
+# Finalized v2 state has no plaintext compatibility tombstone. In that state,
+# the complete M lookup rewrites every named mask record in the same transaction
+# as the entry and dependency root instead of rejecting the transition.
+alpha_tombstones = [
+    path
+    for path in (Path(env["XDG_DATA_HOME"]) / "secdat").rglob("ALPHA.tomb")
+    if "transactions" not in path.parts
+]
+if len(alpha_tombstones) != 1:
+    fail(f"expected one ALPHA compatibility tombstone: {alpha_tombstones!r}")
+alpha_tombstones[0].unlink()
+require_ok(
+    run(
+        "--dir", str(root), "--store", "app", "attr",
+        "--key-visibility", "unlocked", "ALPHA",
+    ),
+    "hidden transition with exact mask closure",
+    "",
+)
+alpha_masks = [
+    path
+    for path in (Path(env["XDG_DATA_HOME"]) / "secdat").rglob("*.mask")
+    if "transactions" not in path.parts and b"ALPHA" in path.read_bytes()
+]
+if alpha_masks:
+    fail(f"hidden transition retained plaintext mask names: {alpha_masks!r}")
+require_ok(
+    run("--dir", str(root), "fsck", "--format", "v2", "--dependency-index"),
+    "hidden transition dependency closure",
+    "ok\n",
+)
 
 require_ok(
     run("--dir", str(child), "--store", "app", "unmask", "ALPHA"),
@@ -323,7 +351,7 @@ require_ok(
     run(
         "--dir", str(root), "--store", "app", "attr", "--key-visibility", "unlocked", "ALPHA"
     ),
-    "hidden transition after exact absence proof",
+    "already-hidden transition after exact absence proof",
     "",
 )
 
@@ -378,15 +406,45 @@ require_ok(
     "read updated hidden key",
     "updated",
 )
-visible_blocked = run(
-    "--dir", str(root), "--store", "app", "attr", "--key-visibility", "always", "GAMMA"
+require_ok(
+    run(
+        "--dir", str(root), "--store", "app", "attr",
+        "--key-visibility", "always", "GAMMA",
+    ),
+    "visible transition with exact mask closure",
+    "",
 )
-if (
-    visible_blocked.returncode == 0
-    or "key_visibility=always cannot be used while identity masks reference entry: GAMMA"
-    not in visible_blocked.stderr
-):
-    fail(f"exact M lookup did not block hidden-to-visible transition: {visible_blocked}")
+gamma_masks = [
+    path
+    for path in (Path(env["XDG_DATA_HOME"]) / "secdat").rglob("*.mask")
+    if "transactions" not in path.parts and b"GAMMA" in path.read_bytes()
+]
+gamma_tombstones = [
+    path
+    for path in (Path(env["XDG_DATA_HOME"]) / "secdat").rglob("GAMMA.tomb")
+    if "transactions" not in path.parts
+]
+if len(gamma_masks) != 1 or len(gamma_tombstones) != 1:
+    fail(
+        "visible transition did not restore canonical rollback state: "
+        f"masks={gamma_masks!r} tombstones={gamma_tombstones!r}"
+    )
+gamma_tombstones[0].unlink()
+require_ok(
+    run(
+        "--dir", str(root), "--store", "app", "attr",
+        "--key-visibility", "unlocked", "GAMMA",
+    ),
+    "restore hidden state after finalized rollback removal",
+    "",
+)
+if b"GAMMA" in gamma_masks[0].read_bytes():
+    fail("restored hidden transition retained plaintext mask name")
+require_ok(
+    run("--dir", str(root), "fsck", "--format", "v2", "--dependency-index"),
+    "bidirectional visibility dependency closure",
+    "ok\n",
+)
 
 hidden_relation_path = relation_path.parent / "hidden-direct.rel"
 hidden_relation_path.write_bytes(

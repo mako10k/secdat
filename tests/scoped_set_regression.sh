@@ -81,6 +81,8 @@ def create_v2_domain(path):
 
 target_state = create_v2_domain(target)
 unrelated_state = create_v2_domain(unrelated)
+epoch_path = Path(env["XDG_DATA_HOME"]) / "secdat" / "gc/reference-epoch"
+epoch_before_create = epoch_path.read_bytes()
 
 # A whole-tree staging clone rejects this non-regular artifact. A scoped set
 # must not inspect it because it is outside the selected domain chain.
@@ -103,6 +105,22 @@ finally:
 
 if expect_ok([bin_path, "--dir", str(target), "get", "SCOPED"]) != "one":
     fail("scoped set value mismatch")
+epoch_after_create = epoch_path.read_bytes()
+if epoch_after_create == epoch_before_create:
+    fail("new binding did not rotate the reference epoch")
+expect_ok(
+    [
+        bin_path,
+        "--dir",
+        str(target),
+        "set",
+        "SCOPED",
+        "--value",
+        "value-only-update",
+    ]
+)
+if epoch_path.read_bytes() != epoch_after_create:
+    fail("value-only update rotated the reference epoch")
 
 # Repeated operands in one command observe earlier projected after-images and
 # preserve one entry identity while the final value wins.
@@ -116,6 +134,9 @@ expect_ok(
         "BATCH=second",
     ]
 )
+epoch_after_batch = epoch_path.read_bytes()
+if epoch_after_batch == epoch_after_create:
+    fail("batch binding creation did not rotate the reference epoch")
 if expect_ok([bin_path, "--dir", str(target), "get", "BATCH"]) != "second":
     fail("projected batch value mismatch")
 entry_count = len(list((target_state / "stores" / "default" / "domain-ent").glob("*.dent")))
@@ -149,10 +170,18 @@ journal_lines = (pending[0] / "journal").read_text(encoding="utf-8").splitlines(
 if len(journal_lines) != 2:
     fail(f"invalid scoped transaction envelope: {journal_lines!r}")
 manifest = json.loads(journal_lines[1])
+guards = manifest.get("guards")
 writes = manifest.get("writes")
 if (
     manifest.get("version") != 2
-    or manifest.get("guards") != []
+    or not isinstance(guards, list)
+    or not guards
+    or not any(guard.get("type") == "typed-directory" for guard in guards)
+    or any(
+        guard.get("type") not in {"exact-file", "typed-directory"}
+        or guard.get("role") != guard.get("type")
+        for guard in guards
+    )
     or not isinstance(writes, list)
     or not writes
     or [(write.get("phase"), write.get("name")) for write in writes]

@@ -653,9 +653,18 @@ if rc != 0 or stdout != "secret-value" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_SECRET_COPY"])
 if rc != 0 or stderr != "":
     fail(f"pure v2 id for copied key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-if stdout.strip() == app_secret_id:
+copied_secret_id = stdout.strip()
+if copied_secret_id == app_secret_id:
     fail("pure v2 cp should create an independent secret object")
-assert_wrapped_object_key_count(stdout.strip(), 1, "pure v2 cp")
+assert_wrapped_object_key_count(copied_secret_id, 1, "pure v2 cp")
+copied_entry_paths = [
+    path
+    for path in domain_entries_dir.glob("*.dent")
+    if f"secret_id={copied_secret_id}\n" in path.read_text(encoding="utf-8")
+]
+if len(copied_entry_paths) != 1:
+    fail(f"pure v2 cp expected one domain entry, found {copied_entry_paths!r}")
+copied_entry_id = copied_entry_paths[0].stem
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "mv", "APP_SECRET_COPY", "APP_SECRET_MOVED"])
 if rc != 0 or stdout != "" or stderr != "":
@@ -670,6 +679,15 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "id", "APP_SECRET_MOVE
 if rc != 0 or stderr != "":
     fail(f"pure v2 id for moved key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 moved_secret_id = stdout.strip()
+if moved_secret_id != copied_secret_id:
+    fail("pure v2 mv changed the secret object UUID")
+moved_entry_paths = [
+    path
+    for path in domain_entries_dir.glob("*.dent")
+    if f"secret_id={moved_secret_id}\n" in path.read_text(encoding="utf-8")
+]
+if len(moved_entry_paths) != 1 or moved_entry_paths[0].stem != copied_entry_id:
+    fail("pure v2 mv changed the domain entry UUID")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "rm", "APP_SECRET_MOVED"])
 if rc != 0 or stdout != "" or stderr != "":
