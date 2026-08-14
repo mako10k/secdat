@@ -90,6 +90,7 @@
 #define SECDAT_AGENT_CAP_OVERLAY_V1 (UINT64_C(1) << 0)
 #define SECDAT_AGENT_CAP_EPHEMERAL_V1 (UINT64_C(1) << 1)
 #define SECDAT_AGENT_CAP_HANDOVER_V1 (UINT64_C(1) << 2)
+#define SECDAT_AGENT_CAP_GC_WORKER_V1 (UINT64_C(1) << 3)
 #ifdef SO_PEERCRED
 #define SECDAT_AGENT_CAP_HANDOVER_SUPPORTED SECDAT_AGENT_CAP_HANDOVER_V1
 #else
@@ -97,7 +98,8 @@
 #endif
 #define SECDAT_AGENT_CAPABILITIES (SECDAT_AGENT_CAP_OVERLAY_V1 \
     | SECDAT_AGENT_CAP_EPHEMERAL_V1 \
-    | SECDAT_AGENT_CAP_HANDOVER_SUPPORTED)
+    | SECDAT_AGENT_CAP_HANDOVER_SUPPORTED \
+    | SECDAT_AGENT_CAP_GC_WORKER_V1)
 #define SECDAT_AGENT_HANDOVER_VERSION 1
 #define SECDAT_AGENT_HANDOVER_HEADER_LEN 40
 #define SECDAT_AGENT_HANDOVER_ITEM_HEADER_LEN 44
@@ -105,6 +107,21 @@
 #define SECDAT_AGENT_HANDOVER_MAX_BYTES (64U * 1024U * 1024U)
 #define SECDAT_AGENT_HANDOVER_MAX_ITEMS 65536U
 #define SECDAT_AGENT_HANDOVER_TIMEOUT_MILLISECONDS 5000
+#define SECDAT_GC_CANDIDATE_MAX_BYTES 4096U
+#define SECDAT_GC_SCAN_ENTRY_BUDGET 256U
+#define SECDAT_GC_SCAN_TIME_BUDGET_MS INT64_C(25)
+#define SECDAT_GC_SLICE_TIME_BUDGET_MS INT64_C(100)
+
+struct secdat_gc_scan_control {
+    int (*service_ready)(void *context);
+    int (*still_eligible)(void *context);
+    void *context;
+    size_t entries_since_service;
+    int64_t service_deadline_ms;
+    int64_t slice_deadline_ms;
+};
+#define SECDAT_GC_DEBOUNCE_NS INT64_C(1000000000)
+#define SECDAT_GC_REFERENCED_DELAY_NS INT64_C(3600000000000)
 
 static const unsigned char secdat_entry_magic[8] = {'S', 'E', 'C', 'D', 'A', 'T', '1', '\0'};
 static const unsigned char secdat_v2_value_magic[8] = {'S', 'E', 'C', 'D', 'V', 'A', 'L', '2'};
@@ -122,6 +139,7 @@ static const char secdat_v2_compat_tombstone_magic[] = "SECDATMASKCOMPAT1";
 static const char secdat_transaction_magic[] = "SECDATTXN1";
 static const char secdat_dependency_state_magic[] = "SECDATDEPSTATE1";
 static const char secdat_dependency_node_magic[] = "SECDATDEPNODE1";
+static const char secdat_gc_candidate_magic[] = "SECDATGCCAND1";
 static const unsigned char secdat_handover_magic[8] = {'S', 'E', 'C', 'D', 'H', 'N', 'D', '1'};
 static const unsigned char secdat_handover_fd_magic[8] = {'S', 'E', 'C', 'D', 'H', 'F', 'D', '1'};
 static const unsigned char secdat_handover_commit[8] = {'C', 'O', 'M', 'M', 'I', 'T', '1', '\0'};
@@ -380,13 +398,82 @@ struct secdat_dependency_lookup_group_list {
 
 struct secdat_gc_options {
     const char *format;
+    const char *owner_domain_id;
+    const char *quarantine_handle;
+    const char *drop_quarantine_handle;
     int orphaned;
     int dangling;
+    int queued;
+    int status;
+    int errors;
+    int json;
+    int repair_epoch;
     int dry_run;
 };
 
 struct secdat_gc_report {
     size_t removals;
+    size_t queued;
+};
+
+enum secdat_gc_candidate_state {
+    SECDAT_GC_CANDIDATE_PENDING = 0,
+    SECDAT_GC_CANDIDATE_RETRY_PENDING,
+    SECDAT_GC_CANDIDATE_MANUAL_REQUIRED,
+};
+
+struct secdat_gc_candidate_record {
+    char owner_domain_id[33];
+    char owner_store_name[PATH_MAX];
+    char owner_store_escaped[PATH_MAX];
+    char secret_id[37];
+    char enqueue_id[37];
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+    char last_error[32];
+    int64_t enqueued_at_ns;
+    int64_t last_attempt_at_ns;
+    int64_t next_attempt_at_ns;
+    uint32_t attempt_count;
+    int has_last_attempt_at;
+    int has_next_attempt_at;
+    enum secdat_gc_candidate_state state;
+};
+
+struct secdat_gc_status_error {
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+    char state[32];
+    char last_error[32];
+};
+
+struct secdat_gc_status_report {
+    size_t pending;
+    size_t ready;
+    size_t retrying;
+    size_t manual_required;
+    size_t corrupt;
+    size_t quarantined;
+    int64_t oldest_enqueued_at_ns;
+    int64_t next_attempt_at_ns;
+    int has_oldest_enqueued_at;
+    int has_next_attempt_at;
+    struct secdat_gc_status_error *errors;
+    size_t error_count;
+    size_t error_capacity;
+};
+
+#define SECDAT_GC_BATCH_MAX 8U
+
+struct secdat_gc_batch_item {
+    struct secdat_gc_candidate_record candidate;
+    size_t reference_count;
+    int referenced;
+};
+
+struct secdat_gc_batch {
+    char reference_epoch[37];
+    struct secdat_gc_batch_item items[SECDAT_GC_BATCH_MAX];
+    size_t count;
+    int scan_incomplete;
 };
 
 enum secdat_store_format {
@@ -756,6 +843,24 @@ struct secdat_prepared_write_set {
 };
 
 static struct secdat_prepared_write_set secdat_prepared_write_set;
+
+struct secdat_gc_topology_effect {
+    char owner_domain_id[PATH_MAX];
+    char owner_store_name[PATH_MAX];
+    char secret_id[64];
+    int64_t reference_delta;
+    int saw_reference_add;
+    int saw_reference_remove;
+    int saw_reference_present;
+};
+
+struct secdat_gc_topology_plan {
+    struct secdat_gc_topology_effect *items;
+    size_t count;
+    size_t capacity;
+};
+
+static struct secdat_gc_topology_plan secdat_gc_topology_plan;
 
 static const char *secdat_mask_warning_policy_name(
     enum secdat_mask_warning_policy policy
@@ -1148,6 +1253,11 @@ static int secdat_read_v2_secret_object_payload(
     size_t *payload_length,
     int *has_payload
 );
+static int secdat_read_v2_secret_object_info(
+    const char *path,
+    const char *file_secret_id,
+    struct secdat_v2_secret_object_info *info
+);
 static const char *secdat_v2_entry_object_domain(
     const char *entry_domain_id,
     const struct secdat_v2_domain_entry_info *info
@@ -1212,6 +1322,41 @@ static int secdat_update_v2_secret_refcount(
     const char *secret_id,
     size_t refcount
 );
+static void secdat_gc_topology_plan_reset(
+    struct secdat_gc_topology_plan *plan
+);
+static int secdat_gc_topology_record_reference_add(
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *secret_id
+);
+static int secdat_gc_topology_record_reference_remove(
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *secret_id
+);
+static int secdat_gc_topology_record_reference_present(
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *secret_id
+);
+static int secdat_gc_topology_plan_apply(
+    struct secdat_gc_topology_plan *plan
+);
+static int secdat_gc_agent_collect_owner(
+    const char *owner_domain_id,
+    struct secdat_gc_scan_control *control
+);
+static int secdat_session_agent_connect_domain(
+    const char *domain_id,
+    int start_if_missing
+);
+static int secdat_session_agent_handover(const char *scope_id);
+static int secdat_session_agent_query_capabilities(
+    const char *scope_id,
+    int advertised_protocol_version,
+    uint64_t *capabilities
+);
 static int secdat_atomic_write_file(const char *path, const unsigned char *data, size_t length);
 static int secdat_remove_if_exists(const char *path);
 static int secdat_transaction_read_target(
@@ -1249,12 +1394,15 @@ static int secdat_prepared_directory_guard_record(
 static int secdat_recover_transactions(void);
 static int secdat_transaction_ensure_root(char *root, size_t root_size);
 static int secdat_transaction_open_lock(const char *root);
+static int secdat_transaction_open_lock_nonblocking(const char *root);
 static int secdat_mutation_cleanup_abandoned_stages(
     const char *transactions_root
 );
 static int secdat_test_synchronize_sdk_update(void);
 static int secdat_test_signal_transaction_lock_attempt(unsigned char signal);
 static int secdat_parse_i64(const char *value, time_t *result);
+static int secdat_read_line(FILE *stream, char *buffer, size_t size);
+static int secdat_domain_id_is_valid(const char *value);
 static int secdat_session_agent_connect_chain_details(const struct secdat_domain_chain *chain, size_t *matched_index, size_t *blocked_index);
 static int secdat_session_agent_status(const struct secdat_domain_chain *chain, struct secdat_session_record *record);
 static int secdat_session_agent_status_details(
@@ -1401,6 +1549,76 @@ static int secdat_overlay_store_name_copy(const char *store_name, char **buffer)
         return 1;
     }
     return 0;
+}
+
+static void secdat_gc_topology_notify_agents(
+    const struct secdat_gc_topology_plan *plan
+)
+{
+    size_t index;
+
+    for (index = 0; index < plan->count; index += 1) {
+        const char *owner_domain_id = plan->items[index].owner_domain_id;
+        size_t previous;
+        int descriptor;
+        FILE *stream;
+        char response[32];
+        uint64_t capabilities = 0;
+
+        for (previous = 0; previous < index; previous += 1) {
+            if (strcmp(
+                    plan->items[previous].owner_domain_id,
+                    owner_domain_id
+                ) == 0) {
+                break;
+            }
+        }
+        if (previous < index) {
+            continue;
+        }
+        if (secdat_session_agent_query_capabilities(
+                owner_domain_id,
+                SECDAT_AGENT_PROTOCOL_VERSION,
+                &capabilities
+            ) != 0) {
+            continue;
+        }
+        if ((capabilities & SECDAT_AGENT_CAP_GC_WORKER_V1) == 0
+            && (capabilities & SECDAT_AGENT_CAP_HANDOVER_V1) != 0) {
+            if (secdat_session_agent_handover(owner_domain_id) != 0) {
+                fprintf(
+                    stderr,
+                    _("deferred GC remains queued because the owner agent could not be upgraded\n")
+                );
+                continue;
+            }
+            capabilities = SECDAT_AGENT_CAPABILITIES;
+        }
+        if ((capabilities & SECDAT_AGENT_CAP_GC_WORKER_V1) == 0) {
+            fprintf(
+                stderr,
+                _("deferred GC remains queued because the owner agent lacks GC_WORKER_V1\n")
+            );
+            continue;
+        }
+        descriptor = secdat_session_agent_connect_domain(
+            owner_domain_id,
+            0
+        );
+        if (descriptor < 0) {
+            continue;
+        }
+        stream = fdopen(descriptor, "r+");
+        if (stream == NULL) {
+            close(descriptor);
+            continue;
+        }
+        fputs("GCWAKE\n", stream);
+        if (fflush(stream) == 0) {
+            (void)secdat_read_line(stream, response, sizeof(response));
+        }
+        fclose(stream);
+    }
 }
 
 static void secdat_overlay_item_free(struct secdat_overlay_item *item)
@@ -3770,6 +3988,192 @@ static int secdat_parse_fsck_options(const struct secdat_cli *cli, struct secdat
     return 0;
 }
 
+static int secdat_apply_gc_option(
+    struct secdat_gc_options *options,
+    int option,
+    const char *argument
+)
+{
+    switch (option) {
+    case 1000:
+        options->orphaned = 1;
+        return 0;
+    case 1001:
+        options->dangling = 1;
+        return 0;
+    case 1002:
+        options->dry_run = 1;
+        return 0;
+    case 1003:
+        if (strcmp(argument, "v2") != 0) {
+            fprintf(stderr, _("invalid gc format: %s\n"), argument);
+            return 2;
+        }
+        options->format = argument;
+        return 0;
+    case 1004:
+        options->queued = 1;
+        return 0;
+    case 1005:
+        options->status = 1;
+        return 0;
+    case 1006:
+        options->errors = 1;
+        return 0;
+    case 1007:
+        options->json = 1;
+        return 0;
+    case 1008:
+        options->owner_domain_id = argument;
+        return 0;
+    case 1009:
+        options->repair_epoch = 1;
+        return 0;
+    case 1010:
+        options->quarantine_handle = argument;
+        return 0;
+    case 1011:
+        options->drop_quarantine_handle = argument;
+        return 0;
+    default:
+        return 2;
+    }
+}
+
+static int secdat_gc_candidate_handle_is_valid(const char *handle)
+{
+    size_t index;
+
+    if (handle == NULL || strlen(handle) != SECDAT_SHA256_HEX_LENGTH) {
+        return 0;
+    }
+    for (index = 0; index < SECDAT_SHA256_HEX_LENGTH; index += 1) {
+        if (!((handle[index] >= '0' && handle[index] <= '9')
+                || (handle[index] >= 'a' && handle[index] <= 'f'))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int secdat_validate_gc_status_options(
+    const struct secdat_gc_options *options
+)
+{
+    if (options->errors && !options->status) {
+        fprintf(stderr, _("gc --errors requires --status\n"));
+        return 2;
+    }
+    if (options->json && !options->status) {
+        fprintf(stderr, _("gc --json requires --status\n"));
+        return 2;
+    }
+    if (options->status
+        && (options->orphaned
+            || options->dangling
+            || options->queued
+            || options->dry_run
+            || options->repair_epoch
+            || options->quarantine_handle != NULL
+            || options->drop_quarantine_handle != NULL)) {
+        fprintf(stderr, _("gc --status cannot be combined with mutation selectors\n"));
+        return 2;
+    }
+    return 0;
+}
+
+static int secdat_validate_gc_owner_options(
+    const struct secdat_gc_options *options
+)
+{
+    if (options->owner_domain_id != NULL
+        && !secdat_domain_id_is_valid(options->owner_domain_id)) {
+        fprintf(stderr, _("invalid GC owner domain ID\n"));
+        return 2;
+    }
+    if (options->owner_domain_id != NULL
+        && !options->queued
+        && !options->status
+        && options->quarantine_handle == NULL
+        && options->drop_quarantine_handle == NULL) {
+        fprintf(stderr, _("gc --owner requires --queued or --status\n"));
+        return 2;
+    }
+    if (options->owner_domain_id != NULL
+        && (options->orphaned || options->dangling)) {
+        fprintf(stderr, _("gc --owner cannot select a full-store sweep\n"));
+        return 2;
+    }
+    return 0;
+}
+
+static int secdat_validate_gc_repair_options(
+    const struct secdat_gc_options *options
+)
+{
+    if (options->repair_epoch
+        && (options->orphaned
+            || options->dangling
+            || options->queued
+            || options->status
+            || options->owner_domain_id != NULL
+            || options->quarantine_handle != NULL
+            || options->drop_quarantine_handle != NULL)) {
+        fprintf(stderr, _("gc --repair-epoch cannot be combined with another selector\n"));
+        return 2;
+    }
+    return 0;
+}
+
+static int secdat_validate_gc_quarantine_options(
+    const struct secdat_gc_options *options
+)
+{
+    if (options->quarantine_handle != NULL
+        && options->drop_quarantine_handle != NULL) {
+        fprintf(stderr, _("invalid GC quarantine selectors\n"));
+        return 2;
+    }
+    if ((options->quarantine_handle != NULL
+            && !secdat_gc_candidate_handle_is_valid(
+                options->quarantine_handle
+            ))
+        || (options->drop_quarantine_handle != NULL
+            && !secdat_gc_candidate_handle_is_valid(
+                options->drop_quarantine_handle
+            ))) {
+        fprintf(stderr, _("invalid GC candidate handle\n"));
+        return 2;
+    }
+    if ((options->quarantine_handle != NULL
+            || options->drop_quarantine_handle != NULL)
+        && (options->orphaned
+            || options->dangling
+            || options->queued
+            || options->status
+            || options->repair_epoch)) {
+        fprintf(stderr, _("invalid GC quarantine selectors\n"));
+        return 2;
+    }
+    return 0;
+}
+
+static void secdat_gc_select_default_sweep(
+    struct secdat_gc_options *options
+)
+{
+    if (!options->orphaned
+        && !options->dangling
+        && !options->queued
+        && !options->status
+        && !options->repair_epoch
+        && options->quarantine_handle == NULL
+        && options->drop_quarantine_handle == NULL) {
+        options->orphaned = 1;
+        options->dangling = 1;
+    }
+}
+
 static int secdat_parse_gc_options(const struct secdat_cli *cli, struct secdat_gc_options *options)
 {
     static const struct option long_options[] = {
@@ -3777,11 +4181,20 @@ static int secdat_parse_gc_options(const struct secdat_cli *cli, struct secdat_g
         {"dangling", no_argument, NULL, 1001},
         {"dry-run", no_argument, NULL, 1002},
         {"format", required_argument, NULL, 1003},
+        {"queued", no_argument, NULL, 1004},
+        {"status", no_argument, NULL, 1005},
+        {"errors", no_argument, NULL, 1006},
+        {"json", no_argument, NULL, 1007},
+        {"owner", required_argument, NULL, 1008},
+        {"repair-epoch", no_argument, NULL, 1009},
+        {"quarantine-candidate", required_argument, NULL, 1010},
+        {"drop-quarantine", required_argument, NULL, 1011},
         {NULL, 0, NULL, 0},
     };
     char *argv[cli->argc + 2];
     int argc;
     int option;
+    int status;
 
     memset(options, 0, sizeof(*options));
     options->format = "v2";
@@ -3789,26 +4202,12 @@ static int secdat_parse_gc_options(const struct secdat_cli *cli, struct secdat_g
     secdat_prepare_option_argv(cli, "gc", &argc, argv);
     secdat_reset_getopt_state();
     while ((option = getopt_long(argc, argv, ":", long_options, NULL)) != -1) {
-        switch (option) {
-        case 1000:
-            options->orphaned = 1;
-            break;
-        case 1001:
-            options->dangling = 1;
-            break;
-        case 1002:
-            options->dry_run = 1;
-            break;
-        case 1003:
-            if (strcmp(optarg, "v2") != 0) {
-                fprintf(stderr, _("invalid gc format: %s\n"), optarg);
-                return 2;
+        int apply_status = secdat_apply_gc_option(options, option, optarg);
+
+        if (apply_status != 0) {
+            if (option == 1003) {
+                return apply_status;
             }
-            options->format = optarg;
-            break;
-        case '?':
-        case ':':
-        default:
             fprintf(stderr, _("invalid arguments for gc\n"));
             secdat_cli_print_try_help(cli, "gc");
             return 2;
@@ -3820,10 +4219,20 @@ static int secdat_parse_gc_options(const struct secdat_cli *cli, struct secdat_g
         secdat_cli_print_try_help(cli, "gc");
         return 2;
     }
-    if (!options->orphaned && !options->dangling) {
-        options->orphaned = 1;
-        options->dangling = 1;
+    status = secdat_validate_gc_status_options(options);
+    if (status == 0) {
+        status = secdat_validate_gc_owner_options(options);
     }
+    if (status == 0) {
+        status = secdat_validate_gc_repair_options(options);
+    }
+    if (status == 0) {
+        status = secdat_validate_gc_quarantine_options(options);
+    }
+    if (status != 0) {
+        return status;
+    }
+    secdat_gc_select_default_sweep(options);
 
     return 0;
 }
@@ -5988,6 +6397,20 @@ static int64_t secdat_agent_ready_deadline(void)
         + SECDAT_AGENT_READY_TIMEOUT_MILLISECONDS;
 }
 
+static int secdat_monotonic_milliseconds(int64_t *value)
+{
+    struct timespec now;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0
+        || now.tv_sec < 0
+        || (uint64_t)now.tv_sec > (uint64_t)INT64_MAX / UINT64_C(1000)) {
+        return 1;
+    }
+    *value = (int64_t)now.tv_sec * INT64_C(1000)
+        + now.tv_nsec / 1000000;
+    return 0;
+}
+
 static int secdat_session_agent_start_lock(const char *socket_path)
 {
     char lock_path[PATH_MAX];
@@ -6428,7 +6851,8 @@ static int secdat_session_agent_handle_client(
     int server_fd,
     struct secdat_session_record *record,
     int *should_exit,
-    int *preserve_socket
+    int *preserve_socket,
+    int *gc_wake
 )
 {
     FILE *stream;
@@ -6492,6 +6916,14 @@ static int secdat_session_agent_handle_client(
             (unsigned long long)SECDAT_AGENT_CAPABILITIES,
             (long long)getpid()
         );
+        fflush(stream);
+        fclose(stream);
+        return 0;
+    }
+
+    if (strcmp(command, "GCWAKE") == 0) {
+        *gc_wake = 1;
+        fprintf(stream, "OK\n");
         fflush(stream);
         fclose(stream);
         return 0;
@@ -6659,6 +7091,7 @@ static int secdat_session_agent_handle_client(
             fclose(stream);
             return 1;
         }
+        *gc_wake = 1;
         fprintf(stream, "OK %lld\n", (long long)record->expires_at);
         fflush(stream);
         fclose(stream);
@@ -7171,9 +7604,81 @@ static int secdat_session_agent_unlink_owned_path(
     return 1;
 }
 
+struct secdat_gc_agent_service_context {
+    int server_fd;
+    struct secdat_session_record *record;
+    int *gc_wake;
+    int should_exit;
+    int preserve_socket;
+};
+
+static int secdat_session_record_is_gc_eligible(
+    struct secdat_session_record *record
+)
+{
+    secdat_session_record_expire_if_needed(record);
+    return record->master_key[0] != '\0'
+        && !record->volatile_mode
+        && !record->readonly_mode;
+}
+
+static int secdat_gc_agent_service_ready(void *opaque)
+{
+    struct secdat_gc_agent_service_context *context = opaque;
+    struct pollfd descriptor;
+    int poll_status;
+    int client_fd;
+    int should_exit = 0;
+    int preserve_socket = 0;
+
+    if (!secdat_session_record_is_gc_eligible(context->record)) {
+        return 1;
+    }
+    descriptor.fd = context->server_fd;
+    descriptor.events = POLLIN;
+    descriptor.revents = 0;
+    do {
+        poll_status = poll(&descriptor, 1, 0);
+    } while (poll_status < 0 && errno == EINTR);
+    if (poll_status < 0) {
+        return 1;
+    }
+    if (poll_status == 0 || (descriptor.revents & POLLIN) == 0) {
+        return 0;
+    }
+    client_fd = accept(context->server_fd, NULL, NULL);
+    if (client_fd < 0) {
+        return 1;
+    }
+    if (secdat_session_agent_handle_client(
+            client_fd,
+            context->server_fd,
+            context->record,
+            &should_exit,
+            &preserve_socket,
+            context->gc_wake
+        ) != 0) {
+        close(client_fd);
+    }
+    if (should_exit) {
+        context->should_exit = 1;
+        context->preserve_socket = preserve_socket;
+        return 1;
+    }
+    return secdat_session_record_is_gc_eligible(context->record) ? 0 : 1;
+}
+
+static int secdat_gc_agent_still_eligible(void *opaque)
+{
+    struct secdat_gc_agent_service_context *context = opaque;
+
+    return secdat_session_record_is_gc_eligible(context->record);
+}
+
 static int secdat_run_session_agent_loop(
     int server_fd,
     const char *socket_path,
+    const char *owner_domain_id,
     struct secdat_session_record *initial_record
 )
 {
@@ -7181,6 +7686,8 @@ static int secdat_run_session_agent_loop(
     int should_exit;
     int preserve_request;
     int preserve_socket = 0;
+    int gc_wake = 1;
+    int64_t next_gc_rescan_ms = 0;
     struct stat socket_identity;
     int socket_identity_valid = 0;
     struct secdat_session_record record = *initial_record;
@@ -7191,25 +7698,94 @@ static int secdat_run_session_agent_loop(
     }
     memset(initial_record, 0, sizeof(*initial_record));
     for (;;) {
-        client_fd = accept(server_fd, NULL, NULL);
-        if (client_fd < 0) {
-            if (errno == EINTR) {
-                continue;
+        struct pollfd descriptor;
+        struct timespec monotonic_now;
+        int64_t now_ms;
+        int timeout_ms = 30000;
+        int poll_result;
+
+        secdat_session_record_expire_if_needed(&record);
+        if (clock_gettime(CLOCK_MONOTONIC, &monotonic_now) != 0) {
+            break;
+        }
+        now_ms = (int64_t)monotonic_now.tv_sec * 1000
+            + monotonic_now.tv_nsec / 1000000;
+        if (gc_wake || next_gc_rescan_ms <= now_ms) {
+            timeout_ms = 0;
+        } else if (next_gc_rescan_ms - now_ms < timeout_ms) {
+            timeout_ms = (int)(next_gc_rescan_ms - now_ms);
+        }
+        if (record.master_key[0] != '\0') {
+            time_t realtime_now = time(NULL);
+
+            if (realtime_now != (time_t)-1
+                && record.expires_at > realtime_now
+                && record.expires_at - realtime_now <= timeout_ms / 1000) {
+                timeout_ms = (int)(record.expires_at - realtime_now) * 1000;
             }
+        }
+        descriptor.fd = server_fd;
+        descriptor.events = POLLIN;
+        descriptor.revents = 0;
+        do {
+            poll_result = poll(&descriptor, 1, timeout_ms);
+        } while (poll_result < 0 && errno == EINTR);
+        if (poll_result < 0) {
             break;
         }
-        if (secdat_session_agent_handle_client(
-                client_fd,
-                server_fd,
-                &record,
-                &should_exit,
-                &preserve_request
-            ) != 0) {
-            close(client_fd);
+        if (poll_result > 0 && (descriptor.revents & POLLIN) != 0) {
+            client_fd = accept(server_fd, NULL, NULL);
+            if (client_fd >= 0) {
+                if (secdat_session_agent_handle_client(
+                        client_fd,
+                        server_fd,
+                        &record,
+                        &should_exit,
+                        &preserve_request,
+                        &gc_wake
+                    ) != 0) {
+                    close(client_fd);
+                }
+                if (should_exit) {
+                    preserve_socket = preserve_request;
+                    break;
+                }
+            }
         }
-        if (should_exit) {
-            preserve_socket = preserve_request;
+        secdat_session_record_expire_if_needed(&record);
+        if (clock_gettime(CLOCK_MONOTONIC, &monotonic_now) != 0) {
             break;
+        }
+        now_ms = (int64_t)monotonic_now.tv_sec * 1000
+            + monotonic_now.tv_nsec / 1000000;
+        if ((gc_wake || now_ms >= next_gc_rescan_ms)
+            && secdat_domain_id_is_valid(owner_domain_id)
+            && secdat_session_record_is_gc_eligible(&record)) {
+            struct secdat_gc_agent_service_context service_context = {
+                .server_fd = server_fd,
+                .record = &record,
+                .gc_wake = &gc_wake,
+            };
+            struct secdat_gc_scan_control control = {
+                .service_ready = secdat_gc_agent_service_ready,
+                .still_eligible = secdat_gc_agent_still_eligible,
+                .context = &service_context,
+                .service_deadline_ms = now_ms
+                    + SECDAT_GC_SCAN_TIME_BUDGET_MS,
+                .slice_deadline_ms = now_ms
+                    + SECDAT_GC_SLICE_TIME_BUDGET_MS,
+            };
+
+            (void)secdat_gc_agent_collect_owner(owner_domain_id, &control);
+            if (service_context.should_exit) {
+                preserve_socket = service_context.preserve_socket;
+                break;
+            }
+            gc_wake = 0;
+            next_gc_rescan_ms = now_ms + 1000;
+        } else if (gc_wake || now_ms >= next_gc_rescan_ms) {
+            gc_wake = 0;
+            next_gc_rescan_ms = now_ms + 30000;
         }
     }
 
@@ -7262,6 +7838,7 @@ static void secdat_test_delay_agent_ready(void)
 
 static int secdat_run_session_agent(
     const char *socket_path,
+    const char *owner_domain_id,
     int ready_fd,
     int startup_lock_fd
 )
@@ -7326,7 +7903,12 @@ static int secdat_run_session_agent(
         return 1;
     }
     close(startup_lock_fd);
-    return secdat_run_session_agent_loop(server_fd, socket_path, &record);
+    return secdat_run_session_agent_loop(
+        server_fd,
+        socket_path,
+        owner_domain_id,
+        &record
+    );
 }
 
 static int secdat_spawn_session_agent(const char *domain_id)
@@ -7432,6 +8014,7 @@ static int secdat_spawn_session_agent(const char *domain_id)
 
         _exit(secdat_run_session_agent(
             socket_path,
+            domain_id,
             ready_sockets[1],
             startup_lock_fd
         ) == 0 ? 0 : 1);
@@ -7880,6 +8463,7 @@ static int secdat_session_agent_connect_chain_details(const struct secdat_domain
 static int secdat_run_handover_successor(
     int server_fd,
     const char *socket_path,
+    const char *owner_domain_id,
     struct secdat_session_record *record,
     int activation_fd
 )
@@ -7953,7 +8537,12 @@ static int secdat_run_handover_successor(
         return 1;
     }
     close(activation_fd);
-    return secdat_run_session_agent_loop(server_fd, socket_path, record);
+    return secdat_run_session_agent_loop(
+        server_fd,
+        socket_path,
+        owner_domain_id,
+        record
+    );
 }
 
 static void secdat_session_agent_abort_handover(
@@ -8113,6 +8702,7 @@ static int secdat_session_agent_handover(const char *domain_id)
         _exit(secdat_run_handover_successor(
             server_fd,
             socket_path,
+            domain_id,
             &imported,
             activation[1]
         ) == 0 ? 0 : 1);
@@ -10694,6 +11284,41 @@ static int secdat_mutation_lock_acquire(int *owned)
     secdat_command_transaction_lock_fd = secdat_transaction_open_lock(
         transactions_root
     );
+    if (secdat_command_transaction_lock_fd < 0) {
+        return 1;
+    }
+    secdat_command_transaction_lock_pid = current_pid;
+    *owned = 1;
+    return 0;
+}
+
+static int secdat_mutation_lock_try_acquire(int *owned)
+{
+    char transactions_root[PATH_MAX];
+    pid_t current_pid = getpid();
+
+    *owned = 0;
+    if (secdat_command_transaction_lock_fd >= 0
+        && secdat_command_transaction_lock_pid == current_pid) {
+        return 0;
+    }
+    if (secdat_command_transaction_lock_fd >= 0) {
+        close(secdat_command_transaction_lock_fd);
+        secdat_command_transaction_lock_fd = -1;
+        secdat_command_transaction_lock_pid = 0;
+    }
+    if (secdat_transaction_ensure_root(
+            transactions_root,
+            sizeof(transactions_root)
+        ) != 0) {
+        return 1;
+    }
+    secdat_command_transaction_lock_fd = secdat_transaction_open_lock_nonblocking(
+        transactions_root
+    );
+    if (secdat_command_transaction_lock_fd == -2) {
+        return 2;
+    }
     if (secdat_command_transaction_lock_fd < 0) {
         return 1;
     }
@@ -15291,6 +15916,1213 @@ static int secdat_generate_uuid_v4(char *buffer, size_t size)
     return 0;
 }
 
+static void secdat_gc_encode_u32(uint32_t value, unsigned char encoded[4])
+{
+    encoded[0] = (unsigned char)(value >> 24);
+    encoded[1] = (unsigned char)(value >> 16);
+    encoded[2] = (unsigned char)(value >> 8);
+    encoded[3] = (unsigned char)value;
+}
+
+static int secdat_gc_candidate_handle(
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *secret_id,
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1]
+)
+{
+    const char *parts[3];
+    EVP_MD_CTX *context = NULL;
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_length = 0;
+    size_t part_index;
+    size_t index;
+    int result = 1;
+
+    parts[0] = owner_domain_id;
+    parts[1] = secdat_effective_store_name(owner_store_name);
+    parts[2] = secret_id;
+    context = EVP_MD_CTX_new();
+    if (context == NULL
+        || EVP_DigestInit_ex(context, EVP_sha256(), NULL) != 1) {
+        goto cleanup;
+    }
+    for (part_index = 0; part_index < 3; part_index += 1) {
+        size_t length = strlen(parts[part_index]);
+        unsigned char encoded_length[4];
+
+        if (length > UINT32_MAX) {
+            goto cleanup;
+        }
+        secdat_gc_encode_u32((uint32_t)length, encoded_length);
+        if (EVP_DigestUpdate(
+                context,
+                encoded_length,
+                sizeof(encoded_length)
+            ) != 1
+            || EVP_DigestUpdate(context, parts[part_index], length) != 1) {
+            goto cleanup;
+        }
+    }
+    if (EVP_DigestFinal_ex(context, digest, &digest_length) != 1
+        || digest_length != 32) {
+        goto cleanup;
+    }
+    for (index = 0; index < digest_length; index += 1) {
+        snprintf(handle + index * 2, 3, "%02x", digest[index]);
+    }
+    handle[SECDAT_SHA256_HEX_LENGTH] = '\0';
+    result = 0;
+
+cleanup:
+    EVP_MD_CTX_free(context);
+    secdat_secure_clear(digest, sizeof(digest));
+    if (result != 0) {
+        fprintf(stderr, _("failed to calculate GC candidate handle\n"));
+    }
+    return result;
+}
+
+static int secdat_gc_candidate_path(
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *secret_id,
+    char *path,
+    size_t path_size,
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1]
+)
+{
+    char state_dir[PATH_MAX];
+    char *escaped_store = NULL;
+    int result = 1;
+
+    if (!secdat_domain_id_is_valid(owner_domain_id)
+        || !secdat_uuid_is_valid(secret_id)
+        || secdat_escape_component(
+            secdat_effective_store_name(owner_store_name),
+            &escaped_store
+        ) != 0
+        || escaped_store[0] == '\0'
+        || strchr(escaped_store, '/') != NULL
+        || secdat_gc_candidate_handle(
+            owner_domain_id,
+            owner_store_name,
+            secret_id,
+            handle
+        ) != 0
+        || secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || snprintf(
+            path,
+            path_size,
+            "%s/gc/candidates/by-owner/%s/%s/%s.gc",
+            state_dir,
+            owner_domain_id,
+            escaped_store,
+            handle
+        ) >= (int)path_size) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(escaped_store);
+    return result;
+}
+
+static int secdat_gc_owner_store_shard_path(
+    const char *subtree,
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    char *path,
+    size_t path_size,
+    char **escaped_store_out
+)
+{
+    char state_dir[PATH_MAX];
+    char *escaped_store = NULL;
+
+    *escaped_store_out = NULL;
+    if ((strcmp(subtree, "candidates") != 0
+            && strcmp(subtree, "quarantine") != 0)
+        || !secdat_domain_id_is_valid(owner_domain_id)
+        || secdat_escape_component(
+            secdat_effective_store_name(owner_store_name),
+            &escaped_store
+        ) != 0
+        || escaped_store[0] == '\0'
+        || strchr(escaped_store, '/') != NULL
+        || secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || snprintf(
+            path,
+            path_size,
+            "%s/gc/%s/by-owner/%s/%s",
+            state_dir,
+            subtree,
+            owner_domain_id,
+            escaped_store
+        ) >= (int)path_size) {
+        free(escaped_store);
+        return 1;
+    }
+    *escaped_store_out = escaped_store;
+    return 0;
+}
+
+static int secdat_gc_lowercase_uuid_is_valid(const char *value)
+{
+    size_t index;
+
+    if (!secdat_uuid_is_valid(value)) {
+        return 0;
+    }
+    for (index = 0; index < 36; index += 1) {
+        if (value[index] >= 'A' && value[index] <= 'F') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int secdat_gc_parse_i64_canonical(
+    const char *value,
+    int64_t *parsed
+)
+{
+    char canonical[32];
+    char *end = NULL;
+    long long number;
+
+    if (value == NULL || value[0] == '\0') {
+        return 1;
+    }
+    errno = 0;
+    number = strtoll(value, &end, 10);
+    if (errno != 0
+        || end == value
+        || *end != '\0'
+        || snprintf(canonical, sizeof(canonical), "%lld", number)
+            >= (int)sizeof(canonical)
+        || strcmp(canonical, value) != 0) {
+        return 1;
+    }
+    *parsed = (int64_t)number;
+    return 0;
+}
+
+static int secdat_gc_parse_u32_canonical(
+    const char *value,
+    uint32_t *parsed
+)
+{
+    char canonical[16];
+    char *end = NULL;
+    unsigned long long number;
+
+    if (value == NULL || value[0] == '\0' || value[0] == '-') {
+        return 1;
+    }
+    errno = 0;
+    number = strtoull(value, &end, 10);
+    if (errno != 0
+        || end == value
+        || *end != '\0'
+        || number > UINT32_MAX
+        || snprintf(canonical, sizeof(canonical), "%llu", number)
+            >= (int)sizeof(canonical)
+        || strcmp(canonical, value) != 0) {
+        return 1;
+    }
+    *parsed = (uint32_t)number;
+    return 0;
+}
+
+static int secdat_gc_candidate_error_is_retry(const char *value)
+{
+    return strcmp(value, "scan-incomplete") == 0
+        || strcmp(value, "io-error") == 0;
+}
+
+static int secdat_gc_candidate_error_is_manual(const char *value)
+{
+    return strcmp(value, "owner-missing") == 0
+        || strcmp(value, "invalid-object") == 0
+        || strcmp(value, "unknown-artifact") == 0;
+}
+
+static int secdat_gc_candidate_split_fields(
+    const unsigned char *data,
+    size_t length,
+    char **text_out,
+    char *values[10]
+)
+{
+    static const char *prefixes[] = {
+        "owner_domain_id=", "owner_store=", "secret_id=", "enqueue_id=",
+        "enqueued_at_ns=", "attempt_count=", "last_attempt_at_ns=",
+        "next_attempt_at_ns=", "last_error=", "manual_required=",
+    };
+    char *lines[11];
+    char *cursor;
+    size_t index;
+
+    *text_out = NULL;
+    if (data == NULL || length == 0
+        || length > SECDAT_GC_CANDIDATE_MAX_BYTES
+        || data[length - 1] != '\n'
+        || memchr(data, '\0', length) != NULL) {
+        return 1;
+    }
+    *text_out = malloc(length + 1);
+    if (*text_out == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    memcpy(*text_out, data, length);
+    (*text_out)[length] = '\0';
+    cursor = *text_out;
+    for (index = 0; index < 11; index += 1) {
+        char *newline = strchr(cursor, '\n');
+
+        if (newline == NULL) {
+            return 1;
+        }
+        *newline = '\0';
+        lines[index] = cursor;
+        cursor = newline + 1;
+    }
+    if (*cursor != '\0' || strcmp(lines[0], secdat_gc_candidate_magic) != 0) {
+        return 1;
+    }
+    for (index = 0; index < 10; index += 1) {
+        size_t prefix_length = strlen(prefixes[index]);
+
+        if (strncmp(lines[index + 1], prefixes[index], prefix_length) != 0) {
+            return 1;
+        }
+        values[index] = lines[index + 1] + prefix_length;
+    }
+    return 0;
+}
+
+static int secdat_gc_candidate_validate_owner_store(
+    char *values[10],
+    const char *expected_owner_domain_id,
+    const char *expected_store_escaped,
+    char **decoded_store
+)
+{
+    char *canonical_store = NULL;
+    int result = 1;
+
+    *decoded_store = NULL;
+    if (!secdat_domain_id_is_valid(values[0])
+        || expected_owner_domain_id == NULL
+        || strcmp(values[0], expected_owner_domain_id) != 0
+        || values[1][0] == '\0'
+        || expected_store_escaped == NULL
+        || strcmp(values[1], expected_store_escaped) != 0
+        || secdat_unescape_component(values[1], decoded_store) != 0
+        || (*decoded_store)[0] == '\0'
+        || secdat_escape_component(*decoded_store, &canonical_store) != 0
+        || strcmp(values[1], canonical_store) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(canonical_store);
+    if (result != 0) {
+        free(*decoded_store);
+        *decoded_store = NULL;
+    }
+    return result;
+}
+
+static int secdat_gc_candidate_parse_schedule(
+    char *values[10],
+    struct secdat_gc_candidate_record *parsed,
+    uint32_t *manual_required
+)
+{
+    parsed->has_last_attempt_at = strcmp(values[6], "-") != 0;
+    parsed->has_next_attempt_at = strcmp(values[7], "-") != 0;
+    if (secdat_gc_parse_i64_canonical(values[4], &parsed->enqueued_at_ns) != 0
+        || secdat_gc_parse_u32_canonical(values[5], &parsed->attempt_count) != 0
+        || (parsed->has_last_attempt_at
+            && secdat_gc_parse_i64_canonical(
+                values[6],
+                &parsed->last_attempt_at_ns
+            ) != 0)
+        || (parsed->has_next_attempt_at
+            && secdat_gc_parse_i64_canonical(
+                values[7],
+                &parsed->next_attempt_at_ns
+            ) != 0)
+        || secdat_gc_parse_u32_canonical(values[9], manual_required) != 0
+        || *manual_required > 1) {
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_gc_candidate_is_pending(
+    const struct secdat_gc_candidate_record *parsed,
+    uint32_t manual_required,
+    const char *last_error
+)
+{
+    return manual_required == 0
+        && parsed->attempt_count == 0
+        && !parsed->has_last_attempt_at
+        && parsed->has_next_attempt_at
+        && strcmp(last_error, "none") == 0;
+}
+
+static int secdat_gc_candidate_is_retrying(
+    const struct secdat_gc_candidate_record *parsed,
+    uint32_t manual_required,
+    const char *last_error
+)
+{
+    return manual_required == 0
+        && parsed->attempt_count > 0
+        && parsed->has_last_attempt_at
+        && parsed->has_next_attempt_at
+        && secdat_gc_candidate_error_is_retry(last_error);
+}
+
+static int secdat_gc_candidate_is_manual(
+    const struct secdat_gc_candidate_record *parsed,
+    uint32_t manual_required,
+    const char *last_error
+)
+{
+    return manual_required == 1
+        && parsed->attempt_count > 0
+        && parsed->has_last_attempt_at
+        && !parsed->has_next_attempt_at
+        && secdat_gc_candidate_error_is_manual(last_error);
+}
+
+static int secdat_gc_candidate_set_state(
+    struct secdat_gc_candidate_record *parsed,
+    uint32_t manual_required,
+    const char *last_error
+)
+{
+
+    if (secdat_gc_candidate_is_pending(parsed, manual_required, last_error)) {
+        parsed->state = SECDAT_GC_CANDIDATE_PENDING;
+        return 0;
+    }
+    if (secdat_gc_candidate_is_retrying(parsed, manual_required, last_error)) {
+        parsed->state = SECDAT_GC_CANDIDATE_RETRY_PENDING;
+        return 0;
+    }
+    if (secdat_gc_candidate_is_manual(parsed, manual_required, last_error)) {
+        parsed->state = SECDAT_GC_CANDIDATE_MANUAL_REQUIRED;
+        return 0;
+    }
+    return 1;
+}
+
+static int secdat_gc_candidate_copy_fields(
+    struct secdat_gc_candidate_record *parsed,
+    char *values[10],
+    const char *decoded_store,
+    const char *calculated_handle
+)
+{
+    return secdat_copy_string(
+            parsed->owner_domain_id,
+            sizeof(parsed->owner_domain_id),
+            values[0]
+        ) != 0
+        || secdat_copy_string(
+            parsed->owner_store_name,
+            sizeof(parsed->owner_store_name),
+            decoded_store
+        ) != 0
+        || secdat_copy_string(
+            parsed->owner_store_escaped,
+            sizeof(parsed->owner_store_escaped),
+            values[1]
+        ) != 0
+        || secdat_copy_string(parsed->secret_id, sizeof(parsed->secret_id), values[2]) != 0
+        || secdat_copy_string(parsed->enqueue_id, sizeof(parsed->enqueue_id), values[3]) != 0
+        || secdat_copy_string(parsed->handle, sizeof(parsed->handle), calculated_handle) != 0
+        || secdat_copy_string(parsed->last_error, sizeof(parsed->last_error), values[8]) != 0;
+}
+
+static int secdat_gc_candidate_parse(
+    const unsigned char *data,
+    size_t length,
+    const char *expected_owner_domain_id,
+    const char *expected_store_escaped,
+    const char *expected_handle,
+    struct secdat_gc_candidate_record *record
+)
+{
+    struct secdat_gc_candidate_record parsed;
+    char *text = NULL;
+    char *values[10];
+    char *decoded_store = NULL;
+    char calculated_handle[SECDAT_SHA256_HEX_LENGTH + 1];
+    uint32_t manual_required = 0;
+    int result = 1;
+
+    memset(record, 0, sizeof(*record));
+    memset(&parsed, 0, sizeof(parsed));
+    if (secdat_gc_candidate_split_fields(data, length, &text, values) != 0
+        || secdat_gc_candidate_validate_owner_store(
+            values,
+            expected_owner_domain_id,
+            expected_store_escaped,
+            &decoded_store
+        ) != 0
+        || !secdat_gc_lowercase_uuid_is_valid(values[2])
+        || !secdat_gc_lowercase_uuid_is_valid(values[3])
+        || secdat_gc_candidate_parse_schedule(
+            values,
+            &parsed,
+            &manual_required
+        ) != 0
+        || secdat_gc_candidate_handle(
+            values[0],
+            decoded_store,
+            values[2],
+            calculated_handle
+        ) != 0
+        || expected_handle == NULL
+        || strcmp(calculated_handle, expected_handle) != 0
+        || secdat_gc_candidate_set_state(
+            &parsed,
+            manual_required,
+            values[8]
+        ) != 0
+        || secdat_gc_candidate_copy_fields(
+            &parsed,
+            values,
+            decoded_store,
+            calculated_handle
+        ) != 0) {
+        goto cleanup;
+    }
+    *record = parsed;
+    result = 0;
+
+cleanup:
+    free(decoded_store);
+    if (text != NULL) {
+        secdat_secure_clear((unsigned char *)text, length);
+    }
+    free(text);
+    return result;
+}
+
+static int secdat_gc_open_secure_regular(
+    const char *path,
+    size_t minimum_size,
+    size_t maximum_size,
+    int *descriptor,
+    size_t *length
+)
+{
+    struct stat status;
+
+    *descriptor = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (*descriptor < 0) {
+        return errno == ENOENT ? 2 : 1;
+    }
+    if (fstat(*descriptor, &status) != 0
+        || !S_ISREG(status.st_mode)
+        || (status.st_mode & 07777) != 0600
+        || status.st_uid != geteuid()
+        || status.st_size < 0
+        || (uintmax_t)status.st_size < minimum_size
+        || (uintmax_t)status.st_size > maximum_size) {
+        close(*descriptor);
+        *descriptor = -1;
+        return 1;
+    }
+    *length = (size_t)status.st_size;
+    return 0;
+}
+
+static int secdat_gc_read_descriptor_fully(
+    int descriptor,
+    unsigned char *data,
+    size_t length
+)
+{
+    size_t offset = 0;
+
+    while (offset < length) {
+        ssize_t count = read(descriptor, data + offset, length - offset);
+
+        if (count < 0 && errno == EINTR) {
+            continue;
+        }
+        if (count <= 0) {
+            return 1;
+        }
+        offset += (size_t)count;
+    }
+    return 0;
+}
+
+static int secdat_gc_read_candidate(
+    const char *path,
+    const char *owner_domain_id,
+    const char *store_escaped,
+    const char *handle,
+    struct secdat_gc_candidate_record *record
+)
+{
+    unsigned char *data = NULL;
+    size_t length = 0;
+    int descriptor = -1;
+    int result = 1;
+
+    memset(record, 0, sizeof(*record));
+    if (secdat_gc_open_secure_regular(
+            path,
+            1,
+            SECDAT_GC_CANDIDATE_MAX_BYTES,
+            &descriptor,
+            &length
+        ) != 0) {
+        goto cleanup;
+    }
+    data = malloc(length);
+    if (data == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    if (secdat_gc_read_descriptor_fully(descriptor, data, length) != 0
+        || secdat_gc_candidate_parse(
+            data,
+            length,
+            owner_domain_id,
+            store_escaped,
+            handle,
+            record
+        ) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    if (descriptor >= 0) {
+        close(descriptor);
+    }
+    if (data != NULL) {
+        secdat_secure_clear(data, length);
+    }
+    free(data);
+    return result;
+}
+
+static int secdat_gc_inspect_candidate_for_object(
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *secret_id,
+    int *exists,
+    int *valid
+)
+{
+    char path[PATH_MAX];
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+    char *escaped_store = NULL;
+    struct secdat_gc_candidate_record candidate;
+    struct stat status;
+    int result = 1;
+
+    *exists = 0;
+    *valid = 0;
+    if (secdat_gc_candidate_path(
+            owner_domain_id,
+            owner_store_name,
+            secret_id,
+            path,
+            sizeof(path),
+            handle
+        ) != 0) {
+        return 1;
+    }
+    if (lstat(path, &status) != 0) {
+        return errno == ENOENT ? 0 : 1;
+    }
+    *exists = 1;
+    if (secdat_escape_component(
+            secdat_effective_store_name(owner_store_name),
+            &escaped_store
+        ) != 0) {
+        goto cleanup;
+    }
+    *valid = secdat_gc_read_candidate(
+            path,
+            owner_domain_id,
+            escaped_store,
+            handle,
+            &candidate
+        ) == 0;
+    result = 0;
+
+cleanup:
+    free(escaped_store);
+    return result;
+}
+
+static int secdat_gc_read_reference_epoch(
+    char epoch_id[37],
+    int *exists,
+    int *valid
+)
+{
+    static const char prefix[] = "SECDATREFEPOCH1\nreference_epoch=";
+    char state_dir[PATH_MAX];
+    char path[PATH_MAX];
+    char payload[sizeof(prefix) - 1 + 36 + 2];
+    size_t length = 0;
+    int descriptor = -1;
+    int open_status;
+    int result = 1;
+
+    epoch_id[0] = '\0';
+    *exists = 0;
+    *valid = 0;
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || secdat_join_path(
+            path,
+            sizeof(path),
+            state_dir,
+            "gc/reference-epoch"
+        ) != 0) {
+        return 1;
+    }
+    open_status = secdat_gc_open_secure_regular(
+        path,
+        sizeof(prefix) - 1 + 36 + 1,
+        sizeof(prefix) - 1 + 36 + 1,
+        &descriptor,
+        &length
+    );
+    if (open_status == 2) {
+        return 0;
+    }
+    if (open_status != 0) {
+        if (descriptor < 0 && access(path, F_OK) == 0) {
+            *exists = 1;
+            return 0;
+        }
+        return 1;
+    }
+    *exists = 1;
+    if (secdat_gc_read_descriptor_fully(
+            descriptor,
+            (unsigned char *)payload,
+            length
+        ) != 0) {
+        goto cleanup;
+    }
+    payload[length] = '\0';
+    if (memcmp(payload, prefix, sizeof(prefix) - 1) == 0
+        && payload[length - 1] == '\n'
+        && (memcpy(
+                epoch_id,
+                payload + sizeof(prefix) - 1,
+                36
+            ),
+            epoch_id[36] = '\0',
+            secdat_gc_lowercase_uuid_is_valid(epoch_id))) {
+        *valid = 1;
+    } else {
+        epoch_id[0] = '\0';
+    }
+    result = 0;
+
+cleanup:
+    if (descriptor >= 0) {
+        close(descriptor);
+    }
+    secdat_secure_clear((unsigned char *)payload, sizeof(payload));
+    return result;
+}
+
+static int secdat_gc_realtime_ns(int64_t *value)
+{
+    struct timespec now;
+
+    if (clock_gettime(CLOCK_REALTIME, &now) != 0
+        || now.tv_sec < 0
+        || now.tv_nsec < 0
+        || now.tv_nsec >= 1000000000L
+        || (uint64_t)now.tv_sec
+            > (uint64_t)(INT64_MAX - now.tv_nsec) / UINT64_C(1000000000)) {
+        fprintf(stderr, _("failed to read the GC scheduling clock\n"));
+        return 1;
+    }
+    *value = (int64_t)now.tv_sec * INT64_C(1000000000)
+        + (int64_t)now.tv_nsec;
+    return 0;
+}
+
+static int secdat_gc_write_pending_candidate(
+    const struct secdat_gc_topology_effect *effect,
+    size_t post_refcount,
+    int post_refcount_valid,
+    int64_t enqueued_at_ns
+)
+{
+    char candidate_path[PATH_MAX];
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+    char enqueue_id[37];
+    char *escaped_store = NULL;
+    char payload[1024];
+    int64_t delay = post_refcount_valid && post_refcount > 0
+        ? SECDAT_GC_REFERENCED_DELAY_NS
+        : SECDAT_GC_DEBOUNCE_NS;
+    int64_t next_attempt_at_ns;
+    int written;
+    int result = 1;
+
+    if (enqueued_at_ns > INT64_MAX - delay
+        || secdat_gc_candidate_path(
+            effect->owner_domain_id,
+            effect->owner_store_name,
+            effect->secret_id,
+            candidate_path,
+            sizeof(candidate_path),
+            handle
+        ) != 0
+        || secdat_generate_uuid_v4(enqueue_id, sizeof(enqueue_id)) != 0
+        || secdat_escape_component(
+            secdat_effective_store_name(effect->owner_store_name),
+            &escaped_store
+        ) != 0) {
+        goto cleanup;
+    }
+    next_attempt_at_ns = enqueued_at_ns + delay;
+    written = snprintf(
+        payload,
+        sizeof(payload),
+        "%s\n"
+        "owner_domain_id=%s\n"
+        "owner_store=%s\n"
+        "secret_id=%s\n"
+        "enqueue_id=%s\n"
+        "enqueued_at_ns=%lld\n"
+        "attempt_count=0\n"
+        "last_attempt_at_ns=-\n"
+        "next_attempt_at_ns=%lld\n"
+        "last_error=none\n"
+        "manual_required=0\n",
+        secdat_gc_candidate_magic,
+        effect->owner_domain_id,
+        escaped_store,
+        effect->secret_id,
+        enqueue_id,
+        (long long)enqueued_at_ns,
+        (long long)next_attempt_at_ns
+    );
+    if (written < 0
+        || (size_t)written >= sizeof(payload)
+        || (size_t)written > SECDAT_GC_CANDIDATE_MAX_BYTES
+        || secdat_atomic_write_file(
+            candidate_path,
+            (const unsigned char *)payload,
+            (size_t)written
+        ) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(escaped_store);
+    return result;
+}
+
+static int secdat_gc_write_attempt_candidate(
+    const struct secdat_gc_candidate_record *candidate,
+    int manual_required,
+    const char *last_error,
+    int64_t attempt_at_ns
+)
+{
+    static const int64_t retry_delays[] = {
+        INT64_C(1000000000),
+        INT64_C(5000000000),
+        INT64_C(30000000000),
+        INT64_C(300000000000),
+        INT64_C(3600000000000),
+    };
+    char path[PATH_MAX];
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+    char payload[1024];
+    uint32_t attempt_count = candidate->attempt_count == UINT32_MAX
+        ? UINT32_MAX
+        : candidate->attempt_count + 1;
+    size_t delay_index = attempt_count > 0
+        ? (size_t)attempt_count - 1
+        : 0;
+    int64_t next_attempt_at_ns = 0;
+    int written;
+
+    if (delay_index >= sizeof(retry_delays) / sizeof(retry_delays[0])) {
+        delay_index = sizeof(retry_delays) / sizeof(retry_delays[0]) - 1;
+    }
+    if (!manual_required
+        && attempt_at_ns > INT64_MAX - retry_delays[delay_index]) {
+        return 1;
+    }
+    next_attempt_at_ns = attempt_at_ns + retry_delays[delay_index];
+    if (secdat_gc_candidate_path(
+            candidate->owner_domain_id,
+            candidate->owner_store_name,
+            candidate->secret_id,
+            path,
+            sizeof(path),
+            handle
+        ) != 0
+        || strcmp(handle, candidate->handle) != 0) {
+        return 1;
+    }
+    if (manual_required) {
+        written = snprintf(
+            payload,
+            sizeof(payload),
+            "%s\n"
+            "owner_domain_id=%s\n"
+            "owner_store=%s\n"
+            "secret_id=%s\n"
+            "enqueue_id=%s\n"
+            "enqueued_at_ns=%lld\n"
+            "attempt_count=%u\n"
+            "last_attempt_at_ns=%lld\n"
+            "next_attempt_at_ns=-\n"
+            "last_error=%s\n"
+            "manual_required=1\n",
+            secdat_gc_candidate_magic,
+            candidate->owner_domain_id,
+            candidate->owner_store_escaped,
+            candidate->secret_id,
+            candidate->enqueue_id,
+            (long long)candidate->enqueued_at_ns,
+            attempt_count,
+            (long long)attempt_at_ns,
+            last_error
+        );
+    } else {
+        written = snprintf(
+            payload,
+            sizeof(payload),
+            "%s\n"
+            "owner_domain_id=%s\n"
+            "owner_store=%s\n"
+            "secret_id=%s\n"
+            "enqueue_id=%s\n"
+            "enqueued_at_ns=%lld\n"
+            "attempt_count=%u\n"
+            "last_attempt_at_ns=%lld\n"
+            "next_attempt_at_ns=%lld\n"
+            "last_error=%s\n"
+            "manual_required=0\n",
+            secdat_gc_candidate_magic,
+            candidate->owner_domain_id,
+            candidate->owner_store_escaped,
+            candidate->secret_id,
+            candidate->enqueue_id,
+            (long long)candidate->enqueued_at_ns,
+            attempt_count,
+            (long long)attempt_at_ns,
+            (long long)next_attempt_at_ns,
+            last_error
+        );
+    }
+    if (written < 0
+        || (size_t)written >= sizeof(payload)
+        || (size_t)written > SECDAT_GC_CANDIDATE_MAX_BYTES) {
+        return 1;
+    }
+    return secdat_atomic_write_file(
+        path,
+        (const unsigned char *)payload,
+        (size_t)written
+    );
+}
+
+static int secdat_gc_cancel_candidate(
+    const struct secdat_gc_topology_effect *effect
+)
+{
+    char candidate_path[PATH_MAX];
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+
+    return secdat_gc_candidate_path(
+            effect->owner_domain_id,
+            effect->owner_store_name,
+            effect->secret_id,
+            candidate_path,
+            sizeof(candidate_path),
+            handle
+        ) != 0
+        || secdat_remove_if_exists(candidate_path) != 0;
+}
+
+static void secdat_gc_topology_plan_reset(
+    struct secdat_gc_topology_plan *plan
+)
+{
+    free(plan->items);
+    memset(plan, 0, sizeof(*plan));
+}
+
+static struct secdat_gc_topology_effect *secdat_gc_topology_effect_find(
+    struct secdat_gc_topology_plan *plan,
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *secret_id
+)
+{
+    const char *effective_store = secdat_effective_store_name(owner_store_name);
+    size_t index;
+
+    for (index = 0; index < plan->count; index += 1) {
+        struct secdat_gc_topology_effect *effect = &plan->items[index];
+
+        if (strcmp(effect->owner_domain_id, owner_domain_id) == 0
+            && strcmp(effect->owner_store_name, effective_store) == 0
+            && strcmp(effect->secret_id, secret_id) == 0) {
+            return effect;
+        }
+    }
+    return NULL;
+}
+
+static struct secdat_gc_topology_effect *secdat_gc_topology_effect_get(
+    struct secdat_gc_topology_plan *plan,
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *secret_id
+)
+{
+    struct secdat_gc_topology_effect *effect;
+    struct secdat_gc_topology_effect *resized;
+    size_t next_capacity;
+
+    if (!secdat_prepared_write_set.active
+        || !secdat_domain_id_is_valid(owner_domain_id)
+        || !secdat_uuid_is_valid(secret_id)) {
+        fprintf(stderr, _("invalid deferred GC topology effect\n"));
+        return NULL;
+    }
+    effect = secdat_gc_topology_effect_find(
+        plan,
+        owner_domain_id,
+        owner_store_name,
+        secret_id
+    );
+    if (effect != NULL) {
+        return effect;
+    }
+    if (plan->count == plan->capacity) {
+        next_capacity = plan->capacity == 0 ? 4 : plan->capacity * 2;
+        resized = realloc(plan->items, next_capacity * sizeof(*resized));
+        if (resized == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return NULL;
+        }
+        plan->items = resized;
+        plan->capacity = next_capacity;
+    }
+    effect = &plan->items[plan->count];
+    memset(effect, 0, sizeof(*effect));
+    if (secdat_copy_string(
+            effect->owner_domain_id,
+            sizeof(effect->owner_domain_id),
+            owner_domain_id
+        ) != 0
+        || secdat_copy_string(
+            effect->owner_store_name,
+            sizeof(effect->owner_store_name),
+            secdat_effective_store_name(owner_store_name)
+        ) != 0
+        || secdat_copy_string(
+            effect->secret_id,
+            sizeof(effect->secret_id),
+            secret_id
+        ) != 0) {
+        return NULL;
+    }
+    plan->count += 1;
+    return effect;
+}
+
+static int secdat_gc_topology_record_reference_add(
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *secret_id
+)
+{
+    struct secdat_gc_topology_effect *effect = secdat_gc_topology_effect_get(
+        &secdat_gc_topology_plan,
+        owner_domain_id,
+        owner_store_name,
+        secret_id
+    );
+
+    if (effect == NULL || effect->reference_delta == INT64_MAX) {
+        return 1;
+    }
+    effect->reference_delta += 1;
+    effect->saw_reference_add = 1;
+    return 0;
+}
+
+static int secdat_gc_topology_record_reference_remove(
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *secret_id
+)
+{
+    struct secdat_gc_topology_effect *effect = secdat_gc_topology_effect_get(
+        &secdat_gc_topology_plan,
+        owner_domain_id,
+        owner_store_name,
+        secret_id
+    );
+
+    if (effect == NULL || effect->reference_delta == INT64_MIN) {
+        return 1;
+    }
+    effect->reference_delta -= 1;
+    effect->saw_reference_remove = 1;
+    return 0;
+}
+
+static int secdat_gc_topology_record_reference_present(
+    const char *owner_domain_id,
+    const char *owner_store_name,
+    const char *secret_id
+)
+{
+    struct secdat_gc_topology_effect *effect = secdat_gc_topology_effect_get(
+        &secdat_gc_topology_plan,
+        owner_domain_id,
+        owner_store_name,
+        secret_id
+    );
+
+    if (effect == NULL) {
+        return 1;
+    }
+    effect->saw_reference_present = 1;
+    return 0;
+}
+
+static int secdat_gc_topology_apply_refcount_hint(
+    const struct secdat_gc_topology_effect *effect,
+    size_t *post_refcount,
+    int *post_refcount_valid
+)
+{
+    char object_path[PATH_MAX];
+    struct secdat_v2_secret_object_info object;
+    size_t next_refcount;
+
+    *post_refcount = 0;
+    *post_refcount_valid = 0;
+    if (secdat_build_v2_secret_object_path(
+            effect->owner_domain_id,
+            effect->owner_store_name,
+            effect->secret_id,
+            object_path,
+            sizeof(object_path)
+        ) != 0) {
+        return 1;
+    }
+    if (secdat_read_v2_secret_object_info(
+            object_path,
+            effect->secret_id,
+            &object
+        ) != 0
+        || !object.refcount_present) {
+        return 0;
+    }
+    next_refcount = object.refcount;
+    if (effect->reference_delta < 0) {
+        uint64_t magnitude = effect->reference_delta == INT64_MIN
+            ? UINT64_C(1) << 63
+            : (uint64_t)(-effect->reference_delta);
+
+        next_refcount = magnitude >= next_refcount
+            ? 0
+            : next_refcount - (size_t)magnitude;
+    } else if ((uint64_t)effect->reference_delta > SIZE_MAX - next_refcount) {
+        fprintf(stderr, _("secret reference count is too large\n"));
+        return 1;
+    } else {
+        next_refcount += (size_t)effect->reference_delta;
+    }
+    if (next_refcount != object.refcount
+        && secdat_update_v2_secret_refcount(
+            effect->owner_domain_id,
+            effect->owner_store_name,
+            effect->secret_id,
+            next_refcount
+        ) != 0) {
+        return 1;
+    }
+    *post_refcount = next_refcount;
+    *post_refcount_valid = 1;
+    return 0;
+}
+
+static int secdat_gc_topology_plan_apply(
+    struct secdat_gc_topology_plan *plan
+)
+{
+    int64_t event_time_ns = 0;
+    size_t index;
+
+    if (plan->count > 0 && secdat_gc_realtime_ns(&event_time_ns) != 0) {
+        return 1;
+    }
+    for (index = 0; index < plan->count; index += 1) {
+        const struct secdat_gc_topology_effect *effect = &plan->items[index];
+        size_t post_refcount = 0;
+        int post_refcount_valid = 0;
+
+        if (secdat_gc_topology_apply_refcount_hint(
+                effect,
+                &post_refcount,
+                &post_refcount_valid
+            ) != 0) {
+            return 1;
+        }
+        if (effect->reference_delta < 0
+            || (effect->saw_reference_remove
+                && !effect->saw_reference_add
+                && !effect->saw_reference_present)) {
+            if (secdat_gc_write_pending_candidate(
+                    effect,
+                    post_refcount,
+                    post_refcount_valid,
+                    event_time_ns
+                ) != 0) {
+                return 1;
+            }
+        } else if (effect->saw_reference_add
+            || effect->saw_reference_present) {
+            if (secdat_gc_cancel_candidate(effect) != 0) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 static int secdat_parse_size_value(const char *value, size_t *parsed)
 {
     char *endptr = NULL;
@@ -17765,11 +19597,9 @@ static int secdat_transaction_ensure_root(char *root, size_t root_size)
     return secdat_transaction_validate_directory(root);
 }
 
-static int secdat_transaction_open_lock(const char *root)
+static int secdat_transaction_open_validated_lock_file(const char *root)
 {
     char lock_path[PATH_MAX];
-    const char *test_sync =
-        getenv("SECDAT_TEST_TRANSACTION_LOCK_ATTEMPT_FD");
     struct stat status;
     int descriptor;
 
@@ -17788,27 +19618,73 @@ static int secdat_transaction_open_lock(const char *root)
         fprintf(stderr, _("invalid transaction lock\n"));
         return -1;
     }
-    if (test_sync != NULL) {
-        if (flock(descriptor, LOCK_EX | LOCK_NB) == 0) {
-            if (secdat_test_signal_transaction_lock_attempt('A') != 0) {
-                close(descriptor);
-                return -1;
-            }
-            return descriptor;
-        }
-        if ((errno != EWOULDBLOCK && errno != EAGAIN)
-            || secdat_test_signal_transaction_lock_attempt('B') != 0) {
-            fprintf(stderr, _("failed to lock transactions\n"));
+    return descriptor;
+}
+
+static int secdat_transaction_test_sync_lock(int descriptor)
+{
+    if (flock(descriptor, LOCK_EX | LOCK_NB) == 0) {
+        if (secdat_test_signal_transaction_lock_attempt('A') != 0) {
             close(descriptor);
             return -1;
         }
+        return descriptor;
     }
-    if (flock(descriptor, LOCK_EX) != 0) {
+    if ((errno != EWOULDBLOCK && errno != EAGAIN)
+        || secdat_test_signal_transaction_lock_attempt('B') != 0) {
+        fprintf(stderr, _("failed to lock transactions\n"));
+        close(descriptor);
+        return -1;
+    }
+    return 0;
+}
+
+static int secdat_transaction_acquire_open_lock(
+    int descriptor,
+    int nonblocking
+)
+{
+    if (flock(descriptor, LOCK_EX | (nonblocking ? LOCK_NB : 0)) != 0) {
+        if (nonblocking && (errno == EWOULDBLOCK || errno == EAGAIN)) {
+            close(descriptor);
+            return -2;
+        }
         fprintf(stderr, _("failed to lock transactions\n"));
         close(descriptor);
         return -1;
     }
     return descriptor;
+}
+
+static int secdat_transaction_open_lock_mode(
+    const char *root,
+    int nonblocking
+)
+{
+    int descriptor = secdat_transaction_open_validated_lock_file(root);
+    int test_status;
+
+    if (descriptor < 0) {
+        return -1;
+    }
+    if (!nonblocking
+        && getenv("SECDAT_TEST_TRANSACTION_LOCK_ATTEMPT_FD") != NULL) {
+        test_status = secdat_transaction_test_sync_lock(descriptor);
+        if (test_status != 0) {
+            return test_status;
+        }
+    }
+    return secdat_transaction_acquire_open_lock(descriptor, nonblocking);
+}
+
+static int secdat_transaction_open_lock(const char *root)
+{
+    return secdat_transaction_open_lock_mode(root, 0);
+}
+
+static int secdat_transaction_open_lock_nonblocking(const char *root)
+{
+    return secdat_transaction_open_lock_mode(root, 1);
 }
 
 static void secdat_transaction_reset(struct secdat_transaction *transaction)
@@ -17836,6 +19712,73 @@ static void secdat_transaction_reset(struct secdat_transaction *transaction)
     transaction->lock_fd = -1;
 }
 
+static int secdat_transaction_gc_store_name_is_valid(const char *escaped_store)
+{
+    char *decoded_store = NULL;
+    char *canonical_store = NULL;
+    int valid = 0;
+
+    if (escaped_store != NULL
+        && escaped_store[0] != '\0'
+        && secdat_unescape_component(escaped_store, &decoded_store) == 0
+        && decoded_store[0] != '\0'
+        && secdat_escape_component(decoded_store, &canonical_store) == 0
+        && strcmp(canonical_store, escaped_store) == 0) {
+        valid = 1;
+    }
+    free(decoded_store);
+    free(canonical_store);
+    return valid;
+}
+
+static int secdat_transaction_gc_filename_is_valid(const char *filename)
+{
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+
+    if (filename == NULL
+        || strlen(filename) != SECDAT_SHA256_HEX_LENGTH + 3
+        || strcmp(filename + SECDAT_SHA256_HEX_LENGTH, ".gc") != 0) {
+        return 0;
+    }
+    memcpy(handle, filename, SECDAT_SHA256_HEX_LENGTH);
+    handle[SECDAT_SHA256_HEX_LENGTH] = '\0';
+    return secdat_gc_candidate_handle_is_valid(handle);
+}
+
+static int secdat_transaction_gc_candidate_name_is_valid(const char *name)
+{
+    static const char prefix[] = "gc/candidates/by-owner/";
+    char relative[PATH_MAX];
+    char *owner;
+    char *escaped_store;
+    char *filename;
+    char *extra;
+    char *saveptr = NULL;
+
+    if (strncmp(name, prefix, sizeof(prefix) - 1) != 0
+        || secdat_copy_string(
+            relative,
+            sizeof(relative),
+            name + sizeof(prefix) - 1
+        ) != 0) {
+        return 0;
+    }
+    owner = strtok_r(relative, "/", &saveptr);
+    escaped_store = strtok_r(NULL, "/", &saveptr);
+    filename = strtok_r(NULL, "/", &saveptr);
+    extra = strtok_r(NULL, "/", &saveptr);
+    if (owner == NULL
+        || escaped_store == NULL
+        || filename == NULL
+        || extra != NULL
+        || !secdat_domain_id_is_valid(owner)
+        || !secdat_transaction_gc_store_name_is_valid(escaped_store)
+        || !secdat_transaction_gc_filename_is_valid(filename)) {
+        return 0;
+    }
+    return 1;
+}
+
 static int secdat_transaction_state_file_name_is_valid(const char *name)
 {
     const char *cursor;
@@ -17852,6 +19795,8 @@ static int secdat_transaction_state_file_name_is_valid(const char *name)
     if (strncmp(name, "domains/", strlen("domains/")) == 0
         || strcmp(name, "gc/reference-epoch") == 0
         || strcmp(name, "indexes/dependency-state") == 0) {
+        allowed = 1;
+    } else if (secdat_transaction_gc_candidate_name_is_valid(name)) {
         allowed = 1;
     } else if (strncmp(
             name,
@@ -22703,7 +24648,8 @@ static int secdat_recover_transactions_locked(const char *transactions_root)
     while ((entry = readdir(directory)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0
             || strcmp(entry->d_name, "..") == 0
-            || strcmp(entry->d_name, "lock") == 0) {
+            || strcmp(entry->d_name, "lock") == 0
+            || strcmp(entry->d_name, "gc-worker.lock") == 0) {
             continue;
         }
         if (!secdat_uuid_is_valid(entry->d_name)
@@ -29500,6 +31446,14 @@ static int secdat_store_v2_plaintext_with_attrs(
     if (secdat_prepared_remove_or_apply(value_path) != 0) {
         goto cleanup;
     }
+    if (lookup_status == SECDAT_V2_LOOKUP_FOUND
+        && secdat_gc_topology_record_reference_present(
+            object_domain_id,
+            object_store_name,
+            secret_id
+        ) != 0) {
+        goto cleanup;
+    }
     status = 0;
 
 cleanup:
@@ -29763,6 +31717,2380 @@ static void secdat_gc_report_removal(struct secdat_gc_report *report, int dry_ru
     report->removals += 1;
 }
 
+static void secdat_gc_status_report_reset(
+    struct secdat_gc_status_report *report
+)
+{
+    free(report->errors);
+    memset(report, 0, sizeof(*report));
+}
+
+static int secdat_gc_status_add_error(
+    struct secdat_gc_status_report *report,
+    const char *handle,
+    const char *state,
+    const char *last_error
+)
+{
+    struct secdat_gc_status_error *resized;
+    struct secdat_gc_status_error *error;
+    size_t next_capacity;
+
+    if (report->error_count == report->error_capacity) {
+        next_capacity = report->error_capacity == 0
+            ? 4
+            : report->error_capacity * 2;
+        resized = realloc(report->errors, next_capacity * sizeof(*resized));
+        if (resized == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        report->errors = resized;
+        report->error_capacity = next_capacity;
+    }
+    error = &report->errors[report->error_count];
+    memset(error, 0, sizeof(*error));
+    if (secdat_copy_string(error->handle, sizeof(error->handle), handle) != 0
+        || secdat_copy_string(error->state, sizeof(error->state), state) != 0
+        || secdat_copy_string(
+            error->last_error,
+            sizeof(error->last_error),
+            last_error
+        ) != 0) {
+        return 1;
+    }
+    report->error_count += 1;
+    return 0;
+}
+
+static int secdat_gc_handle_filename(
+    const char *filename,
+    const char *suffix,
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1]
+)
+{
+    size_t suffix_length = strlen(suffix);
+    size_t index;
+
+    if (strlen(filename) != SECDAT_SHA256_HEX_LENGTH + suffix_length
+        || strcmp(filename + SECDAT_SHA256_HEX_LENGTH, suffix) != 0) {
+        return 1;
+    }
+    for (index = 0; index < SECDAT_SHA256_HEX_LENGTH; index += 1) {
+        if (!((filename[index] >= '0' && filename[index] <= '9')
+                || (filename[index] >= 'a' && filename[index] <= 'f'))) {
+            return 1;
+        }
+    }
+    memcpy(handle, filename, SECDAT_SHA256_HEX_LENGTH);
+    handle[SECDAT_SHA256_HEX_LENGTH] = '\0';
+    return 0;
+}
+
+static int secdat_gc_open_secure_directory(
+    const char *path,
+    DIR **directory,
+    int *exists
+)
+{
+    struct stat status;
+    int descriptor;
+
+    *directory = NULL;
+    *exists = 0;
+    descriptor = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_DIRECTORY);
+    if (descriptor < 0) {
+        if (errno == ENOENT) {
+            return 0;
+        }
+        return 1;
+    }
+    if (fstat(descriptor, &status) != 0
+        || !S_ISDIR(status.st_mode)
+        || (status.st_mode & 07777) != 0700
+        || status.st_uid != geteuid()) {
+        close(descriptor);
+        return 1;
+    }
+    *directory = fdopendir(descriptor);
+    if (*directory == NULL) {
+        close(descriptor);
+        return 1;
+    }
+    *exists = 1;
+    return 0;
+}
+
+static int secdat_gc_status_note_candidate(
+    const struct secdat_gc_candidate_record *candidate,
+    int include_errors,
+    int64_t now_ns,
+    struct secdat_gc_status_report *report
+)
+{
+    if (!report->has_oldest_enqueued_at
+        || candidate->enqueued_at_ns < report->oldest_enqueued_at_ns) {
+        report->oldest_enqueued_at_ns = candidate->enqueued_at_ns;
+        report->has_oldest_enqueued_at = 1;
+    }
+    if (candidate->state == SECDAT_GC_CANDIDATE_MANUAL_REQUIRED) {
+        report->manual_required += 1;
+        return include_errors
+            ? secdat_gc_status_add_error(
+                report,
+                candidate->handle,
+                "manual-required",
+                candidate->last_error
+            )
+            : 0;
+    }
+    if (candidate->has_next_attempt_at
+        && candidate->next_attempt_at_ns <= now_ns) {
+        report->ready += 1;
+    } else if (candidate->state == SECDAT_GC_CANDIDATE_RETRY_PENDING) {
+        report->retrying += 1;
+    } else {
+        report->pending += 1;
+    }
+    if (candidate->has_next_attempt_at
+        && (!report->has_next_attempt_at
+            || candidate->next_attempt_at_ns < report->next_attempt_at_ns)) {
+        report->next_attempt_at_ns = candidate->next_attempt_at_ns;
+        report->has_next_attempt_at = 1;
+    }
+    if (include_errors
+        && candidate->state == SECDAT_GC_CANDIDATE_RETRY_PENDING) {
+        return secdat_gc_status_add_error(
+            report,
+            candidate->handle,
+            "retry-pending",
+            candidate->last_error
+        );
+    }
+    return 0;
+}
+
+static int secdat_gc_status_collect_candidate_entry(
+    const char *shard_path,
+    const char *owner_domain_id,
+    const char *escaped_store,
+    const char *filename,
+    int include_errors,
+    int64_t now_ns,
+    struct secdat_gc_status_report *report
+)
+{
+    char candidate_path[PATH_MAX];
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+    struct secdat_gc_candidate_record candidate;
+    int handle_valid = secdat_gc_handle_filename(filename, ".gc", handle) == 0;
+
+    if (!handle_valid
+        || snprintf(candidate_path, sizeof(candidate_path), "%s/%s", shard_path, filename)
+            >= (int)sizeof(candidate_path)
+        || secdat_gc_read_candidate(
+            candidate_path,
+            owner_domain_id,
+            escaped_store,
+            handle,
+            &candidate
+        ) != 0) {
+        report->corrupt += 1;
+        return include_errors && handle_valid
+            ? secdat_gc_status_add_error(
+                report,
+                handle,
+                "corrupt",
+                "corrupt-record"
+            )
+            : 0;
+    }
+    return secdat_gc_status_note_candidate(
+        &candidate,
+        include_errors,
+        now_ns,
+        report
+    );
+}
+
+static int secdat_gc_status_collect_candidates(
+    const char *owner_domain_id,
+    const char *store_name,
+    int include_errors,
+    int64_t now_ns,
+    struct secdat_gc_status_report *report
+)
+{
+    char shard_path[PATH_MAX];
+    char *escaped_store = NULL;
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int exists = 0;
+    int result = 1;
+
+    if (secdat_gc_owner_store_shard_path(
+            "candidates",
+            owner_domain_id,
+            store_name,
+            shard_path,
+            sizeof(shard_path),
+            &escaped_store
+        ) != 0
+        || secdat_gc_open_secure_directory(
+            shard_path,
+            &directory,
+            &exists
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!exists) {
+        result = 0;
+        goto cleanup;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (secdat_gc_status_collect_candidate_entry(
+                shard_path,
+                owner_domain_id,
+                escaped_store,
+                entry->d_name,
+                include_errors,
+                now_ns,
+                report
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    if (closedir(directory) != 0) {
+        directory = NULL;
+        goto cleanup;
+    }
+    directory = NULL;
+    result = 0;
+
+cleanup:
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    free(escaped_store);
+    return result;
+}
+
+static int secdat_gc_status_collect_quarantine(
+    const char *owner_domain_id,
+    const char *store_name,
+    struct secdat_gc_status_report *report
+)
+{
+    char shard_path[PATH_MAX];
+    char *escaped_store = NULL;
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int exists = 0;
+    int result = 1;
+
+    if (secdat_gc_owner_store_shard_path(
+            "quarantine",
+            owner_domain_id,
+            store_name,
+            shard_path,
+            sizeof(shard_path),
+            &escaped_store
+        ) != 0
+        || secdat_gc_open_secure_directory(
+            shard_path,
+            &directory,
+            &exists
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!exists) {
+        result = 0;
+        goto cleanup;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        char path[PATH_MAX];
+        char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+        struct stat status;
+
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (secdat_gc_handle_filename(
+                entry->d_name,
+                ".candidate-corrupt",
+                handle
+            ) != 0
+            || snprintf(path, sizeof(path), "%s/%s", shard_path, entry->d_name)
+                >= (int)sizeof(path)
+            || lstat(path, &status) != 0
+            || !S_ISREG(status.st_mode)
+            || (status.st_mode & 07777) != 0600
+            || status.st_uid != geteuid()) {
+            report->corrupt += 1;
+            continue;
+        }
+        report->quarantined += 1;
+    }
+    if (closedir(directory) != 0) {
+        directory = NULL;
+        goto cleanup;
+    }
+    directory = NULL;
+    result = 0;
+
+cleanup:
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    free(escaped_store);
+    return result;
+}
+
+static int secdat_gc_snapshot_candidate_entry(
+    const char *shard_path,
+    const char *owner_domain_id,
+    const char *escaped_store,
+    const char *filename,
+    int force,
+    int64_t now_ns,
+    struct secdat_gc_batch *batch
+)
+{
+    char path[PATH_MAX];
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+    struct secdat_gc_candidate_record candidate;
+
+    if (secdat_gc_handle_filename(filename, ".gc", handle) != 0
+        || snprintf(path, sizeof(path), "%s/%s", shard_path, filename)
+            >= (int)sizeof(path)
+        || secdat_gc_read_candidate(
+            path,
+            owner_domain_id,
+            escaped_store,
+            handle,
+            &candidate
+        ) != 0) {
+        return 0;
+    }
+    if (!force
+        && (candidate.state == SECDAT_GC_CANDIDATE_MANUAL_REQUIRED
+            || !candidate.has_next_attempt_at
+            || candidate.next_attempt_at_ns > now_ns)) {
+        return 0;
+    }
+    batch->items[batch->count].candidate = candidate;
+    batch->count += 1;
+    return 0;
+}
+
+static int secdat_gc_snapshot_batch(
+    const char *owner_domain_id,
+    const char *store_name,
+    int force,
+    struct secdat_gc_batch *batch
+)
+{
+    char shard_path[PATH_MAX];
+    char *escaped_store = NULL;
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int64_t now_ns;
+    int epoch_exists = 0;
+    int epoch_valid = 0;
+    int exists = 0;
+    int result = 1;
+
+    memset(batch, 0, sizeof(*batch));
+    if (secdat_gc_read_reference_epoch(
+            batch->reference_epoch,
+            &epoch_exists,
+            &epoch_valid
+        ) != 0
+        || !epoch_exists
+        || !epoch_valid) {
+        fprintf(stderr, _("deferred GC requires a valid reference epoch\n"));
+        return 1;
+    }
+    if (secdat_gc_realtime_ns(&now_ns) != 0
+        || secdat_gc_owner_store_shard_path(
+            "candidates",
+            owner_domain_id,
+            store_name,
+            shard_path,
+            sizeof(shard_path),
+            &escaped_store
+        ) != 0
+        || secdat_gc_open_secure_directory(
+            shard_path,
+            &directory,
+            &exists
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!exists) {
+        result = 0;
+        goto cleanup;
+    }
+    while (batch->count < SECDAT_GC_BATCH_MAX
+        && (entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (secdat_gc_snapshot_candidate_entry(
+                shard_path,
+                owner_domain_id,
+                escaped_store,
+                entry->d_name,
+                force,
+                now_ns,
+                batch
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    if (closedir(directory) != 0) {
+        directory = NULL;
+        goto cleanup;
+    }
+    directory = NULL;
+    result = 0;
+
+cleanup:
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    free(escaped_store);
+    return result;
+}
+
+static int secdat_gc_store_component_is_canonical(
+    const char *escaped_store,
+    char **decoded_store
+)
+{
+    char *canonical = NULL;
+    int result = 1;
+
+    *decoded_store = NULL;
+    if (escaped_store[0] == '\0'
+        || secdat_unescape_component(escaped_store, decoded_store) != 0
+        || (*decoded_store)[0] == '\0'
+        || secdat_escape_component(*decoded_store, &canonical) != 0
+        || strcmp(canonical, escaped_store) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(canonical);
+    if (result != 0) {
+        free(*decoded_store);
+        *decoded_store = NULL;
+    }
+    return result;
+}
+
+static void secdat_gc_count_entry_for_batch(
+    const char *entry_domain_id,
+    const char *entry_store_name,
+    const struct secdat_v2_domain_entry_info *entry,
+    struct secdat_gc_batch *batch
+)
+{
+    const char *object_domain_id = secdat_v2_entry_object_domain(
+        entry_domain_id,
+        entry
+    );
+    const char *object_store_name = secdat_v2_entry_object_store(
+        entry_store_name,
+        entry
+    );
+    size_t index;
+
+    for (index = 0; index < batch->count; index += 1) {
+        struct secdat_gc_batch_item *item = &batch->items[index];
+
+        if (strcmp(entry->secret_id, item->candidate.secret_id) != 0
+            || strcmp(
+                object_domain_id,
+                item->candidate.owner_domain_id
+            ) != 0
+            || strcmp(
+                secdat_effective_store_name(object_store_name),
+                item->candidate.owner_store_name
+            ) != 0) {
+            continue;
+        }
+        item->referenced = 1;
+        if (item->reference_count != SIZE_MAX) {
+            item->reference_count += 1;
+        }
+    }
+}
+
+static void secdat_test_gc_scan_checkpoint(void)
+{
+    static int signaled;
+    const char *signal_path = getenv("SECDAT_TEST_GC_SCAN_SIGNAL_PATH");
+    const char *delay_text = getenv("SECDAT_TEST_GC_SCAN_ENTRY_DELAY_US");
+    char *end = NULL;
+    unsigned long delay_us;
+
+    if (!signaled && signal_path != NULL && signal_path[0] != '\0') {
+        int descriptor = open(
+            signal_path,
+            O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW,
+            0600
+        );
+
+        if (descriptor >= 0) {
+            ssize_t written = write(descriptor, "1", 1);
+
+            close(descriptor);
+            if (written == 1) {
+                signaled = 1;
+            }
+        }
+    }
+    if (delay_text == NULL || delay_text[0] == '\0') {
+        return;
+    }
+    errno = 0;
+    delay_us = strtoul(delay_text, &end, 10);
+    if (errno != 0 || end == delay_text || *end != '\0' || delay_us > 100000UL) {
+        return;
+    }
+    {
+        struct timespec delay = {
+            .tv_sec = (time_t)(delay_us / 1000000UL),
+            .tv_nsec = (long)(delay_us % 1000000UL) * 1000L,
+        };
+
+        while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {
+        }
+    }
+}
+
+static int secdat_gc_scan_checkpoint(
+    struct secdat_gc_scan_control *control
+)
+{
+    int64_t now_ms;
+
+    if (control == NULL || control->service_ready == NULL) {
+        return 0;
+    }
+    secdat_test_gc_scan_checkpoint();
+    control->entries_since_service += 1;
+    if (secdat_monotonic_milliseconds(&now_ms) != 0) {
+        return 1;
+    }
+    if (control->entries_since_service < SECDAT_GC_SCAN_ENTRY_BUDGET
+        && now_ms < control->service_deadline_ms) {
+        return 0;
+    }
+    control->entries_since_service = 0;
+    control->service_deadline_ms = now_ms + SECDAT_GC_SCAN_TIME_BUDGET_MS;
+    return control->service_ready(control->context);
+}
+
+static int secdat_gc_scan_service_now(
+    struct secdat_gc_scan_control *control
+)
+{
+    int64_t now_ms;
+
+    if (control == NULL || control->service_ready == NULL) {
+        return 0;
+    }
+    if (secdat_monotonic_milliseconds(&now_ms) != 0) {
+        return 1;
+    }
+    control->entries_since_service = 0;
+    control->service_deadline_ms = now_ms + SECDAT_GC_SCAN_TIME_BUDGET_MS;
+    return control->service_ready(control->context);
+}
+
+static int secdat_gc_slice_accepts_new_batch(
+    struct secdat_gc_scan_control *control
+)
+{
+    int64_t now_ms;
+
+    if (control == NULL) {
+        return 1;
+    }
+    return secdat_monotonic_milliseconds(&now_ms) == 0
+        && now_ms < control->slice_deadline_ms;
+}
+
+static int secdat_gc_entry_filename_kind(
+    const char *filename,
+    char entry_id[37]
+)
+{
+    size_t name_length = strlen(filename);
+
+    if (name_length == 41 && strcmp(filename + 36, ".life") == 0) {
+        return 1;
+    }
+    if (name_length != 41 || strcmp(filename + 36, ".dent") != 0) {
+        return 2;
+    }
+    memcpy(entry_id, filename, 36);
+    entry_id[36] = '\0';
+    return secdat_gc_lowercase_uuid_is_valid(entry_id) ? 0 : 2;
+}
+
+static int secdat_gc_scan_v2_entry_file(
+    const char *entries_path,
+    const char *entry_domain_id,
+    const char *entry_store_name,
+    const char *filename,
+    struct secdat_gc_batch *batch
+)
+{
+    char entry_id[37];
+    char path[PATH_MAX];
+    struct secdat_v2_domain_entry_info info;
+    int kind = secdat_gc_entry_filename_kind(filename, entry_id);
+
+    if (kind != 0) {
+        return kind == 1 ? 0 : 1;
+    }
+    if (snprintf(path, sizeof(path), "%s/%s", entries_path, filename)
+            >= (int)sizeof(path)
+        || secdat_read_v2_domain_entry_info(path, entry_id, &info) != 0) {
+        return 1;
+    }
+    secdat_gc_count_entry_for_batch(
+        entry_domain_id,
+        entry_store_name,
+        &info,
+        batch
+    );
+    return 0;
+}
+
+static int secdat_gc_scan_v2_entry_directory(
+    const char *entry_domain_id,
+    const char *entry_store_name,
+    struct secdat_gc_batch *batch,
+    struct secdat_gc_scan_control *control
+)
+{
+    char entries_path[PATH_MAX];
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int exists = 0;
+    int result = 1;
+
+    if (secdat_v2_domain_entries_dir(
+            entry_domain_id,
+            entry_store_name,
+            entries_path,
+            sizeof(entries_path)
+        ) != 0
+        || secdat_gc_open_secure_directory(
+            entries_path,
+            &directory,
+            &exists
+        ) != 0
+        || !exists) {
+        batch->scan_incomplete = 1;
+        goto cleanup;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (secdat_gc_scan_v2_entry_file(
+                entries_path,
+                entry_domain_id,
+                entry_store_name,
+                entry->d_name,
+                batch
+            ) != 0) {
+            batch->scan_incomplete = 1;
+        }
+        if (secdat_gc_scan_checkpoint(control) != 0) {
+            result = 2;
+            goto cleanup;
+        }
+    }
+    if (closedir(directory) != 0) {
+        directory = NULL;
+        batch->scan_incomplete = 1;
+        goto cleanup;
+    }
+    directory = NULL;
+    result = 0;
+
+cleanup:
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    return result;
+}
+
+static int secdat_gc_scan_store_shard(
+    const char *stores_path,
+    const char *domain_id,
+    const char *escaped_store,
+    struct secdat_gc_batch *batch,
+    struct secdat_gc_scan_control *control
+)
+{
+    char *store_name = NULL;
+    char store_path[PATH_MAX];
+    DIR *store_directory = NULL;
+    enum secdat_store_format format;
+    int store_exists = 0;
+    int result = 1;
+
+    if (secdat_gc_store_component_is_canonical(escaped_store, &store_name) != 0
+        || snprintf(store_path, sizeof(store_path), "%s/%s", stores_path, escaped_store)
+            >= (int)sizeof(store_path)
+        || secdat_gc_open_secure_directory(
+            store_path,
+            &store_directory,
+            &store_exists
+        ) != 0
+        || !store_exists) {
+        goto cleanup;
+    }
+    if (closedir(store_directory) != 0) {
+        store_directory = NULL;
+        goto cleanup;
+    }
+    store_directory = NULL;
+    if (secdat_read_store_format(domain_id, store_name, &format) != 0
+        || format == SECDAT_STORE_FORMAT_INVALID) {
+        goto cleanup;
+    }
+    if (format != SECDAT_STORE_FORMAT_V2) {
+        result = 0;
+    } else {
+        result = secdat_gc_scan_v2_entry_directory(
+            domain_id,
+            store_name,
+            batch,
+            control
+        );
+    }
+
+cleanup:
+    if (store_directory != NULL) {
+        closedir(store_directory);
+    }
+    free(store_name);
+    return result;
+}
+
+static int secdat_gc_scan_domain_stores(
+    const char *domain_id,
+    struct secdat_gc_batch *batch,
+    struct secdat_gc_scan_control *control
+)
+{
+    char domain_root[PATH_MAX];
+    char stores_path[PATH_MAX];
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int exists = 0;
+    int result = 1;
+
+    if (secdat_domain_data_root(
+            domain_id,
+            domain_root,
+            sizeof(domain_root)
+        ) != 0
+        || secdat_join_path(
+            stores_path,
+            sizeof(stores_path),
+            domain_root,
+            "stores"
+        ) != 0
+        || secdat_gc_open_secure_directory(
+            stores_path,
+            &directory,
+            &exists
+        ) != 0
+        || !exists) {
+        batch->scan_incomplete = 1;
+        goto cleanup;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        int scan_status;
+
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        scan_status = secdat_gc_scan_store_shard(
+            stores_path,
+            domain_id,
+            entry->d_name,
+            batch,
+            control
+        );
+        if (scan_status == 2) {
+            result = 2;
+            goto cleanup;
+        }
+        if (scan_status != 0) {
+            batch->scan_incomplete = 1;
+        }
+        if (secdat_gc_scan_checkpoint(control) != 0) {
+            result = 2;
+            goto cleanup;
+        }
+    }
+    if (closedir(directory) != 0) {
+        directory = NULL;
+        batch->scan_incomplete = 1;
+        goto cleanup;
+    }
+    directory = NULL;
+    result = 0;
+
+cleanup:
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    return result;
+}
+
+static int secdat_gc_scan_domain_shard(
+    const char *by_id_path,
+    const char *domain_id,
+    struct secdat_gc_batch *batch,
+    struct secdat_gc_scan_control *control
+)
+{
+    char domain_path[PATH_MAX];
+    DIR *domain_directory = NULL;
+    int domain_exists = 0;
+
+    if (!secdat_domain_id_is_valid(domain_id)
+        || snprintf(domain_path, sizeof(domain_path), "%s/%s", by_id_path, domain_id)
+            >= (int)sizeof(domain_path)
+        || secdat_gc_open_secure_directory(
+            domain_path,
+            &domain_directory,
+            &domain_exists
+        ) != 0
+        || !domain_exists) {
+        if (domain_directory != NULL) {
+            closedir(domain_directory);
+        }
+        return 1;
+    }
+    if (closedir(domain_directory) != 0) {
+        return 1;
+    }
+    return secdat_gc_scan_domain_stores(domain_id, batch, control);
+}
+
+static int secdat_gc_scan_physical_reference_tree(
+    struct secdat_gc_batch *batch,
+    struct secdat_gc_scan_control *control
+)
+{
+    char state_dir[PATH_MAX];
+    char by_id_path[PATH_MAX];
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int exists = 0;
+    int result = 1;
+
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || secdat_join_path(
+            by_id_path,
+            sizeof(by_id_path),
+            state_dir,
+            "domains/by-id"
+        ) != 0
+        || secdat_gc_open_secure_directory(
+            by_id_path,
+            &directory,
+            &exists
+        ) != 0
+        || !exists) {
+        batch->scan_incomplete = 1;
+        goto cleanup;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        int scan_status;
+
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        scan_status = secdat_gc_scan_domain_shard(
+            by_id_path,
+            entry->d_name,
+            batch,
+            control
+        );
+        if (scan_status == 2) {
+            result = 2;
+            goto cleanup;
+        }
+        if (scan_status != 0) {
+            batch->scan_incomplete = 1;
+        }
+        if (secdat_gc_scan_checkpoint(control) != 0) {
+            result = 2;
+            goto cleanup;
+        }
+    }
+    if (closedir(directory) != 0) {
+        directory = NULL;
+        batch->scan_incomplete = 1;
+        goto cleanup;
+    }
+    directory = NULL;
+    result = 0;
+
+cleanup:
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    return result;
+}
+
+static int secdat_gc_format_timestamp_ns(
+    int64_t value,
+    char *buffer,
+    size_t size
+)
+{
+    time_t seconds = (time_t)(value / INT64_C(1000000000));
+    int64_t nanoseconds = value % INT64_C(1000000000);
+    struct tm broken_down;
+    char prefix[32];
+
+    if (nanoseconds < 0) {
+        nanoseconds += INT64_C(1000000000);
+        seconds -= 1;
+    }
+    if ((int64_t)seconds != value / INT64_C(1000000000)
+        - (value % INT64_C(1000000000) < 0 ? 1 : 0)
+        || gmtime_r(&seconds, &broken_down) == NULL
+        || strftime(prefix, sizeof(prefix), "%Y-%m-%dT%H:%M:%S", &broken_down)
+            == 0
+        || snprintf(
+            buffer,
+            size,
+            "%s.%09lldZ",
+            prefix,
+            (long long)nanoseconds
+        ) >= (int)size) {
+        return 1;
+    }
+    return 0;
+}
+
+static void secdat_gc_print_nullable_timestamp(
+    int has_value,
+    int64_t value
+)
+{
+    char timestamp[64];
+
+    if (!has_value || secdat_gc_format_timestamp_ns(
+            value,
+            timestamp,
+            sizeof(timestamp)
+        ) != 0) {
+        fputs("null", stdout);
+        return;
+    }
+    secdat_write_json_string(stdout, timestamp);
+}
+
+static int secdat_gc_print_status(
+    const char *owner_domain_id,
+    const char *store_name,
+    int include_errors,
+    int json
+)
+{
+    struct secdat_gc_status_report report = {0};
+    int64_t now_ns;
+    size_t index;
+    int result = 1;
+
+    if (secdat_gc_realtime_ns(&now_ns) != 0
+        || secdat_gc_status_collect_candidates(
+            owner_domain_id,
+            store_name,
+            include_errors,
+            now_ns,
+            &report
+        ) != 0
+        || secdat_gc_status_collect_quarantine(
+            owner_domain_id,
+            store_name,
+            &report
+        ) != 0) {
+        goto cleanup;
+    }
+    if (json) {
+        printf(
+            "{\"schema_version\":\"%s\",\"domain_id\":",
+            include_errors
+                ? "secdat.gc-status-errors.v1"
+                : "secdat.gc-status.v1"
+        );
+        secdat_write_json_string(stdout, owner_domain_id);
+        fputs(",\"store\":", stdout);
+        secdat_write_json_string(stdout, secdat_effective_store_name(store_name));
+        printf(
+            ",\"pending\":%zu,\"ready\":%zu,\"retrying\":%zu,"
+            "\"manual_required\":%zu,\"corrupt\":%zu,\"quarantined\":%zu,"
+            "\"oldest_enqueued_at\":",
+            report.pending,
+            report.ready,
+            report.retrying,
+            report.manual_required,
+            report.corrupt,
+            report.quarantined
+        );
+        secdat_gc_print_nullable_timestamp(
+            report.has_oldest_enqueued_at,
+            report.oldest_enqueued_at_ns
+        );
+        fputs(",\"next_attempt_at\":", stdout);
+        secdat_gc_print_nullable_timestamp(
+            report.has_next_attempt_at,
+            report.next_attempt_at_ns
+        );
+        if (include_errors) {
+            fputs(",\"errors\":[", stdout);
+            for (index = 0; index < report.error_count; index += 1) {
+                if (index > 0) {
+                    fputc(',', stdout);
+                }
+                fputs("{\"handle\":", stdout);
+                secdat_write_json_string(stdout, report.errors[index].handle);
+                fputs(",\"state\":", stdout);
+                secdat_write_json_string(stdout, report.errors[index].state);
+                fputs(",\"last_error\":", stdout);
+                secdat_write_json_string(stdout, report.errors[index].last_error);
+                fputc('}', stdout);
+            }
+            fputc(']', stdout);
+        }
+        puts("}");
+    } else {
+        printf("domain_id\t%s\n", owner_domain_id);
+        printf("store\t%s\n", secdat_effective_store_name(store_name));
+        printf("pending\t%zu\n", report.pending);
+        printf("ready\t%zu\n", report.ready);
+        printf("retrying\t%zu\n", report.retrying);
+        printf("manual_required\t%zu\n", report.manual_required);
+        printf("corrupt\t%zu\n", report.corrupt);
+        printf("quarantined\t%zu\n", report.quarantined);
+        for (index = 0; include_errors && index < report.error_count; index += 1) {
+            printf(
+                "error\t%s\t%s\t%s\n",
+                report.errors[index].handle,
+                report.errors[index].state,
+                report.errors[index].last_error
+            );
+        }
+    }
+    result = 0;
+
+cleanup:
+    secdat_gc_status_report_reset(&report);
+    return result;
+}
+
+static int secdat_gc_require_exact_local_persistent_session(
+    const struct secdat_domain_chain *chain,
+    const char *operation
+)
+{
+    struct secdat_session_record record = {0};
+    size_t matched_index = SIZE_MAX;
+    int result = 1;
+
+    if (chain == NULL
+        || chain->count == 0
+        || secdat_session_agent_status_details(
+            chain,
+            &record,
+            &matched_index,
+            NULL
+        ) != 0
+        || matched_index != 0
+        || record.volatile_mode
+        || record.readonly_mode) {
+        fprintf(
+            stderr,
+            _("%s requires an exact-local persistent writable session\n"),
+            operation
+        );
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    secdat_session_record_reset(&record);
+    return result;
+}
+
+static int secdat_gc_repair_reference_epoch(
+    const struct secdat_domain_chain *chain,
+    const char *store_name,
+    int dry_run
+)
+{
+    struct secdat_transaction transaction;
+    char epoch_id[37];
+    int exists = 0;
+    int valid = 0;
+    int result = 1;
+
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
+    if (chain == NULL
+        || chain->count == 0
+        || secdat_gc_read_reference_epoch(epoch_id, &exists, &valid) != 0) {
+        return 1;
+    }
+    if (valid) {
+        puts("ok");
+        return 0;
+    }
+    if (dry_run) {
+        puts("would-repair-reference-epoch");
+        return 0;
+    }
+    if (secdat_gc_require_exact_local_persistent_session(
+            chain,
+            "gc --repair-epoch"
+        ) != 0
+        || secdat_transaction_begin(
+            &transaction,
+            "gc-repair-epoch",
+            chain->ids[0],
+            store_name
+        ) != 0
+        || secdat_transaction_append_reference_epoch(
+            &transaction,
+            chain->ids[0],
+            store_name
+        ) != 0
+        || secdat_transaction_commit(&transaction) != 0) {
+        goto cleanup;
+    }
+    puts(exists ? "repaired-reference-epoch" : "initialized-reference-epoch");
+    result = 0;
+
+cleanup:
+    secdat_transaction_reset(&transaction);
+    return result;
+}
+
+static int secdat_gc_worker_lease_acquire(void)
+{
+    char transactions_root[PATH_MAX];
+    char path[PATH_MAX];
+    struct stat status;
+    int descriptor;
+
+    if (secdat_transaction_ensure_root(
+            transactions_root,
+            sizeof(transactions_root)
+        ) != 0
+        || secdat_join_path(
+            path,
+            sizeof(path),
+            transactions_root,
+            "gc-worker.lock"
+        ) != 0) {
+        return -1;
+    }
+    descriptor = open(
+        path,
+        O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW,
+        0600
+    );
+    if (descriptor < 0
+        || fstat(descriptor, &status) != 0
+        || !S_ISREG(status.st_mode)
+        || (status.st_mode & 07777) != 0600
+        || status.st_uid != geteuid()) {
+        if (descriptor >= 0) {
+            close(descriptor);
+        }
+        return -1;
+    }
+    if (flock(descriptor, LOCK_EX | LOCK_NB) != 0) {
+        close(descriptor);
+        return errno == EWOULDBLOCK || errno == EAGAIN ? -2 : -1;
+    }
+    return descriptor;
+}
+
+static void secdat_gc_worker_lease_release(int descriptor)
+{
+    if (descriptor < 0) {
+        return;
+    }
+    (void)flock(descriptor, LOCK_UN);
+    close(descriptor);
+}
+
+static int secdat_gc_candidate_generation_still_matches(
+    const struct secdat_gc_candidate_record *expected,
+    struct secdat_gc_candidate_record *current
+)
+{
+    char path[PATH_MAX];
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+
+    if (secdat_gc_candidate_path(
+            expected->owner_domain_id,
+            expected->owner_store_name,
+            expected->secret_id,
+            path,
+            sizeof(path),
+            handle
+        ) != 0
+        || strcmp(handle, expected->handle) != 0
+        || secdat_gc_read_candidate(
+            path,
+            expected->owner_domain_id,
+            expected->owner_store_escaped,
+            expected->handle,
+            current
+        ) != 0) {
+        return 0;
+    }
+    return strcmp(current->enqueue_id, expected->enqueue_id) == 0;
+}
+
+static int secdat_gc_owner_exists(const char *owner_domain_id)
+{
+    char path[PATH_MAX];
+    struct stat status;
+
+    return secdat_domain_data_root(owner_domain_id, path, sizeof(path)) == 0
+        && lstat(path, &status) == 0
+        && S_ISDIR(status.st_mode)
+        && (status.st_mode & 07777) == 0700
+        && status.st_uid == geteuid();
+}
+
+static int secdat_gc_object_has_unknown_artifact(
+    const struct secdat_gc_candidate_record *candidate,
+    int *unknown
+)
+{
+    char objects_path[PATH_MAX];
+    DIR *directory = NULL;
+    struct dirent *entry;
+    size_t secret_length = strlen(candidate->secret_id);
+    int exists = 0;
+    int result = 1;
+
+    *unknown = 0;
+    if (secdat_v2_secret_objects_dir(
+            candidate->owner_domain_id,
+            candidate->owner_store_name,
+            objects_path,
+            sizeof(objects_path)
+        ) != 0
+        || secdat_gc_open_secure_directory(
+            objects_path,
+            &directory,
+            &exists
+        ) != 0
+        || !exists) {
+        return 1;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        const char *suffix;
+
+        if (strncmp(entry->d_name, candidate->secret_id, secret_length) != 0
+            || entry->d_name[secret_length] != '.') {
+            continue;
+        }
+        suffix = entry->d_name + secret_length;
+        if (strcmp(suffix, ".sec") != 0
+            && strcmp(suffix, ".value") != 0
+            && strcmp(suffix, ".life") != 0) {
+            *unknown = 1;
+        }
+    }
+    if (closedir(directory) != 0) {
+        directory = NULL;
+        return 1;
+    }
+    directory = NULL;
+    result = 0;
+
+    return result;
+}
+
+static int secdat_gc_validate_object_for_attempt(
+    const struct secdat_gc_candidate_record *candidate,
+    int *valid,
+    int *unknown_artifact
+)
+{
+    char object_path[PATH_MAX];
+    int refcount_present = 0;
+    size_t refcount = 0;
+
+    *valid = 0;
+    *unknown_artifact = 0;
+    if (secdat_build_v2_secret_object_path(
+            candidate->owner_domain_id,
+            candidate->owner_store_name,
+            candidate->secret_id,
+            object_path,
+            sizeof(object_path)
+        ) != 0) {
+        return 1;
+    }
+    if (secdat_validate_v2_secret_object_file(
+            object_path,
+            candidate->secret_id,
+            &refcount_present,
+            &refcount
+        ) != 0) {
+        return 0;
+    }
+    *valid = 1;
+    return secdat_gc_object_has_unknown_artifact(
+        candidate,
+        unknown_artifact
+    );
+}
+
+static int secdat_gc_prepare_delete_object(
+    const struct secdat_gc_candidate_record *candidate
+)
+{
+    char objects_path[PATH_MAX];
+    char object_path[PATH_MAX];
+    char value_path[PATH_MAX];
+    char life_path[PATH_MAX];
+    char candidate_path[PATH_MAX];
+    char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+
+    return secdat_v2_secret_objects_dir(
+            candidate->owner_domain_id,
+            candidate->owner_store_name,
+            objects_path,
+            sizeof(objects_path)
+        ) != 0
+        || snprintf(
+            object_path,
+            sizeof(object_path),
+            "%s/%s.sec",
+            objects_path,
+            candidate->secret_id
+        ) >= (int)sizeof(object_path)
+        || snprintf(
+            value_path,
+            sizeof(value_path),
+            "%s/%s.value",
+            objects_path,
+            candidate->secret_id
+        ) >= (int)sizeof(value_path)
+        || snprintf(
+            life_path,
+            sizeof(life_path),
+            "%s/%s.life",
+            objects_path,
+            candidate->secret_id
+        ) >= (int)sizeof(life_path)
+        || secdat_gc_candidate_path(
+            candidate->owner_domain_id,
+            candidate->owner_store_name,
+            candidate->secret_id,
+            candidate_path,
+            sizeof(candidate_path),
+            handle
+        ) != 0
+        || strcmp(handle, candidate->handle) != 0
+        || secdat_remove_if_exists(object_path) != 0
+        || secdat_remove_if_exists(value_path) != 0
+        || secdat_remove_if_exists(life_path) != 0
+        || secdat_remove_if_exists(candidate_path) != 0;
+}
+
+static int secdat_gc_record_attempt(
+    const struct secdat_gc_candidate_record *candidate,
+    int dry_run,
+    int manual_required,
+    const char *error,
+    int64_t attempt_time_ns
+)
+{
+    return !dry_run
+        && secdat_gc_write_attempt_candidate(
+            candidate,
+            manual_required,
+            error,
+            attempt_time_ns
+        ) != 0;
+}
+
+static int secdat_gc_prepare_manual_candidate(
+    const struct secdat_gc_candidate_record *candidate,
+    const char *error,
+    const char *report_detail,
+    int64_t attempt_time_ns,
+    struct secdat_gc_report *report,
+    int dry_run
+)
+{
+    if (secdat_gc_record_attempt(
+            candidate,
+            dry_run,
+            1,
+            error,
+            attempt_time_ns
+        ) != 0) {
+        return 1;
+    }
+    secdat_gc_report_removal(
+        report,
+        1,
+        "gc-candidate",
+        candidate->handle,
+        report_detail
+    );
+    return 0;
+}
+
+static int secdat_gc_prepare_referenced_candidate(
+    const struct secdat_gc_candidate_record *candidate,
+    size_t reference_count,
+    struct secdat_gc_report *report,
+    int dry_run
+)
+{
+    struct secdat_gc_topology_effect effect;
+
+    memset(&effect, 0, sizeof(effect));
+    if (secdat_copy_string(
+            effect.owner_domain_id,
+            sizeof(effect.owner_domain_id),
+            candidate->owner_domain_id
+        ) != 0
+        || secdat_copy_string(
+            effect.owner_store_name,
+            sizeof(effect.owner_store_name),
+            candidate->owner_store_name
+        ) != 0
+        || secdat_copy_string(
+            effect.secret_id,
+            sizeof(effect.secret_id),
+            candidate->secret_id
+        ) != 0) {
+        return 1;
+    }
+    if (!dry_run
+        && (secdat_update_v2_secret_refcount(
+                candidate->owner_domain_id,
+                candidate->owner_store_name,
+                candidate->secret_id,
+                reference_count
+            ) != 0
+            || secdat_gc_cancel_candidate(&effect) != 0)) {
+        return 1;
+    }
+    secdat_gc_report_removal(
+        report,
+        dry_run,
+        "gc-candidate",
+        candidate->handle,
+        "referenced"
+    );
+    return 0;
+}
+
+static int secdat_gc_prepare_candidate_result(
+    struct secdat_gc_batch_item *item,
+    int scan_incomplete,
+    int64_t attempt_time_ns,
+    struct secdat_gc_report *report,
+    int dry_run
+)
+{
+    struct secdat_gc_candidate_record current;
+    int object_valid = 0;
+    int unknown_artifact = 0;
+
+    if (!secdat_gc_candidate_generation_still_matches(
+            &item->candidate,
+            &current
+        )) {
+        return 0;
+    }
+    if (!secdat_gc_owner_exists(current.owner_domain_id)) {
+        return secdat_gc_prepare_manual_candidate(
+            &current,
+            "owner-missing",
+            "manual-required:owner-missing",
+            attempt_time_ns,
+            report,
+            dry_run
+        );
+    }
+    if (secdat_gc_validate_object_for_attempt(
+            &current,
+            &object_valid,
+            &unknown_artifact
+        ) != 0) {
+        return secdat_gc_record_attempt(
+            &current,
+            dry_run,
+            0,
+            "io-error",
+            attempt_time_ns
+        );
+    }
+    if (!object_valid || unknown_artifact) {
+        const char *error = object_valid
+            ? "unknown-artifact"
+            : "invalid-object";
+
+        return secdat_gc_prepare_manual_candidate(
+            &current,
+            error,
+            error,
+            attempt_time_ns,
+            report,
+            dry_run
+        );
+    }
+    if (item->referenced) {
+        return secdat_gc_prepare_referenced_candidate(
+            &current,
+            item->reference_count,
+            report,
+            dry_run
+        );
+    }
+    if (scan_incomplete) {
+        return secdat_gc_record_attempt(
+            &current,
+            dry_run,
+            0,
+            "scan-incomplete",
+            attempt_time_ns
+        );
+    }
+    if (!dry_run && secdat_gc_prepare_delete_object(&current) != 0) {
+        return 1;
+    }
+    secdat_gc_report_removal(
+        report,
+        dry_run,
+        "orphaned-secret",
+        current.secret_id,
+        "missing-entry"
+    );
+    return 0;
+}
+
+static int secdat_gc_prepare_batch_items(
+    struct secdat_gc_batch *batch,
+    int64_t attempt_time_ns,
+    struct secdat_gc_report *report,
+    int dry_run
+)
+{
+    size_t index;
+
+    for (index = 0; index < batch->count; index += 1) {
+        if (secdat_gc_prepare_candidate_result(
+                &batch->items[index],
+                batch->scan_incomplete,
+                attempt_time_ns,
+                report,
+                dry_run
+            ) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_gc_commit_batch(
+    const char *owner_domain_id,
+    const char *store_name,
+    struct secdat_gc_batch *batch,
+    int64_t attempt_time_ns,
+    struct secdat_gc_report *report
+)
+{
+    struct secdat_transaction transaction;
+    size_t changed_file_count = 0;
+    int result = 1;
+
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.lock_fd = -1;
+    if (secdat_transaction_begin(
+            &transaction,
+            "gc-queued",
+            owner_domain_id,
+            store_name
+        ) != 0) {
+        goto cleanup;
+    }
+    secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    secdat_prepared_write_set.active = 1;
+    secdat_prepared_write_set.observe_reads = 1;
+    secdat_prepared_write_set.project_reads = 1;
+    if (secdat_gc_prepare_batch_items(
+            batch,
+            attempt_time_ns,
+            report,
+            0
+        ) != 0) {
+        goto cleanup;
+    }
+    secdat_prepared_write_set.active = 0;
+    secdat_prepared_write_set.observe_reads = 0;
+    secdat_prepared_write_set.project_reads = 0;
+    if (secdat_transaction_append_prepared_write_set(
+            &transaction,
+            &secdat_prepared_write_set,
+            owner_domain_id,
+            store_name,
+            &changed_file_count
+        ) != 0
+        || (changed_file_count > 0
+            && secdat_transaction_commit(&transaction) != 0)) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    secdat_prepared_write_set.active = 0;
+    secdat_prepared_write_set.observe_reads = 0;
+    secdat_prepared_write_set.project_reads = 0;
+    secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    secdat_transaction_reset(&transaction);
+    return result;
+}
+
+static int secdat_gc_snapshot_under_lock(
+    const char *owner_domain_id,
+    const char *store_name,
+    int force,
+    struct secdat_gc_batch *batch,
+    int *lock_owned
+)
+{
+    int lock_status = secdat_mutation_lock_try_acquire(lock_owned);
+
+    if (lock_status != 0) {
+        return lock_status;
+    }
+    if (secdat_recover_transactions() != 0
+        || secdat_gc_snapshot_batch(
+            owner_domain_id,
+            store_name,
+            force,
+            batch
+        ) != 0) {
+        return 1;
+    }
+    secdat_mutation_lock_release(*lock_owned);
+    *lock_owned = 0;
+    return 0;
+}
+
+static int secdat_gc_relock_and_validate_epoch(
+    const struct secdat_gc_batch *batch,
+    int *lock_owned,
+    int *unchanged,
+    struct secdat_gc_scan_control *control
+)
+{
+    char final_epoch[37];
+    int final_epoch_exists = 0;
+    int final_epoch_valid = 0;
+    int lock_status;
+
+    *unchanged = 0;
+    lock_status = secdat_mutation_lock_try_acquire(lock_owned);
+    if (lock_status != 0) {
+        return lock_status;
+    }
+    if (secdat_recover_transactions() != 0) {
+        return 1;
+    }
+    if (control != NULL
+        && control->still_eligible != NULL
+        && !control->still_eligible(control->context)) {
+        return 2;
+    }
+    if (secdat_gc_read_reference_epoch(
+            final_epoch,
+            &final_epoch_exists,
+            &final_epoch_valid
+        ) != 0) {
+        return 1;
+    }
+    *unchanged = final_epoch_exists
+        && final_epoch_valid
+        && strcmp(final_epoch, batch->reference_epoch) == 0;
+    return 0;
+}
+
+static int secdat_gc_fence_contention_result(
+    struct secdat_gc_scan_control *control
+)
+{
+    if (control != NULL) {
+        return 2;
+    }
+    fprintf(stderr, _("GC mutation fence is busy; retry later\n"));
+    return 1;
+}
+
+static int secdat_gc_begin_collection_fence(
+    const char *owner_domain_id,
+    const char *store_name,
+    int force,
+    struct secdat_gc_batch *batch,
+    int *lease_fd,
+    int *lock_owned,
+    struct secdat_gc_scan_control *control
+)
+{
+    int fence_status;
+
+    *lease_fd = secdat_gc_worker_lease_acquire();
+    if (*lease_fd == -2) {
+        return secdat_gc_fence_contention_result(control);
+    }
+    if (*lease_fd < 0) {
+        return 1;
+    }
+    fence_status = secdat_gc_snapshot_under_lock(
+        owner_domain_id,
+        store_name,
+        force,
+        batch,
+        lock_owned
+    );
+    return fence_status == 2
+        ? secdat_gc_fence_contention_result(control)
+        : fence_status;
+}
+
+static int secdat_gc_finish_collection_fence(
+    const struct secdat_gc_batch *batch,
+    int *lock_owned,
+    int *epoch_unchanged,
+    struct secdat_gc_scan_control *control
+)
+{
+    int fence_status;
+
+    if (secdat_gc_scan_service_now(control) != 0) {
+        return 2;
+    }
+    fence_status = secdat_gc_relock_and_validate_epoch(
+        batch,
+        lock_owned,
+        epoch_unchanged,
+        control
+    );
+    return fence_status == 2
+        ? secdat_gc_fence_contention_result(control)
+        : fence_status;
+}
+
+static int secdat_gc_collect_queued_batch(
+    const char *owner_domain_id,
+    const char *store_name,
+    int force,
+    int dry_run,
+    struct secdat_gc_report *report,
+    size_t *selected_count,
+    struct secdat_gc_scan_control *control
+)
+{
+    struct secdat_gc_batch batch;
+    int epoch_unchanged = 0;
+    int lease_fd = -1;
+    int lock_owned = 0;
+    int scan_status;
+    int64_t attempt_time_ns;
+    int result = 1;
+    int phase_status;
+
+    *selected_count = 0;
+    phase_status = secdat_gc_begin_collection_fence(
+        owner_domain_id,
+        store_name,
+        force,
+        &batch,
+        &lease_fd,
+        &lock_owned,
+        control
+    );
+    if (phase_status != 0) {
+        result = phase_status;
+        goto cleanup;
+    }
+    *selected_count = batch.count;
+    if (batch.count == 0) {
+        if (report->removals == 0) {
+            puts("ok");
+        }
+        result = 0;
+        goto cleanup;
+    }
+    scan_status = secdat_gc_scan_physical_reference_tree(&batch, control);
+    if (scan_status == 2) {
+        result = 2;
+        goto cleanup;
+    }
+    phase_status = secdat_gc_finish_collection_fence(
+        &batch,
+        &lock_owned,
+        &epoch_unchanged,
+        control
+    );
+    if (phase_status != 0) {
+        result = phase_status;
+        goto cleanup;
+    }
+    if (!epoch_unchanged) {
+        result = 0;
+        goto cleanup;
+    }
+    if (secdat_gc_realtime_ns(&attempt_time_ns) != 0) {
+        goto cleanup;
+    }
+    if (dry_run) {
+        if (secdat_gc_prepare_batch_items(
+                &batch,
+                attempt_time_ns,
+                report,
+                1
+            ) != 0) {
+            goto cleanup;
+        }
+        result = 0;
+        goto cleanup;
+    }
+    if (secdat_gc_commit_batch(
+            owner_domain_id,
+            store_name,
+            &batch,
+            attempt_time_ns,
+            report
+        ) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    secdat_mutation_lock_release(lock_owned);
+    secdat_gc_worker_lease_release(lease_fd);
+    return result;
+}
+
+static int secdat_gc_agent_collect_store(
+    const char *owner_path,
+    const char *owner_domain_id,
+    const char *escaped_store,
+    struct secdat_gc_scan_control *control,
+    size_t *selected_count
+)
+{
+    char *store_name = NULL;
+    char store_path[PATH_MAX];
+    DIR *store_directory = NULL;
+    struct secdat_gc_report report = {0};
+    int store_exists = 0;
+    int result = 1;
+
+    if (secdat_gc_store_component_is_canonical(escaped_store, &store_name) != 0
+        || snprintf(store_path, sizeof(store_path), "%s/%s", owner_path, escaped_store)
+            >= (int)sizeof(store_path)
+        || secdat_gc_open_secure_directory(
+            store_path,
+            &store_directory,
+            &store_exists
+        ) != 0
+        || !store_exists) {
+        goto cleanup;
+    }
+    if (closedir(store_directory) != 0) {
+        store_directory = NULL;
+        goto cleanup;
+    }
+    store_directory = NULL;
+    result = secdat_gc_collect_queued_batch(
+        owner_domain_id,
+        store_name,
+        0,
+        0,
+        &report,
+        selected_count,
+        control
+    );
+
+cleanup:
+    if (store_directory != NULL) {
+        closedir(store_directory);
+    }
+    free(store_name);
+    return result;
+}
+
+static int secdat_gc_agent_collect_owner(
+    const char *owner_domain_id,
+    struct secdat_gc_scan_control *control
+)
+{
+    char state_dir[PATH_MAX];
+    char owner_path[PATH_MAX];
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int exists = 0;
+    int result = 0;
+
+    if (!secdat_domain_id_is_valid(owner_domain_id)
+        || secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || snprintf(
+            owner_path,
+            sizeof(owner_path),
+            "%s/gc/candidates/by-owner/%s",
+            state_dir,
+            owner_domain_id
+        ) >= (int)sizeof(owner_path)
+        || secdat_gc_open_secure_directory(
+            owner_path,
+            &directory,
+            &exists
+        ) != 0) {
+        return 1;
+    }
+    if (!exists) {
+        return 0;
+    }
+    while ((entry = readdir(directory)) != NULL) {
+        int collect_status;
+        size_t selected_count = 0;
+
+        if (strcmp(entry->d_name, ".") == 0
+            || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        if (!secdat_gc_slice_accepts_new_batch(control)) {
+            break;
+        }
+        collect_status = secdat_gc_agent_collect_store(
+            owner_path,
+            owner_domain_id,
+            entry->d_name,
+            control,
+            &selected_count
+        );
+        if (collect_status == 2) {
+            result = 2;
+            break;
+        }
+        if (collect_status != 0) {
+            result = 1;
+        }
+        if (secdat_gc_scan_checkpoint(control) != 0) {
+            result = 2;
+            break;
+        }
+        if (selected_count > 0) {
+            break;
+        }
+    }
+    if (closedir(directory) != 0) {
+        result = 1;
+    }
+    return result;
+}
+
+struct secdat_gc_quarantine_paths {
+    char candidate_shard[PATH_MAX];
+    char quarantine_shard[PATH_MAX];
+    char source_path[PATH_MAX];
+    char destination_path[PATH_MAX];
+    char *escaped_candidate_store;
+    char *escaped_quarantine_store;
+};
+
+static void secdat_gc_quarantine_paths_reset(
+    struct secdat_gc_quarantine_paths *paths
+)
+{
+    free(paths->escaped_candidate_store);
+    free(paths->escaped_quarantine_store);
+    memset(paths, 0, sizeof(*paths));
+}
+
+static int secdat_gc_quarantine_paths_init(
+    const char *owner_domain_id,
+    const char *store_name,
+    const char *handle,
+    struct secdat_gc_quarantine_paths *paths
+)
+{
+    struct stat status;
+
+    memset(paths, 0, sizeof(*paths));
+    if (secdat_gc_owner_store_shard_path(
+            "candidates",
+            owner_domain_id,
+            store_name,
+            paths->candidate_shard,
+            sizeof(paths->candidate_shard),
+            &paths->escaped_candidate_store
+        ) != 0
+        || secdat_gc_owner_store_shard_path(
+            "quarantine",
+            owner_domain_id,
+            store_name,
+            paths->quarantine_shard,
+            sizeof(paths->quarantine_shard),
+            &paths->escaped_quarantine_store
+        ) != 0
+        || strcmp(
+            paths->escaped_candidate_store,
+            paths->escaped_quarantine_store
+        ) != 0
+        || snprintf(
+            paths->source_path,
+            sizeof(paths->source_path),
+            "%s/%s.gc",
+            paths->candidate_shard,
+            handle
+        ) >= (int)sizeof(paths->source_path)
+        || snprintf(
+            paths->destination_path,
+            sizeof(paths->destination_path),
+            "%s/%s.candidate-corrupt",
+            paths->quarantine_shard,
+            handle
+        ) >= (int)sizeof(paths->destination_path)
+        || lstat(paths->source_path, &status) != 0
+        || !S_ISREG(status.st_mode)
+        || (status.st_mode & 07777) != 0600
+        || status.st_uid != geteuid()) {
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_gc_quarantine_destination_ready(
+    const char *quarantine_shard
+)
+{
+    DIR *directory = NULL;
+    int exists = 0;
+
+    if (secdat_ensure_directory(quarantine_shard, 0700) != 0
+        || secdat_gc_open_secure_directory(
+            quarantine_shard,
+            &directory,
+            &exists
+        ) != 0
+        || !exists) {
+        if (directory != NULL) {
+            closedir(directory);
+        }
+        return 1;
+    }
+    return closedir(directory) == 0 ? 0 : 1;
+}
+
+static int secdat_gc_quarantine_rename(
+    const char *source_path,
+    const char *destination_path
+)
+{
+#ifdef RENAME_NOREPLACE
+    return renameat2(
+        AT_FDCWD,
+        source_path,
+        AT_FDCWD,
+        destination_path,
+        RENAME_NOREPLACE
+    ) == 0 ? 0 : 1;
+#else
+    struct stat status;
+
+    if (lstat(destination_path, &status) == 0 || errno != ENOENT) {
+        return 1;
+    }
+    return rename(source_path, destination_path) == 0 ? 0 : 1;
+#endif
+}
+
+static int secdat_gc_quarantine_candidate(
+    const char *owner_domain_id,
+    const char *store_name,
+    const char *handle,
+    int dry_run
+)
+{
+    struct secdat_gc_quarantine_paths paths;
+    struct secdat_gc_candidate_record candidate;
+    int lock_owned = 0;
+    int result = 1;
+
+    memset(&paths, 0, sizeof(paths));
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0
+        || secdat_recover_transactions() != 0
+        || secdat_gc_quarantine_paths_init(
+            owner_domain_id,
+            store_name,
+            handle,
+            &paths
+        ) != 0) {
+        goto cleanup;
+    }
+    if (secdat_gc_read_candidate(
+            paths.source_path,
+            owner_domain_id,
+            paths.escaped_candidate_store,
+            handle,
+            &candidate
+        ) == 0) {
+        fprintf(stderr, _("GC candidate is structurally valid and cannot be quarantined\n"));
+        goto cleanup;
+    }
+    if (dry_run) {
+        printf("would-quarantine-candidate\t%s\n", handle);
+        result = 0;
+        goto cleanup;
+    }
+    if (secdat_gc_quarantine_destination_ready(paths.quarantine_shard) != 0
+        || secdat_gc_quarantine_rename(
+            paths.source_path,
+            paths.destination_path
+        ) != 0) {
+        goto cleanup;
+    }
+    if (secdat_fsync_directory(paths.candidate_shard) != 0
+        || secdat_fsync_directory(paths.quarantine_shard) != 0) {
+        goto cleanup;
+    }
+    printf("quarantined-candidate\t%s\n", handle);
+    result = 0;
+
+cleanup:
+    secdat_gc_quarantine_paths_reset(&paths);
+    secdat_mutation_lock_release(lock_owned);
+    return result;
+}
+
+static int secdat_gc_drop_quarantine(
+    const char *owner_domain_id,
+    const char *store_name,
+    const char *handle,
+    int dry_run
+)
+{
+    char quarantine_shard[PATH_MAX];
+    char path[PATH_MAX];
+    char *escaped_store = NULL;
+    struct stat status;
+    int lock_owned = 0;
+    int result = 1;
+
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0
+        || secdat_recover_transactions() != 0
+        || secdat_gc_owner_store_shard_path(
+            "quarantine",
+            owner_domain_id,
+            store_name,
+            quarantine_shard,
+            sizeof(quarantine_shard),
+            &escaped_store
+        ) != 0
+        || snprintf(
+            path,
+            sizeof(path),
+            "%s/%s.candidate-corrupt",
+            quarantine_shard,
+            handle
+        ) >= (int)sizeof(path)
+        || lstat(path, &status) != 0
+        || !S_ISREG(status.st_mode)
+        || (status.st_mode & 07777) != 0600
+        || status.st_uid != geteuid()) {
+        goto cleanup;
+    }
+    if (dry_run) {
+        printf("would-drop-quarantine\t%s\n", handle);
+        result = 0;
+        goto cleanup;
+    }
+    if (unlink(path) != 0 || secdat_fsync_directory(quarantine_shard) != 0) {
+        goto cleanup;
+    }
+    printf("dropped-quarantine\t%s\n", handle);
+    result = 0;
+
+cleanup:
+    free(escaped_store);
+    secdat_mutation_lock_release(lock_owned);
+    return result;
+}
+
+static int secdat_gc_directory_is_secure_and_empty(
+    const char *path,
+    int *empty
+)
+{
+    DIR *directory = NULL;
+    struct dirent *entry;
+    int exists = 0;
+    int result = 1;
+
+    *empty = 0;
+    if (secdat_gc_open_secure_directory(path, &directory, &exists) != 0) {
+        return 1;
+    }
+    if (!exists) {
+        *empty = 1;
+        return 0;
+    }
+    *empty = 1;
+    while ((entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") != 0
+            && strcmp(entry->d_name, "..") != 0) {
+            *empty = 0;
+            break;
+        }
+    }
+    if (closedir(directory) != 0) {
+        directory = NULL;
+        goto cleanup;
+    }
+    directory = NULL;
+    result = 0;
+
+cleanup:
+    if (directory != NULL) {
+        closedir(directory);
+    }
+    return result;
+}
+
+static int secdat_gc_owner_store_queue_is_empty(
+    const char *owner_domain_id,
+    const char *store_name,
+    int *empty
+)
+{
+    char candidate_path[PATH_MAX];
+    char quarantine_path[PATH_MAX];
+    char *candidate_store = NULL;
+    char *quarantine_store = NULL;
+    int candidate_empty = 0;
+    int quarantine_empty = 0;
+    int result = 1;
+
+    *empty = 0;
+    if (secdat_gc_owner_store_shard_path(
+            "candidates",
+            owner_domain_id,
+            store_name,
+            candidate_path,
+            sizeof(candidate_path),
+            &candidate_store
+        ) != 0
+        || secdat_gc_owner_store_shard_path(
+            "quarantine",
+            owner_domain_id,
+            store_name,
+            quarantine_path,
+            sizeof(quarantine_path),
+            &quarantine_store
+        ) != 0
+        || secdat_gc_directory_is_secure_and_empty(
+            candidate_path,
+            &candidate_empty
+        ) != 0
+        || secdat_gc_directory_is_secure_and_empty(
+            quarantine_path,
+            &quarantine_empty
+        ) != 0) {
+        goto cleanup;
+    }
+    *empty = candidate_empty && quarantine_empty;
+    result = 0;
+
+cleanup:
+    free(candidate_store);
+    free(quarantine_store);
+    return result;
+}
+
+static int secdat_gc_owner_queue_is_empty(
+    const char *owner_domain_id,
+    int *empty
+)
+{
+    const char *subtrees[] = {"candidates", "quarantine"};
+    char state_dir[PATH_MAX];
+    size_t index;
+
+    *empty = 0;
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0) {
+        return 1;
+    }
+    for (index = 0; index < sizeof(subtrees) / sizeof(subtrees[0]); index += 1) {
+        char path[PATH_MAX];
+        int subtree_empty = 0;
+
+        if (snprintf(
+                path,
+                sizeof(path),
+                "%s/gc/%s/by-owner/%s",
+                state_dir,
+                subtrees[index],
+                owner_domain_id
+            ) >= (int)sizeof(path)
+            || secdat_gc_directory_is_secure_and_empty(
+                path,
+                &subtree_empty
+            ) != 0) {
+            return 1;
+        }
+        if (!subtree_empty) {
+            return 0;
+        }
+    }
+    *empty = 1;
+    return 0;
+}
+
 static int secdat_gc_build_v2_artifact_path(const char *directory, const char *name, const char *suffix, char *buffer, size_t size)
 {
     if (snprintf(buffer, size, "%s/%s%s", directory, name, suffix) >= (int)size) {
@@ -29920,6 +34248,8 @@ static int secdat_fsck_v2_store(
     size_t actual_refcount;
     size_t cached_refcount;
     int refcount_present;
+    int candidate_exists;
+    int candidate_valid;
     int status = 1;
 
     memset(report, 0, sizeof(*report));
@@ -30077,11 +34407,35 @@ static int secdat_fsck_v2_store(
             if (secdat_validate_v2_secret_object_file(object_path, valid_objects.items[index], &refcount_present, &cached_refcount) != 0) {
                 goto cleanup;
             }
-            if (!refcount_present) {
-                continue;
-            }
             if (secdat_count_v2_secret_references_to_object(current_domain_id, store_name, valid_objects.items[index], &actual_refcount) != 0) {
                 goto cleanup;
+            }
+            if (secdat_gc_inspect_candidate_for_object(
+                    current_domain_id,
+                    store_name,
+                    valid_objects.items[index],
+                    &candidate_exists,
+                    &candidate_valid
+                ) != 0) {
+                goto cleanup;
+            }
+            if (candidate_exists && !candidate_valid) {
+                secdat_fsck_report_issue(
+                    report,
+                    "gc-candidate-inconsistency",
+                    valid_objects.items[index],
+                    "invalid-record"
+                );
+            } else if (actual_refcount == 0 && !candidate_exists) {
+                secdat_fsck_report_issue(
+                    report,
+                    "gc-candidate-inconsistency",
+                    valid_objects.items[index],
+                    "missing-zero-reference"
+                );
+            }
+            if (!refcount_present) {
+                continue;
             }
             if (cached_refcount != actual_refcount) {
                 snprintf(detail, sizeof(detail), "expected=%zu actual=%zu", cached_refcount, actual_refcount);
@@ -30218,6 +34572,7 @@ static int secdat_gc_v2_store(
     size_t actual_refcount;
     size_t cached_refcount;
     int refcount_present;
+    int lock_owned = 0;
     int status = 1;
 
     memset(report, 0, sizeof(*report));
@@ -30227,6 +34582,10 @@ static int secdat_gc_v2_store(
     }
     if (!options->dry_run && secdat_require_mutable_session_chain(chain, "gc") != 0) {
         return 1;
+    }
+    if (secdat_mutation_lock_acquire(&lock_owned) != 0
+        || secdat_recover_transactions() != 0) {
+        goto cleanup;
     }
     current_domain_id = chain->ids[0];
     if (secdat_read_store_format(current_domain_id, store_name, &format) != 0) {
@@ -30275,9 +34634,16 @@ static int secdat_gc_v2_store(
 
         if (invalid_object) {
             if (options->dangling) {
-                secdat_gc_report_removal(report, options->dry_run, "dangling-secret", objects.items[index], "invalid-secret");
-                if (!options->dry_run && secdat_gc_remove_v2_secret_artifacts(secret_objects_dir, objects.items[index]) != 0) {
-                    goto cleanup;
+                if (secdat_gc_lowercase_uuid_is_valid(objects.items[index])) {
+                    printf(
+                        "retained-dangling-secret\t%s\tinvalid-secret\n",
+                        objects.items[index]
+                    );
+                } else {
+                    secdat_gc_report_removal(report, options->dry_run, "dangling-secret", objects.items[index], "invalid-secret");
+                    if (!options->dry_run && secdat_gc_remove_v2_secret_artifacts(secret_objects_dir, objects.items[index]) != 0) {
+                        goto cleanup;
+                    }
                 }
             }
             continue;
@@ -30366,9 +34732,38 @@ static int secdat_gc_v2_store(
                 goto cleanup;
             }
             if (actual_refcount == 0) {
-                secdat_gc_report_removal(report, options->dry_run, "orphaned-secret", valid_objects.items[index], "missing-entry");
-                if (!options->dry_run && secdat_gc_remove_v2_secret_artifacts(secret_objects_dir, valid_objects.items[index]) != 0) {
-                    goto cleanup;
+                if (options->dry_run) {
+                    secdat_gc_report_removal(report, 1, "orphaned-secret", valid_objects.items[index], "missing-entry");
+                } else {
+                    struct secdat_gc_topology_effect effect;
+                    int64_t event_time_ns;
+
+                    memset(&effect, 0, sizeof(effect));
+                    if (secdat_copy_string(
+                            effect.owner_domain_id,
+                            sizeof(effect.owner_domain_id),
+                            current_domain_id
+                        ) != 0
+                        || secdat_copy_string(
+                            effect.owner_store_name,
+                            sizeof(effect.owner_store_name),
+                            secdat_effective_store_name(store_name)
+                        ) != 0
+                        || secdat_copy_string(
+                            effect.secret_id,
+                            sizeof(effect.secret_id),
+                            valid_objects.items[index]
+                        ) != 0
+                        || secdat_gc_realtime_ns(&event_time_ns) != 0
+                        || secdat_gc_write_pending_candidate(
+                            &effect,
+                            0,
+                            1,
+                            event_time_ns
+                        ) != 0) {
+                        goto cleanup;
+                    }
+                    report->queued += 1;
                 }
             }
         }
@@ -30377,11 +34772,226 @@ static int secdat_gc_v2_store(
     status = 0;
 
 cleanup:
+    secdat_mutation_lock_release(lock_owned);
     secdat_key_list_free(&entries);
     secdat_key_list_free(&objects);
     secdat_key_list_free(&values);
     secdat_key_list_free(&valid_objects);
     return status;
+}
+
+static int secdat_gc_resolve_registered_owner_chain(
+    const char *owner_domain_id,
+    struct secdat_domain_chain *chain
+)
+{
+    char owner_root[PATH_MAX];
+
+    memset(chain, 0, sizeof(*chain));
+    if (secdat_domain_root_path(
+            owner_domain_id,
+            owner_root,
+            sizeof(owner_root)
+        ) != 0
+        || secdat_domain_resolve_registered_root_chain(
+            owner_root,
+            chain
+        ) != 0
+        || chain->count == 0
+        || strcmp(chain->ids[0], owner_domain_id) != 0) {
+        secdat_domain_chain_free(chain);
+        fprintf(stderr, _("GC owner domain must be registered before mutation\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_gc_select_owner_authorization(
+    const struct secdat_gc_options *options,
+    const struct secdat_domain_chain *current_chain,
+    struct secdat_domain_chain *owner_chain,
+    const char **owner_domain_id,
+    const struct secdat_domain_chain **authorization_chain
+)
+{
+    *owner_domain_id = options->owner_domain_id != NULL
+        ? options->owner_domain_id
+        : current_chain->ids[0];
+    *authorization_chain = current_chain;
+    if (options->owner_domain_id != NULL
+        && secdat_gc_resolve_registered_owner_chain(
+            *owner_domain_id,
+            owner_chain
+        ) != 0) {
+        return 1;
+    }
+    if (owner_chain->count > 0) {
+        *authorization_chain = owner_chain;
+    }
+    return 0;
+}
+
+static int secdat_gc_require_authorized_mutation(
+    const struct secdat_domain_chain *authorization_chain,
+    int dry_run,
+    const char *operation
+)
+{
+    if (dry_run) {
+        return 0;
+    }
+    return secdat_require_mutable_session_chain(
+            authorization_chain,
+            operation
+        ) != 0
+        || secdat_require_writable_domain_chain(authorization_chain) != 0;
+}
+
+static int secdat_gc_run_quarantine_command(
+    const struct secdat_cli *cli,
+    const struct secdat_gc_options *options,
+    const struct secdat_domain_chain *chain
+)
+{
+    struct secdat_domain_chain owner_chain = {0};
+    const struct secdat_domain_chain *authorization_chain = NULL;
+    const char *owner_domain_id = NULL;
+    int status = 1;
+
+    if (secdat_gc_select_owner_authorization(
+            options,
+            chain,
+            &owner_chain,
+            &owner_domain_id,
+            &authorization_chain
+        ) != 0
+        || secdat_gc_require_authorized_mutation(
+            authorization_chain,
+            options->dry_run,
+            "gc quarantine"
+        ) != 0) {
+        goto cleanup;
+    }
+    status = options->quarantine_handle != NULL
+        ? secdat_gc_quarantine_candidate(
+            owner_domain_id,
+            cli->store,
+            options->quarantine_handle,
+            options->dry_run
+        )
+        : secdat_gc_drop_quarantine(
+            owner_domain_id,
+            cli->store,
+            options->drop_quarantine_handle,
+            options->dry_run
+        );
+
+cleanup:
+    secdat_domain_chain_free(&owner_chain);
+    return status;
+}
+
+static int secdat_gc_run_queued_command(
+    const struct secdat_cli *cli,
+    const struct secdat_gc_options *options,
+    const struct secdat_domain_chain *chain,
+    struct secdat_gc_report *report
+)
+{
+    struct secdat_domain_chain owner_chain = {0};
+    const struct secdat_domain_chain *authorization_chain = NULL;
+    const char *owner_domain_id = NULL;
+    size_t selected_count = 0;
+    int status = 1;
+
+    if (secdat_gc_select_owner_authorization(
+            options,
+            chain,
+            &owner_chain,
+            &owner_domain_id,
+            &authorization_chain
+        ) != 0
+        || secdat_gc_require_authorized_mutation(
+            authorization_chain,
+            options->dry_run,
+            "gc --queued"
+        ) != 0) {
+        goto cleanup;
+    }
+    status = secdat_gc_collect_queued_batch(
+        owner_domain_id,
+        cli->store,
+        1,
+        options->dry_run,
+        report,
+        &selected_count,
+        NULL
+    );
+
+cleanup:
+    secdat_domain_chain_free(&owner_chain);
+    return status;
+}
+
+static int secdat_gc_run_store_sweep(
+    const struct secdat_cli *cli,
+    const struct secdat_gc_options *options,
+    const struct secdat_domain_chain *chain,
+    struct secdat_gc_report *report
+)
+{
+    size_t selected_count = 0;
+    int status = secdat_gc_v2_store(chain, cli->store, options, report);
+
+    if (status != 0 || report->queued == 0) {
+        return status;
+    }
+    return secdat_gc_collect_queued_batch(
+        chain->ids[0],
+        cli->store,
+        1,
+        0,
+        report,
+        &selected_count,
+        NULL
+    );
+}
+
+static int secdat_gc_resolve_current_chain(
+    const struct secdat_cli *cli,
+    struct secdat_domain_chain *chain
+)
+{
+    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), chain) != 0) {
+        return 1;
+    }
+    if (chain->count == 0) {
+        secdat_domain_chain_free(chain);
+        fprintf(stderr, _("gc requires a registered current domain\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_gc_validate_format(
+    const struct secdat_gc_options *options
+)
+{
+    if (strcmp(options->format, "v2") != 0) {
+        fprintf(stderr, _("gc is only supported with --format v2\n"));
+        return 2;
+    }
+    return 0;
+}
+
+static int secdat_gc_parse_validated_options(
+    const struct secdat_cli *cli,
+    struct secdat_gc_options *options
+)
+{
+    int status = secdat_parse_gc_options(cli, options);
+
+    return status == 0 ? secdat_gc_validate_format(options) : status;
 }
 
 static int secdat_command_gc(const struct secdat_cli *cli)
@@ -30391,19 +35001,55 @@ static int secdat_command_gc(const struct secdat_cli *cli)
     struct secdat_domain_chain chain = {0};
     int status;
 
-    status = secdat_parse_gc_options(cli, &options);
+    memset(&report, 0, sizeof(report));
+    status = secdat_gc_parse_validated_options(cli, &options);
     if (status != 0) {
         return status;
     }
-
-    if (strcmp(options.format, "v2") != 0) {
-        fprintf(stderr, _("gc is only supported with --format v2\n"));
-        return 2;
+    if (options.status && options.owner_domain_id != NULL) {
+        return secdat_gc_print_status(
+            options.owner_domain_id,
+            cli->store,
+            options.errors,
+            options.json
+        );
     }
-    if (secdat_domain_resolve_chain(secdat_cli_domain_base(cli), &chain) != 0) {
+    if (secdat_gc_resolve_current_chain(cli, &chain) != 0) {
         return 1;
     }
-    status = secdat_gc_v2_store(&chain, cli->store, &options, &report);
+    if (options.status) {
+        status = secdat_gc_print_status(
+            chain.ids[0],
+            cli->store,
+            options.errors,
+            options.json
+        );
+        secdat_domain_chain_free(&chain);
+        return status;
+    }
+    if (options.repair_epoch) {
+        status = secdat_gc_repair_reference_epoch(
+            &chain,
+            cli->store,
+            options.dry_run
+        );
+        secdat_domain_chain_free(&chain);
+        return status;
+    }
+    if (options.quarantine_handle != NULL
+        || options.drop_quarantine_handle != NULL) {
+        status = secdat_gc_run_quarantine_command(cli, &options, &chain);
+        secdat_domain_chain_free(&chain);
+        return status;
+    }
+    if (options.queued) {
+        status = secdat_gc_run_queued_command(cli, &options, &chain, &report);
+        if (status != 0 || (!options.orphaned && !options.dangling)) {
+            secdat_domain_chain_free(&chain);
+            return status;
+        }
+    }
+    status = secdat_gc_run_store_sweep(cli, &options, &chain, &report);
     secdat_domain_chain_free(&chain);
     if (status != 0) {
         return status;
@@ -32898,6 +37544,7 @@ static int secdat_command_secret_status(const struct secdat_cli *cli)
     char object_path[PATH_MAX];
     char value_path[PATH_MAX];
     size_t actual_refcount = 0;
+    int include_gc = 0;
     int legacy_value_sidecar;
     int status = 1;
 
@@ -32906,13 +37553,16 @@ static int secdat_command_secret_status(const struct secdat_cli *cli)
         secdat_cli_print_try_help(cli, "secret");
         return 2;
     }
-    if (cli->argc != 1) {
+    if (cli->argc == 2 && strcmp(cli->argv[0], "--gc") == 0) {
+        include_gc = 1;
+        secret_id = cli->argv[1];
+    } else if (cli->argc == 1) {
+        secret_id = cli->argv[0];
+    } else {
         fprintf(stderr, _("invalid arguments for secret status\n"));
         secdat_cli_print_try_help(cli, "secret");
         return 2;
     }
-
-    secret_id = cli->argv[0];
     if (!secdat_uuid_is_valid(secret_id)) {
         fprintf(stderr, _("invalid UUID for secret status: %s\n"), secret_id);
         return 2;
@@ -32972,6 +37622,97 @@ static int secdat_command_secret_status(const struct secdat_cli *cli)
     printf("object_payload=%s\n", object.has_value_payload ? "yes" : "no");
     printf("object_payload_length=%zu\n", object.has_value_payload ? object.value_payload_length : 0);
     printf("legacy_value_sidecar=%s\n", legacy_value_sidecar ? "yes" : "no");
+    if (include_gc) {
+        char candidate_path[PATH_MAX];
+        char handle[SECDAT_SHA256_HEX_LENGTH + 1];
+        char *escaped_store = NULL;
+        struct secdat_gc_candidate_record candidate;
+        struct stat candidate_status;
+
+        if (!secdat_gc_lowercase_uuid_is_valid(secret_id)
+            || secdat_gc_candidate_path(
+                chain.ids[0],
+                store_name,
+                secret_id,
+                candidate_path,
+                sizeof(candidate_path),
+                handle
+            ) != 0
+            || secdat_escape_component(store_name, &escaped_store) != 0) {
+            free(escaped_store);
+            goto cleanup;
+        }
+        if (lstat(candidate_path, &candidate_status) != 0
+            && errno == ENOENT) {
+            puts("gc_candidate=absent");
+            puts("gc_enqueued_at=-");
+            puts("gc_last_attempt_at=-");
+            puts("gc_next_attempt_at=-");
+            puts("gc_attempt_count=0");
+            puts("gc_last_error=none");
+        } else if (secdat_gc_read_candidate(
+                candidate_path,
+                chain.ids[0],
+                escaped_store,
+                handle,
+                &candidate
+            ) != 0) {
+            puts("gc_candidate=corrupt");
+            puts("gc_enqueued_at=-");
+            puts("gc_last_attempt_at=-");
+            puts("gc_next_attempt_at=-");
+            puts("gc_attempt_count=0");
+            puts("gc_last_error=corrupt-record");
+        } else {
+            char timestamp[64];
+            const char *state_name = candidate.state
+                    == SECDAT_GC_CANDIDATE_PENDING
+                ? "pending"
+                : (candidate.state == SECDAT_GC_CANDIDATE_RETRY_PENDING
+                    ? "retry-pending"
+                    : "manual-required");
+
+            printf("gc_candidate=%s\n", state_name);
+            if (secdat_gc_format_timestamp_ns(
+                    candidate.enqueued_at_ns,
+                    timestamp,
+                    sizeof(timestamp)
+                ) != 0) {
+                free(escaped_store);
+                goto cleanup;
+            }
+            printf("gc_enqueued_at=%s\n", timestamp);
+            if (candidate.has_last_attempt_at) {
+                if (secdat_gc_format_timestamp_ns(
+                        candidate.last_attempt_at_ns,
+                        timestamp,
+                        sizeof(timestamp)
+                    ) != 0) {
+                    free(escaped_store);
+                    goto cleanup;
+                }
+                printf("gc_last_attempt_at=%s\n", timestamp);
+            } else {
+                puts("gc_last_attempt_at=-");
+            }
+            if (candidate.has_next_attempt_at) {
+                if (secdat_gc_format_timestamp_ns(
+                        candidate.next_attempt_at_ns,
+                        timestamp,
+                        sizeof(timestamp)
+                    ) != 0) {
+                    free(escaped_store);
+                    goto cleanup;
+                }
+                printf("gc_next_attempt_at=%s\n", timestamp);
+            } else {
+                puts("gc_next_attempt_at=-");
+            }
+            printf("gc_attempt_count=%u\n", candidate.attempt_count);
+            printf("gc_last_error=%s\n", candidate.last_error);
+        }
+        free(escaped_store);
+    }
 
     status = 0;
 
@@ -34118,17 +38859,12 @@ static int secdat_update_v2_secret_refcount(
 static int secdat_remove_v2_local_key(const char *domain_id, const char *store_name, const char *key, int *removed)
 {
     char entry_path[PATH_MAX];
-    char object_path[PATH_MAX];
-    char value_path[PATH_MAX];
     char tombstone_path[PATH_MAX];
     char legacy_entry_path[PATH_MAX];
     struct secdat_v2_domain_entry_info entry;
-    struct secdat_v2_secret_object_info object;
     const char *object_domain_id;
     const char *object_store_name;
-    size_t references = 0;
     int lookup_status;
-    int object_is_valid = 0;
 
     *removed = 0;
     lookup_status = secdat_lookup_v2_domain_entry_authoritative(domain_id, store_name, key, &entry, entry_path, sizeof(entry_path));
@@ -34141,19 +38877,14 @@ static int secdat_remove_v2_local_key(const char *domain_id, const char *store_n
     object_domain_id = secdat_v2_entry_object_domain(domain_id, &entry);
     object_store_name = secdat_v2_entry_object_store(store_name, &entry);
 
-    if (secdat_count_v2_secret_references_to_object(object_domain_id, object_store_name, entry.secret_id, &references) != 0) {
-        return 1;
-    }
-    if (secdat_build_v2_secret_object_path(object_domain_id, object_store_name, entry.secret_id, object_path, sizeof(object_path)) != 0
-        || secdat_build_v2_secret_value_path(object_domain_id, object_store_name, entry.secret_id, value_path, sizeof(value_path)) != 0) {
-        return 1;
-    }
     if (secdat_build_tombstone_path(domain_id, store_name, key, tombstone_path, sizeof(tombstone_path)) != 0
-        || secdat_build_entry_path(domain_id, store_name, key, legacy_entry_path, sizeof(legacy_entry_path)) != 0) {
+        || secdat_build_entry_path(domain_id, store_name, key, legacy_entry_path, sizeof(legacy_entry_path)) != 0
+        || secdat_gc_topology_record_reference_remove(
+            object_domain_id,
+            object_store_name,
+            entry.secret_id
+        ) != 0) {
         return 1;
-    }
-    if (secdat_read_v2_secret_object_info(object_path, entry.secret_id, &object) == 0) {
-        object_is_valid = 1;
     }
 
     if (secdat_prepared_remove_or_apply(entry_path) != 0) {
@@ -34165,16 +38896,6 @@ static int secdat_remove_v2_local_key(const char *domain_id, const char *store_n
         || secdat_write_key_metadata(domain_id, store_name, key, NULL) != 0
         || secdat_remove_if_exists(tombstone_path) != 0) {
         return 1;
-    }
-    if (object_is_valid) {
-        if (references <= 1) {
-            if (secdat_remove_if_exists(value_path) != 0
-                || secdat_remove_if_exists(object_path) != 0) {
-                return 1;
-            }
-        } else if (secdat_update_v2_secret_refcount(object_domain_id, object_store_name, entry.secret_id, references - 1) != 0) {
-            return 1;
-        }
     }
 
     *removed = 1;
@@ -36240,14 +40961,11 @@ static int secdat_link_v2_key(
     }
     entry_written = 1;
 
-    if (object.refcount_present
-        && (object.refcount == SIZE_MAX
-            || secdat_update_v2_secret_refcount(
-                object_domain_id,
-                object_store_name,
-                source_entry->secret_id,
-                object.refcount + 1
-            ) != 0)) {
+    if (secdat_gc_topology_record_reference_add(
+            object_domain_id,
+            object_store_name,
+            source_entry->secret_id
+        ) != 0) {
         goto cleanup;
     }
     if (secdat_remove_if_exists(tombstone_path) != 0
@@ -36354,13 +41072,8 @@ static int secdat_remove_replaced_v2_entry(
 )
 {
     char entry_path[PATH_MAX];
-    char object_path[PATH_MAX];
-    char value_path[PATH_MAX];
-    struct secdat_v2_secret_object_info object;
     const char *object_domain_id;
     const char *object_store_name;
-    size_t references = 0;
-    int object_is_valid = 0;
 
     if (!entry->from_v2 || entry->entry_id[0] == '\0') {
         fprintf(stderr, _("destination key already exists: %s\n"), key);
@@ -36369,27 +41082,19 @@ static int secdat_remove_replaced_v2_entry(
 
     object_domain_id = entry->object_domain[0] == '\0' ? domain_id : entry->object_domain;
     object_store_name = entry->object_store[0] == '\0' ? store_name : secdat_effective_entry_object_store(entry);
-    if (secdat_count_v2_secret_references_to_object(object_domain_id, object_store_name, entry->secret_id, &references) != 0
-        || secdat_build_v2_domain_entry_path(domain_id, store_name, entry->entry_id, entry_path, sizeof(entry_path)) != 0
-        || secdat_build_v2_secret_object_path(object_domain_id, object_store_name, entry->secret_id, object_path, sizeof(object_path)) != 0
-        || secdat_build_v2_secret_value_path(object_domain_id, object_store_name, entry->secret_id, value_path, sizeof(value_path)) != 0) {
+    if (secdat_build_v2_domain_entry_path(domain_id, store_name, entry->entry_id, entry_path, sizeof(entry_path)) != 0
+        || secdat_gc_topology_record_reference_remove(
+            object_domain_id,
+            object_store_name,
+            entry->secret_id
+        ) != 0) {
         return 1;
-    }
-    if (secdat_read_v2_secret_object_info(object_path, entry->secret_id, &object) == 0) {
-        object_is_valid = 1;
     }
     if (secdat_prepared_remove_or_apply(entry_path) != 0) {
         fprintf(stderr, _("failed to remove key: %s\n"), key);
         return 1;
     }
-    if (!object_is_valid) {
-        return 0;
-    }
-    if (references <= 1) {
-        return secdat_remove_if_exists(value_path) != 0
-            || secdat_remove_if_exists(object_path) != 0;
-    }
-    return secdat_update_v2_secret_refcount(object_domain_id, object_store_name, entry->secret_id, references - 1);
+    return 0;
 }
 
 static int secdat_command_ln(const struct secdat_cli *cli)
@@ -37721,7 +42426,6 @@ static int secdat_move_v2_entry(
     struct secdat_effective_entry destination_entry = {0};
     struct secdat_metadata_list metadata = {0};
     struct secdat_mask_write_plan source_mask_plan;
-    struct secdat_v2_secret_object_info object;
     struct secdat_secret_attrs attrs;
     unsigned char object_key[SECDAT_V2_OBJECT_KEY_LEN];
     const unsigned char *object_key_ptr = NULL;
@@ -37758,6 +42462,7 @@ static int secdat_move_v2_entry(
     }
     destination_domain_id = destination_chain->ids[0];
     secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    secdat_gc_topology_plan_reset(&secdat_gc_topology_plan);
     if (secdat_transaction_begin(
             &transaction,
             "mv",
@@ -38029,28 +42734,11 @@ static int secdat_move_v2_entry(
         goto cleanup;
     }
     if (!source_is_local) {
-        char object_path[PATH_MAX];
-
-        if (secdat_build_v2_secret_object_path(
+        if (secdat_gc_topology_record_reference_add(
                 object_domain_id,
                 object_store_name,
-                source_entry.secret_id,
-                object_path,
-                sizeof(object_path)
-            ) != 0
-            || secdat_read_v2_secret_object_info(
-                object_path,
-                source_entry.secret_id,
-                &object
-            ) != 0
-            || (object.refcount_present
-                && (object.refcount == SIZE_MAX
-                    || secdat_update_v2_secret_refcount(
-                        object_domain_id,
-                        object_store_name,
-                        source_entry.secret_id,
-                        object.refcount + 1
-                    ) != 0))) {
+                source_entry.secret_id
+            ) != 0) {
             goto cleanup;
         }
     }
@@ -38116,6 +42804,9 @@ static int secdat_move_v2_entry(
             ) != 0)) {
         goto cleanup;
     }
+    if (secdat_gc_topology_plan_apply(&secdat_gc_topology_plan) != 0) {
+        goto cleanup;
+    }
     secdat_prepared_write_set.project_reads = 0;
     secdat_prepared_write_set.active = 0;
     secdat_prepared_write_set.observe_reads = 0;
@@ -38144,6 +42835,7 @@ static int secdat_move_v2_entry(
         || secdat_transaction_commit(&transaction) != 0) {
         goto cleanup;
     }
+    secdat_gc_topology_notify_agents(&secdat_gc_topology_plan);
     (void)unsafe_store;
     (void)changed_file_count;
     status = 0;
@@ -38165,6 +42857,7 @@ cleanup:
     secdat_dependency_update_plan_reset(&dependency_plan);
     secdat_transaction_reset(&transaction);
     secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    secdat_gc_topology_plan_reset(&secdat_gc_topology_plan);
     return status;
 }
 
@@ -40192,6 +44885,7 @@ int secdat_transactional_domain_delete(
     struct secdat_transaction transaction;
     char domain_root[PATH_MAX];
     char recorded_root_path[PATH_MAX];
+    int gc_queue_empty = 0;
     int result = 1;
 
     memset(&transaction, 0, sizeof(transaction));
@@ -40213,7 +44907,12 @@ int secdat_transactional_domain_delete(
             strlen(root_text),
             1
         ) != 0
-        || secdat_container_validate_empty_domain(domain_root) != 0) {
+        || secdat_container_validate_empty_domain(domain_root) != 0
+        || secdat_gc_owner_queue_is_empty(
+            domain_id,
+            &gc_queue_empty
+        ) != 0
+        || !gc_queue_empty) {
         fprintf(stderr, _("domain is not empty: %s\n"), root_text);
         goto cleanup;
     }
@@ -40345,6 +45044,7 @@ static int secdat_store_command_delete(const struct secdat_cli *cli)
     struct stat store_status;
     enum secdat_store_format format;
     const char *schema;
+    int gc_queue_empty = 0;
     int result = 1;
 
     memset(&transaction, 0, sizeof(transaction));
@@ -40403,6 +45103,15 @@ static int secdat_store_command_delete(const struct secdat_cli *cli)
         : "empty-store-v1";
     if (secdat_container_validate_empty_store(store_root, schema) != 0) {
         fprintf(stderr, _("store is not empty: %s\n"), cli->argv[0]);
+        goto cleanup;
+    }
+    if (secdat_gc_owner_store_queue_is_empty(
+            current_domain_id,
+            cli->argv[0],
+            &gc_queue_empty
+        ) != 0
+        || !gc_queue_empty) {
+        fprintf(stderr, _("store has pending or quarantined GC work: %s\n"), cli->argv[0]);
         goto cleanup;
     }
     if (secdat_transaction_begin(
@@ -42365,12 +47074,15 @@ static int secdat_execute_scoped_builder(
     secdat_mutation_stage.saw_overlay = 0;
     *inner_status = secdat_dispatch_command(filtered);
     secdat_mutation_stage.active = 0;
-    secdat_prepared_write_set.project_reads = 0;
     plan->slots = secdat_mutation_stage.slots;
     memset(&secdat_mutation_stage.slots, 0, sizeof(secdat_mutation_stage.slots));
     if (*inner_status != 0) {
         return 1;
     }
+    if (secdat_gc_topology_plan_apply(&secdat_gc_topology_plan) != 0) {
+        return 1;
+    }
+    secdat_prepared_write_set.project_reads = 0;
     if (filtered->command == SECDAT_COMMAND_META_MARK_LEAKED
         && secdat_collect_relation_refresh_suggestions_indexed(
             filtered->argv[0],
@@ -42497,6 +47209,7 @@ static int secdat_run_scoped_mutation(
     transaction.lock_fd = -1;
     memset(&dependency_plan, 0, sizeof(dependency_plan));
     secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    secdat_gc_topology_plan_reset(&secdat_gc_topology_plan);
     secdat_mutation_slot_list_free(&secdat_mutation_stage.slots);
     if (secdat_transaction_begin(
             &transaction,
@@ -42554,6 +47267,7 @@ static int secdat_run_scoped_mutation(
         ) != 0) {
         goto cleanup;
     }
+    secdat_gc_topology_notify_agents(&secdat_gc_topology_plan);
     if (filtered->command == SECDAT_COMMAND_META_MARK_LEAKED) {
         secdat_render_relation_refresh_suggestions(&refresh_suggestions);
     }
@@ -42570,6 +47284,7 @@ cleanup:
     secdat_dependency_update_plan_reset(&dependency_plan);
     secdat_relation_refresh_suggestion_rows_free(&refresh_suggestions);
     secdat_prepared_write_set_reset(&secdat_prepared_write_set);
+    secdat_gc_topology_plan_reset(&secdat_gc_topology_plan);
     return status;
 }
 
@@ -42668,7 +47383,6 @@ static int secdat_command_requires_transaction_lock(
     case SECDAT_COMMAND_RELATION_SUGGEST_REFRESH:
     case SECDAT_COMMAND_RELATION_RM:
     case SECDAT_COMMAND_FSCK:
-    case SECDAT_COMMAND_GC:
     case SECDAT_COMMAND_MASK:
     case SECDAT_COMMAND_UNMASK:
     case SECDAT_COMMAND_SET:

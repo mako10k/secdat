@@ -524,6 +524,7 @@ source removal.
 - when list encounters a malformed canonical record it directs the operator to `fsck --format v2 --dangling` for the diagnostic handle
 - v2 refcount checks report cached object refcount mismatches as `refcount-mismatch	SECRET_ID	expected=N actual=M`
 - `fsck --format v2 --refcount --repair` rewrites only rebuildable cached object refcounts and reports `repaired-refcount	SECRET_ID	expected=N actual=M`
+- v2 refcount checks also report `gc-candidate-inconsistency	SECRET_ID	missing-zero-reference|invalid-record`; repair preserves candidate/object lifecycle state for a later explicit GC or quarantine action
 - `fsck --format v2 --dependency-index` validates the global `SECDATDEPSTATE1` root, canonical content-addressed `SECDATDEPNODE1` records, and complete primary-to-edge and edge-to-primary coverage for the M/R/D key spaces
 - `fsck --format v2 --dependency-index --repair` publishes `building` before scanning, writes and verifies immutable nodes, then publishes `complete`; missing, building, corrupt, or stale coverage is never treated as an empty index
 - reverse-dependent hidden-name checks use exact R-key lookup and direct operators to dependency-index repair when authoritative coverage is unavailable; there is no registered-domain scan fallback
@@ -531,10 +532,16 @@ source removal.
 - with a complete `indexed-mutations-v1` root, canonical v2 mask and unmask writers incrementally replace only affected Merkle paths and publish dependency nodes, mask primaries, and the active root in one recoverable transaction
 - missing or building coverage remains incomplete, malformed coverage blocks canonical v2 mask/unmask writers, and current relation writers still invalidate a complete generation before changing a primary
 - `fsck --repair` must not delete orphaned secrets, dangling entries, values, tombstones, or any non-derived data
-- `secdat gc --format v2 [--orphaned] [--dangling]` is the explicit destructive cleanup path for v2 graph garbage
+- foreground v2 reference removal atomically commits the entry change, reference-epoch rotation, cached-count hint, and durable owner-scoped GC candidate; it does not perform a global reference scan or physically delete the object
+- an exact-local persistent writable owner agent discovers due candidates on startup, wake, and timer; readonly, volatile, inherited, locked, expired, or absent agents retain durable work
+- the common agent/manual collector snapshots at most eight candidates, releases the mutation lock for a physical all-domain reference proof, services agent socket work after 256 records or 25 ms, and rechecks both reference epoch and enqueue generation before one atomic cancel/delete/retry transaction
+- `secdat gc --format v2 [--orphaned] [--dangling] [--queued]` is the explicit recovery and queued-work path for v2 graph garbage
 - without a filter, `gc` targets both orphaned and dangling v2 graph artifacts
 - `gc --dry-run` reports `would-remove-*` rows without deleting files
-- actual `gc` reports `removed-*` rows and removes v2 domain-entry files, orphaned secret-object files, invalid secret-object files, standalone object value sidecars, and sidecars paired with removed secret objects
+- `gc --status [--errors] [--json]` reports queue aggregates, stable corrupt/manual handles, and schedule times without scanning the graph; `--owner DOMAIN_ID --status` remains available for an unregistered owner
+- mutating `--owner DOMAIN_ID --queued`, candidate quarantine/drop, and epoch repair require the documented exact-owner persistent writable authorization; an unregistered owner never becomes delete authority
+- actual zero-reference collection reports `removed-*` rows and atomically removes the object, object value/lifecycle sidecars, and candidate; referenced candidates are cancelled and their present cached refcount is reconciled
+- corrupt candidates remain untouched until explicit `--quarantine-candidate HANDLE`; `--drop-quarantine HANDLE` removes only the quarantined work record
 - `gc` must not touch legacy v1 key/value fallback files preserved for migration compatibility
 
 #### FR-7c Shell Export
@@ -1482,9 +1489,14 @@ Store v2 defines these command surfaces:
 secdat ln [--replace] [--skip-same-value-check] [MASK_MUTATION_OPTIONS] SRC_KEYREF DST_KEYREF
 secdat ln [MASK_MUTATION_OPTIONS] @UUID DST_KEYREF
 secdat id KEYREF
-secdat secret status UUID
+secdat secret status [--gc] UUID
 secdat fsck [--orphaned] [--dangling] [--refcount] [--dependency-index] [--repair]
-secdat gc [--orphaned] [--dangling] [--dry-run]
+secdat gc [--orphaned] [--dangling] [--queued] [--dry-run]
+secdat gc --status [--errors] [--json]
+secdat gc --owner DOMAIN_ID [--store STORE] [--queued|--status] [--json]
+secdat gc --repair-epoch [--dry-run]
+secdat gc --quarantine-candidate HANDLE [--dry-run]
+secdat gc --drop-quarantine HANDLE [--dry-run]
 ```
 
 Current and planned semantics:
@@ -1495,13 +1507,15 @@ Current and planned semantics:
 - cross-domain `ln` is enabled for normal source/destination KEYREFs when both sides resolve through v2 stores; cross-domain refcount checks count all registered v2 domain entries that point at the object domain/store/UUID tuple
 - `ln @UUID DST_KEYREF` is a direct source-object link and is allowed only when the current context can authorize that UUID through an existing visible/unlocked entry; `@UUID` is a source operand, not a destination
 - `id KEYREF` prints the resolved `secret_id` without printing the secret value
-- `secret status UUID` prints non-secret object metadata, link count, and whether the object is orphaned
+- `secret status UUID` prints non-secret object metadata, link count, and whether the object is orphaned; `--gc` appends candidate state and schedule fields without exposing its enqueue generation
 - `fsck --orphaned` lists secret objects with no referencing domain entries
 - `fsck --dangling` lists domain entries pointing to missing or unreadable secret objects and standalone object value sidecars whose secret object is missing
 - `fsck --refcount` compares cached object refcounts with counts rebuilt from domain entries
 - `fsck --repair` repairs only derived metadata currently supported by the implementation, starting with cached v2 refcounts; it must not delete orphaned values without an explicit destructive option
-- `gc --dry-run` lists v2 graph files that would be deleted
-- `gc` without `--dry-run` deletes only explicit v2 graph garbage: orphaned secret objects, standalone or paired object value sidecars, invalid secret objects, invalid domain entries, and domain entries pointing to missing or unreadable objects
+- `gc --queued` runs the same epoch/generation-fenced collector as the owner agent and ignores debounce/backoff for the selected owner/store
+- `gc --status` reads only owner-shard candidate state; `--errors` adds addressable handles and `--json` emits the stable v1 queue schemas
+- `gc --dry-run` lists v2 graph files or queued outcomes without mutating candidate retry state or object state
+- `gc` without `--dry-run` deletes only explicit v2 graph garbage after an authoritative physical reference proof; valid orphan identities are first queued and then processed by the common collector
 
 `cp` and `ln` must remain deliberately different. `cp` produces an independent secret object and can later diverge. `ln` shares one secret object, so changing the value through any link changes the value observed through all links.
 

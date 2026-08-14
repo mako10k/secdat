@@ -68,7 +68,7 @@ value bytes:
 
 ```text
 SECDATGCCAND1
-owner_domain_id=<uuid>
+owner_domain_id=<canonical-32-lowercase-hex-domain-id>
 owner_store=<escaped-canonical-store>
 secret_id=<uuid>
 enqueue_id=<uuid>
@@ -347,7 +347,7 @@ Extend the flat option surface without changing its default selectors:
 ```text
 secdat gc [--orphaned] [--dangling] [--queued] [--dry-run] [--format v2]
 secdat gc --status [--errors] [--json] [--format v2]
-secdat gc --owner UUID [--store STORE] [--queued|--status] [--json]
+secdat gc --owner DOMAIN_ID [--store STORE] [--queued|--status] [--json]
 secdat gc --repair-epoch [--dry-run]
 secdat gc --quarantine-candidate HANDLE [--dry-run]
 secdat gc --drop-quarantine HANDLE [--dry-run]
@@ -360,9 +360,9 @@ two existing selectors. `--status` is read-only and mutually exclusive with
 output, so this form bypasses the mutation-plan wrapper that currently owns
 mutation `--json`.
 
-`--owner UUID` is the explicit administrator/recovery address for an owner
+`--owner DOMAIN_ID` is the explicit administrator/recovery address for an owner
 shard that no longer has a registered root or live exact-local agent. It never
-changes the caller's domain resolution. Mutating `--owner UUID --queued`
+changes the caller's domain resolution. Mutating `--owner DOMAIN_ID --queued`
 requires writable authorization for that exact owner when it is registered;
 authorization may come from its persistent writable agent session or an owner
 master key already accepted by ordinary mutable commands. An unregistered
@@ -429,6 +429,13 @@ narrow responsibility: it repairs a present cached count from an authoritative
 scan but neither enqueues, cancels, nor deletes candidate/object state. It
 reports candidate inconsistency for a later queued/manual GC pass. Repair does
 not update `value_updated_at` or other semantic lifecycle fields.
+The stable diagnostic is
+`gc-candidate-inconsistency<TAB>SECRET_ID<TAB>missing-zero-reference` when a
+valid zero-reference object has no candidate, or the same kind with
+`invalid-record` when its canonical candidate path is present but invalid.
+A valid delayed candidate for an object that still has references is expected
+work, not an fsck inconsistency. Here `<TAB>` denotes one literal tab in CLI
+output.
 
 `gc --status` reads candidate records without an actual graph scan or unlocked
 session. Text reports only aggregate counts and times. `--json` emits this exact
@@ -437,7 +444,7 @@ top-level shape, with RFC 3339 nanosecond strings or `null` for absent times:
 ```json
 {
   "schema_version": "secdat.gc-status.v1",
-  "domain_id": "<uuid>",
+  "domain_id": "<canonical-32-lowercase-hex-domain-id>",
   "store": "default",
   "pending": 0,
   "ready": 0,
@@ -455,7 +462,7 @@ The complete error-detail shape is:
 ```json
 {
   "schema_version": "secdat.gc-status-errors.v1",
-  "domain_id": "<uuid>",
+  "domain_id": "<canonical-32-lowercase-hex-domain-id>",
   "store": "default",
   "pending": 0,
   "ready": 0,
@@ -549,7 +556,7 @@ gc CLI -> common transaction helper: cancel/delete/retry (no writes in dry-run)
 gc CLI -> report: preserve existing default text; opt-in status has v1 JSON
 ```
 
-For an unregistered owner, `gc --owner UUID --status` remains available but
+For an unregistered owner, `gc --owner DOMAIN_ID --status` remains available but
 `--queued` stops before proof/deletion and reports domain recovery as required.
 
 Refcount fsck remains separate from object lifetime:

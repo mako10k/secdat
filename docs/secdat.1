@@ -1,4 +1,4 @@
-.TH SECDAT 1 "2026-08-14" "secdat 0.9.0" "User Commands"
+.TH SECDAT 1 "2026-08-14" "secdat 0.10.0" "User Commands"
 .SH NAME
 secdat \- minimal local secret store with domain and store scoping
 .SH SYNOPSIS
@@ -246,8 +246,11 @@ Remove one semantic relation record.
 .B id KEYREF
 Print the resolved v2 secret object UUID for one key without reading its value. This requires a store marked with the v2 format marker. The UUID is an address, not authority.
 .TP
-.B secret status UUID
+.B secret status [\-\-gc] UUID
 Print one v2 secret object's non-secret metadata in the current domain/store without reading its value. UUID lookup is scoped to the current domain/store object view; for cross-domain links, run direct UUID status from the object-owning context. Output includes the object domain/store address, value-access and injection policy, cached and actual refcounts, orphaned state, object payload presence, and legacy value sidecar presence.
+With
+.B \-\-gc ,
+append the durable candidate state, enqueue/attempt schedule, attempt count, and last error without printing the internal enqueue generation.
 .TP
 .B fsck [\-\-orphaned] [\-\-dangling] [\-\-refcount] [\-\-dependency-index] [\-\-repair] [\-\-format v1|v2]
 Check the current-domain local store namespace without decrypting secret values. Clean v1 output is
@@ -304,8 +307,10 @@ Until atomic mask-primary rewriting is routed, an identity-mask dependency
 rejects either key-visibility transition rather than leaving stale mask
 visibility/name state; updates that keep the existing visibility remain allowed.
 .TP
-.B gc [\-\-orphaned] [\-\-dangling] [\-\-dry-run] [\-\-format v2]
-Remove unreachable or dangling v2 graph files from the current-domain local store namespace. Without a filter,
+.B gc [\-\-orphaned] [\-\-dangling] [\-\-queued] [\-\-dry-run] [\-\-format v2]
+Foreground v2 reference removal commits a durable owner-scoped candidate instead of scanning all domains or deleting an object. An eligible exact-local persistent writable agent processes due candidates; absent, readonly, volatile, inherited, locked, or expired agents leave them queued.
+.B \-\-queued
+runs the same epoch- and generation-fenced proof explicitly and ignores debounce/backoff. It may be combined with the legacy orphan/dangling inventory. Without a filter,
 .B gc
 targets both orphaned and dangling v2 graph artifacts.
 .B --dry-run
@@ -313,7 +318,18 @@ prints
 .B would-remove-*
 rows without deleting files. Actual removal prints
 .B removed-*
-rows. The command removes v2 domain-entry files, orphaned secret-object files, standalone object value sidecars, and sidecars paired with removed secret objects, but does not touch legacy v1 key/value fallback files.
+rows. A proven zero-reference deletion atomically removes the object, value and lifecycle sidecars, and candidate, but does not touch legacy v1 key/value fallback files.
+.PP
+.B gc \-\-status [\-\-errors] [\-\-json]
+reports aggregate candidate state without a graph scan.
+.B \-\-owner DOMAIN_ID
+addresses an owner shard for status or queued work; status may inspect an unregistered owner, but mutation requires writable authorization for that exact registered owner.
+.B \-\-repair-epoch [\-\-dry-run]
+replaces only a missing or malformed reference epoch.
+.B \-\-quarantine-candidate HANDLE
+atomically isolates one structurally corrupt candidate without changing its object, and
+.B \-\-drop-quarantine HANDLE
+is the separate acknowledgement that removes only that quarantine record.
 .TP
 .B mask [\-\-rebind] [\-\-dry-run] [\-\-json] KEYREF
 In a persisted v2 store, create a canonical mask for the nearest inherited

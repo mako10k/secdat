@@ -420,6 +420,22 @@ if rc == 0:
     fail("migrated v2 rm should remove APP_PUBLIC")
 if app_public_files[0].exists():
     fail("migrated v2 rm did not remove the legacy v1 value file")
+app_public_object_path = store_root / "objects" / "secret" / f"{app_public_secret_id}.sec"
+gc_candidates = list((Path(env["XDG_DATA_HOME"]) / "secdat" / "gc" / "candidates").rglob("*.gc"))
+if not app_public_object_path.exists() or len(gc_candidates) != 1:
+    fail("migrated v2 rm did not retain the object with one deferred GC candidate")
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "--store", "app", "gc", "--queued",
+])
+if rc != 0 or stderr != "":
+    fail(f"migrated v2 queued GC failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+assert_contains(
+    stdout,
+    f"removed-orphaned-secret\t{app_public_secret_id}\tmissing-entry\n",
+    "migrated v2 deferred GC",
+)
+if app_public_object_path.exists() or gc_candidates[0].exists():
+    fail("migrated v2 queued GC did not remove object plus candidate")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"migrated v2 fsck after rm failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

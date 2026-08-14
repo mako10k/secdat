@@ -103,6 +103,7 @@ task T_DEFERRED_GC_IMPLEMENT M_SCAN_IMPLEMENTED -> M_GC_IMPLEMENTED:
   title "Implement persistent agent-driven deferred GC"
   description "After scoped transaction write sets exist, implement transaction-bound candidate enqueue, session-agent queue discovery and batched sweep, authoritative zero-reference validation, retry/cancellation, crash and restart handling, and manual fsck/gc interoperability. Foreground rm and replacement must not physically delete objects or perform a registered-domain reference scan."
   duration 13p
+  status done
   priority 60
   requires:
     CODEX 1
@@ -175,3 +176,16 @@ work_event WE-0fb06b38c02d04479c16e2f82296a17e3ddf5f1d5e77cbbde1a6602e1f538abf:
   task T_SCOPED_TRAVERSAL_IMPLEMENT
   kind finish
   occurred_at 2026-08-14T17:50:00+09:00
+
+work_event WE-a5c1b79445f9caeee1dd12e28a880867286baf943ffcd6acc044e244cdba6321:
+  model 1
+  task T_DEFERRED_GC_IMPLEMENT
+  kind start
+  occurred_at 2026-08-14T18:25:01+09:00
+  planned_value 13p
+
+work_event WE-2be5697d6ccf8fbf3e8403fa9f08733a0b150ff39960dbce5e01b2f3ea36b0a4:
+  model 1
+  task T_DEFERRED_GC_IMPLEMENT
+  kind finish
+  occurred_at 2026-08-14T20:05:00+09:00

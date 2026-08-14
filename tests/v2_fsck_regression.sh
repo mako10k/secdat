@@ -574,8 +574,15 @@ if rc != 0 or stdout.strip() != app_secret_id or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "get", "APP_SECRET"])
 if rc != 0 or stdout != "secret-value" or stderr != "":
     fail(f"same-name replaced key get failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if not (consumer_secret_objects_dir / f"{consumer_app_secret_id}.sec").exists():
+    fail("same-name replace removed the destination's old object before deferred GC")
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(consumer_domain), "gc", "--queued",
+])
+if rc != 0 or f"removed-orphaned-secret\t{consumer_app_secret_id}\tmissing-entry\n" not in stdout or stderr != "":
+    fail(f"same-name replacement deferred GC failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if (consumer_secret_objects_dir / f"{consumer_app_secret_id}.sec").exists() or (consumer_secret_objects_dir / f"{consumer_app_secret_id}.value").exists():
-    fail("same-name replace did not remove the destination's old object")
+    fail("same-name deferred GC did not remove the destination's old object")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "secret", "status", app_secret_id])
 if rc != 0 or stderr != "":
     fail(f"same-name linked source status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -695,8 +702,13 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "exists", "APP_SECRET_MOVED"])
 if rc == 0:
     fail("pure v2 rm should remove the moved key")
+if not (secret_objects_dir / f"{moved_secret_id}.sec").exists():
+    fail("pure v2 rm removed the unreferenced object before deferred GC")
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "gc", "--queued"])
+if rc != 0 or f"removed-orphaned-secret\t{moved_secret_id}\tmissing-entry\n" not in stdout or stderr != "":
+    fail(f"pure v2 deferred GC failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 if (secret_objects_dir / f"{moved_secret_id}.sec").exists() or (secret_objects_dir / f"{moved_secret_id}.value").exists():
-    fail("pure v2 rm did not remove the unreferenced secret object")
+    fail("pure v2 deferred GC did not remove the unreferenced secret object")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2"])
 if rc != 0 or stdout != "ok\n" or stderr != "":
     fail(f"pure v2 fsck after value writes failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -829,15 +841,30 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v
 if rc != 1 or stderr != "":
     fail(f"v2 refcount fsck should report issues: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, f"refcount-mismatch\t{secret_id}\texpected=3 actual=2\n", "v2 refcount mismatch")
+assert_contains(
+    stdout,
+    f"gc-candidate-inconsistency\t{orphan_secret_id}\tmissing-zero-reference\n",
+    "v2 missing orphan candidate",
+)
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--refcount", "--repair"])
-if rc != 0 or stderr != "":
+if rc != 1 or stderr != "":
     fail(f"v2 refcount repair should report repaired rows: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, f"repaired-refcount\t{secret_id}\texpected=3 actual=2\n", "v2 refcount repair")
+assert_contains(
+    stdout,
+    f"gc-candidate-inconsistency\t{orphan_secret_id}\tmissing-zero-reference\n",
+    "v2 repair preserves missing orphan candidate",
+)
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--refcount"])
-if rc != 0 or stdout != "ok\n" or stderr != "":
-    fail(f"v2 refcount fsck should be clean after repair: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if (
+    rc != 1
+    or stdout
+    != f"gc-candidate-inconsistency\t{orphan_secret_id}\tmissing-zero-reference\n"
+    or stderr != ""
+):
+    fail(f"v2 refcount repair changed GC lifecycle state: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--orphaned"])
 if rc != 1 or stderr != "":

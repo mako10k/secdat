@@ -1647,7 +1647,11 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "fsck", "[--orphaned] [--dangling] [--refcount] [--dependency-index] [--repair] [--format v1|v2]");
         break;
     case SECDAT_COMMAND_GC:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "gc", "[--orphaned] [--dangling] [--dry-run] [--format v2]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "gc", "[--orphaned] [--dangling] [--queued] [--dry-run] [--format v2]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "gc", "--status [--errors] [--json] [--owner DOMAIN_ID] [--format v2]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "gc", "--repair-epoch [--dry-run]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "gc", "[--owner DOMAIN_ID] --quarantine-candidate HANDLE [--dry-run]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "gc", "[--owner DOMAIN_ID] --drop-quarantine HANDLE [--dry-run]");
         break;
     case SECDAT_COMMAND_MASK:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mask", "[--rebind] [--dry-run] [--json] KEYREF");
@@ -1728,7 +1732,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "store finalize-migration", "STORE --from-format v1 [--dry-run]");
         break;
     case SECDAT_COMMAND_SECRET_STATUS:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "secret status", "UUID");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "secret status", "[--gc] UUID");
         break;
     case SECDAT_COMMAND_DOMAIN_CREATE:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR]", "domain create", "");
