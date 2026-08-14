@@ -249,7 +249,7 @@ Print the resolved v2 secret object UUID for one key without reading its value. 
 .B secret status UUID
 Print one v2 secret object's non-secret metadata in the current domain/store without reading its value. UUID lookup is scoped to the current domain/store object view; for cross-domain links, run direct UUID status from the object-owning context. Output includes the object domain/store address, value-access and injection policy, cached and actual refcounts, orphaned state, object payload presence, and legacy value sidecar presence.
 .TP
-.B fsck [\-\-orphaned] [\-\-dangling] [\-\-refcount] [\-\-repair] [\-\-format v1|v2]
+.B fsck [\-\-orphaned] [\-\-dangling] [\-\-refcount] [\-\-dependency-index] [\-\-repair] [\-\-format v1|v2]
 Check the current-domain local store namespace without decrypting secret values. Clean v1 output is
 .B ok .
 .B --orphaned
@@ -284,6 +284,21 @@ for the diagnostic handle.
 is supported with
 .B --format v2 --refcount
 and rewrites only cached object refcounts that can be rebuilt from domain entries. It does not delete orphaned secrets, dangling entries, values, or tombstones.
+.B --dependency-index
+with
+.B --format v2
+validates the global hash-committed reverse dependency index against all
+registered canonical masks and relations. Missing, building, corrupt, or stale
+coverage is an error, not an empty index. Adding
+.B --repair
+publishes a building state, writes and verifies immutable content-addressed
+nodes for the M/R/D key spaces, and then publishes the complete root. Existing
+mask and relation writers invalidate a complete generation before changing a
+primary, so rebuild before a reverse-dependent hidden-name operation.
+Exact relation lookup rejects a relation-dependent visible-to-hidden transition.
+Until atomic mask-primary rewriting is routed, an identity-mask dependency
+rejects either key-visibility transition rather than leaving stale mask
+visibility/name state; updates that keep the existing visibility remain allowed.
 .TP
 .B gc [\-\-orphaned] [\-\-dangling] [\-\-dry-run] [\-\-format v2]
 Remove unreachable or dangling v2 graph files from the current-domain local store namespace. Without a filter,

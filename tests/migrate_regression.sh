@@ -356,6 +356,12 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "get
 if rc == 0 or stdout != "" or "missing SECDAT_MASTER_KEY" not in stderr:
     fail(f"migrated v2 encrypted get while locked should fail: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(domain), "fsck", "--format", "v2",
+    "--dependency-index", "--repair",
+])
+if rc != 0 or stderr != "" or not stdout.startswith("rebuilt-dependency-index\tglobal\t"):
+    fail(f"migrated dependency index rebuild failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "app", "attr", "APP_TOKEN", "--key-visibility", "unlocked"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"migrated v2 key_visibility hidden update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

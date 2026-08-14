@@ -278,7 +278,7 @@ if mode != "none" or values:
 mode, values, _ = run_completion("fsck", "--")
 if mode != "plain":
     raise SystemExit(f"FAIL: fsck option completion mode mismatch: {mode!r}")
-for expected in ["--orphaned", "--dangling", "--refcount", "--repair", "--format"]:
+for expected in ["--orphaned", "--dangling", "--refcount", "--dependency-index", "--repair", "--format"]:
     assert_contains(values, expected, "fsck options")
 
 mode, values, _ = run_completion("gc", "--")

@@ -58,6 +58,15 @@ def run(args, extra_env=None):
     return completed.returncode, completed.stdout, completed.stderr
 
 
+def rebuild_dependency_index(domain_path):
+    rc, stdout, stderr = run([
+        bin_path, "--dir", str(domain_path), "fsck", "--format", "v2",
+        "--dependency-index", "--repair",
+    ])
+    if rc != 0 or stderr != "" or not stdout.startswith("rebuilt-dependency-index\tglobal\t"):
+        fail(f"dependency index rebuild failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+
 def assert_contains(output, expected, label):
     if expected not in output:
         fail(f"{label}: missing [{expected}] in [{output}]")
@@ -580,6 +589,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "rm", "APP_SE
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"same-name replaced key cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+rebuild_dependency_index(consumer_domain)
 rc, stdout, stderr = run([
     bin_path, "--dir", str(consumer_domain), "set", "APP_SECRET",
     "--value", "secret-value", "--key-visibility", "unlocked", "--bulk-select", "exclude",

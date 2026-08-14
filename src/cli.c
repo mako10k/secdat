@@ -1263,7 +1263,7 @@ int secdat_cli_complete(int argc, char **argv)
         "--cluster-field", "--help", "-h", NULL,
     };
     static const char *const fsck_options[] = {
-        "--orphaned", "--dangling", "--refcount", "--repair", "--format", "--help", "-h", NULL,
+        "--orphaned", "--dangling", "--refcount", "--dependency-index", "--repair", "--format", "--help", "-h", NULL,
     };
     static const char *const gc_options[] = {
         "--orphaned", "--dangling", "--dry-run", "--format", "--help", "-h", NULL,
@@ -1644,7 +1644,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "relation rm", "RELATION_ID");
         break;
     case SECDAT_COMMAND_FSCK:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "fsck", "[--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "fsck", "[--orphaned] [--dangling] [--refcount] [--dependency-index] [--repair] [--format v1|v2]");
         break;
     case SECDAT_COMMAND_GC:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "gc", "[--orphaned] [--dangling] [--dry-run] [--format v2]");
@@ -2253,6 +2253,10 @@ static void secdat_cli_print_target_use_cases(const char *program_name, const ch
         snprintf(buffer, sizeof(buffer), _("  run all current-domain metadata checks: %s fsck\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         snprintf(buffer, sizeof(buffer), _("  rebuild cached v2 refcounts after review: %s fsck --format v2 --refcount --repair\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  validate the global reverse dependency index: %s fsck --format v2 --dependency-index\n"), program_name);
+        secdat_cli_print_detail_line(buffer);
+        snprintf(buffer, sizeof(buffer), _("  rebuild and publish the global reverse dependency index: %s fsck --format v2 --dependency-index --repair\n"), program_name);
         secdat_cli_print_detail_line(buffer);
         return;
     }

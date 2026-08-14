@@ -94,6 +94,7 @@ run_secdat --dir "$root_domain" --store team set SDK_PERSISTENT_SOURCE --value s
 run_secdat --dir "$root_domain" --store team set SDK_MASKED_EPHEMERAL --value persisted-masked-value
 run_secdat --dir "$child_domain" --store team mask SDK_MASKED_EPHEMERAL
 run_secdat --dir "$root_domain" store migrate enumeration --to-format v2
+run_secdat --dir "$root_domain" fsck --format v2 --dependency-index --repair
 run_secdat --dir "$root_domain" --store enumeration set SDK_HIDDEN_EPHEMERAL \
     --key-visibility unlocked \
     --value persisted-hidden-value

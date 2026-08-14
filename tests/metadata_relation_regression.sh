@@ -70,6 +70,15 @@ def assert_not_contains(output, unexpected, label):
         fail(f"{label}: unexpected [{unexpected}] in [{output}]")
 
 
+def rebuild_dependency_index(domain_path):
+    rc, stdout, stderr = run([
+        bin_path, "--dir", str(domain_path), "fsck", "--format", "v2",
+        "--dependency-index", "--repair",
+    ])
+    if rc != 0 or stderr != "" or not stdout.startswith("rebuilt-dependency-index\tglobal\t"):
+        fail(f"dependency index rebuild failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "domain", "create"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -377,6 +386,7 @@ for key, value in [
 rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "store", "migrate", "default", "--to-format", "v2"])
 if rc != 0 or stderr != "":
     fail(f"hidden-domain v2 migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rebuild_dependency_index(hidden_domain)
 rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "attr", "HIDDEN_TOKEN", "--key-visibility", "unlocked"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"hidden key visibility update failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -433,12 +443,14 @@ rc, stdout, stderr = run([
 ])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"visible relation before hiding failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rebuild_dependency_index(hidden_domain)
 rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "attr", "CRED_SECRET", "--key-visibility", "unlocked"])
 if rc == 0 or stdout != "" or "key_visibility=unlocked cannot be used while relation references key: CRED_SECRET (credential-pair)" not in stderr:
     fail(f"hidden visibility should reject existing relation: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "relation", "rm", "credential-pair"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"relation cleanup before hiding failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rebuild_dependency_index(hidden_domain)
 rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "attr", "CRED_SECRET", "--key-visibility", "unlocked"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"hidden visibility after relation cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -458,12 +470,14 @@ rc, stdout, stderr = run([
 ])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"cross-domain relation set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rebuild_dependency_index(hidden_domain)
 rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "attr", "PUBLIC_ID", "--key-visibility", "unlocked"])
 if rc == 0 or stdout != "" or "key_visibility=unlocked cannot be used while relation references key: PUBLIC_ID (remote-credential)" not in stderr:
     fail(f"hidden visibility should reject cross-domain relation: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "relation", "rm", "remote-credential"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"cross-domain relation cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rebuild_dependency_index(hidden_domain)
 rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "attr", "PUBLIC_ID", "--key-visibility", "unlocked"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"hidden visibility after cross-domain cleanup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

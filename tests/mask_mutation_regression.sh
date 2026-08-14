@@ -105,6 +105,20 @@ def create_v2_domain(domain):
     )
     if "verified=yes\n" not in migrated:
         fail(f"migration was not verified for {domain}: {migrated!r}")
+    rebuilt = expect_ok(
+        [
+            bin_path,
+            "--dir",
+            str(domain),
+            "fsck",
+            "--format",
+            "v2",
+            "--dependency-index",
+            "--repair",
+        ]
+    )
+    if not rebuilt.startswith("rebuilt-dependency-index\tglobal\t"):
+        fail(f"dependency index rebuild failed for {domain}: {rebuilt!r}")
 
 
 def set_key(domain, key, value=None, hidden=False):

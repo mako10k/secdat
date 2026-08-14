@@ -162,6 +162,20 @@ def migrate(domain):
     )
     if "verified=yes\n" not in stdout:
         fail(f"migration was not verified for {domain}: {stdout!r}")
+    rebuilt = expect_ok(
+        [
+            bin_path,
+            "--dir",
+            str(domain),
+            "fsck",
+            "--format",
+            "v2",
+            "--dependency-index",
+            "--repair",
+        ]
+    )
+    if not rebuilt.startswith("rebuilt-dependency-index\tglobal\t"):
+        fail(f"dependency index rebuild failed for {domain}: {rebuilt!r}")
 
 
 def set_key(domain, key, value="value", hidden=False):

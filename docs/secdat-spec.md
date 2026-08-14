@@ -54,7 +54,7 @@ secdat [--dir DIR] [--store STORE] relation suggest-refresh KEYREF
 secdat [--dir DIR] [--store STORE] relation suggest-link [--cluster-field FIELD] [KEYREF]
 secdat [--dir DIR] [--store STORE] relation show RELATION_ID
 secdat [--dir DIR] [--store STORE] relation rm RELATION_ID
-secdat [--dir DIR] [--store STORE] fsck [--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]
+secdat [--dir DIR] [--store STORE] fsck [--orphaned] [--dangling] [--refcount] [--dependency-index] [--repair] [--format v1|v2]
 secdat [--dir DIR] [--store STORE] gc [--orphaned] [--dangling] [--dry-run] [--format v2]
 
 secdat [--dir DIR] [--store STORE] exists KEYREF
@@ -510,6 +510,11 @@ revalidated so changed-since-plan state fails before live mutation.
 - when list encounters a malformed canonical record it directs the operator to `fsck --format v2 --dangling` for the diagnostic handle
 - v2 refcount checks report cached object refcount mismatches as `refcount-mismatch	SECRET_ID	expected=N actual=M`
 - `fsck --format v2 --refcount --repair` rewrites only rebuildable cached object refcounts and reports `repaired-refcount	SECRET_ID	expected=N actual=M`
+- `fsck --format v2 --dependency-index` validates the global `SECDATDEPSTATE1` root, canonical content-addressed `SECDATDEPNODE1` records, and complete primary-to-edge and edge-to-primary coverage for the M/R/D key spaces
+- `fsck --format v2 --dependency-index --repair` publishes `building` before scanning, writes and verifies immutable nodes, then publishes `complete`; missing, building, corrupt, or stale coverage is never treated as an empty index
+- reverse-dependent hidden-name checks use exact R-key lookup and direct operators to dependency-index repair when authoritative coverage is unavailable; there is no registered-domain scan fallback
+- until atomic mask-primary rewriting is routed, exact M-key lookup rejects either mask-dependent key-visibility transition rather than publishing an entry with stale mask visibility/name representation; updates that keep the existing visibility remain allowed
+- current mask and relation writers invalidate a complete generation before changing a primary until their incremental copy-on-write index updates are implemented
 - `fsck --repair` must not delete orphaned secrets, dangling entries, values, tombstones, or any non-derived data
 - `secdat gc --format v2 [--orphaned] [--dangling]` is the explicit destructive cleanup path for v2 graph garbage
 - without a filter, `gc` targets both orphaned and dangling v2 graph artifacts
@@ -1461,7 +1466,7 @@ secdat ln [--replace] [--skip-same-value-check] [MASK_MUTATION_OPTIONS] SRC_KEYR
 secdat ln [MASK_MUTATION_OPTIONS] @UUID DST_KEYREF
 secdat id KEYREF
 secdat secret status UUID
-secdat fsck [--orphaned] [--dangling] [--refcount] [--repair]
+secdat fsck [--orphaned] [--dangling] [--refcount] [--dependency-index] [--repair]
 secdat gc [--orphaned] [--dangling] [--dry-run]
 ```
 

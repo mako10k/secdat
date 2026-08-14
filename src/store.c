@@ -79,6 +79,8 @@
 #define SECDAT_TRANSACTION_MAX_MANIFEST_BYTES (64U * 1024U * 1024U)
 #define SECDAT_TRANSACTION_MAX_BLOB_BYTES (256U * 1024U * 1024U)
 #define SECDAT_SHA256_HEX_LENGTH 64
+#define SECDAT_DEPENDENCY_NODE_MAX_BYTES (16U * 1024U)
+#define SECDAT_DEPENDENCY_MAX_RECORDS 65536U
 #define SECDAT_AGENT_PROTOCOL_VERSION 1
 #define SECDAT_AGENT_CAP_OVERLAY_V1 (UINT64_C(1) << 0)
 #define SECDAT_AGENT_CAP_EPHEMERAL_V1 (UINT64_C(1) << 1)
@@ -113,6 +115,8 @@ static const char secdat_v2_secret_object_magic[] = "SECDATSECOBJ1";
 static const char secdat_v2_mask_magic[] = "SECDATMASK1";
 static const char secdat_v2_compat_tombstone_magic[] = "SECDATMASKCOMPAT1";
 static const char secdat_transaction_magic[] = "SECDATTXN1";
+static const char secdat_dependency_state_magic[] = "SECDATDEPSTATE1";
+static const char secdat_dependency_node_magic[] = "SECDATDEPNODE1";
 static const unsigned char secdat_handover_magic[8] = {'S', 'E', 'C', 'D', 'H', 'N', 'D', '1'};
 static const unsigned char secdat_handover_fd_magic[8] = {'S', 'E', 'C', 'D', 'H', 'F', 'D', '1'};
 static const unsigned char secdat_handover_commit[8] = {'C', 'O', 'M', 'M', 'I', 'T', '1', '\0'};
@@ -291,6 +295,7 @@ struct secdat_fsck_options {
     int refcount;
     int repair;
     int skip_masks;
+    int dependency_index;
 };
 
 struct secdat_fsck_report {
@@ -300,6 +305,55 @@ struct secdat_fsck_report {
     size_t secret_objects;
     size_t issues;
     size_t repairs;
+};
+
+enum secdat_dependency_state_kind {
+    SECDAT_DEPENDENCY_STATE_BUILDING = 0,
+    SECDAT_DEPENDENCY_STATE_COMPLETE,
+};
+
+struct secdat_dependency_state {
+    enum secdat_dependency_state_kind state;
+    char build_id[64];
+    char active_root[SECDAT_SHA256_HEX_LENGTH + 1];
+    char building_generation[64];
+    int has_active_root;
+};
+
+struct secdat_dependency_encoded_node {
+    char hash[SECDAT_SHA256_HEX_LENGTH + 1];
+    unsigned char *data;
+    size_t length;
+};
+
+struct secdat_dependency_node_list {
+    struct secdat_dependency_encoded_node *items;
+    size_t count;
+    size_t capacity;
+};
+
+struct secdat_dependency_leaf {
+    char address[SECDAT_SHA256_HEX_LENGTH + 1];
+    json_t *object;
+};
+
+struct secdat_dependency_leaf_list {
+    struct secdat_dependency_leaf *items;
+    size_t count;
+    size_t capacity;
+};
+
+struct secdat_dependency_lookup_group {
+    char kind;
+    char id[PATH_MAX];
+    struct secdat_dependency_leaf_list edges;
+};
+
+struct secdat_dependency_lookup_group_list {
+    struct secdat_dependency_lookup_group *items;
+    size_t count;
+    size_t capacity;
+    size_t edge_count;
 };
 
 struct secdat_gc_options {
@@ -1076,6 +1130,17 @@ static int secdat_load_resolved_secret_attrs(
     int *unsafe_store
 );
 static int secdat_collect_store_names(const char *domain_id, const char *pattern, struct secdat_key_list *stores);
+static int secdat_dependency_index_relation_lookup(
+    const char *canonical_keyref,
+    char *relation_id,
+    size_t relation_id_size,
+    int *found
+);
+static int secdat_dependency_index_mask_lookup(
+    const char *target_entry_id,
+    int *found
+);
+static int secdat_dependency_index_invalidate(void);
 static int secdat_count_v2_secret_references_to_object(
     const char *object_domain_id,
     const char *object_store_name,
@@ -3012,11 +3077,12 @@ static void secdat_print_descendant_unlock_summary(size_t affected_count)
     printf(_("note: unlocked %zu descendant domains in this subtree; local locks remain\n"), affected_count);
 }
 
-static int secdat_parse_key_reference(
+static int secdat_parse_key_reference_internal(
     const char *raw,
     const char *fallback_dir,
     const char *fallback_store,
-    struct secdat_key_reference *reference
+    struct secdat_key_reference *reference,
+    int quiet
 )
 {
     const char *store_separator;
@@ -3033,14 +3099,18 @@ static int secdat_parse_key_reference(
     reference->store_value = fallback_store;
 
     if (raw == NULL || raw[0] == '\0') {
-        fprintf(stderr, _("invalid key reference\n"));
+        if (!quiet) {
+            fprintf(stderr, _("invalid key reference\n"));
+        }
         return 1;
     }
 
     store_separator = strrchr(raw, ':');
     if (store_separator != NULL) {
         if (store_separator[1] == '\0') {
-            fprintf(stderr, _("invalid key reference: %s\n"), raw);
+            if (!quiet) {
+                fprintf(stderr, _("invalid key reference: %s\n"), raw);
+            }
             return 1;
         }
         if (secdat_copy_string(reference->store, sizeof(reference->store), store_separator + 1) != 0) {
@@ -3064,16 +3134,22 @@ static int secdat_parse_key_reference(
         key_length = base_length - domain_length - 1;
         if (domain_length == 0 || key_length == 0
             || key_length >= sizeof(reference->key)) {
-            fprintf(stderr, _("invalid key reference: %s\n"), raw);
+            if (!quiet) {
+                fprintf(stderr, _("invalid key reference: %s\n"), raw);
+            }
             return 1;
         }
         if (domain_length >= PATH_MAX) {
-            fprintf(stderr, _("path is too long\n"));
+            if (!quiet) {
+                fprintf(stderr, _("path is too long\n"));
+            }
             return 1;
         }
         if (raw[0] == '/') {
             if (domain_length >= sizeof(reference->domain)) {
-                fprintf(stderr, _("path is too long\n"));
+                if (!quiet) {
+                    fprintf(stderr, _("path is too long\n"));
+                }
                 return 1;
             }
             memcpy(reference->domain, raw, domain_length);
@@ -3089,7 +3165,9 @@ static int secdat_parse_key_reference(
                 raw
             );
             if (written < 0 || (size_t)written >= sizeof(reference->domain)) {
-                fprintf(stderr, _("path is too long\n"));
+                if (!quiet) {
+                    fprintf(stderr, _("path is too long\n"));
+                }
                 return 1;
             }
         }
@@ -3101,7 +3179,9 @@ static int secdat_parse_key_reference(
     } else {
         key_length = base_length;
         if (key_length == 0 || key_length >= sizeof(reference->key)) {
-            fprintf(stderr, _("invalid key reference: %s\n"), raw);
+            if (!quiet) {
+                fprintf(stderr, _("invalid key reference: %s\n"), raw);
+            }
             return 1;
         }
         memcpy(reference->key, raw, key_length);
@@ -3109,10 +3189,28 @@ static int secdat_parse_key_reference(
     }
 
     if (!secdat_is_valid_env_name(reference->key)) {
-        fprintf(stderr, _("key is not a valid environment variable name: %s\n"), reference->key);
+        if (!quiet) {
+            fprintf(stderr, _("key is not a valid environment variable name: %s\n"), reference->key);
+        }
         return 1;
     }
     return 0;
+}
+
+static int secdat_parse_key_reference(
+    const char *raw,
+    const char *fallback_dir,
+    const char *fallback_store,
+    struct secdat_key_reference *reference
+)
+{
+    return secdat_parse_key_reference_internal(
+        raw,
+        fallback_dir,
+        fallback_store,
+        reference,
+        0
+    );
 }
 
 static int secdat_resolve_key_reference_chain(
@@ -3502,6 +3600,7 @@ static int secdat_parse_fsck_options(const struct secdat_cli *cli, struct secdat
         {"refcount", no_argument, NULL, 1002},
         {"format", required_argument, NULL, 1003},
         {"repair", no_argument, NULL, 1004},
+        {"dependency-index", no_argument, NULL, 1005},
         {NULL, 0, NULL, 0},
     };
     char *argv[cli->argc + 2];
@@ -3534,6 +3633,9 @@ static int secdat_parse_fsck_options(const struct secdat_cli *cli, struct secdat
         case 1004:
             options->repair = 1;
             break;
+        case 1005:
+            options->dependency_index = 1;
+            break;
         case '?':
         case ':':
         default:
@@ -3548,7 +3650,8 @@ static int secdat_parse_fsck_options(const struct secdat_cli *cli, struct secdat
         secdat_cli_print_try_help(cli, "fsck");
         return 2;
     }
-    if (!options->orphaned && !options->dangling && !options->refcount) {
+    if (!options->orphaned && !options->dangling && !options->refcount
+        && !options->dependency_index) {
         options->orphaned = 1;
         options->dangling = 1;
         options->refcount = 1;
@@ -3558,10 +3661,19 @@ static int secdat_parse_fsck_options(const struct secdat_cli *cli, struct secdat
             fprintf(stderr, _("fsck --repair is only supported with --format v2\n"));
             return 2;
         }
-        if (!options->refcount) {
+        if (!options->refcount && !options->dependency_index) {
             fprintf(stderr, _("fsck --repair currently requires --refcount\n"));
             return 2;
         }
+    }
+    if (options->dependency_index && strcmp(options->format, "v2") != 0) {
+        fprintf(stderr, _("fsck --dependency-index requires --format v2\n"));
+        return 2;
+    }
+    if (options->dependency_index
+        && (options->orphaned || options->dangling || options->refcount)) {
+        fprintf(stderr, _("fsck --dependency-index cannot be combined with store checks\n"));
+        return 2;
     }
 
     return 0;
@@ -16225,124 +16337,6 @@ cleanup:
     return status;
 }
 
-static int secdat_find_relation_referencing_keyref(
-    const char *domain_id,
-    const char *store_name,
-    const char *canonical_keyref,
-    char *relation_id,
-    size_t relation_id_size,
-    int *found
-)
-{
-    char relation_dir[PATH_MAX];
-    struct secdat_key_list relation_ids = {0};
-    size_t index;
-    int status = 1;
-
-    *found = 0;
-    if (relation_id_size > 0) {
-        relation_id[0] = '\0';
-    }
-    if (secdat_relations_dir(domain_id, store_name, relation_dir, sizeof(relation_dir)) != 0
-        || secdat_collect_directory_keys(relation_dir, ".rel", &relation_ids) != 0) {
-        goto cleanup;
-    }
-    if (relation_ids.count > 1) {
-        qsort(relation_ids.items, relation_ids.count, sizeof(*relation_ids.items), secdat_compare_strings);
-    }
-    for (index = 0; index < relation_ids.count; index += 1) {
-        struct secdat_relation_info relation = {0};
-        size_t member_index;
-
-        if (secdat_read_relation(domain_id, store_name, relation_ids.items[index], &relation, 0) != 0) {
-            secdat_relation_info_reset(&relation);
-            goto cleanup;
-        }
-        for (member_index = 0; member_index < relation.member_count; member_index += 1) {
-            if (strcmp(relation.members[member_index].keyref, canonical_keyref) == 0) {
-                *found = 1;
-                if (relation_id_size > 0
-                    && secdat_copy_string(relation_id, relation_id_size, relation_ids.items[index]) != 0) {
-                    secdat_relation_info_reset(&relation);
-                    goto cleanup;
-                }
-                secdat_relation_info_reset(&relation);
-                status = 0;
-                goto cleanup;
-            }
-        }
-        secdat_relation_info_reset(&relation);
-    }
-    status = 0;
-
-cleanup:
-    secdat_key_list_free(&relation_ids);
-    return status;
-}
-
-static int secdat_find_relation_referencing_keyref_in_registered_stores(
-    const char *canonical_keyref,
-    char *relation_id,
-    size_t relation_id_size,
-    int *found
-)
-{
-    struct secdat_domain_root_list roots = {0};
-    struct secdat_domain_chain chain = {0};
-    struct secdat_key_list stores = {0};
-    size_t root_index;
-    size_t store_index;
-    int status = 1;
-
-    *found = 0;
-    if (relation_id_size > 0) {
-        relation_id[0] = '\0';
-    }
-    if (secdat_collect_registered_domain_roots(&roots) != 0) {
-        return 1;
-    }
-    for (root_index = 0; root_index < roots.count; root_index += 1) {
-        if (secdat_domain_resolve_registered_root_chain(roots.roots[root_index], &chain) != 0) {
-            goto cleanup;
-        }
-        if (chain.count == 0) {
-            secdat_domain_chain_free(&chain);
-            continue;
-        }
-        if (secdat_collect_store_names(chain.ids[0], NULL, &stores) != 0) {
-            goto cleanup;
-        }
-        for (store_index = 0; store_index < stores.count; store_index += 1) {
-            int exists = 0;
-
-            if (secdat_find_relation_referencing_keyref(
-                    chain.ids[0],
-                    stores.items[store_index],
-                    canonical_keyref,
-                    relation_id,
-                    relation_id_size,
-                    &exists
-                ) != 0) {
-                goto cleanup;
-            }
-            if (exists) {
-                *found = 1;
-                status = 0;
-                goto cleanup;
-            }
-        }
-        secdat_key_list_free(&stores);
-        secdat_domain_chain_free(&chain);
-    }
-    status = 0;
-
-cleanup:
-    secdat_key_list_free(&stores);
-    secdat_domain_chain_free(&chain);
-    secdat_domain_root_list_free(&roots);
-    return status;
-}
-
 static int secdat_reject_hidden_v2_plaintext_auxiliary_refs(const char *domain_id, const char *store_name, const char *key)
 {
     char domain_path[PATH_MAX];
@@ -16366,7 +16360,7 @@ static int secdat_reject_hidden_v2_plaintext_auxiliary_refs(const char *domain_i
             secdat_effective_store_name(store_name),
             1,
             1) != 0
-        || secdat_find_relation_referencing_keyref_in_registered_stores(
+        || secdat_dependency_index_relation_lookup(
             canonical_keyref,
             relation_id,
             sizeof(relation_id),
@@ -21111,6 +21105,2204 @@ cleanup:
     return valid ? 0 : 1;
 }
 
+static int secdat_dependency_digest_is_valid(const char *value)
+{
+    size_t index;
+
+    if (value == NULL || strlen(value) != SECDAT_SHA256_HEX_LENGTH) {
+        return 0;
+    }
+    for (index = 0; index < SECDAT_SHA256_HEX_LENGTH; index += 1) {
+        if (!((value[index] >= '0' && value[index] <= '9')
+                || (value[index] >= 'a' && value[index] <= 'f'))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int secdat_dependency_state_path(char *path, size_t path_size)
+{
+    char state_dir[PATH_MAX];
+
+    return secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || snprintf(path, path_size, "%s/indexes/dependency-state", state_dir)
+            >= (int)path_size;
+}
+
+static int secdat_dependency_nodes_dir(char *path, size_t path_size)
+{
+    char state_dir[PATH_MAX];
+
+    return secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || snprintf(path, path_size, "%s/indexes/dependencies/nodes", state_dir)
+            >= (int)path_size;
+}
+
+static int secdat_dependency_node_path(
+    const char *hash,
+    char *path,
+    size_t path_size
+)
+{
+    char nodes_dir[PATH_MAX];
+
+    return !secdat_dependency_digest_is_valid(hash)
+        || secdat_dependency_nodes_dir(nodes_dir, sizeof(nodes_dir)) != 0
+        || snprintf(path, path_size, "%s/%c%c/%s.idx", nodes_dir, hash[0], hash[1], hash)
+            >= (int)path_size;
+}
+
+static int secdat_dependency_private_directory(
+    const char *path,
+    int allow_missing,
+    int *missing
+)
+{
+    struct stat status;
+
+    if (lstat(path, &status) != 0) {
+        if (allow_missing && errno == ENOENT) {
+            *missing = 1;
+            return 0;
+        }
+        fprintf(stderr, _("invalid dependency index directory\n"));
+        return 1;
+    }
+    if (!S_ISDIR(status.st_mode) || (status.st_mode & 077) != 0) {
+        fprintf(stderr, _("invalid dependency index directory\n"));
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_dependency_state_directories_validate(int *missing)
+{
+    char state_dir[PATH_MAX];
+    char indexes_dir[PATH_MAX];
+
+    *missing = 0;
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || snprintf(indexes_dir, sizeof(indexes_dir), "%s/indexes", state_dir)
+            >= (int)sizeof(indexes_dir)
+        || secdat_dependency_private_directory(state_dir, 1, missing) != 0
+        || *missing
+        || secdat_dependency_private_directory(indexes_dir, 1, missing) != 0) {
+        return *missing ? 0 : 1;
+    }
+    return 0;
+}
+
+static int secdat_dependency_node_directories_validate(const char *hash)
+{
+    char state_dir[PATH_MAX];
+    char indexes_dir[PATH_MAX];
+    char dependencies_dir[PATH_MAX];
+    char nodes_dir[PATH_MAX];
+    char shard_dir[PATH_MAX];
+    const char *directories[5];
+    size_t index;
+    int missing = 0;
+
+    if (!secdat_dependency_digest_is_valid(hash)
+        || secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || snprintf(indexes_dir, sizeof(indexes_dir), "%s/indexes", state_dir)
+            >= (int)sizeof(indexes_dir)
+        || snprintf(dependencies_dir, sizeof(dependencies_dir), "%s/dependencies", indexes_dir)
+            >= (int)sizeof(dependencies_dir)
+        || snprintf(nodes_dir, sizeof(nodes_dir), "%s/nodes", dependencies_dir)
+            >= (int)sizeof(nodes_dir)
+        || snprintf(shard_dir, sizeof(shard_dir), "%s/%c%c", nodes_dir, hash[0], hash[1])
+            >= (int)sizeof(shard_dir)) {
+        return 1;
+    }
+    directories[0] = state_dir;
+    directories[1] = indexes_dir;
+    directories[2] = dependencies_dir;
+    directories[3] = nodes_dir;
+    directories[4] = shard_dir;
+    for (index = 0; index < sizeof(directories) / sizeof(directories[0]); index += 1) {
+        if (secdat_dependency_private_directory(
+                directories[index],
+                0,
+                &missing
+            ) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_dependency_ensure_private_directories(
+    const char *const *directories,
+    size_t directory_count
+)
+{
+    size_t index;
+    int missing = 0;
+
+    for (index = 0; index < directory_count; index += 1) {
+        if (secdat_ensure_directory(directories[index], 0700) != 0
+            || secdat_dependency_private_directory(
+                directories[index],
+                0,
+                &missing
+            ) != 0) {
+            return 1;
+        }
+    }
+    for (index = directory_count; index > 0; index -= 1) {
+        if (secdat_fsync_directory(directories[index - 1]) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_dependency_ensure_state_directories(void)
+{
+    char state_dir[PATH_MAX];
+    char indexes_dir[PATH_MAX];
+    const char *directories[2];
+
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || snprintf(indexes_dir, sizeof(indexes_dir), "%s/indexes", state_dir)
+            >= (int)sizeof(indexes_dir)) {
+        return 1;
+    }
+    directories[0] = state_dir;
+    directories[1] = indexes_dir;
+    return secdat_dependency_ensure_private_directories(
+        directories,
+        sizeof(directories) / sizeof(directories[0])
+    );
+}
+
+static int secdat_dependency_ensure_directories(void)
+{
+    char state_dir[PATH_MAX];
+    char indexes_dir[PATH_MAX];
+    char dependencies_dir[PATH_MAX];
+    char nodes_dir[PATH_MAX];
+
+    if (secdat_state_dir(state_dir, sizeof(state_dir)) != 0
+        || snprintf(indexes_dir, sizeof(indexes_dir), "%s/indexes", state_dir)
+            >= (int)sizeof(indexes_dir)
+        || snprintf(dependencies_dir, sizeof(dependencies_dir), "%s/dependencies", indexes_dir)
+            >= (int)sizeof(dependencies_dir)
+        || snprintf(nodes_dir, sizeof(nodes_dir), "%s/nodes", dependencies_dir)
+            >= (int)sizeof(nodes_dir)) {
+        return 1;
+    }
+    {
+        const char *directories[] = {
+            state_dir, indexes_dir, dependencies_dir, nodes_dir,
+        };
+
+        return secdat_dependency_ensure_private_directories(
+            directories,
+            sizeof(directories) / sizeof(directories[0])
+        );
+    }
+}
+
+static int secdat_dependency_state_encode(
+    const struct secdat_dependency_state *state,
+    unsigned char **data,
+    size_t *length
+)
+{
+    char payload[512];
+    int written;
+
+    if (state == NULL
+        || (state->state != SECDAT_DEPENDENCY_STATE_BUILDING
+            && state->state != SECDAT_DEPENDENCY_STATE_COMPLETE)
+        || !secdat_uuid_is_valid(state->build_id)
+        || (state->has_active_root
+            && !secdat_dependency_digest_is_valid(state->active_root))
+        || (state->state == SECDAT_DEPENDENCY_STATE_COMPLETE
+            && (!state->has_active_root || state->building_generation[0] != '\0'))
+        || (state->state == SECDAT_DEPENDENCY_STATE_BUILDING
+            && !secdat_uuid_is_valid(state->building_generation))) {
+        return 1;
+    }
+    written = snprintf(
+        payload,
+        sizeof(payload),
+        "%s\nschema_version=1\nwriter_contract=indexed-mutations-v1\nstate=%s\nbuild_id=%s\nactive_root=%s\nbuilding_generation=%s\n",
+        secdat_dependency_state_magic,
+        state->state == SECDAT_DEPENDENCY_STATE_COMPLETE ? "complete" : "building",
+        state->build_id,
+        state->has_active_root ? state->active_root : "-",
+        state->state == SECDAT_DEPENDENCY_STATE_COMPLETE
+            ? "-"
+            : state->building_generation
+    );
+    if (written < 0 || (size_t)written >= sizeof(payload)) {
+        return 1;
+    }
+    *data = malloc((size_t)written);
+    if (*data == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    memcpy(*data, payload, (size_t)written);
+    *length = (size_t)written;
+    return 0;
+}
+
+static int secdat_dependency_state_parse(
+    const unsigned char *data,
+    size_t length,
+    struct secdat_dependency_state *state
+)
+{
+    char *text = NULL;
+    char *line;
+    char *saveptr = NULL;
+    const char *expected_names[] = {
+        "schema_version", "writer_contract", "state", "build_id",
+        "active_root", "building_generation",
+    };
+    size_t field = 0;
+    int result = 1;
+
+    memset(state, 0, sizeof(*state));
+    if (length == 0 || length > SECDAT_V2_TEXT_FILE_MAX
+        || data[length - 1] != '\n' || memchr(data, '\0', length) != NULL) {
+        return 1;
+    }
+    for (field = 0; field + 1 < length; field += 1) {
+        if (data[field] == '\n' && data[field + 1] == '\n') {
+            return 1;
+        }
+    }
+    field = 0;
+    text = malloc(length + 1);
+    if (text == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        return 1;
+    }
+    memcpy(text, data, length);
+    text[length] = '\0';
+    line = strtok_r(text, "\n", &saveptr);
+    if (line == NULL || strcmp(line, secdat_dependency_state_magic) != 0) {
+        goto cleanup;
+    }
+    while ((line = strtok_r(NULL, "\n", &saveptr)) != NULL) {
+        char *separator = strchr(line, '=');
+
+        if (field >= sizeof(expected_names) / sizeof(expected_names[0])
+            || separator == NULL || separator == line) {
+            goto cleanup;
+        }
+        *separator = '\0';
+        separator += 1;
+        if (strcmp(line, expected_names[field]) != 0) {
+            goto cleanup;
+        }
+        if (field == 0 && strcmp(separator, "1") != 0) {
+            goto cleanup;
+        } else if (field == 1
+            && strcmp(separator, "indexed-mutations-v1") != 0) {
+            goto cleanup;
+        } else if (field == 2) {
+            if (strcmp(separator, "building") == 0) {
+                state->state = SECDAT_DEPENDENCY_STATE_BUILDING;
+            } else if (strcmp(separator, "complete") == 0) {
+                state->state = SECDAT_DEPENDENCY_STATE_COMPLETE;
+            } else {
+                goto cleanup;
+            }
+        } else if (field == 3) {
+            if (!secdat_uuid_is_valid(separator)
+                || secdat_copy_string(state->build_id, sizeof(state->build_id), separator) != 0) {
+                goto cleanup;
+            }
+        } else if (field == 4) {
+            if (strcmp(separator, "-") != 0) {
+                if (!secdat_dependency_digest_is_valid(separator)
+                    || secdat_copy_string(state->active_root, sizeof(state->active_root), separator) != 0) {
+                    goto cleanup;
+                }
+                state->has_active_root = 1;
+            }
+        } else if (field == 5 && strcmp(separator, "-") != 0) {
+            if (!secdat_uuid_is_valid(separator)
+                || secdat_copy_string(
+                    state->building_generation,
+                    sizeof(state->building_generation),
+                    separator
+                ) != 0) {
+                goto cleanup;
+            }
+        }
+        field += 1;
+    }
+    if (field != sizeof(expected_names) / sizeof(expected_names[0])
+        || (state->state == SECDAT_DEPENDENCY_STATE_COMPLETE
+            && (!state->has_active_root || state->building_generation[0] != '\0'))
+        || (state->state == SECDAT_DEPENDENCY_STATE_BUILDING
+            && state->building_generation[0] == '\0')) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(text);
+    return result;
+}
+
+/* 0=valid, 1=malformed/read failure, 2=missing. */
+static int secdat_dependency_state_read(struct secdat_dependency_state *state)
+{
+    char path[PATH_MAX];
+    unsigned char *data = NULL;
+    size_t length = 0;
+    int exists = 0;
+    int directories_missing = 0;
+    int result;
+
+    if (secdat_dependency_state_directories_validate(&directories_missing) != 0) {
+        return 1;
+    }
+    if (directories_missing) {
+        return 2;
+    }
+    if (secdat_dependency_state_path(path, sizeof(path)) != 0
+        || secdat_transaction_read_target(
+            path,
+            &data,
+            &length,
+            &exists,
+            SECDAT_V2_TEXT_FILE_MAX
+        ) != 0) {
+        return 1;
+    }
+    if (!exists) {
+        return 2;
+    }
+    result = secdat_dependency_state_parse(data, length, state);
+    free(data);
+    return result;
+}
+
+static int secdat_dependency_state_write(
+    const struct secdat_dependency_state *state
+)
+{
+    char path[PATH_MAX];
+    char indexes_dir[PATH_MAX];
+    unsigned char *data = NULL;
+    size_t length = 0;
+    int result = 1;
+
+    if (secdat_dependency_ensure_state_directories() != 0
+        || secdat_dependency_state_path(path, sizeof(path)) != 0
+        || secdat_dependency_state_encode(state, &data, &length) != 0
+        || secdat_atomic_write_file(path, data, length) != 0
+        || secdat_copy_string(indexes_dir, sizeof(indexes_dir), path) != 0) {
+        goto cleanup;
+    }
+    secdat_parent_path(indexes_dir);
+    if (secdat_fsync_directory(indexes_dir) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(data);
+    return result;
+}
+
+static int secdat_dependency_index_invalidate(void)
+{
+    struct secdat_dependency_state current;
+    struct secdat_dependency_state building;
+    int read_status = secdat_dependency_state_read(&current);
+
+    if (read_status == 2
+        || (read_status == 0
+            && current.state == SECDAT_DEPENDENCY_STATE_BUILDING)) {
+        return 0;
+    }
+    if (read_status != 0) {
+        /* A malformed state already fails every authoritative lookup closed. */
+        return 0;
+    }
+    memset(&building, 0, sizeof(building));
+    building.state = SECDAT_DEPENDENCY_STATE_BUILDING;
+    building.has_active_root = current.has_active_root;
+    if ((current.has_active_root
+            && secdat_copy_string(
+                building.active_root,
+                sizeof(building.active_root),
+                current.active_root
+            ) != 0)
+        || secdat_generate_uuid_v4(building.build_id, sizeof(building.build_id)) != 0
+        || secdat_generate_uuid_v4(
+            building.building_generation,
+            sizeof(building.building_generation)
+        ) != 0) {
+        return 1;
+    }
+    return secdat_dependency_state_write(&building);
+}
+
+static void secdat_dependency_node_list_reset(
+    struct secdat_dependency_node_list *nodes
+)
+{
+    size_t index;
+
+    for (index = 0; index < nodes->count; index += 1) {
+        free(nodes->items[index].data);
+    }
+    free(nodes->items);
+    memset(nodes, 0, sizeof(*nodes));
+}
+
+static void secdat_dependency_leaf_list_reset(
+    struct secdat_dependency_leaf_list *leaves
+)
+{
+    size_t index;
+
+    for (index = 0; index < leaves->count; index += 1) {
+        json_decref(leaves->items[index].object);
+    }
+    free(leaves->items);
+    memset(leaves, 0, sizeof(*leaves));
+}
+
+static void secdat_dependency_group_list_reset(
+    struct secdat_dependency_lookup_group_list *groups
+)
+{
+    size_t index;
+
+    for (index = 0; index < groups->count; index += 1) {
+        secdat_dependency_leaf_list_reset(&groups->items[index].edges);
+    }
+    free(groups->items);
+    memset(groups, 0, sizeof(*groups));
+}
+
+static int secdat_dependency_leaf_compare(const void *left, const void *right)
+{
+    const struct secdat_dependency_leaf *left_leaf = left;
+    const struct secdat_dependency_leaf *right_leaf = right;
+
+    return strcmp(left_leaf->address, right_leaf->address);
+}
+
+static int secdat_dependency_leaf_list_append(
+    struct secdat_dependency_leaf_list *leaves,
+    const char *address,
+    json_t *object
+)
+{
+    struct secdat_dependency_leaf *resized;
+    size_t next_capacity;
+    size_t index;
+
+    if (!secdat_dependency_digest_is_valid(address) || !json_is_object(object)
+        || leaves->count >= SECDAT_DEPENDENCY_MAX_RECORDS) {
+        return 1;
+    }
+    for (index = 0; index < leaves->count; index += 1) {
+        if (strcmp(leaves->items[index].address, address) == 0) {
+            char *left = json_dumps(leaves->items[index].object, JSON_COMPACT | JSON_SORT_KEYS);
+            char *right = json_dumps(object, JSON_COMPACT | JSON_SORT_KEYS);
+            int equal = left != NULL && right != NULL && strcmp(left, right) == 0;
+
+            free(left);
+            free(right);
+            if (equal) {
+                json_decref(object);
+                return 0;
+            }
+            return 1;
+        }
+    }
+    if (leaves->count == leaves->capacity) {
+        next_capacity = leaves->capacity == 0 ? 8 : leaves->capacity * 2;
+        resized = realloc(leaves->items, next_capacity * sizeof(*resized));
+        if (resized == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        leaves->items = resized;
+        leaves->capacity = next_capacity;
+    }
+    memset(&leaves->items[leaves->count], 0, sizeof(leaves->items[leaves->count]));
+    if (secdat_copy_string(
+            leaves->items[leaves->count].address,
+            sizeof(leaves->items[leaves->count].address),
+            address
+        ) != 0) {
+        return 1;
+    }
+    leaves->items[leaves->count].object = object;
+    leaves->count += 1;
+    return 0;
+}
+
+static struct secdat_dependency_lookup_group *secdat_dependency_group_get(
+    struct secdat_dependency_lookup_group_list *groups,
+    char kind,
+    const char *id
+)
+{
+    struct secdat_dependency_lookup_group *resized;
+    size_t next_capacity;
+    size_t index;
+
+    for (index = 0; index < groups->count; index += 1) {
+        if (groups->items[index].kind == kind
+            && strcmp(groups->items[index].id, id) == 0) {
+            return &groups->items[index];
+        }
+    }
+    if (groups->count >= SECDAT_DEPENDENCY_MAX_RECORDS) {
+        return NULL;
+    }
+    if (groups->count == groups->capacity) {
+        next_capacity = groups->capacity == 0 ? 8 : groups->capacity * 2;
+        resized = realloc(groups->items, next_capacity * sizeof(*resized));
+        if (resized == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return NULL;
+        }
+        groups->items = resized;
+        groups->capacity = next_capacity;
+    }
+    memset(&groups->items[groups->count], 0, sizeof(groups->items[groups->count]));
+    groups->items[groups->count].kind = kind;
+    if (secdat_copy_string(
+            groups->items[groups->count].id,
+            sizeof(groups->items[groups->count].id),
+            id
+        ) != 0) {
+        return NULL;
+    }
+    groups->count += 1;
+    return &groups->items[groups->count - 1];
+}
+
+static int secdat_dependency_hash_parts(
+    char prefix,
+    const char *const *parts,
+    size_t part_count,
+    char hash[SECDAT_SHA256_HEX_LENGTH + 1]
+)
+{
+    EVP_MD_CTX *context = NULL;
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_length = 0;
+    size_t index;
+    static const char hex[] = "0123456789abcdef";
+    int result = 1;
+
+    context = EVP_MD_CTX_new();
+    if (context == NULL || EVP_DigestInit_ex(context, EVP_sha256(), NULL) != 1
+        || (prefix != '\0' && EVP_DigestUpdate(context, &prefix, 1) != 1)) {
+        goto cleanup;
+    }
+    for (index = 0; index < part_count; index += 1) {
+        uint64_t length = (uint64_t)strlen(parts[index]);
+        unsigned char encoded_length[8];
+        size_t byte;
+
+        for (byte = 0; byte < sizeof(encoded_length); byte += 1) {
+            encoded_length[sizeof(encoded_length) - byte - 1] =
+                (unsigned char)(length >> (byte * 8));
+        }
+        if (EVP_DigestUpdate(context, encoded_length, sizeof(encoded_length)) != 1
+            || EVP_DigestUpdate(context, parts[index], (size_t)length) != 1) {
+            goto cleanup;
+        }
+    }
+    if (EVP_DigestFinal_ex(context, digest, &digest_length) != 1
+        || digest_length != 32) {
+        goto cleanup;
+    }
+    for (index = 0; index < 32; index += 1) {
+        hash[index * 2] = hex[digest[index] >> 4];
+        hash[index * 2 + 1] = hex[digest[index] & 0x0f];
+    }
+    hash[SECDAT_SHA256_HEX_LENGTH] = '\0';
+    result = 0;
+
+cleanup:
+    EVP_MD_CTX_free(context);
+    secdat_secure_clear(digest, sizeof(digest));
+    return result;
+}
+
+static int secdat_dependency_lookup_address(
+    char kind,
+    const char *id,
+    char address[SECDAT_SHA256_HEX_LENGTH + 1]
+)
+{
+    const char *parts[] = {id};
+
+    return (kind != 'M' && kind != 'R' && kind != 'D')
+        || secdat_dependency_hash_parts(kind, parts, 1, address);
+}
+
+static int secdat_dependency_encode_node(
+    json_t *object,
+    struct secdat_dependency_node_list *nodes,
+    char hash[SECDAT_SHA256_HEX_LENGTH + 1]
+)
+{
+    char *json_text = NULL;
+    unsigned char *data = NULL;
+    size_t length;
+    struct secdat_dependency_encoded_node *resized;
+    size_t next_capacity;
+    size_t index;
+    int written;
+    int result = 1;
+
+    json_text = json_dumps(object, JSON_COMPACT | JSON_SORT_KEYS);
+    if (json_text == NULL) {
+        goto cleanup;
+    }
+    length = strlen(secdat_dependency_node_magic) + 1 + strlen(json_text) + 1;
+    if (length > SECDAT_DEPENDENCY_NODE_MAX_BYTES) {
+        fprintf(stderr, _("dependency index node is too large\n"));
+        goto cleanup;
+    }
+    data = malloc(length + 1);
+    if (data == NULL) {
+        fprintf(stderr, _("out of memory\n"));
+        goto cleanup;
+    }
+    written = snprintf(
+        (char *)data,
+        length + 1,
+        "%s\n%s\n",
+        secdat_dependency_node_magic,
+        json_text
+    );
+    if (written < 0 || (size_t)written != length
+        || secdat_sha256_hex(data, length, hash) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < nodes->count; index += 1) {
+        if (strcmp(nodes->items[index].hash, hash) == 0) {
+            if (nodes->items[index].length != length
+                || CRYPTO_memcmp(nodes->items[index].data, data, length) != 0) {
+                goto cleanup;
+            }
+            result = 0;
+            goto cleanup;
+        }
+    }
+    if (nodes->count >= SECDAT_DEPENDENCY_MAX_RECORDS) {
+        goto cleanup;
+    }
+    if (nodes->count == nodes->capacity) {
+        next_capacity = nodes->capacity == 0 ? 16 : nodes->capacity * 2;
+        resized = realloc(nodes->items, next_capacity * sizeof(*resized));
+        if (resized == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            goto cleanup;
+        }
+        nodes->items = resized;
+        nodes->capacity = next_capacity;
+    }
+    memset(&nodes->items[nodes->count], 0, sizeof(nodes->items[nodes->count]));
+    if (secdat_copy_string(
+            nodes->items[nodes->count].hash,
+            sizeof(nodes->items[nodes->count].hash),
+            hash
+        ) != 0) {
+        goto cleanup;
+    }
+    nodes->items[nodes->count].data = data;
+    nodes->items[nodes->count].length = length;
+    nodes->count += 1;
+    data = NULL;
+    result = 0;
+
+cleanup:
+    free(json_text);
+    free(data);
+    return result;
+}
+
+static int secdat_dependency_build_tree_range(
+    struct secdat_dependency_leaf *leaves,
+    size_t start,
+    size_t end,
+    struct secdat_dependency_node_list *nodes,
+    char root[SECDAT_SHA256_HEX_LENGTH + 1]
+)
+{
+    size_t common;
+    size_t group_start;
+    json_t *branch = NULL;
+    json_t *slots = NULL;
+    int result = 1;
+
+    if (end - start == 1) {
+        return secdat_dependency_encode_node(leaves[start].object, nodes, root);
+    }
+    if (start == end) {
+        branch = json_pack("{s:s,s:s,s:o,s:i}",
+            "kind", "branch", "prefix", "", "slots", json_array(),
+            "schema_version", 1);
+        if (branch == NULL) {
+            return 1;
+        }
+        result = secdat_dependency_encode_node(branch, nodes, root);
+        json_decref(branch);
+        return result;
+    }
+    common = 0;
+    while (common < SECDAT_SHA256_HEX_LENGTH
+        && leaves[start].address[common] == leaves[end - 1].address[common]) {
+        common += 1;
+    }
+    if (common >= SECDAT_SHA256_HEX_LENGTH) {
+        return 1;
+    }
+    slots = json_array();
+    if (slots == NULL) {
+        return 1;
+    }
+    group_start = start;
+    while (group_start < end) {
+        size_t group_end = group_start + 1;
+        char child_hash[SECDAT_SHA256_HEX_LENGTH + 1];
+        char slot_text[2] = {leaves[group_start].address[common], '\0'};
+        json_t *slot;
+
+        while (group_end < end
+            && leaves[group_end].address[common] == slot_text[0]) {
+            group_end += 1;
+        }
+        if (secdat_dependency_build_tree_range(
+                leaves,
+                group_start,
+                group_end,
+                nodes,
+                child_hash
+            ) != 0) {
+            goto cleanup;
+        }
+        slot = json_pack("{s:s,s:s}", "child", child_hash, "slot", slot_text);
+        if (slot == NULL || json_array_append_new(slots, slot) != 0) {
+            json_decref(slot);
+            goto cleanup;
+        }
+        group_start = group_end;
+    }
+    {
+        char prefix[SECDAT_SHA256_HEX_LENGTH + 1];
+
+        memcpy(prefix, leaves[start].address, common);
+        prefix[common] = '\0';
+        branch = json_pack("{s:s,s:s,s:O,s:i}",
+            "kind", "branch", "prefix", prefix, "slots", slots,
+            "schema_version", 1);
+    }
+    if (branch == NULL) {
+        goto cleanup;
+    }
+    result = secdat_dependency_encode_node(branch, nodes, root);
+
+cleanup:
+    json_decref(branch);
+    json_decref(slots);
+    return result;
+}
+
+static int secdat_dependency_build_tree(
+    struct secdat_dependency_leaf_list *leaves,
+    struct secdat_dependency_node_list *nodes,
+    char root[SECDAT_SHA256_HEX_LENGTH + 1]
+)
+{
+    if (leaves->count > 1) {
+        qsort(leaves->items, leaves->count, sizeof(*leaves->items), secdat_dependency_leaf_compare);
+    }
+    return secdat_dependency_build_tree_range(
+        leaves->items,
+        0,
+        leaves->count,
+        nodes,
+        root
+    );
+}
+
+static int secdat_dependency_read_primary_digest(
+    const char *path,
+    char digest[SECDAT_SHA256_HEX_LENGTH + 1]
+)
+{
+    unsigned char *data = NULL;
+    size_t length = 0;
+    int exists = 0;
+    int result = 1;
+
+    if (secdat_transaction_read_target(
+            path,
+            &data,
+            &length,
+            &exists,
+            SECDAT_TRANSACTION_MAX_BLOB_BYTES
+        ) != 0
+        || !exists
+        || secdat_sha256_hex(data, length, digest) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(data);
+    return result;
+}
+
+static int secdat_dependency_append_mask_edge(
+    struct secdat_dependency_lookup_group_list *groups,
+    const char *domain_id,
+    const char *store_name,
+    const char *record_id,
+    const struct secdat_v2_mask_record *record,
+    const char *primary_digest
+)
+{
+    struct secdat_dependency_lookup_group *group;
+    const char *parts[] = {domain_id, secdat_effective_store_name(store_name), record_id};
+    char address[SECDAT_SHA256_HEX_LENGTH + 1];
+    json_t *leaf;
+    int result;
+
+    if (strcmp(record->target_entry_id, record_id) != 0
+        || groups->edge_count >= SECDAT_DEPENDENCY_MAX_RECORDS
+        || secdat_dependency_hash_parts('m', parts, 3, address) != 0) {
+        return 1;
+    }
+    group = secdat_dependency_group_get(groups, 'M', record->target_entry_id);
+    if (group == NULL) {
+        return 1;
+    }
+    leaf = json_pack(
+        "{s:s,s:s,s:s,s:s,s:s,s:s,s:s,s:i}",
+        "address", address,
+        "kind", "mask-edge",
+        "mask_domain_id", domain_id,
+        "mask_record_id", record_id,
+        "mask_store", secdat_effective_store_name(store_name),
+        "primary_digest", primary_digest,
+        "target_entry_id", record->target_entry_id,
+        "schema_version", 1
+    );
+    if (leaf == NULL) {
+        return 1;
+    }
+    result = secdat_dependency_leaf_list_append(&group->edges, address, leaf);
+    if (result != 0) {
+        json_decref(leaf);
+        return 1;
+    }
+    groups->edge_count += 1;
+    return 0;
+}
+
+static int secdat_dependency_relation_key(
+    const char *canonical_keyref,
+    char keyref_hash[SECDAT_SHA256_HEX_LENGTH + 1]
+)
+{
+    const char *parts[] = {canonical_keyref};
+
+    return secdat_dependency_hash_parts('\0', parts, 1, keyref_hash);
+}
+
+static int secdat_dependency_relation_keyref_validate(
+    const char *canonical_keyref,
+    const char *fallback_domain_id,
+    const char *fallback_store,
+    char domain_id[PATH_MAX]
+)
+{
+    struct secdat_key_reference reference;
+    struct secdat_domain_chain chain = {0};
+    struct secdat_v2_domain_entry_info entry;
+    char fallback_root[PATH_MAX];
+    char referenced_root[PATH_MAX];
+    char normalized[PATH_MAX * 2];
+    char entry_path[PATH_MAX];
+    enum secdat_store_format format;
+    int lookup_status;
+    int result = 1;
+
+    if (secdat_domain_root_path(fallback_domain_id, fallback_root, sizeof(fallback_root)) != 0
+        || secdat_parse_key_reference_internal(
+            canonical_keyref,
+            fallback_root,
+            fallback_store,
+            &reference,
+            1
+        ) != 0
+        || secdat_resolve_key_reference_chain(&reference, &chain) != 0
+        || chain.count == 0
+        || !reference.domain_qualified
+        || secdat_domain_root_path(chain.ids[0], referenced_root, sizeof(referenced_root)) != 0
+        || secdat_format_canonical_key(
+            normalized,
+            sizeof(normalized),
+            reference.key,
+            referenced_root,
+            secdat_effective_store_name(reference.store_value),
+            1,
+            1
+        ) != 0
+        || strcmp(normalized, canonical_keyref) != 0
+        || secdat_read_store_format(
+            chain.ids[0],
+            reference.store_value,
+            &format
+        ) != 0
+        || secdat_copy_string(domain_id, PATH_MAX, chain.ids[0]) != 0) {
+        goto cleanup;
+    }
+    if (format == SECDAT_STORE_FORMAT_INVALID) {
+        goto cleanup;
+    }
+    if (format == SECDAT_STORE_FORMAT_V2) {
+        lookup_status = secdat_lookup_v2_domain_entry_authoritative(
+            chain.ids[0],
+            reference.store_value,
+            reference.key,
+            &entry,
+            entry_path,
+            sizeof(entry_path)
+        );
+        if (lookup_status == SECDAT_V2_LOOKUP_ERROR
+            || lookup_status == SECDAT_V2_LOOKUP_INACCESSIBLE) {
+            goto cleanup;
+        }
+        if (lookup_status == SECDAT_V2_LOOKUP_FOUND
+            && entry.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
+            fprintf(
+                stderr,
+                _("cannot index a relation dependency that references a hidden v2 key\n")
+            );
+            goto cleanup;
+        }
+    }
+    result = 0;
+
+cleanup:
+    secdat_domain_chain_free(&chain);
+    return result;
+}
+
+static int secdat_dependency_append_relation_edge(
+    struct secdat_dependency_lookup_group_list *groups,
+    const char *domain_id,
+    const char *store_name,
+    const char *relation_id,
+    const char *canonical_keyref,
+    const char *primary_digest
+)
+{
+    struct secdat_dependency_lookup_group *relation_group;
+    struct secdat_dependency_lookup_group *domain_group;
+    char keyref_hash[SECDAT_SHA256_HEX_LENGTH + 1];
+    char referenced_domain_id[PATH_MAX];
+    char address[SECDAT_SHA256_HEX_LENGTH + 1];
+    const char *parts[4];
+    json_t *relation_leaf;
+    json_t *domain_leaf;
+
+    if (groups->edge_count > SECDAT_DEPENDENCY_MAX_RECORDS - 2
+        || secdat_dependency_relation_key(canonical_keyref, keyref_hash) != 0
+        || secdat_dependency_relation_keyref_validate(
+            canonical_keyref,
+            domain_id,
+            store_name,
+            referenced_domain_id
+        ) != 0) {
+        return 1;
+    }
+    parts[0] = keyref_hash;
+    parts[1] = domain_id;
+    parts[2] = secdat_effective_store_name(store_name);
+    parts[3] = relation_id;
+    if (secdat_dependency_hash_parts('r', parts, 4, address) != 0) {
+        return 1;
+    }
+    relation_group = secdat_dependency_group_get(groups, 'R', keyref_hash);
+    domain_group = secdat_dependency_group_get(groups, 'D', referenced_domain_id);
+    if (relation_group == NULL || domain_group == NULL) {
+        return 1;
+    }
+    /* Creating the second group may realloc the backing array. */
+    relation_group = secdat_dependency_group_get(groups, 'R', keyref_hash);
+    domain_group = secdat_dependency_group_get(groups, 'D', referenced_domain_id);
+    if (relation_group == NULL || domain_group == NULL) {
+        return 1;
+    }
+    relation_leaf = json_pack(
+        "{s:s,s:s,s:s,s:s,s:s,s:s,s:s,s:s,s:i}",
+        "address", address,
+        "keyref_hash", keyref_hash,
+        "kind", "relation-edge",
+        "primary_digest", primary_digest,
+        "referenced_domain_id", referenced_domain_id,
+        "relation_domain_id", domain_id,
+        "relation_id", relation_id,
+        "relation_store", secdat_effective_store_name(store_name),
+        "schema_version", 1
+    );
+    if (relation_leaf == NULL) {
+        return 1;
+    }
+    domain_leaf = json_incref(relation_leaf);
+    if (secdat_dependency_leaf_list_append(
+            &relation_group->edges,
+            address,
+            relation_leaf
+        ) != 0) {
+        json_decref(relation_leaf);
+        json_decref(domain_leaf);
+        return 1;
+    }
+    if (secdat_dependency_leaf_list_append(
+            &domain_group->edges,
+            address,
+            domain_leaf
+        ) != 0) {
+        json_decref(domain_leaf);
+        return 1;
+    }
+    groups->edge_count += 2;
+    return 0;
+}
+
+static int secdat_dependency_scan_domain_store(
+    struct secdat_dependency_lookup_group_list *groups,
+    const char *domain_id,
+    const char *store_name
+)
+{
+    char masks_dir[PATH_MAX];
+    char mask_path[PATH_MAX];
+    char relations_dir[PATH_MAX];
+    char relation_path[PATH_MAX];
+    char primary_digest[SECDAT_SHA256_HEX_LENGTH + 1];
+    struct secdat_key_list mask_ids = {0};
+    struct secdat_key_list relation_ids = {0};
+    size_t index;
+    int result = 1;
+
+    if (secdat_v2_masks_dir(domain_id, store_name, masks_dir, sizeof(masks_dir)) != 0
+        || secdat_relations_dir(domain_id, store_name, relations_dir, sizeof(relations_dir)) != 0
+        || secdat_collect_directory_keys(masks_dir, ".mask", &mask_ids) != 0
+        || secdat_collect_directory_keys(relations_dir, ".rel", &relation_ids) != 0) {
+        goto cleanup;
+    }
+    if (mask_ids.count > 1) {
+        qsort(mask_ids.items, mask_ids.count, sizeof(*mask_ids.items), secdat_compare_strings);
+    }
+    if (relation_ids.count > 1) {
+        qsort(relation_ids.items, relation_ids.count, sizeof(*relation_ids.items), secdat_compare_strings);
+    }
+    for (index = 0; index < mask_ids.count; index += 1) {
+        struct secdat_v2_mask_record record;
+
+        if (!secdat_uuid_is_valid(mask_ids.items[index])
+            || secdat_build_v2_mask_path(
+                domain_id,
+                store_name,
+                mask_ids.items[index],
+                mask_path,
+                sizeof(mask_path)
+            ) != 0
+            || secdat_read_v2_mask_record(mask_path, mask_ids.items[index], &record) != 0
+            || secdat_dependency_read_primary_digest(mask_path, primary_digest) != 0
+            || secdat_dependency_append_mask_edge(
+                groups,
+                domain_id,
+                store_name,
+                mask_ids.items[index],
+                &record,
+                primary_digest
+            ) != 0) {
+            fprintf(stderr, _("cannot build dependency index from invalid mask record\n"));
+            goto cleanup;
+        }
+    }
+    for (index = 0; index < relation_ids.count; index += 1) {
+        struct secdat_relation_info relation = {0};
+        struct secdat_key_list seen_keyrefs = {0};
+        size_t member_index;
+
+        if (secdat_build_relation_path(
+                domain_id,
+                store_name,
+                relation_ids.items[index],
+                relation_path,
+                sizeof(relation_path)
+            ) != 0
+            || secdat_read_relation(
+                domain_id,
+                store_name,
+                relation_ids.items[index],
+                &relation,
+                1
+            ) != 0
+            || secdat_dependency_read_primary_digest(relation_path, primary_digest) != 0) {
+            secdat_relation_info_reset(&relation);
+            secdat_key_list_free(&seen_keyrefs);
+            fprintf(stderr, _("cannot build dependency index from invalid relation record\n"));
+            goto cleanup;
+        }
+        for (member_index = 0; member_index < relation.member_count; member_index += 1) {
+            const char *keyref = relation.members[member_index].keyref;
+
+            if (secdat_key_list_contains(&seen_keyrefs, keyref)) {
+                continue;
+            }
+            if (secdat_key_list_append(&seen_keyrefs, keyref) != 0
+                || secdat_dependency_append_relation_edge(
+                    groups,
+                    domain_id,
+                    store_name,
+                    relation_ids.items[index],
+                    keyref,
+                    primary_digest
+                ) != 0) {
+                fprintf(
+                    stderr,
+                    _("cannot index relation dependency: %s\n"),
+                    relation_ids.items[index]
+                );
+                secdat_relation_info_reset(&relation);
+                secdat_key_list_free(&seen_keyrefs);
+                goto cleanup;
+            }
+        }
+        secdat_relation_info_reset(&relation);
+        secdat_key_list_free(&seen_keyrefs);
+    }
+    result = 0;
+
+cleanup:
+    secdat_key_list_free(&mask_ids);
+    secdat_key_list_free(&relation_ids);
+    return result;
+}
+
+static int secdat_dependency_scan_primaries(
+    struct secdat_dependency_lookup_group_list *groups
+)
+{
+    struct secdat_domain_root_list roots = {0};
+    struct secdat_domain_chain chain = {0};
+    struct secdat_key_list stores = {0};
+    struct secdat_key_list seen_domains = {0};
+    size_t root_index;
+    size_t store_index;
+    int result = 1;
+
+    if (secdat_collect_registered_domain_roots(&roots) != 0) {
+        goto cleanup;
+    }
+    for (root_index = 0; root_index < roots.count; root_index += 1) {
+        if (secdat_domain_resolve_registered_root_chain(roots.roots[root_index], &chain) != 0
+            || chain.count == 0) {
+            goto cleanup;
+        }
+        if (secdat_key_list_contains(&seen_domains, chain.ids[0])) {
+            secdat_domain_chain_free(&chain);
+            continue;
+        }
+        if (secdat_key_list_append(&seen_domains, chain.ids[0]) != 0
+            || secdat_collect_store_names(chain.ids[0], NULL, &stores) != 0) {
+            goto cleanup;
+        }
+        for (store_index = 0; store_index < stores.count; store_index += 1) {
+            if (secdat_dependency_scan_domain_store(
+                    groups,
+                    chain.ids[0],
+                    stores.items[store_index]
+                ) != 0) {
+                goto cleanup;
+            }
+        }
+        secdat_key_list_free(&stores);
+        secdat_domain_chain_free(&chain);
+    }
+    result = 0;
+
+cleanup:
+    secdat_key_list_free(&stores);
+    secdat_key_list_free(&seen_domains);
+    secdat_domain_chain_free(&chain);
+    secdat_domain_root_list_free(&roots);
+    return result;
+}
+
+static int secdat_dependency_build_expected(
+    struct secdat_dependency_node_list *nodes,
+    char root[SECDAT_SHA256_HEX_LENGTH + 1],
+    size_t *lookup_count,
+    size_t *edge_count
+)
+{
+    struct secdat_dependency_lookup_group_list groups = {0};
+    struct secdat_dependency_leaf_list top = {0};
+    size_t group_index;
+    int result = 1;
+
+    *lookup_count = 0;
+    *edge_count = 0;
+    if (secdat_dependency_scan_primaries(&groups) != 0) {
+        goto cleanup;
+    }
+    for (group_index = 0; group_index < groups.count; group_index += 1) {
+        struct secdat_dependency_lookup_group *group = &groups.items[group_index];
+        char edges_root[SECDAT_SHA256_HEX_LENGTH + 1];
+        char address[SECDAT_SHA256_HEX_LENGTH + 1];
+        char kind_text[2] = {group->kind, '\0'};
+        json_t *leaf;
+
+        if (secdat_dependency_build_tree(&group->edges, nodes, edges_root) != 0
+            || secdat_dependency_lookup_address(group->kind, group->id, address) != 0) {
+            goto cleanup;
+        }
+        leaf = json_pack(
+            "{s:s,s:s,s:s,s:s,s:s,s:i}",
+            "address", address,
+            "edges_root", edges_root,
+            "kind", "lookup",
+            "lookup_id", group->id,
+            "lookup_kind", kind_text,
+            "schema_version", 1
+        );
+        if (leaf == NULL
+            || secdat_dependency_leaf_list_append(&top, address, leaf) != 0) {
+            json_decref(leaf);
+            goto cleanup;
+        }
+        if (*edge_count > SECDAT_DEPENDENCY_MAX_RECORDS - group->edges.count) {
+            goto cleanup;
+        }
+        *edge_count += group->edges.count;
+    }
+    if (secdat_dependency_build_tree(&top, nodes, root) != 0) {
+        goto cleanup;
+    }
+    *lookup_count = groups.count;
+    result = 0;
+
+cleanup:
+    secdat_dependency_leaf_list_reset(&top);
+    secdat_dependency_group_list_reset(&groups);
+    return result;
+}
+
+static int secdat_dependency_node_object_is_valid(json_t *object)
+{
+    static const char *const branch_keys[] = {
+        "kind", "prefix", "schema_version", "slots",
+    };
+    static const char *const slot_keys[] = {"child", "slot"};
+    static const char *const lookup_keys[] = {
+        "address", "edges_root", "kind", "lookup_id", "lookup_kind",
+        "schema_version",
+    };
+    static const char *const mask_keys[] = {
+        "address", "kind", "mask_domain_id", "mask_record_id", "mask_store",
+        "primary_digest", "schema_version", "target_entry_id",
+    };
+    static const char *const relation_keys[] = {
+        "address", "keyref_hash", "kind", "primary_digest",
+        "referenced_domain_id", "relation_domain_id", "relation_id",
+        "relation_store", "schema_version",
+    };
+    json_t *kind_value = json_object_get(object, "kind");
+    json_t *schema_value = json_object_get(object, "schema_version");
+    const char *kind;
+
+    if (!secdat_json_is_canonical_string(kind_value)
+        || !json_is_integer(schema_value)
+        || json_integer_value(schema_value) != 1) {
+        return 0;
+    }
+    kind = json_string_value(kind_value);
+    if (strcmp(kind, "branch") == 0) {
+        json_t *prefix_value;
+        json_t *slots;
+        const char *prefix;
+        const char *previous = NULL;
+        size_t index;
+
+        if (!secdat_json_object_has_exact_keys(
+                object,
+                branch_keys,
+                sizeof(branch_keys) / sizeof(branch_keys[0])
+            )) {
+            return 0;
+        }
+        prefix_value = json_object_get(object, "prefix");
+        slots = json_object_get(object, "slots");
+        if (!secdat_json_is_canonical_string(prefix_value) || !json_is_array(slots)
+            || json_array_size(slots) > 16) {
+            return 0;
+        }
+        prefix = json_string_value(prefix_value);
+        if (strlen(prefix) >= SECDAT_SHA256_HEX_LENGTH) {
+            return 0;
+        }
+        for (index = 0; prefix[index] != '\0'; index += 1) {
+            if (!isxdigit((unsigned char)prefix[index])
+                || (prefix[index] >= 'A' && prefix[index] <= 'F')) {
+                return 0;
+            }
+        }
+        for (index = 0; index < json_array_size(slots); index += 1) {
+            json_t *slot = json_array_get(slots, index);
+            json_t *slot_value;
+            json_t *child_value;
+            const char *slot_text;
+
+            if (!secdat_json_object_has_exact_keys(
+                    slot,
+                    slot_keys,
+                    sizeof(slot_keys) / sizeof(slot_keys[0])
+                )) {
+                return 0;
+            }
+            slot_value = json_object_get(slot, "slot");
+            child_value = json_object_get(slot, "child");
+            if (!secdat_json_is_canonical_string(slot_value)
+                || !secdat_json_is_canonical_string(child_value)
+                || !secdat_dependency_digest_is_valid(json_string_value(child_value))) {
+                return 0;
+            }
+            slot_text = json_string_value(slot_value);
+            if (strlen(slot_text) != 1
+                || !isxdigit((unsigned char)slot_text[0])
+                || (slot_text[0] >= 'A' && slot_text[0] <= 'F')
+                || (previous != NULL && strcmp(previous, slot_text) >= 0)) {
+                return 0;
+            }
+            previous = slot_text;
+        }
+        return (json_array_size(slots) == 0 && prefix[0] == '\0')
+            || json_array_size(slots) >= 2;
+    }
+    if (strcmp(kind, "lookup") == 0) {
+        const char *address;
+        const char *edges_root;
+        const char *lookup_id;
+        const char *lookup_kind;
+        char expected[SECDAT_SHA256_HEX_LENGTH + 1];
+
+        if (!secdat_json_object_has_exact_keys(
+                object,
+                lookup_keys,
+                sizeof(lookup_keys) / sizeof(lookup_keys[0])
+            )
+            || !secdat_json_is_canonical_string(json_object_get(object, "address"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "edges_root"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "lookup_id"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "lookup_kind"))) {
+            return 0;
+        }
+        address = json_string_value(json_object_get(object, "address"));
+        edges_root = json_string_value(json_object_get(object, "edges_root"));
+        lookup_id = json_string_value(json_object_get(object, "lookup_id"));
+        lookup_kind = json_string_value(json_object_get(object, "lookup_kind"));
+        return strlen(lookup_kind) == 1
+            && secdat_dependency_digest_is_valid(address)
+            && secdat_dependency_digest_is_valid(edges_root)
+            && secdat_dependency_lookup_address(lookup_kind[0], lookup_id, expected) == 0
+            && strcmp(address, expected) == 0
+            && ((lookup_kind[0] == 'M' && secdat_uuid_is_valid(lookup_id))
+                || (lookup_kind[0] == 'R' && secdat_dependency_digest_is_valid(lookup_id))
+                || (lookup_kind[0] == 'D' && secdat_domain_id_is_valid(lookup_id)));
+    }
+    if (strcmp(kind, "mask-edge") == 0) {
+        const char *parts[3];
+        char expected[SECDAT_SHA256_HEX_LENGTH + 1];
+
+        if (!secdat_json_object_has_exact_keys(
+                object,
+                mask_keys,
+                sizeof(mask_keys) / sizeof(mask_keys[0])
+            )) {
+            return 0;
+        }
+        if (!secdat_json_is_canonical_string(json_object_get(object, "address"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "mask_domain_id"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "mask_record_id"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "mask_store"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "primary_digest"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "target_entry_id"))) {
+            return 0;
+        }
+        parts[0] = json_string_value(json_object_get(object, "mask_domain_id"));
+        parts[1] = json_string_value(json_object_get(object, "mask_store"));
+        parts[2] = json_string_value(json_object_get(object, "mask_record_id"));
+        return parts[0] != NULL && parts[1] != NULL && parts[2] != NULL
+            && secdat_domain_id_is_valid(parts[0]) && parts[1][0] != '\0'
+            && secdat_uuid_is_valid(parts[2])
+            && strcmp(parts[2], json_string_value(json_object_get(object, "target_entry_id"))) == 0
+            && secdat_dependency_digest_is_valid(json_string_value(json_object_get(object, "primary_digest")))
+            && secdat_dependency_hash_parts('m', parts, 3, expected) == 0
+            && strcmp(expected, json_string_value(json_object_get(object, "address"))) == 0;
+    }
+    if (strcmp(kind, "relation-edge") == 0) {
+        const char *parts[4];
+        char expected[SECDAT_SHA256_HEX_LENGTH + 1];
+
+        if (!secdat_json_object_has_exact_keys(
+                object,
+                relation_keys,
+                sizeof(relation_keys) / sizeof(relation_keys[0])
+            )) {
+            return 0;
+        }
+        if (!secdat_json_is_canonical_string(json_object_get(object, "address"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "keyref_hash"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "primary_digest"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "referenced_domain_id"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "relation_domain_id"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "relation_id"))
+            || !secdat_json_is_canonical_string(json_object_get(object, "relation_store"))) {
+            return 0;
+        }
+        parts[0] = json_string_value(json_object_get(object, "keyref_hash"));
+        parts[1] = json_string_value(json_object_get(object, "relation_domain_id"));
+        parts[2] = json_string_value(json_object_get(object, "relation_store"));
+        parts[3] = json_string_value(json_object_get(object, "relation_id"));
+        return parts[0] != NULL && parts[1] != NULL && parts[2] != NULL && parts[3] != NULL
+            && secdat_dependency_digest_is_valid(parts[0])
+            && secdat_domain_id_is_valid(parts[1]) && parts[2][0] != '\0'
+            && secdat_relation_id_is_valid(parts[3])
+            && secdat_domain_id_is_valid(json_string_value(json_object_get(object, "referenced_domain_id")))
+            && secdat_dependency_digest_is_valid(json_string_value(json_object_get(object, "primary_digest")))
+            && secdat_dependency_hash_parts('r', parts, 4, expected) == 0
+            && strcmp(expected, json_string_value(json_object_get(object, "address"))) == 0;
+    }
+    return 0;
+}
+
+static int secdat_dependency_node_read(
+    const char *hash,
+    json_t **object_out,
+    unsigned char **data_out,
+    size_t *length_out
+)
+{
+    char path[PATH_MAX];
+    unsigned char *data = NULL;
+    size_t length = 0;
+    int exists = 0;
+    char actual_hash[SECDAT_SHA256_HEX_LENGTH + 1];
+    const size_t magic_length = strlen(secdat_dependency_node_magic);
+    json_error_t error;
+    json_t *object = NULL;
+    char *canonical = NULL;
+    size_t canonical_length;
+    int result = 1;
+
+    *object_out = NULL;
+    if (data_out != NULL) {
+        *data_out = NULL;
+    }
+    if (length_out != NULL) {
+        *length_out = 0;
+    }
+    if (secdat_dependency_node_directories_validate(hash) != 0
+        || secdat_dependency_node_path(hash, path, sizeof(path)) != 0
+        || secdat_transaction_read_target(
+            path,
+            &data,
+            &length,
+            &exists,
+            SECDAT_DEPENDENCY_NODE_MAX_BYTES
+        ) != 0
+        || !exists || length <= magic_length + 2 || data[length - 1] != '\n'
+        || memcmp(data, secdat_dependency_node_magic, magic_length) != 0
+        || data[magic_length] != '\n'
+        || secdat_sha256_hex(data, length, actual_hash) != 0
+        || strcmp(actual_hash, hash) != 0) {
+        goto cleanup;
+    }
+    object = json_loadb(
+        (const char *)data + magic_length + 1,
+        length - magic_length - 2,
+        JSON_REJECT_DUPLICATES,
+        &error
+    );
+    if (object == NULL || !secdat_dependency_node_object_is_valid(object)) {
+        goto cleanup;
+    }
+    canonical = json_dumps(object, JSON_COMPACT | JSON_SORT_KEYS);
+    canonical_length = canonical != NULL ? strlen(canonical) : 0;
+    if (canonical == NULL
+        || canonical_length != length - magic_length - 2
+        || memcmp(data + magic_length + 1, canonical, canonical_length) != 0) {
+        goto cleanup;
+    }
+    *object_out = object;
+    object = NULL;
+    if (data_out != NULL) {
+        *data_out = data;
+        data = NULL;
+    }
+    if (length_out != NULL) {
+        *length_out = length;
+    }
+    result = 0;
+
+cleanup:
+    json_decref(object);
+    free(canonical);
+    free(data);
+    return result;
+}
+
+static int secdat_dependency_tree_lookup(
+    const char *root,
+    const char *address,
+    json_t **leaf_out,
+    int *found
+)
+{
+    char current[SECDAT_SHA256_HEX_LENGTH + 1];
+    size_t depth;
+
+    *leaf_out = NULL;
+    *found = 0;
+    if (!secdat_dependency_digest_is_valid(root)
+        || !secdat_dependency_digest_is_valid(address)
+        || secdat_copy_string(current, sizeof(current), root) != 0) {
+        return 1;
+    }
+    for (depth = 0; depth <= SECDAT_SHA256_HEX_LENGTH; depth += 1) {
+        json_t *node = NULL;
+        const char *kind;
+
+        if (secdat_dependency_node_read(current, &node, NULL, NULL) != 0) {
+            return 1;
+        }
+        kind = json_string_value(json_object_get(node, "kind"));
+        if (strcmp(kind, "branch") != 0) {
+            const char *node_address = json_string_value(json_object_get(node, "address"));
+
+            if (node_address != NULL && strcmp(node_address, address) == 0) {
+                *leaf_out = node;
+                *found = 1;
+            } else {
+                json_decref(node);
+            }
+            return 0;
+        }
+        {
+            const char *prefix = json_string_value(json_object_get(node, "prefix"));
+            json_t *slots = json_object_get(node, "slots");
+            size_t prefix_length = strlen(prefix);
+            size_t index;
+            int matched = 0;
+
+            if (strncmp(address, prefix, prefix_length) != 0) {
+                json_decref(node);
+                return 0;
+            }
+            for (index = 0; index < json_array_size(slots); index += 1) {
+                json_t *slot = json_array_get(slots, index);
+                const char *slot_text = json_string_value(json_object_get(slot, "slot"));
+
+                if (slot_text[0] == address[prefix_length]) {
+                    const char *child = json_string_value(json_object_get(slot, "child"));
+                    if (secdat_copy_string(current, sizeof(current), child) != 0) {
+                        json_decref(node);
+                        return 1;
+                    }
+                    matched = 1;
+                    break;
+                }
+            }
+            json_decref(node);
+            if (!matched) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static int secdat_dependency_write_nodes(
+    const struct secdat_dependency_node_list *nodes
+)
+{
+    char nodes_dir[PATH_MAX];
+    size_t index;
+
+    if (secdat_dependency_ensure_directories() != 0
+        || secdat_dependency_nodes_dir(nodes_dir, sizeof(nodes_dir)) != 0) {
+        return 1;
+    }
+    for (index = 0; index < nodes->count; index += 1) {
+        const struct secdat_dependency_encoded_node *node = &nodes->items[index];
+        char shard_dir[PATH_MAX];
+        char path[PATH_MAX];
+        unsigned char *existing = NULL;
+        size_t existing_length = 0;
+        int exists = 0;
+
+        if (snprintf(shard_dir, sizeof(shard_dir), "%s/%c%c", nodes_dir, node->hash[0], node->hash[1])
+                >= (int)sizeof(shard_dir)
+            || secdat_ensure_directory(shard_dir, 0700) != 0
+            || secdat_dependency_node_directories_validate(node->hash) != 0
+            || secdat_dependency_node_path(node->hash, path, sizeof(path)) != 0
+            || secdat_transaction_read_target(
+                path,
+                &existing,
+                &existing_length,
+                &exists,
+                SECDAT_DEPENDENCY_NODE_MAX_BYTES
+            ) != 0) {
+            free(existing);
+            return 1;
+        }
+        if (!exists || existing_length != node->length
+            || CRYPTO_memcmp(existing, node->data, node->length) != 0) {
+            if (secdat_atomic_write_file(path, node->data, node->length) != 0
+                || secdat_fsync_directory(shard_dir) != 0) {
+                free(existing);
+                return 1;
+            }
+        }
+        free(existing);
+    }
+    return secdat_fsync_directory(nodes_dir);
+}
+
+static int secdat_dependency_validate_expected_nodes(
+    const struct secdat_dependency_node_list *nodes
+)
+{
+    size_t index;
+
+    for (index = 0; index < nodes->count; index += 1) {
+        json_t *object = NULL;
+        unsigned char *data = NULL;
+        size_t length = 0;
+        const struct secdat_dependency_encoded_node *expected = &nodes->items[index];
+
+        if (secdat_dependency_node_read(
+                expected->hash,
+                &object,
+                &data,
+                &length
+            ) != 0
+            || length != expected->length
+            || CRYPTO_memcmp(data, expected->data, length) != 0) {
+            fprintf(stderr, _("invalid dependency index node: %s\n"), expected->hash);
+            json_decref(object);
+            free(data);
+            return 1;
+        }
+        json_decref(object);
+        free(data);
+    }
+    return 0;
+}
+
+static int secdat_dependency_relation_edge_validate(
+    json_t *edge,
+    const char *canonical_keyref,
+    const char *keyref_hash,
+    char *first_relation_id,
+    size_t first_relation_id_size,
+    size_t *edge_count
+)
+{
+    const char *relation_domain = json_string_value(json_object_get(edge, "relation_domain_id"));
+    const char *relation_store = json_string_value(json_object_get(edge, "relation_store"));
+    const char *relation_id = json_string_value(json_object_get(edge, "relation_id"));
+    const char *primary_digest = json_string_value(json_object_get(edge, "primary_digest"));
+    const char *edge_keyref_hash = json_string_value(json_object_get(edge, "keyref_hash"));
+    const char *referenced_domain = json_string_value(json_object_get(edge, "referenced_domain_id"));
+    char relation_path[PATH_MAX];
+    char actual_digest[SECDAT_SHA256_HEX_LENGTH + 1];
+    char actual_referenced_domain[PATH_MAX];
+    struct secdat_relation_info relation = {0};
+    size_t index;
+    int matched = 0;
+
+    if (strcmp(json_string_value(json_object_get(edge, "kind")), "relation-edge") != 0
+        || strcmp(edge_keyref_hash, keyref_hash) != 0
+        || secdat_dependency_relation_keyref_validate(
+            canonical_keyref,
+            relation_domain,
+            relation_store,
+            actual_referenced_domain
+        ) != 0
+        || strcmp(actual_referenced_domain, referenced_domain) != 0
+        || secdat_build_relation_path(
+            relation_domain,
+            relation_store,
+            relation_id,
+            relation_path,
+            sizeof(relation_path)
+        ) != 0
+        || secdat_dependency_read_primary_digest(relation_path, actual_digest) != 0
+        || strcmp(actual_digest, primary_digest) != 0
+        || secdat_read_relation(
+            relation_domain,
+            relation_store,
+            relation_id,
+            &relation,
+            1
+        ) != 0) {
+        secdat_relation_info_reset(&relation);
+        return 1;
+    }
+    for (index = 0; index < relation.member_count; index += 1) {
+        if (strcmp(relation.members[index].keyref, canonical_keyref) == 0) {
+            matched = 1;
+            break;
+        }
+    }
+    secdat_relation_info_reset(&relation);
+    if (!matched) {
+        return 1;
+    }
+    if (*edge_count == 0 && first_relation_id_size > 0
+        && secdat_copy_string(first_relation_id, first_relation_id_size, relation_id) != 0) {
+        return 1;
+    }
+    *edge_count += 1;
+    return 0;
+}
+
+static int secdat_dependency_relation_edges_walk(
+    const char *root,
+    const char *canonical_keyref,
+    const char *keyref_hash,
+    char *first_relation_id,
+    size_t first_relation_id_size,
+    size_t *edge_count,
+    size_t depth
+)
+{
+    json_t *node = NULL;
+    const char *kind;
+    int result = 1;
+
+    if (depth > SECDAT_SHA256_HEX_LENGTH
+        || secdat_dependency_node_read(root, &node, NULL, NULL) != 0) {
+        return 1;
+    }
+    kind = json_string_value(json_object_get(node, "kind"));
+    if (strcmp(kind, "branch") == 0) {
+        json_t *slots = json_object_get(node, "slots");
+        size_t index;
+
+        for (index = 0; index < json_array_size(slots); index += 1) {
+            const char *child = json_string_value(json_object_get(
+                json_array_get(slots, index), "child"));
+            if (secdat_dependency_relation_edges_walk(
+                    child,
+                    canonical_keyref,
+                    keyref_hash,
+                    first_relation_id,
+                    first_relation_id_size,
+                    edge_count,
+                    depth + 1
+                ) != 0) {
+                goto cleanup;
+            }
+        }
+        result = 0;
+    } else {
+        result = secdat_dependency_relation_edge_validate(
+            node,
+            canonical_keyref,
+            keyref_hash,
+            first_relation_id,
+            first_relation_id_size,
+            edge_count
+        );
+    }
+
+cleanup:
+    json_decref(node);
+    return result;
+}
+
+static int secdat_dependency_mask_edge_validate(
+    json_t *edge,
+    const char *target_entry_id,
+    size_t *edge_count
+)
+{
+    const char *mask_domain = json_string_value(json_object_get(edge, "mask_domain_id"));
+    const char *mask_store = json_string_value(json_object_get(edge, "mask_store"));
+    const char *record_id = json_string_value(json_object_get(edge, "mask_record_id"));
+    const char *primary_digest = json_string_value(json_object_get(edge, "primary_digest"));
+    char mask_path[PATH_MAX];
+    char actual_digest[SECDAT_SHA256_HEX_LENGTH + 1];
+    struct secdat_v2_mask_record record;
+
+    if (strcmp(json_string_value(json_object_get(edge, "kind")), "mask-edge") != 0
+        || strcmp(json_string_value(json_object_get(edge, "target_entry_id")), target_entry_id) != 0
+        || strcmp(record_id, target_entry_id) != 0
+        || secdat_build_v2_mask_path(
+            mask_domain,
+            mask_store,
+            record_id,
+            mask_path,
+            sizeof(mask_path)
+        ) != 0
+        || secdat_dependency_read_primary_digest(mask_path, actual_digest) != 0
+        || strcmp(actual_digest, primary_digest) != 0
+        || secdat_read_v2_mask_record(mask_path, record_id, &record) != 0
+        || strcmp(record.target_entry_id, target_entry_id) != 0) {
+        return 1;
+    }
+    *edge_count += 1;
+    return 0;
+}
+
+static int secdat_dependency_mask_edges_walk(
+    const char *root,
+    const char *target_entry_id,
+    size_t *edge_count,
+    size_t depth
+)
+{
+    json_t *node = NULL;
+    const char *kind;
+    int result = 1;
+
+    if (depth > SECDAT_SHA256_HEX_LENGTH
+        || secdat_dependency_node_read(root, &node, NULL, NULL) != 0) {
+        return 1;
+    }
+    kind = json_string_value(json_object_get(node, "kind"));
+    if (strcmp(kind, "branch") == 0) {
+        json_t *slots = json_object_get(node, "slots");
+        size_t index;
+
+        for (index = 0; index < json_array_size(slots); index += 1) {
+            const char *child = json_string_value(json_object_get(
+                json_array_get(slots, index), "child"));
+            if (secdat_dependency_mask_edges_walk(
+                    child,
+                    target_entry_id,
+                    edge_count,
+                    depth + 1
+                ) != 0) {
+                goto cleanup;
+            }
+        }
+        result = 0;
+    } else {
+        result = secdat_dependency_mask_edge_validate(
+            node,
+            target_entry_id,
+            edge_count
+        );
+    }
+
+cleanup:
+    json_decref(node);
+    return result;
+}
+
+static int secdat_dependency_index_mask_lookup(
+    const char *target_entry_id,
+    int *found
+)
+{
+    struct secdat_dependency_state state;
+    char address[SECDAT_SHA256_HEX_LENGTH + 1];
+    json_t *lookup = NULL;
+    const char *edges_root;
+    size_t edge_count = 0;
+    int lookup_found = 0;
+
+    *found = 0;
+    if (!secdat_uuid_is_valid(target_entry_id)
+        || secdat_dependency_state_read(&state) != 0
+        || state.state != SECDAT_DEPENDENCY_STATE_COMPLETE
+        || secdat_dependency_lookup_address('M', target_entry_id, address) != 0
+        || secdat_dependency_tree_lookup(
+            state.active_root,
+            address,
+            &lookup,
+            &lookup_found
+        ) != 0) {
+        fprintf(stderr, _("dependency index is incomplete; run fsck --format v2 --dependency-index --repair\n"));
+        return 1;
+    }
+    if (!lookup_found) {
+        return 0;
+    }
+    if (strcmp(json_string_value(json_object_get(lookup, "kind")), "lookup") != 0
+        || strcmp(json_string_value(json_object_get(lookup, "lookup_kind")), "M") != 0
+        || strcmp(json_string_value(json_object_get(lookup, "lookup_id")), target_entry_id) != 0) {
+        json_decref(lookup);
+        fprintf(stderr, _("dependency index is corrupt; run fsck --format v2 --dependency-index --repair\n"));
+        return 1;
+    }
+    edges_root = json_string_value(json_object_get(lookup, "edges_root"));
+    if (secdat_dependency_mask_edges_walk(
+            edges_root,
+            target_entry_id,
+            &edge_count,
+            0
+        ) != 0
+        || edge_count == 0) {
+        json_decref(lookup);
+        fprintf(stderr, _("dependency index is corrupt; run fsck --format v2 --dependency-index --repair\n"));
+        return 1;
+    }
+    json_decref(lookup);
+    *found = 1;
+    return 0;
+}
+
+static int secdat_dependency_index_relation_lookup(
+    const char *canonical_keyref,
+    char *relation_id,
+    size_t relation_id_size,
+    int *found
+)
+{
+    struct secdat_dependency_state state;
+    char keyref_hash[SECDAT_SHA256_HEX_LENGTH + 1];
+    char address[SECDAT_SHA256_HEX_LENGTH + 1];
+    json_t *lookup = NULL;
+    const char *edges_root;
+    size_t edge_count = 0;
+    int lookup_found = 0;
+
+    *found = 0;
+    if (relation_id_size > 0) {
+        relation_id[0] = '\0';
+    }
+    if (secdat_dependency_state_read(&state) != 0
+        || state.state != SECDAT_DEPENDENCY_STATE_COMPLETE
+        || secdat_dependency_relation_key(canonical_keyref, keyref_hash) != 0
+        || secdat_dependency_lookup_address('R', keyref_hash, address) != 0
+        || secdat_dependency_tree_lookup(
+            state.active_root,
+            address,
+            &lookup,
+            &lookup_found
+        ) != 0) {
+        fprintf(stderr, _("dependency index is incomplete; run fsck --format v2 --dependency-index --repair\n"));
+        return 1;
+    }
+    if (!lookup_found) {
+        return 0;
+    }
+    if (strcmp(json_string_value(json_object_get(lookup, "kind")), "lookup") != 0
+        || strcmp(json_string_value(json_object_get(lookup, "lookup_kind")), "R") != 0
+        || strcmp(json_string_value(json_object_get(lookup, "lookup_id")), keyref_hash) != 0) {
+        json_decref(lookup);
+        fprintf(stderr, _("dependency index is corrupt; run fsck --format v2 --dependency-index --repair\n"));
+        return 1;
+    }
+    edges_root = json_string_value(json_object_get(lookup, "edges_root"));
+    if (secdat_dependency_relation_edges_walk(
+            edges_root,
+            canonical_keyref,
+            keyref_hash,
+            relation_id,
+            relation_id_size,
+            &edge_count,
+            0
+        ) != 0
+        || edge_count == 0) {
+        json_decref(lookup);
+        fprintf(stderr, _("dependency index is corrupt; run fsck --format v2 --dependency-index --repair\n"));
+        return 1;
+    }
+    json_decref(lookup);
+    *found = 1;
+    return 0;
+}
+
+static int secdat_dependency_index_validate(
+    size_t *lookup_count,
+    size_t *edge_count
+)
+{
+    struct secdat_dependency_state state;
+    struct secdat_dependency_node_list nodes = {0};
+    char expected_root[SECDAT_SHA256_HEX_LENGTH + 1];
+    int result = 1;
+
+    if (secdat_dependency_state_read(&state) != 0
+        || state.state != SECDAT_DEPENDENCY_STATE_COMPLETE
+        || secdat_dependency_build_expected(
+            &nodes,
+            expected_root,
+            lookup_count,
+            edge_count
+        ) != 0
+        || strcmp(state.active_root, expected_root) != 0
+        || secdat_dependency_validate_expected_nodes(&nodes) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    secdat_dependency_node_list_reset(&nodes);
+    return result;
+}
+
+static int secdat_dependency_index_rebuild(
+    size_t *lookup_count,
+    size_t *edge_count
+)
+{
+    struct secdat_dependency_state previous;
+    struct secdat_dependency_state building;
+    struct secdat_dependency_state complete;
+    struct secdat_dependency_node_list first_nodes = {0};
+    struct secdat_dependency_node_list second_nodes = {0};
+    struct secdat_dependency_node_list final_nodes = {0};
+    char first_root[SECDAT_SHA256_HEX_LENGTH + 1];
+    char second_root[SECDAT_SHA256_HEX_LENGTH + 1];
+    char final_root[SECDAT_SHA256_HEX_LENGTH + 1];
+    size_t first_lookups = 0;
+    size_t first_edges = 0;
+    size_t second_lookups = 0;
+    size_t second_edges = 0;
+    size_t final_lookups = 0;
+    size_t final_edges = 0;
+    int previous_status;
+    const char *failed_stage = "initialize";
+    int result = 1;
+
+    memset(&building, 0, sizeof(building));
+    previous_status = secdat_dependency_state_read(&previous);
+    building.state = SECDAT_DEPENDENCY_STATE_BUILDING;
+    if (previous_status == 0 && previous.has_active_root) {
+        building.has_active_root = 1;
+        if (secdat_copy_string(
+                building.active_root,
+                sizeof(building.active_root),
+                previous.active_root
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    if (secdat_generate_uuid_v4(building.build_id, sizeof(building.build_id)) != 0
+        || secdat_generate_uuid_v4(
+            building.building_generation,
+            sizeof(building.building_generation)
+        ) != 0) {
+        goto cleanup;
+    }
+    failed_stage = "publish-building";
+    if (secdat_dependency_state_write(&building) != 0) {
+        goto cleanup;
+    }
+    failed_stage = "scan-primary";
+    if (secdat_dependency_build_expected(
+            &first_nodes,
+            first_root,
+            &first_lookups,
+            &first_edges
+        ) != 0) {
+        goto cleanup;
+    }
+    failed_stage = "write-nodes";
+    if (secdat_dependency_write_nodes(&first_nodes) != 0) {
+        goto cleanup;
+    }
+    failed_stage = "rescan-primary";
+    if (secdat_dependency_build_expected(
+            &second_nodes,
+            second_root,
+            &second_lookups,
+            &second_edges
+        ) != 0) {
+        goto cleanup;
+    }
+    failed_stage = "verify-generation";
+    if (strcmp(first_root, second_root) != 0
+        || first_lookups != second_lookups || first_edges != second_edges
+        || secdat_dependency_validate_expected_nodes(&second_nodes) != 0) {
+        fprintf(
+            stderr,
+            _("dependency index generation changed: first=%s/%zu/%zu second=%s/%zu/%zu\n"),
+            first_root,
+            first_lookups,
+            first_edges,
+            second_root,
+            second_lookups,
+            second_edges
+        );
+        goto cleanup;
+    }
+    memset(&complete, 0, sizeof(complete));
+    complete.state = SECDAT_DEPENDENCY_STATE_COMPLETE;
+    complete.has_active_root = 1;
+    if (secdat_copy_string(complete.build_id, sizeof(complete.build_id), building.build_id) != 0
+        || secdat_copy_string(complete.active_root, sizeof(complete.active_root), second_root) != 0) {
+        goto cleanup;
+    }
+    failed_stage = "publish-complete";
+    if (secdat_dependency_state_write(&complete) != 0) {
+        goto cleanup;
+    }
+    failed_stage = "post-publication-scan";
+    if (secdat_dependency_build_expected(
+            &final_nodes,
+            final_root,
+            &final_lookups,
+            &final_edges
+        ) != 0) {
+        if (secdat_dependency_state_write(&building) != 0) {
+            failed_stage = "post-publication-revoke";
+        }
+        goto cleanup;
+    }
+    failed_stage = "post-publication-verify";
+    if (strcmp(complete.active_root, final_root) != 0
+        || second_lookups != final_lookups || second_edges != final_edges
+        || secdat_dependency_validate_expected_nodes(&final_nodes) != 0) {
+        if (secdat_dependency_state_write(&building) != 0) {
+            failed_stage = "post-publication-revoke";
+        }
+        goto cleanup;
+    }
+    *lookup_count = final_lookups;
+    *edge_count = final_edges;
+    result = 0;
+
+cleanup:
+    if (result != 0) {
+        fprintf(stderr, _("dependency index rebuild failed at %s\n"), failed_stage);
+    }
+    secdat_dependency_node_list_reset(&first_nodes);
+    secdat_dependency_node_list_reset(&second_nodes);
+    secdat_dependency_node_list_reset(&final_nodes);
+    return result;
+}
+
 static int secdat_lookup_v2_domain_entry_by_id(
     const char *domain_id,
     const char *store_name,
@@ -22800,6 +24992,7 @@ static int secdat_update_v2_secret_attrs(
     size_t payload_length = 0;
     int has_payload = 0;
     int key_matches = 0;
+    int mask_dependency_found = 0;
     int status = 1;
 
     if (secdat_v2_domain_entries_dir(domain_id, store_name, domain_entries_dir, sizeof(domain_entries_dir)) != 0
@@ -22827,6 +25020,22 @@ static int secdat_update_v2_secret_attrs(
     }
     if (object.bulk_select_value == SECDAT_BULK_SELECT_VALUE_EXCLUDE && attrs->bulk_select != SECDAT_BULK_SELECT_EXCLUDE) {
         fprintf(stderr, _("secret object excludes bulk select: %s\n"), key);
+        goto cleanup;
+    }
+    if (attrs->key_visibility != domain_entry.key_visibility
+        && (secdat_dependency_index_mask_lookup(
+                entry->entry_id,
+                &mask_dependency_found
+            ) != 0
+            || mask_dependency_found)) {
+        if (mask_dependency_found) {
+            fprintf(
+                stderr,
+                _("key_visibility=%s cannot be used while identity masks reference entry: %s\n"),
+                secdat_key_visibility_name(attrs->key_visibility),
+                key
+            );
+        }
         goto cleanup;
     }
     if (attrs->key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED) {
@@ -22920,6 +25129,7 @@ static int secdat_store_v2_plaintext_with_attrs(
     int refcount_present = 1;
     size_t refcount = 1;
     int lookup_status;
+    int mask_dependency_found = 0;
     int status = 1;
 
     if (attrs != NULL) {
@@ -22996,6 +25206,23 @@ static int secdat_store_v2_plaintext_with_attrs(
         || secdat_build_v2_secret_value_path(object_domain_id, object_store_name, secret_id, value_path, sizeof(value_path)) != 0
         || secdat_build_tombstone_path(domain_id, store_name, key, tombstone_path, sizeof(tombstone_path)) != 0
         || secdat_encode_v2_value_for_storage(object_key_ptr, plaintext, plaintext_length, unsafe_store, &encrypted, &encrypted_length) != 0) {
+        goto cleanup;
+    }
+    if (lookup_status == 0
+        && write_attrs.key_visibility != entry.key_visibility
+        && (secdat_dependency_index_mask_lookup(
+                entry.entry_id,
+                &mask_dependency_found
+            ) != 0
+            || mask_dependency_found)) {
+        if (mask_dependency_found) {
+            fprintf(
+                stderr,
+                _("key_visibility=%s cannot be used while identity masks reference entry: %s\n"),
+                secdat_key_visibility_name(write_attrs.key_visibility),
+                key
+            );
+        }
         goto cleanup;
     }
     if (write_attrs.key_visibility == SECDAT_KEY_VISIBILITY_UNLOCKED
@@ -23646,6 +25873,8 @@ static int secdat_command_fsck(const struct secdat_cli *cli)
     struct secdat_fsck_report report;
     struct secdat_domain_chain chain = {0};
     int status;
+    size_t dependency_lookups = 0;
+    size_t dependency_edges = 0;
 
     status = secdat_parse_fsck_options(cli, &options);
     if (status != 0) {
@@ -23661,7 +25890,44 @@ static int secdat_command_fsck(const struct secdat_cli *cli)
         secdat_domain_chain_free(&chain);
         return 1;
     }
-    if (strcmp(options.format, "v2") == 0) {
+    if (options.dependency_index
+        && !options.orphaned && !options.dangling && !options.refcount) {
+        memset(&report, 0, sizeof(report));
+        status = options.repair
+            ? secdat_dependency_index_rebuild(
+                &dependency_lookups,
+                &dependency_edges
+            )
+            : secdat_dependency_index_validate(
+                &dependency_lookups,
+                &dependency_edges
+            );
+        if (status == 0 && options.repair) {
+            char detail[128];
+
+            snprintf(
+                detail,
+                sizeof(detail),
+                "lookups=%zu edges=%zu",
+                dependency_lookups,
+                dependency_edges
+            );
+            secdat_fsck_report_repair(
+                &report,
+                "rebuilt-dependency-index",
+                "global",
+                detail
+            );
+        } else if (status != 0) {
+            secdat_fsck_report_issue(
+                &report,
+                "dependency-index",
+                "global",
+                "missing-building-corrupt-or-stale"
+            );
+            status = 0;
+        }
+    } else if (strcmp(options.format, "v2") == 0) {
         status = secdat_fsck_v2_store(&chain, cli->store, &options, &report);
     } else {
         status = secdat_fsck_v1_store(&chain, cli->store, &options, &report);
@@ -24862,6 +27128,9 @@ static int secdat_command_relation_set(const struct secdat_cli *cli)
         || secdat_require_writable_domain_chain(&chain) != 0) {
         goto cleanup;
     }
+    if (secdat_dependency_index_invalidate() != 0) {
+        goto cleanup;
+    }
     status = secdat_write_relation(current_domain_id, cli->store, &relation);
 
 cleanup:
@@ -25970,6 +28239,9 @@ static int secdat_command_relation_rm(const struct secdat_cli *cli)
     }
     if (!secdat_file_exists(relation_path)) {
         fprintf(stderr, _("relation not found: %s\n"), cli->argv[0]);
+        goto cleanup;
+    }
+    if (secdat_dependency_index_invalidate() != 0) {
         goto cleanup;
     }
     status = secdat_remove_if_exists(relation_path);
@@ -30234,7 +32506,9 @@ static int secdat_command_mask(const struct secdat_cli *cli)
             options.json
         );
     } else {
-        status = secdat_commit_mask_write_plan(&plan, &transaction);
+        status = secdat_dependency_index_invalidate() != 0
+            ? 1
+            : secdat_commit_mask_write_plan(&plan, &transaction);
         if (status == 0 && options.json) {
             status = secdat_print_mask_write_plan(&plan, 0, 1, 1);
         }
@@ -30352,7 +32626,9 @@ static int secdat_command_unmask(const struct secdat_cli *cli)
     if (options.dry_run) {
         status = secdat_print_unmask_plan(&plan, 1, 0, options.json);
     } else {
-        status = secdat_commit_v2_unmask_plan(&plan, &transaction);
+        status = secdat_dependency_index_invalidate() != 0
+            ? 1
+            : secdat_commit_v2_unmask_plan(&plan, &transaction);
         if (status == 0 && options.json) {
             status = secdat_print_unmask_plan(&plan, 0, 1, 1);
         }
@@ -30956,7 +33232,7 @@ static int secdat_store_migrate_write_v2(
 {
     struct secdat_store_migrate_v1_plan plan = {0};
     struct secdat_key_list written_paths = {0};
-    struct secdat_fsck_options fsck_options = {"v2", 1, 1, 1, 0, 1};
+    struct secdat_fsck_options fsck_options = {"v2", 1, 1, 1, 0, 1, 0};
     struct secdat_fsck_report fsck_report;
     char domain_entries_dir[PATH_MAX];
     char secret_objects_dir[PATH_MAX];

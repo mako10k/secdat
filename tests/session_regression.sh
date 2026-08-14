@@ -1125,7 +1125,7 @@ for args, marker in [
     ([bin_path, "help", "lock"], "[-d DIR|--dir DIR] lock [-i|--inherit] [-s|--save]"),
     ([bin_path, "help", "list"], "list [-m|--masked] [--dormant] [-O|--orphaned] [--all-masks] [--long|--json]"),
     ([bin_path, "help", "attr"], "attr KEYREF [--key-visibility always|unlocked] [--value-access unlocked|always] [--bulk-select exclude|named|include]"),
-    ([bin_path, "help", "fsck"], "fsck [--orphaned] [--dangling] [--refcount] [--repair] [--format v1|v2]"),
+    ([bin_path, "help", "fsck"], "fsck [--orphaned] [--dangling] [--refcount] [--dependency-index] [--repair] [--format v1|v2]"),
     ([bin_path, "help", "gc"], "gc [--orphaned] [--dangling] [--dry-run] [--format v2]"),
     ([bin_path, "help", "mask"], "mask [--rebind] [--dry-run] [--json] KEYREF"),
     ([bin_path, "help", "unmask"], "unmask [--dry-run] [--json] [--mask-chain UUID] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask]"),
@@ -2169,6 +2169,11 @@ if rc != 0 or "session unlocked\n" not in stdout:
 rc, stdout, stderr = run(scoped(["store", "migrate", "default", "--to-format", "v2"], v2_enumeration_domain))
 if rc != 0 or stderr != "":
     fail(f"v2 enumeration migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped([
+    "fsck", "--format", "v2", "--dependency-index", "--repair",
+], v2_enumeration_domain))
+if rc != 0 or stderr != "" or not stdout.startswith("rebuilt-dependency-index\tglobal\t"):
+    fail(f"v2 dependency index rebuild failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 v2_ephemeral_key = "V2_HIDDEN_EPHEMERAL"
 rc, stdout, stderr = run(scoped([
     "set", v2_ephemeral_key,
