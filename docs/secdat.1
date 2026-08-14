@@ -292,9 +292,13 @@ registered canonical masks and relations. Missing, building, corrupt, or stale
 coverage is an error, not an empty index. Adding
 .B --repair
 publishes a building state, writes and verifies immutable content-addressed
-nodes for the M/R/D key spaces, and then publishes the complete root. Existing
-mask and relation writers invalidate a complete generation before changing a
-primary, so rebuild before a reverse-dependent hidden-name operation.
+nodes for the M/R/D key spaces, and then publishes the complete root. With a
+complete indexed-mutations-v1 root, canonical v2 mask and unmask writers update
+only affected Merkle paths and publish dependency nodes, mask primaries, and the
+replacement active root in one recoverable transaction. Missing or building
+coverage remains incomplete, malformed coverage blocks those writers, and
+relation writers still invalidate a complete generation before changing a
+primary.
 Exact relation lookup rejects a relation-dependent visible-to-hidden transition.
 Until atomic mask-primary rewriting is routed, an identity-mask dependency
 rejects either key-visibility transition rather than leaving stale mask

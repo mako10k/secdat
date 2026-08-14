@@ -458,7 +458,7 @@ assert_mask_state(
 fault_cases = [
     ("prepared", "FAULT_PREPARED", (False, False), (False, False)),
     ("committing", "FAULT_COMMITTING", (False, False), (True, True)),
-    ("target-1", "FAULT_TARGET", (True, False), (True, True)),
+    ("target-1", "FAULT_TARGET", (False, False), (True, True)),
     ("committed", "FAULT_COMMITTED", (True, True), (True, True)),
 ]
 for boundary, key, crash_state, recovered_state in fault_cases:
@@ -563,11 +563,16 @@ if (
         "guards",
         "writes",
     }
-    or len(dependency_manifest["guards"]) != 1
-    or dependency_manifest["guards"][0].get("type") != "exact-file"
-    or dependency_manifest["guards"][0].get("role") != "exact-file"
+    or not dependency_manifest["guards"]
+    or any(
+        guard.get("type") != "exact-file"
+        or guard.get("role") != "exact-file"
+        for guard in dependency_manifest["guards"]
+    )
     or not dependency_manifest["writes"]
-    or any(write.get("phase") != 30 for write in dependency_manifest["writes"])
+    or not {20, 30, 40}.issubset(
+        {write.get("phase") for write in dependency_manifest["writes"]}
+    )
 ):
     fail(f"v2 guard/write manifest was not canonical: {dependency_manifest!r}")
 dependency_original = dependency_path.read_text(encoding="utf-8")

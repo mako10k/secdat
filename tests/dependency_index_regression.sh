@@ -14,6 +14,7 @@ export XDG_DATA_HOME="$work_root/data"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
 python3 - "$bin_path" "$work_root" <<'PY'
+import json
 import os
 import subprocess
 import sys
@@ -29,8 +30,10 @@ env.update(
 )
 root = work_root / "root"
 child = root / "child"
+child2 = root / "child2"
 root.mkdir(parents=True)
 child.mkdir(parents=True)
+child2.mkdir(parents=True)
 
 
 def fail(message):
@@ -52,7 +55,7 @@ def require_ok(result, label, stdout=None):
         )
 
 
-for domain in (root, child):
+for domain in (root, child, child2):
     require_ok(run("--dir", str(domain), "domain", "create"), f"create {domain}", "")
     require_ok(run("--dir", str(domain), "store", "create", "app"), f"store {domain}", "")
 
@@ -70,6 +73,10 @@ require_ok(
 require_ok(
     run("--dir", str(child), "store", "migrate", "app", "--to-format", "v2"),
     "migrate child",
+)
+require_ok(
+    run("--dir", str(child2), "store", "migrate", "app", "--to-format", "v2"),
+    "migrate child2",
 )
 
 missing = run("--dir", str(root), "fsck", "--format", "v2", "--dependency-index")
@@ -149,15 +156,91 @@ require_ok(
     "canonical mask",
     "",
 )
-if "state=building\n" not in state_path.read_text(encoding="utf-8"):
-    fail("mask writer did not invalidate complete dependency index")
-
-rebuilt = run(
-    "--dir", str(root), "fsck", "--format", "v2", "--dependency-index", "--repair"
+if "state=complete\n" not in state_path.read_text(encoding="utf-8"):
+    fail("mask writer did not preserve a complete dependency index")
+require_ok(
+    run("--dir", str(root), "fsck", "--format", "v2", "--dependency-index"),
+    "incremental mask dependency update",
+    "ok\n",
 )
-require_ok(rebuilt, "dependency rebuild")
-if rebuilt.stdout != "rebuilt-dependency-index\tglobal\tlookups=3 edges=3\n":
-    fail(f"M/R/D coverage or duplicate member coalescing mismatch: {rebuilt.stdout!r}")
+require_ok(
+    run("--dir", str(child2), "--store", "app", "mask", "ALPHA"),
+    "second canonical mask for one entry",
+    "",
+)
+require_ok(
+    run("--dir", str(root), "fsck", "--format", "v2", "--dependency-index"),
+    "incremental multi-edge mask update",
+    "ok\n",
+)
+require_ok(
+    run("--dir", str(child2), "--store", "app", "unmask", "ALPHA"),
+    "remove one mask edge while preserving another",
+    "",
+)
+require_ok(
+    run("--dir", str(root), "fsck", "--format", "v2", "--dependency-index"),
+    "incremental multi-edge mask removal",
+    "ok\n",
+)
+
+# A complete index is updated in the same recovery authority as the mask
+# primary. The manifest guards every old Merkle node that was traversed and
+# publishes new nodes before the primary and the replacement active root.
+crash_env = {**env, "SECDAT_TEST_TRANSACTION_CRASH_AFTER": "committing"}
+crashed_mask = subprocess.run(
+    [bin_path, "--dir", str(child), "--store", "app", "mask", "BETA"],
+    text=True,
+    capture_output=True,
+    env=crash_env,
+    check=False,
+)
+if crashed_mask.returncode != 86:
+    fail(f"indexed mask did not stop at committing: {crashed_mask}")
+transactions_root = Path(env["XDG_DATA_HOME"]) / "secdat/transactions"
+pending = [path for path in transactions_root.iterdir() if path.name != "lock"]
+if len(pending) != 1:
+    fail(f"expected one indexed mask transaction: {pending!r}")
+envelope = (pending[0] / "journal").read_text(encoding="utf-8").splitlines()
+if len(envelope) != 2:
+    fail(f"invalid indexed mask journal envelope: {envelope!r}")
+manifest = json.loads(envelope[1])
+guards = manifest.get("guards", [])
+writes = manifest.get("writes", [])
+phases = {write.get("phase") for write in writes}
+if (
+    manifest.get("version") != 2
+    or manifest.get("state") != "committing"
+    or not guards
+    or any(
+        guard.get("type") != "exact-file"
+        or guard.get("role") != "exact-file"
+        for guard in guards
+    )
+    or not {20, 30, 40}.issubset(phases)
+    or not any(write.get("role") == "dependency-node" for write in writes)
+    or not any(write.get("role") == "primary-record" for write in writes)
+    or not any(write.get("role") == "dependency-root" for write in writes)
+):
+    fail(f"indexed mask transaction ordering/guards mismatch: {manifest!r}")
+require_ok(run("--dir", str(child), "status", "--quiet"), "indexed mask recovery", "")
+if "state=complete\n" not in state_path.read_text(encoding="utf-8"):
+    fail("indexed mask recovery did not publish a complete root")
+require_ok(
+    run("--dir", str(root), "fsck", "--format", "v2", "--dependency-index"),
+    "indexed mask recovery validation",
+    "ok\n",
+)
+require_ok(
+    run("--dir", str(child), "--store", "app", "unmask", "BETA"),
+    "remove recovered indexed mask",
+    "",
+)
+require_ok(
+    run("--dir", str(root), "fsck", "--format", "v2", "--dependency-index"),
+    "incremental recovered-mask removal",
+    "ok\n",
+)
 
 indexes_root = Path(env["XDG_DATA_HOME"]) / "secdat/indexes"
 node_bytes = b"".join(path.read_bytes() for path in sorted(indexes_root.rglob("*.idx")))
@@ -229,12 +312,13 @@ require_ok(
     "unmask",
     "",
 )
-final_rebuild = run(
-    "--dir", str(root), "fsck", "--format", "v2", "--dependency-index", "--repair"
+if "state=complete\n" not in state_path.read_text(encoding="utf-8"):
+    fail("unmask writer did not preserve a complete dependency index")
+require_ok(
+    run("--dir", str(root), "fsck", "--format", "v2", "--dependency-index"),
+    "incremental unmask dependency update",
+    "ok\n",
 )
-require_ok(final_rebuild, "final rebuild")
-if final_rebuild.stdout != "rebuilt-dependency-index\tglobal\tlookups=0 edges=0\n":
-    fail(f"removed primaries remain indexed: {final_rebuild.stdout!r}")
 require_ok(
     run(
         "--dir", str(root), "--store", "app", "attr", "--key-visibility", "unlocked", "ALPHA"
@@ -252,6 +336,14 @@ state_path.write_text(original_state + "unknown=field\n", encoding="utf-8")
 strict = run("--dir", str(root), "fsck", "--format", "v2", "--dependency-index")
 if strict.returncode != 1 or "dependency-index\tglobal\t" not in strict.stdout:
     fail(f"unknown state field was accepted: {strict}")
+corrupt_writer = run(
+    "--dir", str(child2), "--store", "app", "mask", "BETA"
+)
+if (
+    corrupt_writer.returncode == 0
+    or "dependency index is corrupt" not in corrupt_writer.stderr
+):
+    fail(f"mask writer accepted malformed dependency state: {corrupt_writer}")
 
 state_path.write_text(original_state, encoding="utf-8")
 require_ok(

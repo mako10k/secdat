@@ -514,7 +514,8 @@ revalidated so changed-since-plan state fails before live mutation.
 - `fsck --format v2 --dependency-index --repair` publishes `building` before scanning, writes and verifies immutable nodes, then publishes `complete`; missing, building, corrupt, or stale coverage is never treated as an empty index
 - reverse-dependent hidden-name checks use exact R-key lookup and direct operators to dependency-index repair when authoritative coverage is unavailable; there is no registered-domain scan fallback
 - until atomic mask-primary rewriting is routed, exact M-key lookup rejects either mask-dependent key-visibility transition rather than publishing an entry with stale mask visibility/name representation; updates that keep the existing visibility remain allowed
-- current mask and relation writers invalidate a complete generation before changing a primary until their incremental copy-on-write index updates are implemented
+- with a complete `indexed-mutations-v1` root, canonical v2 mask and unmask writers incrementally replace only affected Merkle paths and publish dependency nodes, mask primaries, and the active root in one recoverable transaction
+- missing or building coverage remains incomplete, malformed coverage blocks canonical v2 mask/unmask writers, and current relation writers still invalidate a complete generation before changing a primary
 - `fsck --repair` must not delete orphaned secrets, dangling entries, values, tombstones, or any non-derived data
 - `secdat gc --format v2 [--orphaned] [--dangling]` is the explicit destructive cleanup path for v2 graph garbage
 - without a filter, `gc` targets both orphaned and dangling v2 graph artifacts
