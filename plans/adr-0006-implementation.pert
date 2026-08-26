@@ -1,5 +1,5 @@
 project ADR0006:
-  version 1
+  version 5
   title "UUID-stable mv and identity-linked masks"
   description |
     ADR 0006を実装issue #161から#169まで順番に進める。
@@ -95,7 +95,7 @@ task MASK_IMPACT_WRITES MASK_WRITES_ACCEPTED -> MASK_IMPACT_ACCEPTED:
     default/on/off警告、direct-hit、whole-batch transaction、
     dry-run/JSONと対応help/spec/man/completion/poを実装・review・commitする。
   duration 21p
-  status active
+  status done
   priority 60
   requires:
     CODEX 1
@@ -166,3 +166,9 @@ task SURFACE_COMPLETION CROSS_NAMESPACE_ACCEPTED -> ADR0006_ACCEPTED:
   requires:
     CODEX 1
     REVIEW 1
+
+work_event ISSUE164_ACCEPTED_20260826:
+  model 1
+  task MASK_IMPACT_WRITES
+  kind finish
+  occurred_at 2026-08-26T20:16:42+09:00

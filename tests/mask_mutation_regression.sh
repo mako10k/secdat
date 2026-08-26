@@ -30,11 +30,13 @@ root = work_root / "workspace" / "root"
 parent = root / "parent"
 child = parent / "child"
 bundle_source = work_root / "workspace" / "bundle-source"
-for domain in (root, parent, child, bundle_source):
+fault_bundle_source = work_root / "workspace" / "fault-bundle-source"
+for domain in (root, parent, child, bundle_source, fault_bundle_source):
     domain.mkdir(parents=True, exist_ok=True)
 
 askpass_path = work_root / "askpass.py"
 bundle_path = work_root / "load.secdat"
+fault_bundle_path = work_root / "fault-load.secdat"
 askpass_path.write_text(
     "#!/usr/bin/env python3\n"
     "import os\n"
@@ -87,6 +89,13 @@ def parse_json(stdout, context):
         return json.loads(stdout)
     except json.JSONDecodeError as error:
         fail(f"{context} did not return JSON: {error}: {stdout!r}")
+
+
+def parse_mutation_plan(stdout, context):
+    report = parse_json(stdout, context)
+    if report.get("plan_schema_version") != "secdat.mutation-plan.v1":
+        fail(f"{context} returned the wrong mutation plan schema: {report!r}")
+    return report
 
 
 def create_v2_domain(domain):
@@ -174,7 +183,7 @@ def domain_store(domain):
     fail(f"domain store not found for {domain}")
 
 
-for domain in (root, parent, child, bundle_source):
+for domain in (root, parent, child, bundle_source, fault_bundle_source):
     create_v2_domain(domain)
 
 parent_keys = [
@@ -191,7 +200,13 @@ parent_keys = [
     "BATCH_TWO",
     "LOAD_ONE",
     "LOAD_TWO",
+    "LOAD_ATOMIC_SECOND",
+    "LOAD_FAULT_ONE",
+    "LOAD_FAULT_TWO",
     "FAULT_SET",
+    "FAULT_BATCH_ONE",
+    "FAULT_BATCH_TWO",
+    "BATCH_REJECT_SECOND",
     "ORPHAN_SET",
     "LEGACY_AMBIGUOUS",
     "LOCKED_OTHER",
@@ -212,7 +227,13 @@ for key in [
     "BATCH_TWO",
     "LOAD_ONE",
     "LOAD_TWO",
+    "LOAD_ATOMIC_SECOND",
+    "LOAD_FAULT_ONE",
+    "LOAD_FAULT_TWO",
     "FAULT_SET",
+    "FAULT_BATCH_ONE",
+    "FAULT_BATCH_TWO",
+    "BATCH_REJECT_SECOND",
     "ORPHAN_SET",
     "HIDDEN_LOCKED",
 ]:
@@ -243,7 +264,7 @@ if mask_state("SET_ACTIVE") != "dormant":
 
 # A repeated dormant direct hit remains observable; warning suppression changes
 # neither the result nor the JSON impact rows.
-report = parse_json(
+report = parse_mutation_plan(
     expect_ok(
         [
             bin_path,
@@ -280,6 +301,42 @@ if (
 ):
     fail(f"dormant direct-hit row mismatch: {direct_rows!r}")
 
+# An orphan barrier remains authoritative and observable when a same-name
+# local destination is written.
+expect_ok([bin_path, "--dir", str(parent), "rm", "ORPHAN_SET"])
+if mask_state("ORPHAN_SET") != "orphaned":
+    fail("orphan direct-hit fixture did not become orphaned")
+orphan_report = parse_mutation_plan(
+    expect_ok(
+        [
+            bin_path,
+            "--dir",
+            str(child),
+            "set",
+            "ORPHAN_SET",
+            "--value",
+            "local-orphan",
+            "--no-warn-mask",
+            "--json",
+        ]
+    ),
+    "orphan direct-hit set",
+)
+orphan_direct_rows = [
+    row
+    for row in orphan_report["mask_impact_rows"]
+    if row.get("event") == "direct-hit"
+]
+if (
+    orphan_report["mask_impact_counts"].get("direct-hit") != 1
+    or len(orphan_direct_rows) != 1
+    or orphan_direct_rows[0].get("state_before") != "orphaned"
+    or orphan_direct_rows[0].get("state_after") != "orphaned"
+    or mask_state("ORPHAN_SET") != "orphaned"
+    or not key_exists(child, "ORPHAN_SET")
+):
+    fail(f"orphan direct-hit result mismatch: {orphan_report!r}")
+
 # reject and dry-run both use the complete plan and leave live state untouched.
 rc, stdout, stderr = run(
     [
@@ -294,7 +351,7 @@ rc, stdout, stderr = run(
         "--json",
     ]
 )
-reject_report = parse_json(stdout, "reject set")
+reject_report = parse_mutation_plan(stdout, "reject set")
 if (
     rc != 1
     or stderr != ""
@@ -307,7 +364,7 @@ if (
 ):
     fail(f"reject contract mismatch: {reject_report!r} stderr={stderr!r}")
 
-dry_report = parse_json(
+dry_report = parse_mutation_plan(
     expect_ok(
         [
             bin_path,
@@ -333,12 +390,63 @@ if (
 ):
     fail(f"dry-run contract mismatch: {dry_report!r}")
 
-# cp and ln use the same destination plan and do not delete its mask.
+# cp and ln expose the same non-mutating dry-run/reject plan before commit and
+# do not delete the destination mask.
 for command, source, destination in [
     ("cp", "CP_SOURCE", "CP_DEST"),
     ("ln", "LN_SOURCE", "LN_DEST"),
 ]:
-    report = parse_json(
+    dry_report = parse_mutation_plan(
+        expect_ok(
+            [
+                bin_path,
+                "--dir",
+                str(child),
+                command,
+                source,
+                destination,
+                "--dry-run",
+                "--json",
+            ]
+        ),
+        f"{command} dry-run destination plan",
+    )
+    if (
+        not dry_report.get("ok")
+        or dry_report.get("committed")
+        or not dry_report.get("dry_run")
+        or dry_report["mask_impact_counts"].get("direct-hit") != 1
+        or key_exists(child, destination)
+        or mask_state(destination) != "active"
+    ):
+        fail(f"{command} dry-run mask result mismatch: {dry_report!r}")
+    rc, stdout, stderr = expect_failure(
+        [
+            bin_path,
+            "--dir",
+            str(child),
+            command,
+            source,
+            destination,
+            "--mask-action=reject",
+            "--json",
+        ]
+    )
+    reject_report = parse_mutation_plan(
+        stdout,
+        f"{command} reject destination plan",
+    )
+    if (
+        rc != 1
+        or stderr != ""
+        or reject_report.get("ok")
+        or reject_report.get("committed")
+        or reject_report["mask_impact_counts"].get("direct-hit") != 1
+        or key_exists(child, destination)
+        or mask_state(destination) != "active"
+    ):
+        fail(f"{command} reject mask result mismatch: {reject_report!r}")
+    report = parse_mutation_plan(
         expect_ok(
             [
                 bin_path,
@@ -375,7 +483,7 @@ expect_ok(
         "--no-warn-mask",
     ]
 )
-rm_report = parse_json(
+rm_report = parse_mutation_plan(
     expect_ok(
         [
             bin_path,
@@ -396,6 +504,29 @@ if (
 ):
     fail(f"rm reactivation mismatch: {rm_report!r}")
 
+rm_dry_report = parse_mutation_plan(
+    expect_ok(
+        [
+            bin_path,
+            "--dir",
+            str(child),
+            "rm",
+            "RM_SOURCE_MASK",
+            "--dry-run",
+            "--json",
+        ]
+    ),
+    "rm source-mask dry-run",
+)
+if (
+    not rm_dry_report.get("ok")
+    or rm_dry_report.get("committed")
+    or not rm_dry_report.get("dry_run")
+    or rm_dry_report["mask_impact_counts"].get("source-mask-created") != 1
+    or not key_exists(child, "RM_SOURCE_MASK")
+):
+    fail(f"rm source-mask dry-run mismatch: {rm_dry_report!r}")
+
 rc, stdout, stderr = run(
     [
         bin_path,
@@ -407,7 +538,7 @@ rc, stdout, stderr = run(
         "--json",
     ]
 )
-source_reject = parse_json(stdout, "rm source-mask reject")
+source_reject = parse_mutation_plan(stdout, "rm source-mask reject")
 if (
     rc != 1
     or stderr != ""
@@ -416,8 +547,55 @@ if (
 ):
     fail(f"rm source-mask reject mismatch: {source_reject!r}")
 
-# Multi-set plans and commits as one aggregate batch.
-batch_report = parse_json(
+# Multi-set dry-run, reject, and commit use one aggregate plan.
+batch_dry_report = parse_mutation_plan(
+    expect_ok(
+        [
+            bin_path,
+            "--dir",
+            str(child),
+            "set",
+            "BATCH_ONE=one",
+            "BATCH_TWO=two",
+            "--dry-run",
+            "--json",
+        ]
+    ),
+    "multi-set dry-run aggregate",
+)
+if (
+    not batch_dry_report.get("ok")
+    or batch_dry_report.get("committed")
+    or not batch_dry_report.get("dry_run")
+    or batch_dry_report["mask_impact_counts"].get("direct-hit") != 2
+    or key_exists(child, "BATCH_ONE")
+    or key_exists(child, "BATCH_TWO")
+):
+    fail(f"multi-set dry-run mismatch: {batch_dry_report!r}")
+rc, stdout, stderr = expect_failure(
+    [
+        bin_path,
+        "--dir",
+        str(child),
+        "set",
+        "BATCH_ONE=one",
+        "BATCH_TWO=two",
+        "--mask-action=reject",
+        "--json",
+    ]
+)
+batch_reject_report = parse_mutation_plan(stdout, "multi-set reject aggregate")
+if (
+    rc != 1
+    or stderr != ""
+    or batch_reject_report.get("ok")
+    or batch_reject_report.get("committed")
+    or batch_reject_report["mask_impact_counts"].get("direct-hit") != 2
+    or key_exists(child, "BATCH_ONE")
+    or key_exists(child, "BATCH_TWO")
+):
+    fail(f"multi-set reject mismatch: {batch_reject_report!r}")
+batch_report = parse_mutation_plan(
     expect_ok(
         [
             bin_path,
@@ -454,9 +632,37 @@ expect_failure(
 if key_exists(child, "ATOMIC_GOOD"):
     fail("failed multi-set leaked its earlier assignment")
 
+# A mask rejection on a later assignment must not leak the earlier assignment.
+rc, stdout, stderr = expect_failure(
+    [
+        bin_path,
+        "--dir",
+        str(child),
+        "set",
+        "BATCH_REJECT_FIRST=one",
+        "BATCH_REJECT_SECOND=two",
+        "--mask-action=reject",
+        "--json",
+    ]
+)
+later_mask_reject = parse_mutation_plan(stdout, "later multi-set mask reject")
+if (
+    rc != 1
+    or stderr != ""
+    or later_mask_reject.get("ok")
+    or later_mask_reject.get("committed")
+    or later_mask_reject["mask_impact_counts"].get("direct-hit") != 1
+    or key_exists(child, "BATCH_REJECT_FIRST")
+    or key_exists(child, "BATCH_REJECT_SECOND")
+    or mask_state("BATCH_REJECT_SECOND") != "active"
+):
+    fail(f"later multi-set mask rejection was not atomic: {later_mask_reject!r}")
+
 # load uses one plan for every key in the bundle.
 set_key(bundle_source, "LOAD_ONE", "loaded-one")
 set_key(bundle_source, "LOAD_TWO", "loaded-two")
+set_key(bundle_source, "LOAD_ATOMIC_FIRST", "loaded-atomic-first")
+set_key(bundle_source, "LOAD_ATOMIC_SECOND", "loaded-atomic-second")
 expect_ok(
     [
         bin_path,
@@ -467,7 +673,55 @@ expect_ok(
     ],
     askpass_env,
 )
-load_report = parse_json(
+load_dry_report = parse_mutation_plan(
+    expect_ok(
+        [
+            bin_path,
+            "--dir",
+            str(child),
+            "load",
+            str(bundle_path),
+            "--dry-run",
+            "--json",
+        ],
+        askpass_env,
+    ),
+    "load dry-run aggregate",
+)
+if (
+    not load_dry_report.get("ok")
+    or load_dry_report.get("committed")
+    or not load_dry_report.get("dry_run")
+    or load_dry_report["mask_impact_counts"].get("direct-hit") != 3
+    or key_exists(child, "LOAD_ATOMIC_FIRST")
+    or key_exists(child, "LOAD_ATOMIC_SECOND")
+):
+    fail(f"load dry-run mismatch: {load_dry_report!r}")
+rc, stdout, stderr = expect_failure(
+    [
+        bin_path,
+        "--dir",
+        str(child),
+        "load",
+        str(bundle_path),
+        "--mask-action=reject",
+        "--json",
+    ],
+    askpass_env,
+)
+load_reject_report = parse_mutation_plan(stdout, "load reject aggregate")
+if (
+    rc != 1
+    or stderr != ""
+    or load_reject_report.get("ok")
+    or load_reject_report.get("committed")
+    or load_reject_report["mask_impact_counts"].get("direct-hit") != 3
+    or key_exists(child, "LOAD_ATOMIC_FIRST")
+    or key_exists(child, "LOAD_ATOMIC_SECOND")
+    or mask_state("LOAD_ATOMIC_SECOND") != "active"
+):
+    fail(f"load reject was not atomic: {load_reject_report!r}")
+load_report = parse_mutation_plan(
     expect_ok(
         [
             bin_path,
@@ -483,12 +737,82 @@ load_report = parse_json(
     "load aggregate",
 )
 if (
-    load_report["mask_impact_counts"].get("direct-hit") != 2
-    or load_report["mask_impact_counts"].get("became-dormant") != 2
+    load_report["mask_impact_counts"].get("direct-hit") != 3
+    or load_report["mask_impact_counts"].get("became-dormant") != 3
     or mask_state("LOAD_ONE") != "dormant"
     or mask_state("LOAD_TWO") != "dormant"
+    or mask_state("LOAD_ATOMIC_SECOND") != "dormant"
+    or not key_exists(child, "LOAD_ATOMIC_FIRST")
 ):
     fail(f"load aggregate mismatch: {load_report!r}")
+
+# Multi-set and load both recover to one all-after batch after a commit fault.
+fault_env = {
+    **env,
+    "SECDAT_TEST_TRANSACTION_CRASH_AFTER": "target-1",
+}
+rc, stdout, stderr = run(
+    [
+        bin_path,
+        "--dir",
+        str(child),
+        "set",
+        "FAULT_BATCH_ONE=one",
+        "FAULT_BATCH_TWO=two",
+        "--no-warn-mask",
+    ],
+    fault_env,
+)
+if rc != 86:
+    fail(
+        "multi-set transaction fault did not stop at target-1: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+expect_ok([bin_path, "--dir", str(child), "status", "--quiet"])
+if (
+    not key_exists(child, "FAULT_BATCH_ONE")
+    or not key_exists(child, "FAULT_BATCH_TWO")
+    or mask_state("FAULT_BATCH_ONE") != "dormant"
+    or mask_state("FAULT_BATCH_TWO") != "dormant"
+):
+    fail("multi-set transaction recovery did not restore one all-after batch")
+
+set_key(fault_bundle_source, "LOAD_FAULT_ONE", "load-fault-one")
+set_key(fault_bundle_source, "LOAD_FAULT_TWO", "load-fault-two")
+expect_ok(
+    [
+        bin_path,
+        "--dir",
+        str(fault_bundle_source),
+        "save",
+        str(fault_bundle_path),
+    ],
+    askpass_env,
+)
+rc, stdout, stderr = run(
+    [
+        bin_path,
+        "--dir",
+        str(child),
+        "load",
+        str(fault_bundle_path),
+        "--no-warn-mask",
+    ],
+    {**askpass_env, "SECDAT_TEST_TRANSACTION_CRASH_AFTER": "target-1"},
+)
+if rc != 86:
+    fail(
+        "load transaction fault did not stop at target-1: "
+        f"rc={rc} stdout={stdout!r} stderr={stderr!r}"
+    )
+expect_ok([bin_path, "--dir", str(child), "status", "--quiet"])
+if (
+    not key_exists(child, "LOAD_FAULT_ONE")
+    or not key_exists(child, "LOAD_FAULT_TWO")
+    or mask_state("LOAD_FAULT_ONE") != "dormant"
+    or mask_state("LOAD_FAULT_TWO") != "dormant"
+):
+    fail("load transaction recovery did not restore one all-after batch")
 
 # A standalone ambiguous legacy tombstone is a hard precondition even with
 # warnings disabled, and its complete JSON result remains available.
@@ -510,7 +834,7 @@ rc, stdout, stderr = expect_failure(
         "--json",
     ]
 )
-legacy_report = parse_json(stdout, "legacy ambiguous set")
+legacy_report = parse_mutation_plan(stdout, "legacy ambiguous set")
 if (
     rc != 1
     or stderr != ""
@@ -568,11 +892,8 @@ if (
 ):
     fail(f"locked hidden-mask preflight mismatch: {stderr!r}")
 
-# Fault recovery rolls a multi-file mutation forward before the next command.
-fault_env = {
-    **env,
-    "SECDAT_TEST_TRANSACTION_CRASH_AFTER": "target-1",
-}
+# Fault recovery also rolls a one-key multi-file mutation forward before the
+# next command.
 rc, stdout, stderr = run(
     [
         bin_path,
