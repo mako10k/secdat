@@ -1305,10 +1305,6 @@ static int secdat_relation_contains_keyref(
     const struct secdat_relation_info *relation,
     const char *canonical_keyref
 );
-static int secdat_dependency_index_mask_lookup(
-    const char *target_entry_id,
-    int *found
-);
 static int secdat_dependency_index_invalidate(void);
 static int secdat_count_v2_secret_references_to_object(
     const char *object_domain_id,
@@ -4747,50 +4743,6 @@ static int secdat_directory_is_empty(const char *path)
     return 1;
 }
 
-static int secdat_directory_contains_only_names(
-    const char *path,
-    const char *const *allowed_names,
-    size_t allowed_count,
-    int *contains_only
-)
-{
-    DIR *directory;
-    struct dirent *entry;
-
-    *contains_only = 1;
-    directory = opendir(path);
-    if (directory == NULL) {
-        if (errno == ENOENT) {
-            return 0;
-        }
-        fprintf(stderr, _("failed to open directory: %s\n"), path);
-        return 1;
-    }
-
-    while ((entry = readdir(directory)) != NULL) {
-        size_t index;
-        int allowed = 0;
-
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-        for (index = 0; index < allowed_count; index += 1) {
-            if (strcmp(entry->d_name, allowed_names[index]) == 0) {
-                allowed = 1;
-                break;
-            }
-        }
-        if (!allowed) {
-            *contains_only = 0;
-            closedir(directory);
-            return 0;
-        }
-    }
-
-    closedir(directory);
-    return 0;
-}
-
 static int secdat_store_root(const char *domain_id, const char *store_name, char *buffer, size_t size)
 {
     return secdat_domain_store_root(domain_id, store_name, buffer, size);
@@ -5492,16 +5444,6 @@ static int secdat_remove_if_exists(const char *path)
     }
 
     fprintf(stderr, _("failed to remove file: %s\n"), path);
-    return 1;
-}
-
-static int secdat_remove_directory_if_exists(const char *path)
-{
-    if (rmdir(path) == 0 || errno == ENOENT) {
-        return 0;
-    }
-
-    fprintf(stderr, _("failed to remove directory: %s\n"), path);
     return 1;
 }
 
@@ -17905,17 +17847,6 @@ static int secdat_ensure_key_metadata_dir(const char *domain_id, const char *sto
     return secdat_ensure_directory(metadata_dir, 0700);
 }
 
-static int secdat_ensure_relations_dir(const char *domain_id, const char *store_name)
-{
-    char relation_dir[PATH_MAX];
-
-    if (secdat_ensure_store_dirs(domain_id, store_name) != 0
-        || secdat_relations_dir(domain_id, store_name, relation_dir, sizeof(relation_dir)) != 0) {
-        return 1;
-    }
-    return secdat_ensure_directory(relation_dir, 0700);
-}
-
 static int secdat_read_key_metadata_path(const char *metadata_path, struct secdat_metadata_list *metadata, int quiet)
 {
     unsigned char *data = NULL;
@@ -29178,105 +29109,6 @@ static int secdat_dependency_mask_edge_validate(
         return 1;
     }
     *edge_count += 1;
-    return 0;
-}
-
-static int secdat_dependency_mask_edges_walk(
-    const char *root,
-    const char *target_entry_id,
-    size_t *edge_count,
-    size_t depth
-)
-{
-    json_t *node = NULL;
-    const char *kind;
-    int result = 1;
-
-    if (depth > SECDAT_SHA256_HEX_LENGTH
-        || secdat_dependency_node_read(root, &node, NULL, NULL) != 0) {
-        return 1;
-    }
-    kind = json_string_value(json_object_get(node, "kind"));
-    if (strcmp(kind, "branch") == 0) {
-        json_t *slots = json_object_get(node, "slots");
-        size_t index;
-
-        for (index = 0; index < json_array_size(slots); index += 1) {
-            const char *child = json_string_value(json_object_get(
-                json_array_get(slots, index), "child"));
-            if (secdat_dependency_mask_edges_walk(
-                    child,
-                    target_entry_id,
-                    edge_count,
-                    depth + 1
-                ) != 0) {
-                goto cleanup;
-            }
-        }
-        result = 0;
-    } else {
-        result = secdat_dependency_mask_edge_validate(
-            node,
-            target_entry_id,
-            edge_count
-        );
-    }
-
-cleanup:
-    json_decref(node);
-    return result;
-}
-
-static int secdat_dependency_index_mask_lookup(
-    const char *target_entry_id,
-    int *found
-)
-{
-    struct secdat_dependency_state state;
-    char address[SECDAT_SHA256_HEX_LENGTH + 1];
-    json_t *lookup = NULL;
-    const char *edges_root;
-    size_t edge_count = 0;
-    int lookup_found = 0;
-
-    *found = 0;
-    if (!secdat_uuid_is_valid(target_entry_id)
-        || secdat_dependency_state_read(&state) != 0
-        || state.state != SECDAT_DEPENDENCY_STATE_COMPLETE
-        || secdat_dependency_lookup_address('M', target_entry_id, address) != 0
-        || secdat_dependency_tree_lookup(
-            state.active_root,
-            address,
-            &lookup,
-            &lookup_found
-        ) != 0) {
-        fprintf(stderr, _("dependency index is incomplete; run fsck --format v2 --dependency-index --repair\n"));
-        return 1;
-    }
-    if (!lookup_found) {
-        return 0;
-    }
-    if (strcmp(json_string_value(json_object_get(lookup, "kind")), "lookup") != 0
-        || strcmp(json_string_value(json_object_get(lookup, "lookup_kind")), "M") != 0
-        || strcmp(json_string_value(json_object_get(lookup, "lookup_id")), target_entry_id) != 0) {
-        json_decref(lookup);
-        fprintf(stderr, _("dependency index is corrupt; run fsck --format v2 --dependency-index --repair\n"));
-        return 1;
-    }
-    edges_root = json_string_value(json_object_get(lookup, "edges_root"));
-    if (secdat_dependency_mask_edges_walk(
-            edges_root,
-            target_entry_id,
-            &edge_count,
-            0
-        ) != 0
-        || edge_count == 0) {
-        json_decref(lookup);
-        fprintf(stderr, _("dependency index is corrupt; run fsck --format v2 --dependency-index --repair\n"));
-        return 1;
-    }
-    json_decref(lookup);
-    *found = 1;
     return 0;
 }
 

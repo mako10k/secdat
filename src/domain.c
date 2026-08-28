@@ -744,46 +744,6 @@ static int secdat_domain_meta_file_for_id(const char *domain_id, const char *nam
     return secdat_join_path(buffer, size, meta_dir, name);
 }
 
-static int secdat_ensure_directory(const char *path, mode_t mode)
-{
-    struct stat status;
-    char partial[PATH_MAX];
-    size_t index;
-    size_t length;
-
-    length = strlen(path);
-    if (length == 0 || length >= sizeof(partial)) {
-        fprintf(stderr, _("path is too long\n"));
-        return 1;
-    }
-
-    memcpy(partial, path, length + 1);
-    for (index = 1; index < length; index += 1) {
-        if (partial[index] != '/') {
-            continue;
-        }
-
-        partial[index] = '\0';
-        if (mkdir(partial, mode) != 0 && errno != EEXIST) {
-            fprintf(stderr, _("failed to create directory: %s\n"), partial);
-            return 1;
-        }
-        partial[index] = '/';
-    }
-
-    if (mkdir(partial, mode) != 0 && errno != EEXIST) {
-        fprintf(stderr, _("failed to create directory: %s\n"), partial);
-        return 1;
-    }
-
-    if (stat(path, &status) != 0 || !S_ISDIR(status.st_mode)) {
-        fprintf(stderr, _("not a directory: %s\n"), path);
-        return 1;
-    }
-
-    return 0;
-}
-
 static void secdat_domain_identity_from_stat(const struct stat *status, struct secdat_domain_identity *identity)
 {
     identity->device = (uintmax_t)status->st_dev;
