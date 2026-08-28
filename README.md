@@ -266,8 +266,9 @@ local entry later may expose inheritance. `--mask-warnings=default|on|off`,
 `--warn-mask`, and `--no-warn-mask` control only this warning; they do not
 change the plan, persisted state, success, or exit status.
 
-Persisted v2 `set`, `cp`, `ln`, `rm`, `mv`, and `load` writes use the same
-recoverable mutation plan. `--mask-action=preserve` is the default: it keeps
+Persisted v2 `set`, `cp`, `ln`, `rm`, and `load` writes, plus same-domain/store
+local v2 `mv`, use the same recoverable mutation plan.
+`--mask-action=preserve` is the default: it keeps
 canonical masks when a destination is written, permits active masks to become
 dormant and dormant masks to reactivate, and reports direct hits even when a
 mask was already dormant. `--mask-action=reject` fails before live mutation

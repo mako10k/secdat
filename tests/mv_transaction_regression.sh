@@ -138,6 +138,7 @@ for key, value in (
     ("CRASH_MOVE", "crash-value"),
     ("CROSS_MOVE", "cross-value"),
     ("HIDDEN_MOVE", "hidden-value"),
+    ("INACCESSIBLE_MOVE", "inaccessible-value"),
 ):
     set_key(root, key, value)
 
@@ -176,9 +177,20 @@ require_ok(
     ),
     "crash relation setup",
 )
+require_ok(
+    run(
+        "--dir", str(root), "relation", "set", "inaccessible-pair",
+        "--member", "first=INACCESSIBLE_MOVE", "--member", "second=OTHER",
+    ),
+    "inaccessible relation setup",
+)
 require_ok(run("--dir", str(child), "mask", "MOVE_MASK"), "mask setup")
 require_ok(run("--dir", str(child), "mask", "CRASH_MOVE"), "crash mask setup")
 require_ok(run("--dir", str(child), "mask", "HIDDEN_MOVE"), "hidden mask setup")
+require_ok(
+    run("--dir", str(child), "mask", "INACCESSIBLE_MOVE"),
+    "inaccessible mask setup",
+)
 
 move_secret = secret_id(root, "MOVE_MASK")
 move_entry = entry_id(root_id, move_secret, "MOVE_MASK")
@@ -286,6 +298,57 @@ require_ok(
     "dependency validation after dependent mv",
     "ok\n",
 )
+
+inaccessible_secret = secret_id(root, "INACCESSIBLE_MOVE")
+inaccessible_entry = entry_id(
+    root_id,
+    inaccessible_secret,
+    "INACCESSIBLE_MOVE",
+)
+inaccessible_mask = (
+    state_root
+    / "domains/by-id"
+    / child_id
+    / "stores/default/masks"
+    / f"{inaccessible_entry}.mask"
+)
+inaccessible_mask_before = inaccessible_mask.read_bytes()
+inaccessible_mask_mode = inaccessible_mask.stat().st_mode & 0o777
+inaccessible_relation_before = run(
+    "--dir", str(root), "relation", "show", "inaccessible-pair",
+)
+require_ok(
+    inaccessible_relation_before,
+    "inaccessible relation before rejected mv",
+    stdout=None,
+)
+inaccessible_mask.chmod(0)
+try:
+    inaccessible_move = run(
+        "--dir", str(root), "mv",
+        "INACCESSIBLE_MOVE", "INACCESSIBLE_MOVED",
+    )
+finally:
+    inaccessible_mask.chmod(inaccessible_mask_mode)
+if inaccessible_move.returncode != 1:
+    fail(f"inaccessible descendant mv was not rejected safely: {inaccessible_move}")
+if secret_id(root, "INACCESSIBLE_MOVE") != inaccessible_secret:
+    fail("inaccessible descendant mv changed the source identity")
+if entry_id(root_id, inaccessible_secret, "INACCESSIBLE_MOVE") != inaccessible_entry:
+    fail("inaccessible descendant mv changed the source entry")
+require_missing(root, "INACCESSIBLE_MOVED", "inaccessible descendant mv")
+if inaccessible_mask.read_bytes() != inaccessible_mask_before:
+    fail("inaccessible descendant mv changed the affected mask")
+inaccessible_relation_after = run(
+    "--dir", str(root), "relation", "show", "inaccessible-pair",
+)
+require_ok(
+    inaccessible_relation_after,
+    "inaccessible relation after rejected mv",
+    stdout=inaccessible_relation_before.stdout,
+)
+if run("--dir", str(child), "get", "INACCESSIBLE_MOVE").returncode == 0:
+    fail("inaccessible descendant mv lost the original identity mask")
 
 hidden_secret = secret_id(root, "HIDDEN_MOVE")
 hidden_entry = entry_id(root_id, hidden_secret)

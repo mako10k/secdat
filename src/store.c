@@ -29127,16 +29127,37 @@ static int secdat_dependency_mask_edge_validate(
     size_t *edge_count
 )
 {
+    const char *kind = json_string_value(json_object_get(edge, "kind"));
+    const char *edge_target_entry_id = json_string_value(
+        json_object_get(edge, "target_entry_id")
+    );
     const char *mask_domain = json_string_value(json_object_get(edge, "mask_domain_id"));
     const char *mask_store = json_string_value(json_object_get(edge, "mask_store"));
     const char *record_id = json_string_value(json_object_get(edge, "mask_record_id"));
     const char *primary_digest = json_string_value(json_object_get(edge, "primary_digest"));
+    const char *required_fields[] = {
+        kind,
+        edge_target_entry_id,
+        mask_domain,
+        mask_store,
+        record_id,
+        primary_digest,
+    };
     char mask_path[PATH_MAX];
     char actual_digest[SECDAT_SHA256_HEX_LENGTH + 1];
     struct secdat_v2_mask_record record;
+    size_t field_index;
 
-    if (strcmp(json_string_value(json_object_get(edge, "kind")), "mask-edge") != 0
-        || strcmp(json_string_value(json_object_get(edge, "target_entry_id")), target_entry_id) != 0
+    for (field_index = 0;
+         field_index < sizeof(required_fields) / sizeof(required_fields[0]);
+         field_index += 1) {
+        if (required_fields[field_index] == NULL) {
+            return 1;
+        }
+    }
+
+    if (strcmp(kind, "mask-edge") != 0
+        || strcmp(edge_target_entry_id, target_entry_id) != 0
         || strcmp(record_id, target_entry_id) != 0
         || secdat_build_v2_mask_path(
             mask_domain,
