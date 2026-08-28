@@ -444,8 +444,8 @@ With
 .B --ephemeral,
 only the current-domain session-local value is removed, revealing any persisted value it shadowed. Plain rm rejects an ephemeral target.
 .TP
-.B mv SRC_KEYREF DST_KEYREF
-Rename or relocate one key between resolved locations.
+.B mv [\-\-mask-action=preserve|reject] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] [\-\-dry-run] [\-\-json] SRC_KEYREF DST_KEYREF
+Rename or relocate one key between resolved locations. A same-domain/store local v2 rename preserves both entry and secret IDs, existing links, and object refcount. Descendant identity masks follow the preserved entry in the same recoverable transaction. Dry-run and JSON report identity preservation, mask effects, and separate name-based relation KEYREF rewrites from the prepared commit candidate. Mutation planning options do not yet apply to inherited or cross-domain/store moves.
 .TP
 .B cp [\-\-mask-action=preserve|reject] [\-\-mask-warnings=default|on|off] [\-\-warn-mask|\-\-no-warn-mask] [\-\-dry-run] [\-\-json] SRC_KEYREF DST_KEYREF
 Copy one key into another resolved location.

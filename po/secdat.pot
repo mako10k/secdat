@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: secdat 0.10.0\n"
 "Report-Msgid-Bugs-To: noreply@example.invalid\n"
-"POT-Creation-Date: 2026-08-28 15:15+0900\n"
+"POT-Creation-Date: 2026-08-28 17:53+0900\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -64,282 +64,282 @@ msgstr ""
 msgid "unknown option: %s\n"
 msgstr ""
 
-#: src/cli.c:1759
+#: src/cli.c:1766
 #, c-format
 msgid "  %s [options] subcommand ...\n"
 msgstr ""
 
-#: src/cli.c:1764
+#: src/cli.c:1771
 #, c-format
 msgid ""
 "\n"
 "Options:\n"
 msgstr ""
 
-#: src/cli.c:1765
+#: src/cli.c:1772
 msgid ""
 "  -d, --dir DIR      set the base directory used for domain resolution\n"
 msgstr ""
 
-#: src/cli.c:1766
+#: src/cli.c:1773
 msgid ""
 "      --domain DIR   require one exact registered domain root instead of "
 "discovery\n"
 msgstr ""
 
-#: src/cli.c:1767
+#: src/cli.c:1774
 msgid ""
 "  -s, --store STORE  select the store namespace inside the resolved domain\n"
 msgstr ""
 
-#: src/cli.c:1768
+#: src/cli.c:1775
 msgid ""
 "  -h, --help         show global help, or combine with COMMAND or TOPIC for "
 "detailed help\n"
 msgstr ""
 
-#: src/cli.c:1769
+#: src/cli.c:1776
 msgid "  -V, --version      print the secdat version\n"
 msgstr ""
 
-#: src/cli.c:1803
+#: src/cli.c:1810
 #, c-format
 msgid ""
 "\n"
 "Help:\n"
 msgstr ""
 
-#: src/cli.c:1804
+#: src/cli.c:1811
 #, c-format
 msgid "  %s --help\n"
 msgstr ""
 
-#: src/cli.c:1805
+#: src/cli.c:1812
 #, c-format
 msgid "  %s help [COMMAND...]\n"
 msgstr ""
 
-#: src/cli.c:1806
+#: src/cli.c:1813
 #, c-format
 msgid "  %s help usecases\n"
 msgstr ""
 
-#: src/cli.c:1807
+#: src/cli.c:1814
 #, c-format
 msgid "  %s help concepts\n"
 msgstr ""
 
-#: src/cli.c:1808
+#: src/cli.c:1815
 #, c-format
 msgid "  %s help inject\n"
 msgstr ""
 
-#: src/cli.c:1810
+#: src/cli.c:1817
 #, c-format
 msgid "  %s --help COMMAND...\n"
 msgstr ""
 
-#: src/cli.c:1811
+#: src/cli.c:1818
 #, c-format
 msgid "  %s COMMAND --help\n"
 msgstr ""
 
-#: src/cli.c:1813 src/cli.c:1815
+#: src/cli.c:1820 src/cli.c:1822
 #, c-format
 msgid "  %s --help %s\n"
 msgstr ""
 
-#: src/cli.c:1816
+#: src/cli.c:1823
 #, c-format
 msgid "  %s %s --help\n"
 msgstr ""
 
-#: src/cli.c:1818
+#: src/cli.c:1825
 #, c-format
 msgid "  %s --version\n"
 msgstr ""
 
-#: src/cli.c:1819
+#: src/cli.c:1826
 #, c-format
 msgid "  %s version\n"
 msgstr ""
 
-#: src/cli.c:1824
+#: src/cli.c:1831
 #, c-format
 msgid ""
 "\n"
 "Shell:\n"
 msgstr ""
 
-#: src/cli.c:1827
+#: src/cli.c:1834
 #, c-format
 msgid "  bash load current shell vars: source <(%s export)\n"
 msgstr ""
 
-#: src/cli.c:1829
+#: src/cli.c:1836
 #, c-format
 msgid "  bash alternative: eval \"$(%s export)\"\n"
 msgstr ""
 
-#: src/cli.c:1832
+#: src/cli.c:1839
 msgid "  bash completion script: completions/secdat.bash\n"
 msgstr ""
 
-#: src/cli.c:1833
+#: src/cli.c:1840
 msgid "  man page source: docs/secdat.1\n"
 msgstr ""
 
-#: src/cli.c:1838
+#: src/cli.c:1845
 #, c-format
 msgid ""
 "\n"
 "Support:\n"
 msgstr ""
 
-#: src/cli.c:1839
+#: src/cli.c:1846
 msgid "  issues: https://github.com/mako10k/secdat/issues\n"
 msgstr ""
 
-#: src/cli.c:1840
+#: src/cli.c:1847
 msgid "  repository: https://github.com/mako10k/secdat\n"
 msgstr ""
 
-#: src/cli.c:1841
+#: src/cli.c:1848
 msgid "  author: Makoto Katsumata <mako10k@mk10.org>\n"
 msgstr ""
 
-#: src/cli.c:1846
+#: src/cli.c:1853
 #, c-format
 msgid ""
 "\n"
 "Groups:\n"
 msgstr ""
 
-#: src/cli.c:1847
+#: src/cli.c:1854
 msgid ""
 "  store: manage store namespaces and v1 to v2 migration inside the resolved "
 "current domain\n"
 msgstr ""
 
-#: src/cli.c:1848
+#: src/cli.c:1855
 msgid "  meta: manage non-secret searchable metadata attached to keys\n"
 msgstr ""
 
-#: src/cli.c:1849
+#: src/cli.c:1856
 msgid ""
 "  relation: connect keys into semantic groups with non-secret security "
 "meaning\n"
 msgstr ""
 
-#: src/cli.c:1850 src/cli.c:2164
+#: src/cli.c:1857 src/cli.c:2174
 msgid ""
 "  secret: inspect v2 secret-object metadata by UUID without reading secret "
 "values\n"
 msgstr ""
 
-#: src/cli.c:1851 src/cli.c:2173
+#: src/cli.c:1858 src/cli.c:2183
 msgid "  domain: manage domain roots and domain discovery scope\n"
 msgstr ""
 
-#: src/cli.c:1856
+#: src/cli.c:1863
 #, c-format
 msgid ""
 "\n"
 "Commands:\n"
 msgstr ""
 
-#: src/cli.c:1857 src/cli.c:1906
+#: src/cli.c:1864 src/cli.c:1913
 msgid "  help: show global help or detailed help for one command\n"
 msgstr ""
 
-#: src/cli.c:1858 src/cli.c:1910
+#: src/cli.c:1865 src/cli.c:1917
 msgid ""
 "  ls: list effective keys visible from the current domain view, optionally "
 "filtered by safe or unsafe storage\n"
 msgstr ""
 
-#: src/cli.c:1859 src/cli.c:1914
+#: src/cli.c:1866 src/cli.c:1921
 msgid ""
 "  list: inspect current-domain entries or identity and legacy masks by "
 "state, with long or JSON detail\n"
 msgstr ""
 
-#: src/cli.c:1860 src/cli.c:1923
+#: src/cli.c:1867 src/cli.c:1930
 msgid ""
 "  attr: show or update one key's visibility, value-access, and bulk_select "
 "attribute\n"
 msgstr ""
 
-#: src/cli.c:1861
+#: src/cli.c:1868
 msgid ""
 "  meta: manage non-secret searchable metadata without reading secret values\n"
 msgstr ""
 
-#: src/cli.c:1862
+#: src/cli.c:1869
 msgid ""
 "  relation: record semantic links between keys and the security meaning of "
 "those links\n"
 msgstr ""
 
-#: src/cli.c:1863
+#: src/cli.c:1870
 msgid ""
 "  meta mark-leaked: mark one key as leaked metadata and suggest high-risk "
 "refresh targets\n"
 msgstr ""
 
-#: src/cli.c:1864
+#: src/cli.c:1871
 msgid ""
 "  relation suggest-refresh: suggest high-risk refresh targets related to one "
 "leaked key\n"
 msgstr ""
 
-#: src/cli.c:1865
+#: src/cli.c:1872
 msgid ""
 "  relation suggest-link: compare same-name keys across registered domains "
 "and show link candidates\n"
 msgstr ""
 
-#: src/cli.c:1866 src/cli.c:1987
+#: src/cli.c:1873 src/cli.c:1994
 msgid ""
 "  fsck: check current-domain store metadata for migration and limited "
 "repair\n"
 msgstr ""
 
-#: src/cli.c:1867
+#: src/cli.c:1874
 msgid "  gc: remove unreachable or dangling v2 graph files after review\n"
 msgstr ""
 
-#: src/cli.c:1868
+#: src/cli.c:1875
 msgid ""
 "  mask: create a rollback-safe identity mask for one inherited key, or "
 "atomically rebind an orphan barrier\n"
 msgstr ""
 
-#: src/cli.c:1869
+#: src/cli.c:1876
 msgid ""
 "  unmask: atomically remove one logical mask chain, with explicit chain "
 "selection when names are ambiguous\n"
 msgstr ""
 
-#: src/cli.c:1870 src/cli.c:2017
+#: src/cli.c:1877 src/cli.c:2024
 msgid ""
 "  exists: check whether one resolved key is visible from the current domain "
 "view\n"
 msgstr ""
 
-#: src/cli.c:1871 src/cli.c:2021
+#: src/cli.c:1878 src/cli.c:2028
 msgid ""
 "  id: print the v2 secret object UUID for one resolved key without reading "
 "its value\n"
 msgstr ""
 
-#: src/cli.c:1872 src/cli.c:2026
+#: src/cli.c:1879 src/cli.c:2033
 msgid ""
 "  get: decrypt one resolved key and write it to standard output; --on-demand-"
 "unlock waits for another terminal to unlock\n"
 msgstr ""
 
-#: src/cli.c:1873
+#: src/cli.c:1880
 msgid ""
 "  set: store or update one key in the resolved current domain; --generate "
 "writes a CSPRNG-generated value without printing it; --unsafe stores "
@@ -347,51 +347,51 @@ msgid ""
 "the active session agent\n"
 msgstr ""
 
-#: src/cli.c:1874
+#: src/cli.c:1881
 msgid ""
 "  rm: remove one key locally or create a tombstone for an inherited key; --"
 "ignore-missing treats absent keys as success; --ephemeral removes only a "
 "session-local ephemeral value\n"
 msgstr ""
 
-#: src/cli.c:1875 src/cli.c:2051
+#: src/cli.c:1882 src/cli.c:2058
 msgid "  mv: rename or relocate one key between resolved locations\n"
 msgstr ""
 
-#: src/cli.c:1876
+#: src/cli.c:1883
 msgid "  cp: copy one key into another resolved location\n"
 msgstr ""
 
-#: src/cli.c:1877 src/cli.c:2060
+#: src/cli.c:1884 src/cli.c:2070
 msgid ""
 "  ln: link another key to the same v2 secret object, including cross-domain "
 "v2 links and authorized @UUID sources\n"
 msgstr ""
 
-#: src/cli.c:1878 src/cli.c:2067
+#: src/cli.c:1885 src/cli.c:2077
 msgid ""
 "  exec: build a child environment through supply, route, and final injection "
 "layers\n"
 msgstr ""
 
-#: src/cli.c:1879 src/cli.c:2076
+#: src/cli.c:1886 src/cli.c:2086
 msgid ""
 "  export: emit shell-ready export lines that defer secret reads to secdat "
 "get\n"
 msgstr ""
 
-#: src/cli.c:1880 src/cli.c:2080
+#: src/cli.c:1887 src/cli.c:2090
 msgid ""
 "  save: write current-view or selected secrets to a passphrase-protected "
 "bundle\n"
 msgstr ""
 
-#: src/cli.c:1881
+#: src/cli.c:1888
 msgid ""
 "  load: import a passphrase-protected bundle into the current domain view\n"
 msgstr ""
 
-#: src/cli.c:1882 src/cli.c:2093
+#: src/cli.c:1889 src/cli.c:2103
 msgid ""
 "  unlock: start or refresh a local unlock for the current domain; --duration "
 "accepts plain minutes, suffix forms like 1h30m, or ISO 8601 durations such "
@@ -399,119 +399,119 @@ msgid ""
 "drops the current domain's local override to fall back to inherited state\n"
 msgstr ""
 
-#: src/cli.c:1883 src/cli.c:2100
+#: src/cli.c:1890 src/cli.c:2110
 msgid ""
 "  inherit: force the current domain back to inherited state by removing a "
 "local lock or clearing a local unlock, without checking whether the result "
 "stays unlocked\n"
 msgstr ""
 
-#: src/cli.c:1884 src/cli.c:2104
+#: src/cli.c:1891 src/cli.c:2114
 msgid "  passwd: change the wrapped-master-key passphrase\n"
 msgstr ""
 
-#: src/cli.c:1885 src/cli.c:2108
+#: src/cli.c:1892 src/cli.c:2118
 msgid ""
 "  lock: return the current domain to a locked local state, or do nothing "
 "when it is already locked\n"
 msgstr ""
 
-#: src/cli.c:1886 src/cli.c:2112
+#: src/cli.c:1893 src/cli.c:2122
 msgid ""
 "  status: report whether secret material is available from the current "
 "domain scope\n"
 msgstr ""
 
-#: src/cli.c:1887 src/cli.c:2116
+#: src/cli.c:1894 src/cli.c:2126
 msgid ""
 "  wait-unlock: wait until the current domain scope becomes unlocked, or fail "
 "on timeout\n"
 msgstr ""
 
-#: src/cli.c:1888 src/cli.c:2168
+#: src/cli.c:1895 src/cli.c:2178
 msgid ""
 "  secret status: print one v2 secret object's non-secret metadata and "
 "reference counts\n"
 msgstr ""
 
-#: src/cli.c:1889
+#: src/cli.c:1896
 msgid ""
 "  store migrate: validate a v1 store and write the side-by-side v2 domain-"
 "entry/object graph after review\n"
 msgstr ""
 
-#: src/cli.c:1890
+#: src/cli.c:1897
 msgid ""
 "  store finalize-migration: inspect or remove legacy v1 fallback files after "
 "a v2 migration\n"
 msgstr ""
 
-#: src/cli.c:1891 src/cli.c:2120
+#: src/cli.c:1898 src/cli.c:2130
 msgid "  version: print the secdat version\n"
 msgstr ""
 
-#: src/cli.c:1896
+#: src/cli.c:1903
 #, c-format
 msgid ""
 "\n"
 "Topics:\n"
 msgstr ""
 
-#: src/cli.c:1897 src/cli.c:2124
+#: src/cli.c:1904 src/cli.c:2134
 msgid ""
 "  usecases: show example workflows and task-oriented command combinations\n"
 msgstr ""
 
-#: src/cli.c:1898
+#: src/cli.c:1905
 msgid ""
 "  concepts: explain domains, stores, inheritance, local unlocks, local "
 "locks, and KEYREF resolution\n"
 msgstr ""
 
-#: src/cli.c:1899 src/cli.c:2132
+#: src/cli.c:1906 src/cli.c:2142
 msgid ""
 "  inject: explain exec --inject layers, rule kinds, selectors, policy files, "
 "and preflight checks\n"
 msgstr ""
 
-#: src/cli.c:1904
+#: src/cli.c:1911
 #, c-format
 msgid ""
 "\n"
 "Meaning:\n"
 msgstr ""
 
-#: src/cli.c:1915
+#: src/cli.c:1922
 msgid ""
 "  --masked, --dormant, and --orphaned select mask states; combine them or "
 "use --all-masks for all three\n"
 msgstr ""
 
-#: src/cli.c:1916
+#: src/cli.c:1923
 msgid ""
 "  --long and --json report record kind, resolution, chain, authorized target "
 "identity, and orphan reason\n"
 msgstr ""
 
-#: src/cli.c:1917
+#: src/cli.c:1924
 msgid ""
 "  locked hidden names are omitted; state=unknown means observation is "
 "incomplete, not a fourth stored state, and lists explicit candidates\n"
 msgstr ""
 
-#: src/cli.c:1918
+#: src/cli.c:1925
 msgid ""
 "  JSON reports visible and redacted unknown-state counts and whether the "
 "selected-state result is complete\n"
 msgstr ""
 
-#: src/cli.c:1919
+#: src/cli.c:1926
 msgid ""
 "  --long and --json cannot be combined with local-entry filters; short state "
 "filters return a union\n"
 msgstr ""
 
-#: src/cli.c:1924
+#: src/cli.c:1931
 msgid ""
 "  key_visibility controls whether the key name is visible while locked; "
 "value_access=always stores a public/plaintext-at-rest value; bulk_select "
@@ -519,577 +519,595 @@ msgid ""
 "--bulk-gate is used for this entry\n"
 msgstr ""
 
-#: src/cli.c:1925
+#: src/cli.c:1932
 msgid ""
 "  v2 effective --bulk-gate selection also requires the secret object's "
 "bulk_select_value policy to allow bulk selection\n"
 msgstr ""
 
-#: src/cli.c:1929
+#: src/cli.c:1936
 msgid ""
 "  meta: manage non-secret searchable metadata attached to keys in the "
 "current store\n"
 msgstr ""
 
-#: src/cli.c:1930
+#: src/cli.c:1937
 msgid ""
 "  metadata values are labels or descriptions for lookup; do not store secret "
 "material in metadata\n"
 msgstr ""
 
-#: src/cli.c:1934
+#: src/cli.c:1941
 msgid "  meta get: print non-secret searchable metadata for one visible key\n"
 msgstr ""
 
-#: src/cli.c:1938
+#: src/cli.c:1945
 msgid ""
 "  meta set: attach or replace one non-secret searchable metadata field on a "
 "local key\n"
 msgstr ""
 
-#: src/cli.c:1942
+#: src/cli.c:1949
 msgid "  meta unset: remove one searchable metadata field from a local key\n"
 msgstr ""
 
-#: src/cli.c:1946
+#: src/cli.c:1953
 msgid ""
 "  meta search: list visible keys whose non-secret metadata contains all "
 "requested fields or glob-matched values\n"
 msgstr ""
 
-#: src/cli.c:1950
+#: src/cli.c:1957
 msgid ""
 "  meta mark-leaked: mark one key as leaked metadata and print high-risk "
 "relation refresh suggestions\n"
 msgstr ""
 
-#: src/cli.c:1954
+#: src/cli.c:1961
 msgid ""
 "  relation: record semantic links between multiple key references and the "
 "non-secret security meaning of the combination\n"
 msgstr ""
 
-#: src/cli.c:1958
+#: src/cli.c:1965
 msgid ""
 "  relation set: create or replace one semantic relation with two or more "
 "role=KEYREF members\n"
 msgstr ""
 
-#: src/cli.c:1962
+#: src/cli.c:1969
 msgid ""
 "  relation ls: list relation identifiers, optionally limited to relations "
 "containing one key\n"
 msgstr ""
 
-#: src/cli.c:1966
+#: src/cli.c:1973
 msgid ""
 "  relation search: list relation identifiers whose non-secret relation "
 "fields match all filters\n"
 msgstr ""
 
-#: src/cli.c:1970
+#: src/cli.c:1977
 msgid ""
 "  relation suggest-refresh: suggest high-risk refresh targets related to one "
 "leaked key without reading secret values\n"
 msgstr ""
 
-#: src/cli.c:1974
+#: src/cli.c:1981
 msgid ""
 "  relation suggest-link: compare same-name keys across registered domains "
 "and print link candidates without printing secret values\n"
 msgstr ""
 
-#: src/cli.c:1975
+#: src/cli.c:1982
 msgid ""
 "  link clusters are optional non-secret key metadata; by default relation "
 "suggest-link reads the link_cluster field\n"
 msgstr ""
 
-#: src/cli.c:1979
+#: src/cli.c:1986
 msgid ""
 "  relation show: print one semantic relation without reading secret values\n"
 msgstr ""
 
-#: src/cli.c:1983
+#: src/cli.c:1990
 msgid "  relation rm: remove one semantic relation record\n"
 msgstr ""
 
-#: src/cli.c:1988
+#: src/cli.c:1995
 msgid ""
 "  with no filters, fsck runs orphaned, dangling, and refcount checks; --"
 "repair only rebuilds cached v2 refcounts\n"
 msgstr ""
 
-#: src/cli.c:1989
+#: src/cli.c:1996
 msgid ""
 "  v2 mask checks report orphaned-mask, ambiguous-mask, dangling-mask, and "
 "incomplete-mask-state; dormant masks are valid\n"
 msgstr ""
 
-#: src/cli.c:1990
+#: src/cli.c:1997
 msgid ""
 "  corrupt mask rows use a non-reversible record-sha256 handle; <redacted> "
 "means the identity is not authorized\n"
 msgstr ""
 
-#: src/cli.c:1991
+#: src/cli.c:1998
 msgid ""
 "  record-sha256 is the first 16 SHA-256 hex digits of the .mask filename "
 "UUID; match it inside the protected masks directory\n"
 msgstr ""
 
-#: src/cli.c:1992
+#: src/cli.c:1999
 msgid ""
 "  no automatic mask-record repair is available; preserve a corrupt record "
 "until its intended mask can be recovered\n"
 msgstr ""
 
-#: src/cli.c:1993
+#: src/cli.c:2000
 msgid ""
 "  unlock affected domains for <redacted> rows and rerun list --all-masks --"
 "long and fsck\n"
 msgstr ""
 
-#: src/cli.c:1997
+#: src/cli.c:2004
 msgid ""
 "  gc: remove unreachable or dangling v2 graph files after dry-run review\n"
 msgstr ""
 
-#: src/cli.c:1998
+#: src/cli.c:2005
 msgid ""
 "  --dry-run previews selected v2 graph files; without --dry-run it "
 "permanently removes the selected graph files\n"
 msgstr ""
 
-#: src/cli.c:2002
+#: src/cli.c:2009
 msgid ""
 "  mask: create a canonical identity mask and, for public names, its v1 "
 "rollback-compatible tombstone in one recoverable transaction\n"
 msgstr ""
 
-#: src/cli.c:2003
+#: src/cli.c:2010
 msgid ""
 "  hidden names remain canonical-only; an unsafe v1 rollback projection is "
 "rejected before mutation\n"
 msgstr ""
 
-#: src/cli.c:2004
+#: src/cli.c:2011
 msgid ""
 "  --rebind repairs a legacy or orphan barrier by attaching the current "
 "unique inherited target without an exposure window\n"
 msgstr ""
 
-#: src/cli.c:2005
+#: src/cli.c:2012
 msgid ""
 "  when rebind has multiple candidates, use domain ls --ancestors and id KEY "
 "in each ancestor to locate duplicates before retrying\n"
 msgstr ""
 
-#: src/cli.c:2006
+#: src/cli.c:2013
 msgid ""
 "  --dry-run reports the immutable plan; --json uses secdat.mask-operation-"
 "plan.v1 for dry-run and committed results\n"
 msgstr ""
 
-#: src/cli.c:2010
+#: src/cli.c:2017
 msgid ""
 "  unmask: atomically remove the unique logical mask chain controlling one "
 "key\n"
 msgstr ""
 
-#: src/cli.c:2011
+#: src/cli.c:2018
 msgid ""
 "  name-only removal refuses competing chains and chains protecting multiple "
 "names; inspect list --all-masks --long and retry with --mask-chain UUID\n"
 msgstr ""
 
-#: src/cli.c:2012
+#: src/cli.c:2019
 msgid ""
 "  --mask-chain must identify a chain that protects the requested key; --dry-"
 "run/--json list every affected authorized key slot\n"
 msgstr ""
 
-#: src/cli.c:2013
+#: src/cli.c:2020
 msgid ""
 "  deferred-exposure warnings default to on; --mask-warnings=default|on|off, "
 "--warn-mask, and --no-warn-mask change warnings only\n"
 msgstr ""
 
-#: src/cli.c:2022
+#: src/cli.c:2029
 msgid ""
 "  the UUID is an address, not authority; follow-up metadata commands still "
 "use the current domain/store object view\n"
 msgstr ""
 
-#: src/cli.c:2030
+#: src/cli.c:2037
 msgid ""
 "  set: store or update one key in the resolved current domain; --generate "
 "writes a CSPRNG-generated value without printing it; --unsafe stores "
 "plaintext visible while locked\n"
 msgstr ""
 
-#: src/cli.c:2031
+#: src/cli.c:2038
 msgid ""
 "  --generate requires --length N and --charset CLASS[,CLASS...]; classes are "
 "lower, upper, digit, symbol, alnum, hex, base64url, and ascii\n"
 msgstr ""
 
-#: src/cli.c:2032
+#: src/cli.c:2039
 msgid ""
 "  --require-each-class requires at least one character from every named "
 "charset class\n"
 msgstr ""
 
-#: src/cli.c:2033
+#: src/cli.c:2040
 msgid ""
 "  --ephemeral stores only in the active session agent, forces unlocked key/"
 "value access, and defaults bulk_select to exclude\n"
 msgstr ""
 
-#: src/cli.c:2034
+#: src/cli.c:2041
 msgid ""
 "  ephemeral values shadow persisted same-name values until rm --ephemeral, "
 "lock, or session expiry; use --bulk-select include to allow bulk-gated "
 "selection\n"
 msgstr ""
 
-#: src/cli.c:2035
+#: src/cli.c:2042
 msgid ""
 "  plain set, SDK/FUSE writes, cp, mv, ln, mask, unmask, attr updates, and "
 "save reject an ephemeral target instead of persisting it accidentally\n"
 msgstr ""
 
-#: src/cli.c:2036
+#: src/cli.c:2043
 msgid ""
 "  mutation planning options such as --dry-run and --json are not supported "
 "with --ephemeral\n"
 msgstr ""
 
-#: src/cli.c:2037
+#: src/cli.c:2044
 msgid ""
 "  v2 writes default to --mask-action=preserve; reject fails before any "
 "direct hit or mask state transition\n"
 msgstr ""
 
-#: src/cli.c:2038
+#: src/cli.c:2045
 msgid ""
 "  mask warnings default to on for preserve and off for reject; warning "
 "controls never change behavior or exit status\n"
 msgstr ""
 
-#: src/cli.c:2039
+#: src/cli.c:2046
 msgid ""
 "  --dry-run and --json expose the same secdat.mutation-plan.v1 used for one "
 "key or the whole assignment batch\n"
 msgstr ""
 
-#: src/cli.c:2043
+#: src/cli.c:2050
 msgid ""
 "  rm: remove one key locally or create a tombstone for an inherited key; --"
 "ignore-missing treats absent keys as success\n"
 msgstr ""
 
-#: src/cli.c:2044
+#: src/cli.c:2051
 msgid ""
 "  --ephemeral removes only the current domain's session-local ephemeral "
 "value and reveals any persisted value it shadowed\n"
 msgstr ""
 
-#: src/cli.c:2045
+#: src/cli.c:2052
 msgid ""
 "  v2 rm preserves canonical masks and reports reactivation or source-mask "
 "creation through the common mutation plan\n"
 msgstr ""
 
-#: src/cli.c:2046
+#: src/cli.c:2053
 msgid ""
 "  --mask-action=reject blocks those interactions; warning controls affect "
 "only successful post-commit warnings\n"
 msgstr ""
 
-#: src/cli.c:2047
+#: src/cli.c:2054
 msgid ""
 "  --dry-run and --json expose secdat.mutation-plan.v1 without changing "
 "persisted state\n"
 msgstr ""
 
-#: src/cli.c:2055
+#: src/cli.c:2059
+msgid ""
+"  a same-domain/store local v2 rename preserves both entry and secret IDs, "
+"existing links, and object refcount\n"
+msgstr ""
+
+#: src/cli.c:2060
+msgid ""
+"  descendant identity masks follow the preserved entry; relation KEYREF "
+"rewrites are reported separately in the common mutation plan\n"
+msgstr ""
+
+#: src/cli.c:2061
+msgid ""
+"  --mask-action=preserve is the default; reject, warning controls, dry-run, "
+"and JSON apply to local same-namespace v2 rename\n"
+msgstr ""
+
+#: src/cli.c:2065
 msgid ""
 "  cp: copy one key to a new independently identified destination while "
 "preserving destination masks in v2 stores\n"
 msgstr ""
 
-#: src/cli.c:2056
+#: src/cli.c:2066
 msgid ""
 "  --mask-action=preserve is the default; reject, warning controls, dry-run, "
 "and JSON use the common mutation plan\n"
 msgstr ""
 
-#: src/cli.c:2061
+#: src/cli.c:2071
 msgid ""
 "  value writes through either linked key affect the shared object; domain-"
 "entry attributes remain per link\n"
 msgstr ""
 
-#: src/cli.c:2062
+#: src/cli.c:2072
 msgid ""
 "  --replace allows replacing an existing same-name destination key; by "
 "default it first confirms both values are equal, and --skip-same-value-check "
 "bypasses that confirmation\n"
 msgstr ""
 
-#: src/cli.c:2063
+#: src/cli.c:2073
 msgid ""
 "  destination masks are preserved; reject, warning controls, dry-run, and "
 "JSON use the common mutation plan\n"
 msgstr ""
 
-#: src/cli.c:2068
+#: src/cli.c:2078
 msgid ""
 "  --inject LAYER:KIND=SELECTOR configures ambient, secret, route, or final "
 "rules; repeated --inject accumulates selectors of the same kind\n"
 msgstr ""
 
-#: src/cli.c:2069
+#: src/cli.c:2079
 msgid ""
 "  --inject-file FILE loads a YAML policy; command profiles can refine file "
 "rules before CLI --inject overrides them\n"
 msgstr ""
 
-#: src/cli.c:2070
+#: src/cli.c:2080
 msgid ""
 "  --bulk-gate applies the store bulk_select pre-filter before secret supply\n"
 msgstr ""
 
-#: src/cli.c:2071
+#: src/cli.c:2081
 msgid ""
 "  --command-resolution MODE selects CMD lookup: caller-path (default), child-"
 "path, or direct\n"
 msgstr ""
 
-#: src/cli.c:2072
+#: src/cli.c:2082
 msgid ""
 "  see help inject for the rule vocabulary, selector syntax, YAML shape, and "
 "preflight examples\n"
 msgstr ""
 
-#: src/cli.c:2081
+#: src/cli.c:2091
 msgid ""
 "  --key KEY may be repeated to save only named keys from the selected domain "
 "and store\n"
 msgstr ""
 
-#: src/cli.c:2085
+#: src/cli.c:2095
 msgid ""
 "  load: import a passphrase-protected bundle through one v2 mutation plan "
 "and one recoverable transaction\n"
 msgstr ""
 
-#: src/cli.c:2086
+#: src/cli.c:2096
 msgid ""
 "  --conflict=reject is the default and rejects any destination name visible "
 "in ls; overwrite replaces, skip leaves it unchanged\n"
 msgstr ""
 
-#: src/cli.c:2087
+#: src/cli.c:2097
 msgid ""
 "  linked v2 objects require a v2 destination; --allow-link-split explicitly "
 "materializes independent v1 values\n"
 msgstr ""
 
-#: src/cli.c:2088
+#: src/cli.c:2098
 msgid ""
 "  --mask-action=reject blocks any batch mask interaction; warning controls "
 "never change the batch result\n"
 msgstr ""
 
-#: src/cli.c:2089
+#: src/cli.c:2099
 msgid ""
 "  --dry-run and --json report the whole batch without committing any entry\n"
 msgstr ""
 
-#: src/cli.c:2094
+#: src/cli.c:2104
 msgid ""
 "  --gui forces passphrase prompts through the askpass helper even when a "
 "terminal is available\n"
 msgstr ""
 
-#: src/cli.c:2095
+#: src/cli.c:2105
 msgid ""
 "  --volatile keeps writes, deletes, tombstones, and read-side resolution "
 "changes in a session overlay; lock --save persists supported overlay changes "
 "before locking\n"
 msgstr ""
 
-#: src/cli.c:2096
+#: src/cli.c:2106
 msgid ""
 "  persisted tombstone removal and v2 local-entry deletions still require a "
 "normal writable session\n"
 msgstr ""
 
-#: src/cli.c:2128
+#: src/cli.c:2138
 msgid ""
 "  concepts: explain domains, stores, inheritance, sessions, and KEYREF "
 "resolution\n"
 msgstr ""
 
-#: src/cli.c:2136
+#: src/cli.c:2146
 msgid ""
 "  store: manage store namespaces and migrate v1 stores to the v2 domain-"
 "entry/object layout\n"
 msgstr ""
 
-#: src/cli.c:2140
+#: src/cli.c:2150
 msgid ""
 "  store create: create one store namespace in the resolved current domain\n"
 msgstr ""
 
-#: src/cli.c:2144
+#: src/cli.c:2154
 msgid ""
 "  store delete: delete one store namespace from the resolved current domain\n"
 msgstr ""
 
-#: src/cli.c:2148
+#: src/cli.c:2158
 msgid "  store ls: list store namespaces in the resolved current domain\n"
 msgstr ""
 
-#: src/cli.c:2152
+#: src/cli.c:2162
 msgid ""
 "  store migrate: validate one v1 store; without --dry-run, write the side-by-"
 "side v2 domain-entry/object graph and leave v1 fallback files in place\n"
 msgstr ""
 
-#: src/cli.c:2153
+#: src/cli.c:2163
 msgid ""
 "  mask plan counts separate existing canonical masks, conversion candidates, "
 "ambiguous legacy masks, and v1 rollback blockers\n"
 msgstr ""
 
-#: src/cli.c:2154
+#: src/cli.c:2164
 msgid ""
 "  dry-run mask-plan rows name each authorized candidate, ambiguity, or "
 "existing canonical mask; ambiguity remains fail closed and does not alone "
 "block migration\n"
 msgstr ""
 
-#: src/cli.c:2155
+#: src/cli.c:2165
 msgid ""
 "  an unverifiable legacy projection blocks migration; unlock affected "
 "domains, inspect masks, and retry the dry-run\n"
 msgstr ""
 
-#: src/cli.c:2159
+#: src/cli.c:2169
 msgid ""
 "  store finalize-migration: inspect legacy v1 fallback files; without --dry-"
 "run, remove only removable files and refuse to remove anything while "
 "blockers remain\n"
 msgstr ""
 
-#: src/cli.c:2160
+#: src/cli.c:2170
 msgid ""
 "  typical order is migrate dry-run, migrate, fsck --format v2, rewrite or "
 "remove fallback-backed values, finalize dry-run, then finalize\n"
 msgstr ""
 
-#: src/cli.c:2169
+#: src/cli.c:2179
 msgid ""
 "  UUID lookup is scoped to the current domain/store object view; use the "
 "object's owning context for cross-domain links\n"
 msgstr ""
 
-#: src/cli.c:2177
+#: src/cli.c:2187
 msgid "  domain create: register the resolved directory as a domain root\n"
 msgstr ""
 
-#: src/cli.c:2181
+#: src/cli.c:2191
 msgid "  domain delete: unregister the resolved directory as a domain root\n"
 msgstr ""
 
-#: src/cli.c:2185
+#: src/cli.c:2195
 msgid ""
 "  domain move: update a registered domain root path without deleting its "
 "stored secrets\n"
 msgstr ""
 
-#: src/cli.c:2189
+#: src/cli.c:2199
 msgid "  domain ls: list domain roots around the scoped directory\n"
 msgstr ""
 
-#: src/cli.c:2193
+#: src/cli.c:2203
 msgid ""
 "  domain status: report the resolved domain root and effective lock/unlock "
 "source\n"
 msgstr ""
 
-#: src/cli.c:2204 src/cli.c:2425
+#: src/cli.c:2214 src/cli.c:2435
 #, c-format
 msgid ""
 "\n"
 "Use cases:\n"
 msgstr ""
 
-#: src/cli.c:2207
+#: src/cli.c:2217
 #, c-format
 msgid "  read one value to stdout: %s get API_TOKEN --stdout\n"
 msgstr ""
 
-#: src/cli.c:2209
+#: src/cli.c:2219
 #, c-format
 msgid ""
 "  wait for another terminal to unlock before reading: %s get --on-demand-"
 "unlock --unlock-timeout 30 API_TOKEN --stdout\n"
 msgstr ""
 
-#: src/cli.c:2215
+#: src/cli.c:2225
 #, c-format
 msgid ""
 "  write one value from an argument: %s set API_TOKEN --value new-token\n"
 msgstr ""
 
-#: src/cli.c:2217
+#: src/cli.c:2227
 #, c-format
 msgid ""
 "  generate a 40-character token without printing it: %s set API_TOKEN --"
 "generate --length 40 --charset lower,upper,digit --require-each-class\n"
 msgstr ""
 
-#: src/cli.c:2219
+#: src/cli.c:2229
 #, c-format
 msgid ""
 "  read a value from standard input without echoing it in shell history: "
 "printf 'token' | %s set API_TOKEN --stdin\n"
 msgstr ""
 
-#: src/cli.c:2225
+#: src/cli.c:2235
 #, c-format
 msgid "  inspect one key's current attributes: %s attr API_TOKEN\n"
 msgstr ""
 
-#: src/cli.c:2227
+#: src/cli.c:2237
 #, c-format
 msgid ""
 "  make one value public while keeping the key name visible: %s attr "
 "API_TOKEN --value-access always\n"
 msgstr ""
 
-#: src/cli.c:2233
+#: src/cli.c:2243
 #, c-format
 msgid "  tag one key for search: %s meta set API_TOKEN service billing\n"
 msgstr ""
 
-#: src/cli.c:2235
+#: src/cli.c:2245
 #, c-format
 msgid "  find keys by metadata: %s meta search service=bill*\n"
 msgstr ""
 
-#: src/cli.c:2237
+#: src/cli.c:2247
 #, c-format
 msgid ""
 "  mark a leaked key and suggest refresh targets: %s meta mark-leaked "
 "BILLING_PASSWORD\n"
 msgstr ""
 
-#: src/cli.c:2243
+#: src/cli.c:2253
 #, c-format
 msgid ""
 "  record a credential pair: %s relation set billing-login --kind credential "
@@ -1097,612 +1115,612 @@ msgid ""
 "combination-sensitive\n"
 msgstr ""
 
-#: src/cli.c:2245
+#: src/cli.c:2255
 #, c-format
 msgid ""
 "  find credential relations: %s relation search kind=credential "
 "security=combination-*\n"
 msgstr ""
 
-#: src/cli.c:2247
+#: src/cli.c:2257
 #, c-format
 msgid ""
 "  suggest refresh targets after a leak: %s relation suggest-refresh "
 "BILLING_PASSWORD\n"
 msgstr ""
 
-#: src/cli.c:2249
+#: src/cli.c:2259
 #, c-format
 msgid ""
 "  find same-name cross-domain link candidates: %s relation suggest-link "
 "APP_TOKEN\n"
 msgstr ""
 
-#: src/cli.c:2251
+#: src/cli.c:2261
 #, c-format
 msgid "  inspect relation metadata: %s relation show billing-login\n"
 msgstr ""
 
-#: src/cli.c:2257
+#: src/cli.c:2267
 #, c-format
 msgid "  run all current-domain metadata checks: %s fsck\n"
 msgstr ""
 
-#: src/cli.c:2259
+#: src/cli.c:2269
 #, c-format
 msgid ""
 "  rebuild cached v2 refcounts after review: %s fsck --format v2 --refcount --"
 "repair\n"
 msgstr ""
 
-#: src/cli.c:2261
+#: src/cli.c:2271
 #, c-format
 msgid ""
 "  validate the global reverse dependency index: %s fsck --format v2 --"
 "dependency-index\n"
 msgstr ""
 
-#: src/cli.c:2263
+#: src/cli.c:2273
 #, c-format
 msgid ""
 "  rebuild and publish the global reverse dependency index: %s fsck --format "
 "v2 --dependency-index --repair\n"
 msgstr ""
 
-#: src/cli.c:2269
+#: src/cli.c:2279
 #, c-format
 msgid ""
 "  preview unreachable v2 graph files before deletion: %s gc --format v2 --"
 "dry-run\n"
 msgstr ""
 
-#: src/cli.c:2271
+#: src/cli.c:2281
 #, c-format
 msgid "  delete the reviewed unreachable v2 graph files: %s gc --format v2\n"
 msgstr ""
 
-#: src/cli.c:2277
+#: src/cli.c:2287
 #, c-format
 msgid ""
 "  preview the canonical identity and any safe rollback projection: %s mask --"
 "dry-run --json API_TOKEN\n"
 msgstr ""
 
-#: src/cli.c:2279
+#: src/cli.c:2289
 #, c-format
 msgid ""
 "  repair an orphan barrier without exposing the replacement target: %s mask "
 "--rebind API_TOKEN\n"
 msgstr ""
 
-#: src/cli.c:2285
+#: src/cli.c:2295
 #, c-format
 msgid ""
 "  preview every record removed from the unique chain: %s unmask --dry-run --"
 "json API_TOKEN\n"
 msgstr ""
 
-#: src/cli.c:2287
+#: src/cli.c:2297
 #, c-format
 msgid ""
 "  inspect and explicitly remove one multi-name chain: %s unmask --dry-run --"
 "mask-chain UUID API_TOKEN\n"
 msgstr ""
 
-#: src/cli.c:2289
+#: src/cli.c:2299
 #, c-format
 msgid ""
 "  suppress only the post-commit warning: %s unmask --no-warn-mask API_TOKEN\n"
 msgstr ""
 
-#: src/cli.c:2295
+#: src/cli.c:2305
 #, c-format
 msgid ""
 "  load current shell variables without printing raw secrets: source <(%s "
 "export)\n"
 msgstr ""
 
-#: src/cli.c:2297
+#: src/cli.c:2307
 #, c-format
 msgid ""
 "  export one namespace before running another tool: eval \"$(%s --store app "
 "export --pattern 'APP_*')\"\n"
 msgstr ""
 
-#: src/cli.c:2303
+#: src/cli.c:2313
 #, c-format
 msgid ""
 "  run one command with matching secrets injected: %s exec --inject secret:"
 "only=APP_* env\n"
 msgstr ""
 
-#: src/cli.c:2305
+#: src/cli.c:2315
 #, c-format
 msgid ""
 "  exclude one inherited key while running a child process: %s exec --inject "
 "secret:only=APP_* --inject secret:omit=APP_DEBUG_* CMD\n"
 msgstr ""
 
-#: src/cli.c:2311
+#: src/cli.c:2321
 #, c-format
 msgid ""
 "  share one v2 secret object under another key: %s ln APP_TOKEN "
 "SERVICE_TOKEN\n"
 msgstr ""
 
-#: src/cli.c:2313
+#: src/cli.c:2323
 #, c-format
 msgid ""
 "  link across explicit domains/stores: %s ln /src/domain/APP_TOKEN:app /dst/"
 "domain/APP_TOKEN:ops\n"
 msgstr ""
 
-#: src/cli.c:2315
+#: src/cli.c:2325
 #, c-format
 msgid ""
 "  replace an existing same-name destination after value confirmation: %s ln "
 "--replace /src/domain/APP_TOKEN /dst/domain/APP_TOKEN\n"
 msgstr ""
 
-#: src/cli.c:2321
+#: src/cli.c:2331
 #, c-format
 msgid ""
 "  resolve one key to its v2 secret object UUID without reading it: %s id "
 "API_TOKEN\n"
 msgstr ""
 
-#: src/cli.c:2323
+#: src/cli.c:2333
 #, c-format
 msgid ""
 "  inspect that object from its owning domain/store context: %s secret status "
 "01234567-89ab-4def-8123-456789abcdef\n"
 msgstr ""
 
-#: src/cli.c:2329
+#: src/cli.c:2339
 #, c-format
 msgid "  start a session for the current project directory: %s unlock\n"
 msgstr ""
 
-#: src/cli.c:2331
+#: src/cli.c:2341
 #, c-format
 msgid ""
 "  refresh an active session for 15 minutes without re-entering the "
 "passphrase: %s unlock --duration 15\n"
 msgstr ""
 
-#: src/cli.c:2333
+#: src/cli.c:2343
 #, c-format
 msgid ""
 "  unlock one specific domain from elsewhere: %s --dir ~/example/project "
 "unlock\n"
 msgstr ""
 
-#: src/cli.c:2339
+#: src/cli.c:2349
 #, c-format
 msgid ""
 "  block a script until another terminal unlocks the same domain: %s --dir ~/"
 "example/project wait-unlock --timeout 900\n"
 msgstr ""
 
-#: src/cli.c:2341
+#: src/cli.c:2351
 #, c-format
 msgid ""
 "  poll quietly before a later secret read: %s wait-unlock --timeout 30 --"
 "quiet\n"
 msgstr ""
 
-#: src/cli.c:2347
+#: src/cli.c:2357
 #, c-format
 msgid "  check whether the current domain can read secrets now: %s status\n"
 msgstr ""
 
-#: src/cli.c:2349
+#: src/cli.c:2359
 #, c-format
 msgid "  use exit status only in scripts: %s status --quiet\n"
 msgstr ""
 
-#: src/cli.c:2351
+#: src/cli.c:2361
 #, c-format
 msgid "  read machine-readable state in scripts: %s status --json\n"
 msgstr ""
 
-#: src/cli.c:2357
+#: src/cli.c:2367
 #, c-format
 msgid ""
 "  inspect local tombstones and overrides before cleanup: %s list --masked\n"
 msgstr ""
 
-#: src/cli.c:2359
+#: src/cli.c:2369
 #, c-format
 msgid ""
 "  inspect only plaintext-at-rest entries in the current domain: %s list --"
 "unsafe\n"
 msgstr ""
 
-#: src/cli.c:2365
+#: src/cli.c:2375
 #, c-format
 msgid "  create one namespace for app-specific keys: %s store create app\n"
 msgstr ""
 
-#: src/cli.c:2367
+#: src/cli.c:2377
 #, c-format
 msgid ""
 "  inspect available namespaces before selecting one with --store: %s store "
 "ls\n"
 msgstr ""
 
-#: src/cli.c:2369 src/cli.c:2381
+#: src/cli.c:2379 src/cli.c:2391
 #, c-format
 msgid ""
 "  inspect a v1 to v2 migration before writing: %s store migrate app --to-"
 "format v2 --dry-run\n"
 msgstr ""
 
-#: src/cli.c:2371
+#: src/cli.c:2381
 #, c-format
 msgid ""
 "  write the v2 domain-entry/object graph after review: %s store migrate app "
 "--to-format v2\n"
 msgstr ""
 
-#: src/cli.c:2373
+#: src/cli.c:2383
 #, c-format
 msgid ""
 "  inspect legacy fallback files after blockers are rewritten or removed: %s "
 "store finalize-migration app --from-format v1 --dry-run\n"
 msgstr ""
 
-#: src/cli.c:2375
+#: src/cli.c:2385
 #, c-format
 msgid ""
 "  remove removable legacy fallback files after review: %s store finalize-"
 "migration app --from-format v1\n"
 msgstr ""
 
-#: src/cli.c:2383
+#: src/cli.c:2393
 #, c-format
 msgid ""
 "  write the v2 graph after reviewing the dry-run output: %s store migrate "
 "app --to-format v2\n"
 msgstr ""
 
-#: src/cli.c:2389
+#: src/cli.c:2399
 #, c-format
 msgid ""
 "  identify legacy fallback blockers before deleting anything: %s store "
 "finalize-migration app --from-format v1 --dry-run\n"
 msgstr ""
 
-#: src/cli.c:2391
+#: src/cli.c:2401
 #, c-format
 msgid ""
 "  remove removable legacy fallback files only after blockers are gone: %s "
 "store finalize-migration app --from-format v1\n"
 msgstr ""
 
-#: src/cli.c:2397
+#: src/cli.c:2407
 #, c-format
 msgid ""
 "  inspect one v2 secret object by UUID without reading its value: %s secret "
 "status 01234567-89ab-4def-8123-456789abcdef\n"
 msgstr ""
 
-#: src/cli.c:2399
+#: src/cli.c:2409
 #, c-format
 msgid ""
 "  resolve a visible or unlocked key to its UUID first: %s id API_TOKEN\n"
 msgstr ""
 
-#: src/cli.c:2401
+#: src/cli.c:2411
 #, c-format
 msgid ""
 "  for cross-domain links, run status from the object's owning domain/store "
 "context\n"
 msgstr ""
 
-#: src/cli.c:2407
+#: src/cli.c:2417
 #, c-format
 msgid "  register the current directory as a domain root: %s domain create\n"
 msgstr ""
 
-#: src/cli.c:2409
+#: src/cli.c:2419
 #, c-format
 msgid ""
 "  recover a moved domain root: %s --dir /new/path domain move --from /old/"
 "path\n"
 msgstr ""
 
-#: src/cli.c:2411
+#: src/cli.c:2421
 #, c-format
 msgid ""
 "  inspect inherited and blocked descendants: %s domain ls -l --descendants\n"
 msgstr ""
 
-#: src/cli.c:2418
+#: src/cli.c:2428
 #, c-format
 msgid ""
 "  see %s help usecases for workflow-oriented examples across multiple "
 "commands\n"
 msgstr ""
 
-#: src/cli.c:2428
+#: src/cli.c:2438
 #, c-format
 msgid "  bootstrap a new project domain: %s --dir ~/example/project unlock\n"
 msgstr ""
 
-#: src/cli.c:2430
+#: src/cli.c:2440
 #, c-format
 msgid ""
 "  read one secret directly: %s --dir ~/example/project get API_TOKEN --"
 "stdout\n"
 msgstr ""
 
-#: src/cli.c:2432
+#: src/cli.c:2442
 #, c-format
 msgid ""
 "  load shell variables without exposing raw values in exported text: source "
 "<(%s --dir ~/example/project export)\n"
 msgstr ""
 
-#: src/cli.c:2434
+#: src/cli.c:2444
 #, c-format
 msgid ""
 "  inject secrets into one subprocess only: %s --dir ~/example/project exec --"
 "inject secret:rename='s/^MY_APP_\\(.*\\)$/APP_\\1/' CMD\n"
 msgstr ""
 
-#: src/cli.c:2436
+#: src/cli.c:2446
 #, c-format
 msgid ""
 "  block automation until a human unlocks the domain elsewhere: %s --dir ~/"
 "example/project wait-unlock --timeout 900\n"
 msgstr ""
 
-#: src/cli.c:2438
+#: src/cli.c:2448
 #, c-format
 msgid ""
 "  inspect inheritance and local locks under one branch: %s --dir ~/example/"
 "project domain ls -l --descendants\n"
 msgstr ""
 
-#: src/cli.c:2445
+#: src/cli.c:2455
 #, c-format
 msgid ""
 "\n"
 "Concepts:\n"
 msgstr ""
 
-#: src/cli.c:2448
+#: src/cli.c:2458
 #, c-format
 msgid ""
 "  domain: a directory-scoped boundary for inheritance, sessions, and "
 "tombstones; resolve it with --dir or inspect it with %s domain status\n"
 msgstr ""
 
-#: src/cli.c:2450
+#: src/cli.c:2460
 msgid ""
 "  store: a domain-local namespace selected by --store; use it to separate "
 "app, ops, or personal keys inside one domain\n"
 msgstr ""
 
-#: src/cli.c:2451
+#: src/cli.c:2461
 msgid ""
 "  inheritance: reads fall back to parent domains until a local value, "
 "tombstone, or local lock changes the effective view\n"
 msgstr ""
 
-#: src/cli.c:2452
+#: src/cli.c:2462
 msgid ""
 "  local lock: a local override that blocks reuse of an inherited unlock "
 "until the current domain unlocks or inherits again\n"
 msgstr ""
 
-#: src/cli.c:2453
+#: src/cli.c:2463
 #, c-format
 msgid ""
 "  local unlock: an authenticated master-key cache scoped to one domain "
 "branch; inspect availability with %s status and refresh it with %s unlock\n"
 msgstr ""
 
-#: src/cli.c:2455
+#: src/cli.c:2465
 msgid ""
 "  KEYREF: [DOMAIN_PATH/]KEY[:STORE]; DOMAIN_PATH may be absolute or relative "
 "and selects only that exact registered domain\n"
 msgstr ""
 
-#: src/cli.c:2456
+#: src/cli.c:2466
 msgid ""
 "  relative KEYREF domains use --domain, then --dir, then the current working "
 "directory as their base; unqualified keys keep inherited lookup\n"
 msgstr ""
 
-#: src/cli.c:2462
+#: src/cli.c:2472
 #, c-format
 msgid ""
 "\n"
 "Inject rules:\n"
 msgstr ""
 
-#: src/cli.c:2465
+#: src/cli.c:2475
 msgid ""
 "  form: pass repeated --inject LAYER:KIND=SELECTOR rules to exec; use --"
 "inject-file FILE for a YAML policy\n"
 msgstr ""
 
-#: src/cli.c:2466
+#: src/cli.c:2476
 msgid ""
 "  layers: ambient selects caller environment variables; secret selects store "
 "keys; route resolves ambient/secret name collisions; final validates the "
 "child environment\n"
 msgstr ""
 
-#: src/cli.c:2467
+#: src/cli.c:2477
 msgid ""
 "  kinds: only is a whitelist, omit excludes matches, require fails when a "
 "match is missing, reject fails when a match is available, rename maps secret "
 "keys to env names, prefer sets the default collision pick\n"
 msgstr ""
 
-#: src/cli.c:2468
+#: src/cli.c:2478
 msgid ""
 "  selectors: exact names and shell-style globs are allowed; separate "
 "multiple selectors in one value with ':'\n"
 msgstr ""
 
-#: src/cli.c:2469
+#: src/cli.c:2479
 msgid ""
 "  route picks: route:prefer=secret, route:prefer=ambient, route:"
 "prefer=error, or route:GLOB=secret|ambient|error\n"
 msgstr ""
 
-#: src/cli.c:2470
+#: src/cli.c:2480
 msgid ""
 "  rename: secret:rename=EXPR uses one sed-style s/// expression; generated "
 "environment names must be valid identifiers\n"
 msgstr ""
 
-#: src/cli.c:2471
+#: src/cli.c:2481
 msgid ""
 "  files: --inject-file accepts a small YAML subset: bulk_gate, "
 "profile_required, profiles, supply, route, demand, scalar values, inline "
 "arrays, and block lists\n"
 msgstr ""
 
-#: src/cli.c:2472
+#: src/cli.c:2482
 msgid ""
 "  profiles: profiles.NAME.match.command matches CMD path or basename; match."
 "argv_prefix matches CMD arguments from the start\n"
 msgstr ""
 
-#: src/cli.c:2473
+#: src/cli.c:2483
 msgid ""
 "  profile safety: profile_required: true fails when no profile matches, and "
 "multiple matching profiles fail closed\n"
 msgstr ""
 
-#: src/cli.c:2474
+#: src/cli.c:2484
 msgid ""
 "  file limits: unsupported YAML syntax fails closed; use block lists for "
 "large selector sets instead of long inline arrays\n"
 msgstr ""
 
-#: src/cli.c:2475
+#: src/cli.c:2485
 msgid ""
 "  gate: --bulk-gate applies the key bulk_select pre-filter before secret "
 "supply; list and export can also use --bulk-gate but do not inject into a "
 "child process\n"
 msgstr ""
 
-#: src/cli.c:2476
+#: src/cli.c:2486
 msgid ""
 "  ptyterm handoff: secdat can be an optional stdin secret provider for "
 "ptyterm; neither tool requires the other\n"
 msgstr ""
 
-#: src/cli.c:2477
+#: src/cli.c:2487
 #, c-format
 msgid ""
 "  preflight: %s exec --inject secret:only=APP_* --dry-run --json -- CMD\n"
 msgstr ""
 
-#: src/cli.c:2479
+#: src/cli.c:2489
 #, c-format
 msgid ""
 "  example: %s exec --inject ambient:omit=SECDAT_* --inject secret:only=APP_* "
 "--inject route:prefer=secret --inject final:reject=SECDAT_* -- CMD\n"
 msgstr ""
 
-#: src/cli.c:2481
+#: src/cli.c:2491
 #, c-format
 msgid ""
 "  terminal handoff: %s get ROUTER_PASSWORD --stdout | ptyterm --session=1 --"
 "send-stdin --send-eol=cr --redact-sent\n"
 msgstr ""
 
-#: src/cli.c:2488
+#: src/cli.c:2498
 #, c-format
 msgid ""
 "\n"
 "Semantics:\n"
 msgstr ""
 
-#: src/cli.c:2489
+#: src/cli.c:2499
 msgid ""
 "  DIR: base directory used for domain resolution; defaults to the current "
 "working directory\n"
 msgstr ""
 
-#: src/cli.c:2490
+#: src/cli.c:2500
 msgid ""
 "  DOMAIN: directory-scoped configuration boundary used for inheritance and "
 "tombstones\n"
 msgstr ""
 
-#: src/cli.c:2491
+#: src/cli.c:2501
 msgid ""
 "  STORE: domain-local namespace selected by --store; defaults to the default "
 "store\n"
 msgstr ""
 
-#: src/cli.c:2492
+#: src/cli.c:2502
 msgid ""
 "  KEY / KEYREF: logical secret name, optionally qualified as "
 "[DOMAIN_PATH/]KEY[:STORE]; qualified lookup is exact-local\n"
 msgstr ""
 
-#: src/cli.c:2493
+#: src/cli.c:2503
 msgid ""
 "  migration hints: v2-only errors suggest store migrate; set "
 "SECDAT_SUPPRESS_MIGRATION_HINTS=1 to hide those hints\n"
 msgstr ""
 
-#: src/cli.c:2521
+#: src/cli.c:2531
 #, c-format
 msgid "unknown store subcommand: %s\n"
 msgstr ""
 
-#: src/cli.c:2523
+#: src/cli.c:2533
 #, c-format
 msgid "unknown meta subcommand: %s\n"
 msgstr ""
 
-#: src/cli.c:2525
+#: src/cli.c:2535
 #, c-format
 msgid "unknown relation subcommand: %s\n"
 msgstr ""
 
-#: src/cli.c:2527
+#: src/cli.c:2537
 #, c-format
 msgid "unknown secret subcommand: %s\n"
 msgstr ""
 
-#: src/cli.c:2529
+#: src/cli.c:2539
 #, c-format
 msgid "unknown domain subcommand: %s\n"
 msgstr ""
 
-#: src/cli.c:2674 src/cli.c:2690 src/cli.c:2722 src/cli.c:2744
+#: src/cli.c:2684 src/cli.c:2700 src/cli.c:2732 src/cli.c:2754
 #, c-format
 msgid "Usage:\n"
 msgstr ""
 
-#: src/cli.c:2700
+#: src/cli.c:2710
 #, c-format
 msgid "\n"
 msgstr ""
 
-#: src/cli.c:2701
+#: src/cli.c:2711
 msgid ""
 "  KEYREF syntax: [DOMAIN_PATH/]KEY[:STORE] (absolute or relative; qualified "
 "lookup is exact-local)\n"
 msgstr ""
 
-#: src/cli.c:2777
+#: src/cli.c:2787
 #, c-format
 msgid "Try: %s help %s\n"
 msgstr ""
 
-#: src/cli.c:2781
+#: src/cli.c:2791
 #, c-format
 msgid "Try: %s help\n"
 msgstr ""
@@ -1722,38 +1740,38 @@ msgstr ""
 #: src/exec_inject_policy_file.c:60 src/exec_inject_policy_file.c:103
 #: src/exec_inject_policy_file.c:128 src/exec_inject_policy_file.c:202
 #: src/exec_inject_policy_file.c:245 src/exec_inject_policy_file.c:283
-#: src/exec_inject_policy_file.c:475 src/secdat-fuse.c:145 src/store.c:1528
-#: src/store.c:1544 src/store.c:1685 src/store.c:1720 src/store.c:1769
-#: src/store.c:1884 src/store.c:1893 src/store.c:1910 src/store.c:1919
-#: src/store.c:1933 src/store.c:1939 src/store.c:4525 src/store.c:4571
-#: src/store.c:4598 src/store.c:4644 src/store.c:4679 src/store.c:5098
-#: src/store.c:5555 src/store.c:5595 src/store.c:9646 src/store.c:10244
-#: src/store.c:10348 src/store.c:10398 src/store.c:10482 src/store.c:10490
-#: src/store.c:11020 src/store.c:11332 src/store.c:11441 src/store.c:11502
-#: src/store.c:11760 src/store.c:11869 src/store.c:11910 src/store.c:11983
-#: src/store.c:13198 src/store.c:13320 src/store.c:13341 src/store.c:13423
-#: src/store.c:13535 src/store.c:13703 src/store.c:13758 src/store.c:15101
-#: src/store.c:15578 src/store.c:15722 src/store.c:16119 src/store.c:16441
-#: src/store.c:16875 src/store.c:17114 src/store.c:17152 src/store.c:17466
-#: src/store.c:17572 src/store.c:17650 src/store.c:17664 src/store.c:17673
-#: src/store.c:17730 src/store.c:17743 src/store.c:17752 src/store.c:17873
-#: src/store.c:18009 src/store.c:18049 src/store.c:18060 src/store.c:18094
-#: src/store.c:18225 src/store.c:19129 src/store.c:19928 src/store.c:21113
-#: src/store.c:21139 src/store.c:21393 src/store.c:21443 src/store.c:21469
-#: src/store.c:21838 src/store.c:22242 src/store.c:22367 src/store.c:22396
-#: src/store.c:22447 src/store.c:22742 src/store.c:23320 src/store.c:23807
-#: src/store.c:24426 src/store.c:24960 src/store.c:25560 src/store.c:25597
-#: src/store.c:25846 src/store.c:25888 src/store.c:25995 src/store.c:26026
-#: src/store.c:29401 src/store.c:29436 src/store.c:29584 src/store.c:29783
-#: src/store.c:30829 src/store.c:30961 src/store.c:31577 src/store.c:36331
-#: src/store.c:36336 src/store.c:36673 src/store.c:36733 src/store.c:36739
-#: src/store.c:36814 src/store.c:36827 src/store.c:37875 src/store.c:37956
-#: src/store.c:38055 src/store.c:38093 src/store.c:39938 src/store.c:40026
-#: src/store.c:40076 src/store.c:41338 src/store.c:41499 src/store.c:43440
-#: src/store.c:44996 src/store.c:45171 src/store.c:45413 src/store.c:45438
-#: src/store.c:45462 src/store.c:45542 src/store.c:45593 src/store.c:45642
-#: src/store.c:45682 src/store.c:45976 src/store.c:46201 src/store.c:47368
-#: src/store.c:47376
+#: src/exec_inject_policy_file.c:475 src/secdat-fuse.c:145 src/store.c:1571
+#: src/store.c:1587 src/store.c:1728 src/store.c:1763 src/store.c:1812
+#: src/store.c:1927 src/store.c:1936 src/store.c:1953 src/store.c:1962
+#: src/store.c:1976 src/store.c:1982 src/store.c:4568 src/store.c:4614
+#: src/store.c:4641 src/store.c:4687 src/store.c:4722 src/store.c:5141
+#: src/store.c:5598 src/store.c:5638 src/store.c:9689 src/store.c:10287
+#: src/store.c:10391 src/store.c:10441 src/store.c:10525 src/store.c:10533
+#: src/store.c:11063 src/store.c:11375 src/store.c:11484 src/store.c:11545
+#: src/store.c:11803 src/store.c:11912 src/store.c:11953 src/store.c:12026
+#: src/store.c:13241 src/store.c:13363 src/store.c:13384 src/store.c:13466
+#: src/store.c:13578 src/store.c:13746 src/store.c:13801 src/store.c:15144
+#: src/store.c:15621 src/store.c:15765 src/store.c:16162 src/store.c:16484
+#: src/store.c:16918 src/store.c:17157 src/store.c:17195 src/store.c:17509
+#: src/store.c:17615 src/store.c:17693 src/store.c:17707 src/store.c:17716
+#: src/store.c:17773 src/store.c:17786 src/store.c:17795 src/store.c:17916
+#: src/store.c:18052 src/store.c:18092 src/store.c:18103 src/store.c:18137
+#: src/store.c:18268 src/store.c:19172 src/store.c:19971 src/store.c:21156
+#: src/store.c:21182 src/store.c:21436 src/store.c:21486 src/store.c:21512
+#: src/store.c:21881 src/store.c:22285 src/store.c:22410 src/store.c:22439
+#: src/store.c:22490 src/store.c:22785 src/store.c:23363 src/store.c:23850
+#: src/store.c:24469 src/store.c:25003 src/store.c:25603 src/store.c:25640
+#: src/store.c:25889 src/store.c:25931 src/store.c:26038 src/store.c:26069
+#: src/store.c:29444 src/store.c:29479 src/store.c:29627 src/store.c:29826
+#: src/store.c:30872 src/store.c:31004 src/store.c:31620 src/store.c:36374
+#: src/store.c:36379 src/store.c:36716 src/store.c:36776 src/store.c:36782
+#: src/store.c:36857 src/store.c:36870 src/store.c:37918 src/store.c:37999
+#: src/store.c:38098 src/store.c:38136 src/store.c:39981 src/store.c:40069
+#: src/store.c:40119 src/store.c:41381 src/store.c:41542 src/store.c:41749
+#: src/store.c:43959 src/store.c:45515 src/store.c:45690 src/store.c:45932
+#: src/store.c:45957 src/store.c:45981 src/store.c:46061 src/store.c:46112
+#: src/store.c:46161 src/store.c:46201 src/store.c:46495 src/store.c:46803
+#: src/store.c:48101 src/store.c:48109
 #, c-format
 msgid "out of memory\n"
 msgstr ""
@@ -1764,18 +1782,18 @@ msgstr ""
 #: src/domain.c:955 src/domain.c:990 src/domain.c:1002 src/domain.c:1006
 #: src/domain.c:1101 src/domain.c:1234 src/domain.c:1356 src/domain.c:1364
 #: src/domain.c:1451 src/domain.c:1513 src/domain.c:1590 src/secdat-fuse.c:186
-#: src/store.c:1960 src/store.c:1978 src/store.c:3449 src/store.c:3456
-#: src/store.c:3474 src/store.c:4423 src/store.c:4693 src/store.c:4797
-#: src/store.c:4824 src/store.c:4851 src/store.c:5277 src/store.c:5475
-#: src/store.c:5645 src/store.c:5668 src/store.c:5684 src/store.c:6366
-#: src/store.c:7806 src/store.c:8311 src/store.c:8335 src/store.c:10187
-#: src/store.c:10513 src/store.c:14258 src/store.c:14268 src/store.c:14286
-#: src/store.c:14321 src/store.c:14374 src/store.c:15827 src/store.c:17814
-#: src/store.c:17833 src/store.c:18723 src/store.c:18737 src/store.c:18751
-#: src/store.c:19177 src/store.c:19538 src/store.c:30789 src/store.c:30911
-#: src/store.c:31216 src/store.c:33929 src/store.c:34136 src/store.c:34175
-#: src/store.c:34236 src/store.c:34461 src/store.c:34529 src/store.c:38768
-#: src/store.c:39682 src/store.c:40601
+#: src/store.c:2003 src/store.c:2021 src/store.c:3492 src/store.c:3499
+#: src/store.c:3517 src/store.c:4466 src/store.c:4736 src/store.c:4840
+#: src/store.c:4867 src/store.c:4894 src/store.c:5320 src/store.c:5518
+#: src/store.c:5688 src/store.c:5711 src/store.c:5727 src/store.c:6409
+#: src/store.c:7849 src/store.c:8354 src/store.c:8378 src/store.c:10230
+#: src/store.c:10556 src/store.c:14301 src/store.c:14311 src/store.c:14329
+#: src/store.c:14364 src/store.c:14417 src/store.c:15870 src/store.c:17857
+#: src/store.c:17876 src/store.c:18766 src/store.c:18780 src/store.c:18794
+#: src/store.c:19220 src/store.c:19581 src/store.c:30832 src/store.c:30954
+#: src/store.c:31259 src/store.c:33972 src/store.c:34179 src/store.c:34218
+#: src/store.c:34279 src/store.c:34504 src/store.c:34572 src/store.c:38811
+#: src/store.c:39725 src/store.c:40644
 #, c-format
 msgid "path is too long\n"
 msgstr ""
@@ -1796,17 +1814,17 @@ msgstr ""
 msgid "local-lock"
 msgstr ""
 
-#: src/domain.c:337 src/domain.c:375 src/domain.c:382 src/store.c:12667
+#: src/domain.c:337 src/domain.c:375 src/domain.c:382 src/store.c:12710
 msgid "locked"
 msgstr ""
 
-#: src/domain.c:356 src/domain.c:2337 src/store.c:12633 src/store.c:12651
-#: src/store.c:12668
+#: src/domain.c:356 src/domain.c:2337 src/store.c:12676 src/store.c:12694
+#: src/store.c:12711
 msgid "wrapped master key: present"
 msgstr ""
 
-#: src/domain.c:356 src/domain.c:2337 src/store.c:12633 src/store.c:12651
-#: src/store.c:12668
+#: src/domain.c:356 src/domain.c:2337 src/store.c:12676 src/store.c:12694
+#: src/store.c:12711
 msgid "wrapped master key: absent"
 msgstr ""
 
@@ -1818,7 +1836,7 @@ msgstr ""
 msgid "session"
 msgstr ""
 
-#: src/domain.c:383 src/store.c:12631 src/store.c:12641
+#: src/domain.c:383 src/store.c:12674 src/store.c:12684
 msgid "unlocked"
 msgstr ""
 
@@ -1854,18 +1872,18 @@ msgstr ""
 msgid "DOMAIN"
 msgstr ""
 
-#: src/domain.c:639 src/store.c:5663
+#: src/domain.c:639 src/store.c:5706
 #, c-format
 msgid "HOME is not set\n"
 msgstr ""
 
-#: src/domain.c:795 src/store.c:5548 src/store.c:5569
+#: src/domain.c:795 src/store.c:5591 src/store.c:5612
 #, c-format
 msgid "failed to open file: %s\n"
 msgstr ""
 
-#: src/domain.c:801 src/domain.c:835 src/domain.c:1502 src/store.c:5602
-#: src/store.c:19946
+#: src/domain.c:801 src/domain.c:835 src/domain.c:1502 src/store.c:5645
+#: src/store.c:19989
 #, c-format
 msgid "failed to read file: %s\n"
 msgstr ""
@@ -1881,13 +1899,13 @@ msgid "domain root identity mismatch for: %s\n"
 msgstr ""
 
 #: src/domain.c:911 src/domain.c:995 src/domain.c:1447 src/secdat-fuse.c:182
-#: src/store.c:1973
+#: src/store.c:2016
 #, c-format
 msgid "failed to resolve directory: %s\n"
 msgstr ""
 
-#: src/domain.c:921 src/domain.c:1622 src/domain.c:1782 src/store.c:5254
-#: src/store.c:5301
+#: src/domain.c:921 src/domain.c:1622 src/domain.c:1782 src/store.c:5297
+#: src/store.c:5344
 #, c-format
 msgid "not a directory: %s\n"
 msgstr ""
@@ -1907,7 +1925,7 @@ msgstr ""
 msgid "failed to generate domain id\n"
 msgstr ""
 
-#: src/domain.c:1268 src/store.c:4731 src/store.c:13806 src/store.c:43388
+#: src/domain.c:1268 src/store.c:4774 src/store.c:13849 src/store.c:43907
 #, c-format
 msgid "failed to open directory: %s\n"
 msgstr ""
@@ -1958,8 +1976,8 @@ msgstr ""
 msgid "invalid arguments for domain status\n"
 msgstr ""
 
-#: src/domain.c:2288 src/store.c:2223 src/store.c:2229 src/store.c:9994
-#: src/store.c:12752
+#: src/domain.c:2288 src/store.c:2266 src/store.c:2272 src/store.c:10037
+#: src/store.c:12795
 #, c-format
 msgid "resolved domain: %s\n"
 msgstr ""
@@ -2033,7 +2051,7 @@ msgstr ""
 msgid "effective source: locked"
 msgstr ""
 
-#: src/domain.c:2355 src/store.c:45862
+#: src/domain.c:2355 src/store.c:46381
 #, c-format
 msgid "command not implemented yet: %s\n"
 msgstr ""
@@ -2100,7 +2118,7 @@ msgstr ""
 msgid "invalid secret rename regex: %s\n"
 msgstr ""
 
-#: src/exec_inject.c:834 src/store.c:3498 src/store.c:45109 src/store.c:45179
+#: src/exec_inject.c:834 src/store.c:3541 src/store.c:45628 src/store.c:45698
 #, c-format
 msgid "key is not a valid environment variable name: %s\n"
 msgstr ""
@@ -2441,2066 +2459,2066 @@ msgstr ""
 msgid "failed to create pipe\n"
 msgstr ""
 
-#: src/store.c:1587
+#: src/store.c:1630
 #, c-format
 msgid ""
 "deferred GC remains queued because the owner agent could not be upgraded\n"
 msgstr ""
 
-#: src/store.c:1596
+#: src/store.c:1639
 #, c-format
 msgid "deferred GC remains queued because the owner agent lacks GC_WORKER_V1\n"
 msgstr ""
 
-#: src/store.c:2018
+#: src/store.c:2061
 #, c-format
 msgid "writes to the default domain are not supported\n"
 msgstr ""
 
-#: src/store.c:2095 src/store.c:5446
+#: src/store.c:2138 src/store.c:5489
 #, c-format
 msgid "failed to remove file: %s\n"
 msgstr ""
 
-#: src/store.c:2155
+#: src/store.c:2198
 #, c-format
 msgid "note: %zu descendant domains can now reuse this session\n"
 msgstr ""
 
-#: src/store.c:2158 src/store.c:2195
+#: src/store.c:2201 src/store.c:2238
 #, c-format
 msgid "note: %zu orphaned descendant domains are not affected by unlock\n"
 msgstr ""
 
-#: src/store.c:2160 src/store.c:2197
+#: src/store.c:2203 src/store.c:2240
 #, c-format
 msgid ""
 "recover or delete orphaned descendant: secdat domain move --from %s --to "
 "NEW_ROOT\n"
 msgstr ""
 
-#: src/store.c:2161 src/store.c:2198
+#: src/store.c:2204 src/store.c:2241
 #, c-format
 msgid "discard orphaned descendant: secdat --dir %s domain delete\n"
 msgstr ""
 
-#: src/store.c:2168
+#: src/store.c:2211
 #, c-format
 msgid "note: %zu descendant domains remain locked under this branch\n"
 msgstr ""
 
-#: src/store.c:2169
+#: src/store.c:2212
 msgid "affected descendants:"
-msgstr ""
-
-#: src/store.c:2188
-#, c-format
-msgid "  %s\n"
-msgstr ""
-
-#: src/store.c:2192
-#, c-format
-msgid "  ... and %zu more\n"
-msgstr ""
-
-#: src/store.c:2202
-#, c-format
-msgid "inspect descendants: secdat --dir %s domain ls -l --descendants\n"
-msgstr ""
-
-#: src/store.c:2204
-#, c-format
-msgid "inspect one descendant: secdat --dir %s domain status\n"
-msgstr ""
-
-#: src/store.c:2205
-#, c-format
-msgid "unlock one descendant: secdat --dir %s unlock\n"
-msgstr ""
-
-#: src/store.c:2224
-#, c-format
-msgid "inspect current domain: secdat domain status\n"
-msgstr ""
-
-#: src/store.c:2225
-#, c-format
-msgid "unlock current domain: secdat unlock\n"
-msgstr ""
-
-#: src/store.c:2230
-#, c-format
-msgid "inspect current domain: secdat --dir %s domain status\n"
 msgstr ""
 
 #: src/store.c:2231
 #, c-format
+msgid "  %s\n"
+msgstr ""
+
+#: src/store.c:2235
+#, c-format
+msgid "  ... and %zu more\n"
+msgstr ""
+
+#: src/store.c:2245
+#, c-format
+msgid "inspect descendants: secdat --dir %s domain ls -l --descendants\n"
+msgstr ""
+
+#: src/store.c:2247
+#, c-format
+msgid "inspect one descendant: secdat --dir %s domain status\n"
+msgstr ""
+
+#: src/store.c:2248
+#, c-format
+msgid "unlock one descendant: secdat --dir %s unlock\n"
+msgstr ""
+
+#: src/store.c:2267
+#, c-format
+msgid "inspect current domain: secdat domain status\n"
+msgstr ""
+
+#: src/store.c:2268
+#, c-format
+msgid "unlock current domain: secdat unlock\n"
+msgstr ""
+
+#: src/store.c:2273
+#, c-format
+msgid "inspect current domain: secdat --dir %s domain status\n"
+msgstr ""
+
+#: src/store.c:2274
+#, c-format
 msgid "unlock current domain: secdat --dir %s unlock\n"
 msgstr ""
 
-#: src/store.c:2327
+#: src/store.c:2370
 #, c-format
 msgid ""
 "Hint: inspect migration first with `%s store migrate %s --to-format v2 --dry-"
 "run`\n"
 msgstr ""
 
-#: src/store.c:2328
+#: src/store.c:2371
 #, c-format
 msgid "Hint: suppress migration hints with %s=1\n"
 msgstr ""
 
-#: src/store.c:2359
+#: src/store.c:2402
 #, c-format
 msgid "invalid value for --unlock-timeout: %s\n"
 msgstr ""
 
-#: src/store.c:2807
+#: src/store.c:2850
 #, c-format
 msgid "missing value for --unlock-timeout\n"
 msgstr ""
 
-#: src/store.c:2812 src/store.c:2821 src/store.c:2833
+#: src/store.c:2855 src/store.c:2864 src/store.c:2876
 #, c-format
 msgid "invalid arguments for get\n"
 msgstr ""
 
-#: src/store.c:2842
+#: src/store.c:2885
 #, c-format
 msgid "missing key for get\n"
 msgstr ""
 
-#: src/store.c:2847
+#: src/store.c:2890
 #, c-format
 msgid "--unlock-timeout requires --on-demand-unlock or %s\n"
 msgstr ""
 
-#: src/store.c:2876
+#: src/store.c:2919
 #, c-format
 msgid "invalid value for --timeout: %s\n"
 msgstr ""
 
-#: src/store.c:2883
+#: src/store.c:2926
 #, c-format
 msgid "missing value for --timeout\n"
 msgstr ""
 
-#: src/store.c:2892 src/store.c:2899 src/store.c:12681
+#: src/store.c:2935 src/store.c:2942 src/store.c:12724
 #, c-format
 msgid "invalid arguments for wait-unlock\n"
 msgstr ""
 
-#: src/store.c:2921
+#: src/store.c:2964
 #, c-format
 msgid ""
 "waiting for another terminal to unlock secrets for resolved domain: %s\n"
 msgstr ""
 
-#: src/store.c:2923 src/store.c:2986
+#: src/store.c:2966 src/store.c:3029
 #, c-format
 msgid "unlock from another terminal: secdat unlock\n"
 msgstr ""
 
-#: src/store.c:2925 src/store.c:2988
+#: src/store.c:2968 src/store.c:3031
 #, c-format
 msgid "unlock from another terminal: secdat --dir %s unlock\n"
 msgstr ""
 
-#: src/store.c:2928
+#: src/store.c:2971
 #, c-format
 msgid "unlock wait timeout: %lld seconds\n"
 msgstr ""
 
-#: src/store.c:2959
+#: src/store.c:3002
 #, c-format
 msgid ""
 "timed out waiting for another terminal to unlock secrets after %lld seconds\n"
 msgstr ""
 
-#: src/store.c:2984
+#: src/store.c:3027
 #, c-format
 msgid "waiting for another terminal to unlock resolved domain: %s\n"
 msgstr ""
 
-#: src/store.c:2991
+#: src/store.c:3034
 #, c-format
 msgid "wait-unlock timeout: %lld seconds\n"
 msgstr ""
 
-#: src/store.c:3019
+#: src/store.c:3062
 #, c-format
 msgid ""
 "timed out waiting for another terminal to unlock resolved domain after %lld "
 "seconds\n"
 msgstr ""
 
-#: src/store.c:3091 src/store.c:3103 src/store.c:3110 src/store.c:3122
-#: src/store.c:3127 src/store.c:3132 src/store.c:12737
+#: src/store.c:3134 src/store.c:3146 src/store.c:3153 src/store.c:3165
+#: src/store.c:3170 src/store.c:3175 src/store.c:12780
 #, c-format
 msgid "invalid arguments for unlock\n"
 msgstr ""
 
-#: src/store.c:3116
+#: src/store.c:3159
 #, c-format
 msgid "--duration and --until cannot be combined\n"
 msgstr ""
 
-#: src/store.c:3138
+#: src/store.c:3181
 #, c-format
 msgid "invalid value for --duration: %s\n"
 msgstr ""
 
-#: src/store.c:3143
+#: src/store.c:3186
 #, c-format
 msgid "invalid value for --until: %s\n"
 msgstr ""
 
-#: src/store.c:3168 src/store.c:3177 src/store.c:3184 src/store.c:13118
+#: src/store.c:3211 src/store.c:3220 src/store.c:3227 src/store.c:13161
 #, c-format
 msgid "invalid arguments for passwd\n"
 msgstr ""
 
-#: src/store.c:3218 src/store.c:3225 src/store.c:3231 src/store.c:13000
+#: src/store.c:3261 src/store.c:3268 src/store.c:3274 src/store.c:13043
 #, c-format
 msgid "invalid arguments for lock\n"
 msgstr ""
 
-#: src/store.c:3250
+#: src/store.c:3293
 #, c-format
 msgid ""
 "cannot unlock descendant domains because an orphaned registered domain is in "
 "this subtree: %s\n"
 msgstr ""
 
-#: src/store.c:3251
+#: src/store.c:3294
 #, c-format
 msgid "recover it with: secdat domain move --from %s --to NEW_ROOT\n"
 msgstr ""
 
-#: src/store.c:3252
+#: src/store.c:3295
 #, c-format
 msgid "or discard it with: secdat --dir %s domain delete\n"
 msgstr ""
 
-#: src/store.c:3312
+#: src/store.c:3355
 #, c-format
 msgid ""
 "unlock --descendants requires confirmation on a terminal or rerun with --"
 "yes\n"
 msgstr ""
 
-#: src/store.c:3319
+#: src/store.c:3362
 #, c-format
 msgid "failed to read confirmation\n"
 msgstr ""
 
-#: src/store.c:3339
+#: src/store.c:3382
 msgid ""
 "unlock descendant domains in this subtree? local locks will remain [y/N]: "
 msgstr ""
 
-#: src/store.c:3349
+#: src/store.c:3392
 #, c-format
 msgid "descendant unlock cancelled\n"
 msgstr ""
 
-#: src/store.c:3382
+#: src/store.c:3425
 #, c-format
 msgid ""
 "note: unlocked %zu descendant domains in this subtree; local locks remain\n"
 msgstr ""
 
-#: src/store.c:3408
+#: src/store.c:3451
 #, c-format
 msgid "invalid key reference\n"
 msgstr ""
 
-#: src/store.c:3417 src/store.c:3443 src/store.c:3488
+#: src/store.c:3460 src/store.c:3486 src/store.c:3531
 #, c-format
 msgid "invalid key reference: %s\n"
 msgstr ""
 
-#: src/store.c:3564
+#: src/store.c:3607
 #, c-format
 msgid "%s is no longer supported; use %s\n"
 msgstr ""
 
-#: src/store.c:3571
+#: src/store.c:3614
 #, c-format
 msgid ""
 "--inject is not valid for %s; use --bulk-select to set bulk_select policy "
 "(exec supply rules use --inject on exec)\n"
 msgstr ""
 
-#: src/store.c:3651
+#: src/store.c:3694
 #, c-format
 msgid "invalid arguments for ls\n"
 msgstr ""
 
-#: src/store.c:3691 src/store.c:3706 src/store.c:3716
+#: src/store.c:3734 src/store.c:3749 src/store.c:3759
 #, c-format
 msgid "invalid arguments for export\n"
 msgstr ""
 
-#: src/store.c:3789 src/store.c:3796 src/store.c:3802 src/store.c:3808
-#: src/store.c:3814
+#: src/store.c:3832 src/store.c:3839 src/store.c:3845 src/store.c:3851
+#: src/store.c:3857
 #, c-format
 msgid "invalid arguments for list\n"
 msgstr ""
 
-#: src/store.c:3821
+#: src/store.c:3864
 #, c-format
 msgid "missing state filter for list\n"
 msgstr ""
 
-#: src/store.c:3878 src/store.c:3892
+#: src/store.c:3921 src/store.c:3935
 #, c-format
 msgid "invalid arguments for attr\n"
 msgstr ""
 
-#: src/store.c:3885
+#: src/store.c:3928
 #, c-format
 msgid "missing key for attr\n"
 msgstr ""
 
-#: src/store.c:3933
+#: src/store.c:3976
 #, c-format
 msgid "invalid fsck format: %s\n"
 msgstr ""
 
-#: src/store.c:3947 src/store.c:3954
+#: src/store.c:3990 src/store.c:3997
 #, c-format
 msgid "invalid arguments for fsck\n"
 msgstr ""
 
-#: src/store.c:3966
+#: src/store.c:4009
 #, c-format
 msgid "fsck --repair is only supported with --format v2\n"
 msgstr ""
 
-#: src/store.c:3970
+#: src/store.c:4013
 #, c-format
 msgid "fsck --repair currently requires --refcount\n"
 msgstr ""
 
-#: src/store.c:3975
+#: src/store.c:4018
 #, c-format
 msgid "fsck --dependency-index requires --format v2\n"
 msgstr ""
 
-#: src/store.c:3980
+#: src/store.c:4023
 #, c-format
 msgid "fsck --dependency-index cannot be combined with store checks\n"
 msgstr ""
 
-#: src/store.c:4005
+#: src/store.c:4048
 #, c-format
 msgid "invalid gc format: %s\n"
 msgstr ""
 
-#: src/store.c:4060
+#: src/store.c:4103
 #, c-format
 msgid "gc --errors requires --status\n"
 msgstr ""
 
-#: src/store.c:4064
+#: src/store.c:4107
 #, c-format
 msgid "gc --json requires --status\n"
 msgstr ""
 
-#: src/store.c:4075
+#: src/store.c:4118
 #, c-format
 msgid "gc --status cannot be combined with mutation selectors\n"
 msgstr ""
 
-#: src/store.c:4087
+#: src/store.c:4130
 #, c-format
 msgid "invalid GC owner domain ID\n"
 msgstr ""
 
-#: src/store.c:4095
+#: src/store.c:4138
 #, c-format
 msgid "gc --owner requires --queued or --status\n"
 msgstr ""
 
-#: src/store.c:4100
+#: src/store.c:4143
 #, c-format
 msgid "gc --owner cannot select a full-store sweep\n"
 msgstr ""
 
-#: src/store.c:4118
+#: src/store.c:4161
 #, c-format
 msgid "gc --repair-epoch cannot be combined with another selector\n"
 msgstr ""
 
-#: src/store.c:4130 src/store.c:4151
+#: src/store.c:4173 src/store.c:4194
 #, c-format
 msgid "invalid GC quarantine selectors\n"
 msgstr ""
 
-#: src/store.c:4141
+#: src/store.c:4184
 #, c-format
 msgid "invalid GC candidate handle\n"
 msgstr ""
 
-#: src/store.c:4207 src/store.c:4214
+#: src/store.c:4250 src/store.c:4257
 #, c-format
 msgid "invalid arguments for gc\n"
 msgstr ""
 
-#: src/store.c:4255
+#: src/store.c:4298
 #, c-format
 msgid "invalid migration target format: %s\n"
 msgstr ""
 
-#: src/store.c:4266 src/store.c:4278
+#: src/store.c:4309 src/store.c:4321
 #, c-format
 msgid "invalid arguments for store migrate\n"
 msgstr ""
 
-#: src/store.c:4273
+#: src/store.c:4316
 #, c-format
 msgid "missing store name for store migrate\n"
 msgstr ""
 
-#: src/store.c:4283
+#: src/store.c:4326
 #, c-format
 msgid "store migrate requires --to-format v2\n"
 msgstr ""
 
-#: src/store.c:4313
+#: src/store.c:4356
 #, c-format
 msgid "invalid migration source format: %s\n"
 msgstr ""
 
-#: src/store.c:4324 src/store.c:4336
+#: src/store.c:4367 src/store.c:4379
 #, c-format
 msgid "invalid arguments for store finalize-migration\n"
 msgstr ""
 
-#: src/store.c:4331
+#: src/store.c:4374
 #, c-format
 msgid "missing store name for store finalize-migration\n"
 msgstr ""
 
-#: src/store.c:4341
+#: src/store.c:4384
 #, c-format
 msgid "store finalize-migration requires --from-format v1\n"
 msgstr ""
 
-#: src/store.c:4367 src/store.c:4378 src/store.c:4388
+#: src/store.c:4410 src/store.c:4421 src/store.c:4431
 #, c-format
 msgid "invalid arguments for store ls\n"
 msgstr ""
 
-#: src/store.c:4566
+#: src/store.c:4609
 #, c-format
 msgid "secret value is too large\n"
 msgstr ""
 
-#: src/store.c:4593 src/store.c:4606
+#: src/store.c:4636 src/store.c:4649
 #, c-format
 msgid "invalid overlay payload\n"
 msgstr ""
 
-#: src/store.c:4906 src/store.c:30809
+#: src/store.c:4949 src/store.c:30852
 #, c-format
 msgid "invalid key visibility: %s\n"
 msgstr ""
 
-#: src/store.c:4920
+#: src/store.c:4963
 #, c-format
 msgid "invalid value access: %s\n"
 msgstr ""
 
-#: src/store.c:4978
+#: src/store.c:5021
 #, c-format
 msgid "invalid bulk select policy: %s; use %s\n"
 msgstr ""
 
-#: src/store.c:4981 src/store.c:4990
+#: src/store.c:5024 src/store.c:5033
 #, c-format
 msgid "invalid bulk select policy: %s\n"
 msgstr ""
 
-#: src/store.c:5022
+#: src/store.c:5065
 #, c-format
 msgid ""
 "key_visibility=unlocked requires store format v2; run store migrate STORE --"
 "to-format v2 --dry-run first\n"
 msgstr ""
 
-#: src/store.c:5053 src/store.c:5092
+#: src/store.c:5096 src/store.c:5135
 #, c-format
 msgid "invalid secret metadata\n"
 msgstr ""
 
-#: src/store.c:5070
+#: src/store.c:5113
 #, c-format
 msgid "unsupported secret metadata field: %s\n"
 msgstr ""
 
-#: src/store.c:5106
+#: src/store.c:5149
 #, c-format
 msgid "unsupported secret metadata format\n"
 msgstr ""
 
-#: src/store.c:5200 src/store.c:31167 src/store.c:37724
+#: src/store.c:5243 src/store.c:31210 src/store.c:37767
 #, c-format
 msgid "secret value_access does not match storage mode\n"
 msgstr ""
 
-#: src/store.c:5217 src/store.c:30866 src/store.c:30943 src/store.c:30955
-#: src/store.c:31312
+#: src/store.c:5260 src/store.c:30909 src/store.c:30986 src/store.c:30998
+#: src/store.c:31355
 #, c-format
 msgid "secret metadata is too large\n"
 msgstr ""
 
-#: src/store.c:5289 src/store.c:5296
+#: src/store.c:5332 src/store.c:5339
 #, c-format
 msgid "failed to create directory: %s\n"
 msgstr ""
 
-#: src/store.c:5470 src/store.c:19487
+#: src/store.c:5513 src/store.c:19530
 #, c-format
 msgid "invalid path: %s\n"
 msgstr ""
 
-#: src/store.c:5485
+#: src/store.c:5528
 #, c-format
 msgid "failed to create temporary file for: %s\n"
 msgstr ""
 
-#: src/store.c:5490
+#: src/store.c:5533
 #, c-format
 msgid "failed to set permissions on: %s\n"
 msgstr ""
 
-#: src/store.c:5500
+#: src/store.c:5543
 #, c-format
 msgid "failed to write file: %s\n"
 msgstr ""
 
-#: src/store.c:5509
+#: src/store.c:5552
 #, c-format
 msgid "failed to fsync file: %s\n"
 msgstr ""
 
-#: src/store.c:5516 src/store.c:19954
+#: src/store.c:5559 src/store.c:19997
 #, c-format
 msgid "failed to close file: %s\n"
 msgstr ""
 
-#: src/store.c:5522
+#: src/store.c:5565
 #, c-format
 msgid "failed to rename file into place: %s\n"
 msgstr ""
 
-#: src/store.c:5575 src/store.c:5588
+#: src/store.c:5618 src/store.c:5631
 #, c-format
 msgid "failed to seek file: %s\n"
 msgstr ""
 
-#: src/store.c:5582
+#: src/store.c:5625
 #, c-format
 msgid "failed to determine file size: %s\n"
 msgstr ""
 
-#: src/store.c:5701 src/store.c:12103
+#: src/store.c:5744 src/store.c:12146
 #, c-format
 msgid "failed to derive encryption key\n"
 msgstr ""
 
-#: src/store.c:5784
+#: src/store.c:5827
 #, c-format
 msgid "%s must be an integer between %u and %u\n"
 msgstr ""
 
-#: src/store.c:6381 src/store.c:6394 src/store.c:7905 src/store.c:7911
-#: src/store.c:7921 src/store.c:7969
+#: src/store.c:6424 src/store.c:6437 src/store.c:7948 src/store.c:7954
+#: src/store.c:7964 src/store.c:8012
 #, c-format
 msgid "failed to start session agent\n"
 msgstr ""
 
-#: src/store.c:6399 src/store.c:7976
+#: src/store.c:6442 src/store.c:8019
 #, c-format
 msgid "timed out waiting for session agent readiness\n"
 msgstr ""
 
-#: src/store.c:6826
+#: src/store.c:6869
 #, c-format
 msgid "failed to open file descriptor\n"
 msgstr ""
 
-#: src/store.c:7815
+#: src/store.c:7858
 #, c-format
 msgid "failed to bind session agent socket\n"
 msgstr ""
 
-#: src/store.c:7838
+#: src/store.c:7881
 #, c-format
 msgid "failed to listen on session agent socket\n"
 msgstr ""
 
-#: src/store.c:7984
+#: src/store.c:8027
 #, c-format
 msgid "session agent failed before readiness\n"
 msgstr ""
 
-#: src/store.c:8022
+#: src/store.c:8065
 #, c-format
 msgid "empty passphrase is not allowed\n"
 msgstr ""
 
-#: src/store.c:8039
+#: src/store.c:8082
 #, c-format
 msgid "missing askpass provider\n"
 msgstr ""
 
-#: src/store.c:8044
+#: src/store.c:8087
 #, c-format
 msgid "missing askpass provider: %s\n"
 msgstr ""
 
-#: src/store.c:8046
+#: src/store.c:8089
 #, c-format
 msgid "unsupported askpass provider: %s\n"
 msgstr ""
 
-#: src/store.c:8052 src/store.c:8060
+#: src/store.c:8095 src/store.c:8103
 #, c-format
 msgid "failed to start askpass command\n"
 msgstr ""
 
-#: src/store.c:8110
+#: src/store.c:8153
 #, c-format
 msgid "failed to read askpass output\n"
 msgstr ""
 
-#: src/store.c:8117
+#: src/store.c:8160
 #, c-format
 msgid "askpass prompt cancelled\n"
 msgstr ""
 
-#: src/store.c:8122
+#: src/store.c:8165
 #, c-format
 msgid "askpass output is too long\n"
 msgstr ""
 
-#: src/store.c:8149
+#: src/store.c:8192
 #, c-format
 msgid ""
 "missing askpass provider; --gui requires --askpass, SECDAT_ASKPASS, or "
 "SSH_ASKPASS\n"
 msgstr ""
 
-#: src/store.c:8152
+#: src/store.c:8195
 #, c-format
 msgid ""
 "missing askpass provider; this command requires a terminal for passphrase "
 "input\n"
 msgstr ""
 
-#: src/store.c:8160
+#: src/store.c:8203
 #, c-format
 msgid "failed to read terminal settings\n"
 msgstr ""
 
-#: src/store.c:8167 src/store.c:8183
+#: src/store.c:8210 src/store.c:8226
 #, c-format
 msgid "failed to update terminal settings\n"
 msgstr ""
 
-#: src/store.c:8173
+#: src/store.c:8216
 #, c-format
 msgid "failed to read passphrase\n"
 msgstr ""
 
-#: src/store.c:8204
+#: src/store.c:8247
 msgid "Create secdat passphrase: "
 msgstr ""
 
-#: src/store.c:8207
+#: src/store.c:8250
 msgid "Confirm secdat passphrase: "
 msgstr ""
 
-#: src/store.c:8214 src/store.c:8242
+#: src/store.c:8257 src/store.c:8285
 #, c-format
 msgid "passphrase confirmation did not match\n"
 msgstr ""
 
-#: src/store.c:8270
+#: src/store.c:8313
 msgid "Enter secdat passphrase: "
 msgstr ""
 
-#: src/store.c:8303 src/store.c:8330
+#: src/store.c:8346 src/store.c:8373
 #, c-format
 msgid "failed to create session agent socket\n"
 msgstr ""
 
-#: src/store.c:8340
+#: src/store.c:8383
 #, c-format
 msgid "failed to connect to session agent\n"
 msgstr ""
 
-#: src/store.c:8722
+#: src/store.c:8765
 #, c-format
 msgid "failed to hand over the active session agent safely\n"
 msgstr ""
 
-#: src/store.c:8841 src/store.c:8854 src/store.c:8878
+#: src/store.c:8884 src/store.c:8897 src/store.c:8921
 #, c-format
 msgid "invalid response from the active session agent\n"
 msgstr ""
 
-#: src/store.c:8887 src/store.c:9231 src/store.c:9545
+#: src/store.c:8930 src/store.c:9274 src/store.c:9588
 #, c-format
 msgid "failed to negotiate capabilities with the active session agent\n"
 msgstr ""
 
-#: src/store.c:9015 src/store.c:9019
+#: src/store.c:9058 src/store.c:9062
 #, c-format
 msgid ""
 "failed to purge session-local ephemeral values from an active session agent\n"
 msgstr ""
 
-#: src/store.c:9237 src/store.c:9551
+#: src/store.c:9280 src/store.c:9594
 #, c-format
 msgid "the active session agent cannot expose its volatile overlay safely\n"
 msgstr ""
 
-#: src/store.c:9260 src/store.c:9275 src/store.c:9574 src/store.c:9589
+#: src/store.c:9303 src/store.c:9318 src/store.c:9617 src/store.c:9632
 #, c-format
 msgid "legacy volatile session cannot be read safely by this secdat version\n"
 msgstr ""
 
-#: src/store.c:9263 src/store.c:9577
+#: src/store.c:9306 src/store.c:9620
 #, c-format
 msgid "the active session agent did not complete the overlay protocol\n"
 msgstr ""
 
-#: src/store.c:9379 src/store.c:11427 src/store.c:11494 src/store.c:37816
+#: src/store.c:9422 src/store.c:11470 src/store.c:11537 src/store.c:37859
 #, c-format
 msgid ""
 "key is ephemeral in the current session; use set --ephemeral to update it: "
 "%s\n"
 msgstr ""
 
-#: src/store.c:9429 src/store.c:37781
+#: src/store.c:9472 src/store.c:37824
 #, c-format
 msgid ""
 "key has a volatile session change and cannot be replaced by an ephemeral "
 "secret: %s\n"
 msgstr ""
 
-#: src/store.c:9471 src/store.c:9510 src/store.c:38757
+#: src/store.c:9514 src/store.c:9553 src/store.c:38800
 #, c-format
 msgid ""
 "key is ephemeral in the current session; use rm --ephemeral to remove it: "
 "%s\n"
 msgstr ""
 
-#: src/store.c:9860
+#: src/store.c:9903
 #, c-format
 msgid ""
 "per-key ephemeral secrets require an active secdat session agent; run secdat "
 "unlock first\n"
 msgstr ""
 
-#: src/store.c:9866
+#: src/store.c:9909
 #, c-format
 msgid "current session is readonly and cannot store an ephemeral secret\n"
 msgstr ""
 
-#: src/store.c:9996
+#: src/store.c:10039
 #, c-format
 msgid "unlock writable session: secdat unlock\n"
 msgstr ""
 
-#: src/store.c:9998
+#: src/store.c:10041
 #, c-format
 msgid "unlock writable session: secdat --dir %s unlock\n"
 msgstr ""
 
-#: src/store.c:10007
+#: src/store.c:10050
 #, c-format
 msgid "current session is readonly and cannot run %s\n"
 msgstr ""
 
-#: src/store.c:10069 src/store.c:38723 src/store.c:38869 src/store.c:40926
+#: src/store.c:10112 src/store.c:38766 src/store.c:38912 src/store.c:40969
 #, c-format
 msgid "failed to remove key: %s\n"
 msgstr ""
 
-#: src/store.c:10085 src/store.c:10090
+#: src/store.c:10128 src/store.c:10133
 #, c-format
 msgid "lock --save requires a local volatile session\n"
 msgstr ""
 
-#: src/store.c:10170
+#: src/store.c:10213
 #, c-format
 msgid "invalid wrap key iteration count\n"
 msgstr ""
 
-#: src/store.c:10174
+#: src/store.c:10217
 #, c-format
 msgid "failed to derive wrap key\n"
 msgstr ""
 
-#: src/store.c:10191 src/store.c:10234 src/store.c:11750 src/store.c:13190
-#: src/store.c:13415 src/store.c:30652
+#: src/store.c:10234 src/store.c:10277 src/store.c:11793 src/store.c:13233
+#: src/store.c:13458 src/store.c:30695
 #, c-format
 msgid "failed to generate nonce\n"
 msgstr ""
 
-#: src/store.c:10260 src/store.c:11776 src/store.c:13212 src/store.c:13437
+#: src/store.c:10303 src/store.c:11819 src/store.c:13255 src/store.c:13480
 #, c-format
 msgid "failed to create encryption context\n"
 msgstr ""
 
-#: src/store.c:10266 src/store.c:11782 src/store.c:13219 src/store.c:13443
+#: src/store.c:10309 src/store.c:11825 src/store.c:13262 src/store.c:13486
 #, c-format
 msgid "failed to initialize encryption\n"
 msgstr ""
 
-#: src/store.c:10276 src/store.c:11796 src/store.c:13230 src/store.c:13447
-#: src/store.c:13457
+#: src/store.c:10319 src/store.c:11839 src/store.c:13273 src/store.c:13490
+#: src/store.c:13500
 #, c-format
 msgid "failed to encrypt value\n"
 msgstr ""
 
-#: src/store.c:10284 src/store.c:11804 src/store.c:13235 src/store.c:13461
+#: src/store.c:10327 src/store.c:11847 src/store.c:13278 src/store.c:13504
 #, c-format
 msgid "failed to finalize encryption\n"
 msgstr ""
 
-#: src/store.c:10289 src/store.c:11809 src/store.c:13241 src/store.c:13466
+#: src/store.c:10332 src/store.c:11852 src/store.c:13284 src/store.c:13509
 #, c-format
 msgid "failed to obtain authentication tag\n"
 msgstr ""
 
-#: src/store.c:10331 src/store.c:10339 src/store.c:12023
+#: src/store.c:10374 src/store.c:10382 src/store.c:12066
 #, c-format
 msgid "invalid wrapped master key\n"
 msgstr ""
 
-#: src/store.c:10423 src/store.c:11848 src/store.c:11859 src/store.c:45422
-#: src/store.c:45453 src/store.c:45473 src/store.c:45496 src/store.c:45664
-#: src/store.c:45672 src/store.c:45694 src/store.c:45710
+#: src/store.c:10466 src/store.c:11891 src/store.c:11902 src/store.c:45941
+#: src/store.c:45972 src/store.c:45992 src/store.c:46015 src/store.c:46183
+#: src/store.c:46191 src/store.c:46213 src/store.c:46229
 #, c-format
 msgid "invalid secret bundle\n"
 msgstr ""
 
-#: src/store.c:10475
+#: src/store.c:10518
 #, c-format
 msgid "secret bundle has too many objects\n"
 msgstr ""
 
-#: src/store.c:10585 src/store.c:10736 src/store.c:14533 src/store.c:14729
-#: src/store.c:18133 src/store.c:18182 src/store.c:35294 src/store.c:35476
-#: src/store.c:37350 src/store.c:38812 src/store.c:38835 src/store.c:38889
-#: src/store.c:39160 src/store.c:39714 src/store.c:39746 src/store.c:41046
-#: src/store.c:42332
+#: src/store.c:10628 src/store.c:10779 src/store.c:14576 src/store.c:14772
+#: src/store.c:18176 src/store.c:18225 src/store.c:35337 src/store.c:35519
+#: src/store.c:37393 src/store.c:38855 src/store.c:38878 src/store.c:38932
+#: src/store.c:39203 src/store.c:39757 src/store.c:39789 src/store.c:41089
+#: src/store.c:42776
 #, c-format
 msgid "key not found: %s\n"
 msgstr ""
 
-#: src/store.c:10643
+#: src/store.c:10686
 #, c-format
 msgid "secret bundle entry is too large\n"
 msgstr ""
 
-#: src/store.c:10653
+#: src/store.c:10696
 #, c-format
 msgid "secret bundle value is unavailable for a selected v2 object\n"
 msgstr ""
 
-#: src/store.c:10743
+#: src/store.c:10786
 #, c-format
 msgid "save is not supported while an ephemeral secret is visible: %s\n"
 msgstr ""
 
-#: src/store.c:11742
+#: src/store.c:11785
 #, c-format
 msgid "bundle file already exists: %s\n"
 msgstr ""
 
-#: src/store.c:11746
+#: src/store.c:11789
 #, c-format
 msgid "secret bundle is too large\n"
 msgstr ""
 
-#: src/store.c:11786
+#: src/store.c:11829
 #, c-format
 msgid "failed to encrypt bundle metadata\n"
 msgstr ""
 
-#: src/store.c:11915 src/store.c:11989 src/store.c:13351 src/store.c:13545
+#: src/store.c:11958 src/store.c:12032 src/store.c:13394 src/store.c:13588
 #, c-format
 msgid "failed to create decryption context\n"
 msgstr ""
 
-#: src/store.c:11921 src/store.c:11995 src/store.c:13358 src/store.c:13551
+#: src/store.c:11964 src/store.c:12038 src/store.c:13401 src/store.c:13594
 #, c-format
 msgid "failed to initialize decryption\n"
 msgstr ""
 
-#: src/store.c:11925
+#: src/store.c:11968
 #, c-format
 msgid "failed to decrypt bundle metadata\n"
 msgstr ""
 
-#: src/store.c:11929 src/store.c:12005 src/store.c:13363 src/store.c:13555
-#: src/store.c:13559
+#: src/store.c:11972 src/store.c:12048 src/store.c:13406 src/store.c:13598
+#: src/store.c:13602
 #, c-format
 msgid "failed to decrypt value\n"
 msgstr ""
 
-#: src/store.c:11933 src/store.c:12014 src/store.c:13368 src/store.c:13563
+#: src/store.c:11976 src/store.c:12057 src/store.c:13411 src/store.c:13606
 #, c-format
 msgid "failed to set authentication tag\n"
 msgstr ""
 
-#: src/store.c:11937
+#: src/store.c:11980
 #, c-format
 msgid "failed to unlock secret bundle\n"
 msgstr ""
 
-#: src/store.c:12018
+#: src/store.c:12061
 #, c-format
 msgid "failed to unlock persistent master key\n"
 msgstr ""
 
-#: src/store.c:12094 src/store.c:19043 src/store.c:41035
+#: src/store.c:12137 src/store.c:19086 src/store.c:41078
 #, c-format
 msgid ""
 "missing SECDAT_MASTER_KEY and no active secdat session; run secdat unlock or "
 "export SECDAT_MASTER_KEY\n"
 msgstr ""
 
-#: src/store.c:12266 src/store.c:12270 src/store.c:12293
+#: src/store.c:12309 src/store.c:12313 src/store.c:12336
 #, c-format
 msgid "no local lock for: %s\n"
 msgstr ""
 
-#: src/store.c:12280
+#: src/store.c:12323
 #, c-format
 msgid "refusing to remove local lock for: %s\n"
 msgstr ""
 
-#: src/store.c:12281 src/store.c:12329
+#: src/store.c:12324 src/store.c:12372
 #, c-format
 msgid "expected resulting state: %s\n"
 msgstr ""
 
-#: src/store.c:12283
+#: src/store.c:12326
 #, c-format
 msgid "actual resulting state after removing local lock: %s\n"
 msgstr ""
 
-#: src/store.c:12298
+#: src/store.c:12341
 msgid "local lock removed; resulting state: unlocked"
 msgstr ""
 
-#: src/store.c:12300
+#: src/store.c:12343
 msgid "local lock removed; resulting state: locked"
 msgstr ""
 
-#: src/store.c:12302
+#: src/store.c:12345
 msgid "local lock removed"
 msgstr ""
 
-#: src/store.c:12318 src/store.c:12364
+#: src/store.c:12361 src/store.c:12407
 #, c-format
 msgid "no local lock or local unlock for: %s\n"
 msgstr ""
 
-#: src/store.c:12328
+#: src/store.c:12371
 #, c-format
 msgid "refusing to clear local unlock for: %s\n"
 msgstr ""
 
-#: src/store.c:12331
+#: src/store.c:12374
 #, c-format
 msgid "actual resulting state after clearing local unlock: %s\n"
 msgstr ""
 
-#: src/store.c:12342
+#: src/store.c:12385
 msgid "local unlock cleared; resulting state: unlocked"
 msgstr ""
 
-#: src/store.c:12344
+#: src/store.c:12387
 msgid "local unlock cleared; resulting state: locked"
 msgstr ""
 
-#: src/store.c:12346
+#: src/store.c:12389
 msgid "local unlock cleared"
 msgstr ""
 
-#: src/store.c:12601 src/store.c:12608 src/store.c:12614 src/store.c:12620
+#: src/store.c:12644 src/store.c:12651 src/store.c:12657 src/store.c:12663
 #, c-format
 msgid "invalid arguments for status\n"
 msgstr ""
 
-#: src/store.c:12632
+#: src/store.c:12675
 msgid "source: environment"
 msgstr ""
 
-#: src/store.c:12642
+#: src/store.c:12685
 msgid "source: session agent"
 msgstr ""
 
-#: src/store.c:12644
+#: src/store.c:12687
 msgid "overlay: volatile"
 msgstr ""
 
-#: src/store.c:12647
+#: src/store.c:12690
 msgid "access: readonly"
 msgstr ""
 
-#: src/store.c:12650
+#: src/store.c:12693
 #, c-format
 msgid "expires in: %s\n"
 msgstr ""
 
-#: src/store.c:12770
+#: src/store.c:12813
 #, c-format
 msgid "this will unlock %zu descendant domains in the current subtree\n"
 msgstr ""
 
-#: src/store.c:12771
+#: src/store.c:12814
 #, c-format
 msgid "local locks will remain after local unlock expiry or a later lock\n"
 msgstr ""
 
-#: src/store.c:12805
+#: src/store.c:12848
 msgid "volatile session refreshed"
 msgstr ""
 
-#: src/store.c:12805
+#: src/store.c:12848
 msgid "readonly session refreshed"
 msgstr ""
 
-#: src/store.c:12805
+#: src/store.c:12848
 msgid "session refreshed"
 msgstr ""
 
-#: src/store.c:12886
+#: src/store.c:12929
 msgid "readonly session unlocked from environment"
 msgstr ""
 
-#: src/store.c:12887 src/store.c:12979
+#: src/store.c:12930 src/store.c:13022
 msgid "readonly session unlocked"
 msgstr ""
 
-#: src/store.c:12889 src/store.c:12925
+#: src/store.c:12932 src/store.c:12968
 msgid "volatile session unlocked with an ephemeral master key"
 msgstr ""
 
-#: src/store.c:12892
+#: src/store.c:12935
 msgid "volatile session unlocked from environment"
 msgstr ""
 
-#: src/store.c:12893 src/store.c:12979
+#: src/store.c:12936 src/store.c:13022
 msgid "volatile session unlocked"
 msgstr ""
 
-#: src/store.c:12896
+#: src/store.c:12939
 msgid "persistent master key initialized; session unlocked from environment"
 msgstr ""
 
-#: src/store.c:12897
+#: src/store.c:12940
 msgid "persistent master key initialized; session unlocked"
 msgstr ""
 
-#: src/store.c:12899
+#: src/store.c:12942
 msgid "session unlocked from environment"
 msgstr ""
 
-#: src/store.c:12932
+#: src/store.c:12975
 #, c-format
 msgid ""
 "no persistent master key is initialized; readonly unlock requires an "
 "existing master key\n"
 msgstr ""
 
-#: src/store.c:12937 src/store.c:13127
+#: src/store.c:12980 src/store.c:13170
 #, c-format
 msgid ""
 "no persistent master key is initialized; run secdat unlock once to create "
 "one\n"
 msgstr ""
 
-#: src/store.c:12979
+#: src/store.c:13022
 msgid "session unlocked"
 msgstr ""
 
-#: src/store.c:13032
+#: src/store.c:13075
 msgid "already locked"
 msgstr ""
 
-#: src/store.c:13059
+#: src/store.c:13102
 msgid "volatile session saved and locked"
 msgstr ""
 
-#: src/store.c:13059
+#: src/store.c:13102
 msgid "session locked"
 msgstr ""
 
-#: src/store.c:13092
+#: src/store.c:13135
 #, c-format
 msgid "invalid arguments for inherit\n"
 msgstr ""
 
-#: src/store.c:13139
+#: src/store.c:13182
 msgid "Create new secdat passphrase: "
 msgstr ""
 
-#: src/store.c:13140
+#: src/store.c:13183
 msgid "Confirm new secdat passphrase: "
 msgstr ""
 
-#: src/store.c:13156
+#: src/store.c:13199
 msgid "persistent master key passphrase updated"
 msgstr ""
 
-#: src/store.c:13286 src/store.c:13304 src/store.c:13309 src/store.c:13315
-#: src/store.c:13330 src/store.c:13516 src/store.c:13523 src/store.c:13528
-#: src/store.c:14585 src/store.c:14669
+#: src/store.c:13329 src/store.c:13347 src/store.c:13352 src/store.c:13358
+#: src/store.c:13373 src/store.c:13559 src/store.c:13566 src/store.c:13571
+#: src/store.c:14628 src/store.c:14712
 #, c-format
 msgid "invalid encrypted entry\n"
 msgstr ""
 
-#: src/store.c:13291 src/store.c:14592 src/store.c:14673
+#: src/store.c:13334 src/store.c:14635 src/store.c:14716
 #, c-format
 msgid "unsupported encrypted entry format\n"
 msgstr ""
 
-#: src/store.c:13297 src/store.c:14596 src/store.c:14677
+#: src/store.c:13340 src/store.c:14639 src/store.c:14720
 #, c-format
 msgid "unsupported encryption algorithm\n"
 msgstr ""
 
-#: src/store.c:13374 src/store.c:13567
+#: src/store.c:13417 src/store.c:13610
 #, c-format
 msgid "failed to authenticate encrypted value\n"
 msgstr ""
 
-#: src/store.c:13733 src/store.c:14610 src/store.c:14616 src/store.c:18945
-#: src/store.c:18962 src/store.c:19016 src/store.c:19027 src/store.c:29356
-#: src/store.c:29975 src/store.c:30137 src/store.c:30719 src/store.c:30729
-#: src/store.c:31039 src/store.c:31075 src/store.c:31201 src/store.c:40743
-#: src/store.c:40766 src/store.c:42443
+#: src/store.c:13776 src/store.c:14653 src/store.c:14659 src/store.c:18988
+#: src/store.c:19005 src/store.c:19059 src/store.c:19070 src/store.c:29399
+#: src/store.c:30018 src/store.c:30180 src/store.c:30762 src/store.c:30772
+#: src/store.c:31082 src/store.c:31118 src/store.c:31244 src/store.c:40786
+#: src/store.c:40809 src/store.c:42907
 #, c-format
 msgid "invalid v2 domain entry: %s\n"
 msgstr ""
 
-#: src/store.c:13771
+#: src/store.c:13814
 #, c-format
 msgid "failed to read standard input\n"
 msgstr ""
 
-#: src/store.c:13998 src/store.c:14221 src/store.c:14391 src/store.c:30029
-#: src/store.c:30276 src/store.c:33992 src/store.c:34097 src/store.c:34427
-#: src/store.c:37415 src/store.c:37703 src/store.c:38512 src/store.c:38611
-#: src/store.c:38855 src/store.c:41026 src/store.c:43028 src/store.c:43174
-#: src/store.c:43586 src/store.c:44206 src/store.c:44930 src/store.c:45506
+#: src/store.c:14041 src/store.c:14264 src/store.c:14434 src/store.c:30072
+#: src/store.c:30319 src/store.c:34035 src/store.c:34140 src/store.c:34470
+#: src/store.c:37458 src/store.c:37746 src/store.c:38555 src/store.c:38654
+#: src/store.c:38898 src/store.c:41069 src/store.c:43547 src/store.c:43693
+#: src/store.c:44105 src/store.c:44725 src/store.c:45449 src/store.c:46025
 #, c-format
 msgid "invalid store format marker\n"
 msgstr ""
 
-#: src/store.c:14121
+#: src/store.c:14164
 #, c-format
 msgid "Key candidates:\n"
 msgstr ""
 
-#: src/store.c:14144
+#: src/store.c:14187
 #, c-format
 msgid ""
 "Hint: use %s get KEY for an explicit key lookup, or %s help COMMAND for "
 "command help\n"
 msgstr ""
 
-#: src/store.c:14156
+#: src/store.c:14199
 #, c-format
 msgid ""
 "Hint: check secdat status, --dir, and --store to confirm the lookup context\n"
 msgstr ""
 
-#: src/store.c:14565 src/store.c:30617 src/store.c:31045 src/store.c:31049
-#: src/store.c:31189 src/store.c:38659 src/store.c:38666 src/store.c:40749
+#: src/store.c:14608 src/store.c:30660 src/store.c:31088 src/store.c:31092
+#: src/store.c:31232 src/store.c:38702 src/store.c:38709 src/store.c:40792
 #, c-format
 msgid "invalid v2 secret object: %s\n"
 msgstr ""
 
-#: src/store.c:14573
+#: src/store.c:14616
 #, c-format
 msgid "v2 secret value storage is not implemented yet\n"
 msgstr ""
 
-#: src/store.c:15831 src/store.c:37986
+#: src/store.c:15874 src/store.c:38029
 #, c-format
 msgid "failed to generate random bytes\n"
 msgstr ""
 
-#: src/store.c:15923
+#: src/store.c:15966
 #, c-format
 msgid "failed to calculate GC candidate handle\n"
 msgstr ""
 
-#: src/store.c:16605
+#: src/store.c:16648
 #, c-format
 msgid "failed to read the GC scheduling clock\n"
 msgstr ""
 
-#: src/store.c:16859
+#: src/store.c:16902
 #, c-format
 msgid "invalid deferred GC topology effect\n"
 msgstr ""
 
-#: src/store.c:17005
+#: src/store.c:17048
 #, c-format
 msgid "secret reference count is too large\n"
 msgstr ""
 
-#: src/store.c:17552 src/store.c:17565
+#: src/store.c:17595 src/store.c:17608
 #, c-format
 msgid "metadata is too large\n"
 msgstr ""
 
-#: src/store.c:17644 src/store.c:17687 src/store.c:17736 src/store.c:35500
-#: src/store.c:35620 src/store.c:36876
+#: src/store.c:17687 src/store.c:17730 src/store.c:17779 src/store.c:35543
+#: src/store.c:35663 src/store.c:36919
 #, c-format
 msgid "invalid metadata field: %s\n"
 msgstr ""
 
-#: src/store.c:17725
+#: src/store.c:17768
 #, c-format
 msgid "invalid metadata filter: %s\n"
 msgstr ""
 
-#: src/store.c:17867 src/store.c:17896 src/store.c:17907
+#: src/store.c:17910 src/store.c:17939 src/store.c:17950
 #, c-format
 msgid "invalid key metadata\n"
 msgstr ""
 
-#: src/store.c:17882
+#: src/store.c:17925
 #, c-format
 msgid "unsupported key metadata format\n"
 msgstr ""
 
-#: src/store.c:18027 src/store.c:18100
+#: src/store.c:18070 src/store.c:18143
 #, c-format
 msgid "invalid relation member role: %s\n"
 msgstr ""
 
-#: src/store.c:18033
+#: src/store.c:18076
 #, c-format
 msgid "invalid relation member key reference\n"
 msgstr ""
 
-#: src/store.c:18040
+#: src/store.c:18083
 #, c-format
 msgid "duplicate relation member role: %s\n"
 msgstr ""
 
-#: src/store.c:18085
+#: src/store.c:18128
 #, c-format
 msgid "invalid relation member: %s\n"
 msgstr ""
 
-#: src/store.c:18210 src/store.c:35779
+#: src/store.c:18253 src/store.c:35822
 #, c-format
 msgid "relation not found: %s\n"
 msgstr ""
 
-#: src/store.c:18219 src/store.c:18247 src/store.c:18404
+#: src/store.c:18262 src/store.c:18290 src/store.c:18447
 #, c-format
 msgid "invalid relation metadata\n"
 msgstr ""
 
-#: src/store.c:18233
+#: src/store.c:18276
 #, c-format
 msgid "unsupported relation metadata format\n"
 msgstr ""
 
-#: src/store.c:18460
+#: src/store.c:18503
 #, c-format
 msgid "key_visibility=unlocked cannot be used while key metadata exists: %s\n"
 msgstr ""
 
-#: src/store.c:18482
+#: src/store.c:18525
 #, c-format
 msgid ""
 "key_visibility=unlocked cannot be used while relation references key: %s "
 "(%s)\n"
 msgstr ""
 
-#: src/store.c:19440
+#: src/store.c:19483
 #, c-format
 msgid "failed to calculate transaction digest\n"
 msgstr ""
 
-#: src/store.c:19462
+#: src/store.c:19505
 #, c-format
 msgid "failed to open directory for fsync: %s\n"
 msgstr ""
 
-#: src/store.c:19466
+#: src/store.c:19509
 #, c-format
 msgid "failed to fsync directory: %s\n"
 msgstr ""
 
-#: src/store.c:19471
+#: src/store.c:19514
 #, c-format
 msgid "failed to close directory: %s\n"
 msgstr ""
 
-#: src/store.c:19511
+#: src/store.c:19554
 #, c-format
 msgid "invalid transaction directory: %s\n"
 msgstr ""
 
-#: src/store.c:19549
+#: src/store.c:19592
 #, c-format
 msgid "invalid transaction lock\n"
 msgstr ""
 
-#: src/store.c:19566 src/store.c:19583
+#: src/store.c:19609 src/store.c:19626
 #, c-format
 msgid "failed to lock transactions\n"
 msgstr ""
 
-#: src/store.c:19912
+#: src/store.c:19955
 #, c-format
 msgid "failed to inspect transaction target: %s\n"
 msgstr ""
 
-#: src/store.c:19921
+#: src/store.c:19964
 #, c-format
 msgid "invalid transaction target: %s\n"
 msgstr ""
 
-#: src/store.c:20691
+#: src/store.c:20734
 #, c-format
 msgid "container tree does not match schema: %s\n"
 msgstr ""
 
-#: src/store.c:21237 src/store.c:21243 src/store.c:21364
+#: src/store.c:21280 src/store.c:21286 src/store.c:21407
 #, c-format
 msgid "failed to inspect typed directory: %s\n"
 msgstr ""
 
-#: src/store.c:21264
+#: src/store.c:21307
 #, c-format
 msgid "invalid typed directory: %s\n"
 msgstr ""
 
-#: src/store.c:21660 src/store.c:21751
+#: src/store.c:21703 src/store.c:21794
 #, c-format
 msgid "invalid transaction target directory\n"
 msgstr ""
 
-#: src/store.c:21780 src/store.c:21790 src/store.c:21868
+#: src/store.c:21823 src/store.c:21833 src/store.c:21911
 #, c-format
 msgid "failed to read transaction target\n"
 msgstr ""
 
-#: src/store.c:22236 src/store.c:22427 src/store.c:22438
+#: src/store.c:22279 src/store.c:22470 src/store.c:22481
 #, c-format
 msgid "transaction data is too large\n"
 msgstr ""
 
-#: src/store.c:22300
+#: src/store.c:22343
 #, c-format
 msgid "transaction has too many targets\n"
 msgstr ""
 
-#: src/store.c:22312
+#: src/store.c:22355
 #, c-format
 msgid "invalid transaction validation target\n"
 msgstr ""
 
-#: src/store.c:22358 src/store.c:22794
+#: src/store.c:22401 src/store.c:22837
 #, c-format
 msgid "transaction changed since plan\n"
 msgstr ""
 
-#: src/store.c:22381 src/store.c:22839
+#: src/store.c:22424 src/store.c:22882
 #, c-format
 msgid "duplicate transaction target\n"
 msgstr ""
 
-#: src/store.c:22825
+#: src/store.c:22868
 #, c-format
 msgid "typed directory guards require transaction manifest v2\n"
 msgstr ""
 
-#: src/store.c:22890
+#: src/store.c:22933
 #, c-format
 msgid "prepared guard is outside the state directory\n"
 msgstr ""
 
-#: src/store.c:22912
+#: src/store.c:22955
 #, c-format
 msgid "prepared write is outside the state directory\n"
 msgstr ""
 
-#: src/store.c:23015
+#: src/store.c:23058
 #, c-format
 msgid "invalid move source removal target\n"
 msgstr ""
 
-#: src/store.c:23187
+#: src/store.c:23230
 #, c-format
 msgid "invalid transaction blob: %s\n"
 msgstr ""
 
-#: src/store.c:23989
+#: src/store.c:24032
 #, c-format
 msgid "invalid transaction journal: %s\n"
 msgstr ""
 
-#: src/store.c:24056 src/store.c:24097
+#: src/store.c:24099 src/store.c:24140
 #, c-format
 msgid "failed to open transaction directory: %s\n"
 msgstr ""
 
-#: src/store.c:24072
+#: src/store.c:24115
 #, c-format
 msgid "unexpected transaction file: %s\n"
 msgstr ""
 
-#: src/store.c:24080
+#: src/store.c:24123
 #, c-format
 msgid "failed to close transaction directory\n"
 msgstr ""
 
-#: src/store.c:24123
+#: src/store.c:24166
 #, c-format
 msgid "invalid transaction temporary file: %s\n"
 msgstr ""
 
-#: src/store.c:24232
+#: src/store.c:24275
 #, c-format
 msgid "failed to remove completed transaction: %s\n"
 msgstr ""
 
-#: src/store.c:24286 src/store.c:24298 src/store.c:24303 src/store.c:24309
-#: src/store.c:24405
+#: src/store.c:24329 src/store.c:24341 src/store.c:24346 src/store.c:24352
+#: src/store.c:24448
 #, c-format
 msgid "failed to apply transaction target\n"
 msgstr ""
 
-#: src/store.c:24461
+#: src/store.c:24504
 #, c-format
 msgid "transaction target changed during recovery: %s\n"
 msgstr ""
 
-#: src/store.c:24497
+#: src/store.c:24540
 #, c-format
 msgid "committed transaction target is inconsistent: %s\n"
 msgstr ""
 
-#: src/store.c:24552
+#: src/store.c:24595
 #, c-format
 msgid "invalid unpublished transaction: %s\n"
 msgstr ""
 
-#: src/store.c:24576
+#: src/store.c:24619
 #, c-format
 msgid "failed to open transactions directory\n"
 msgstr ""
 
-#: src/store.c:24588
+#: src/store.c:24631
 #, c-format
 msgid "invalid transaction entry: %s\n"
 msgstr ""
 
-#: src/store.c:24672
+#: src/store.c:24715
 #, c-format
 msgid "failed to inspect transactions directory\n"
 msgstr ""
 
-#: src/store.c:24781
+#: src/store.c:24824
 #, c-format
 msgid "failed to stage transaction\n"
 msgstr ""
 
-#: src/store.c:24860
+#: src/store.c:24903
 #, c-format
 msgid "transaction changed since plan: %s\n"
 msgstr ""
 
-#: src/store.c:25122
+#: src/store.c:25165
 #, c-format
 msgid "invalid abandoned mutation stage\n"
 msgstr ""
 
-#: src/store.c:25382 src/store.c:25386
+#: src/store.c:25425 src/store.c:25429
 #, c-format
 msgid "invalid dependency index directory\n"
 msgstr ""
 
-#: src/store.c:25990
+#: src/store.c:26033
 #, c-format
 msgid "dependency index node is too large\n"
 msgstr ""
 
-#: src/store.c:26394
+#: src/store.c:26437
 #, c-format
 msgid "cannot index a relation dependency that references a hidden v2 key\n"
 msgstr ""
 
-#: src/store.c:26538
+#: src/store.c:26581
 #, c-format
 msgid "cannot build dependency index from invalid mask record\n"
 msgstr ""
 
-#: src/store.c:26564
+#: src/store.c:26607
 #, c-format
 msgid "cannot build dependency index from invalid relation record\n"
 msgstr ""
 
-#: src/store.c:26584
+#: src/store.c:26627
 #, c-format
 msgid "cannot index relation dependency: %s\n"
 msgstr ""
 
-#: src/store.c:27662 src/store.c:28057 src/store.c:28159 src/store.c:28686
-#: src/store.c:28796 src/store.c:29154 src/store.c:29169
+#: src/store.c:27705 src/store.c:28100 src/store.c:28202 src/store.c:28729
+#: src/store.c:28839 src/store.c:29197 src/store.c:29212
 #, c-format
 msgid ""
 "dependency index is corrupt; run fsck --format v2 --dependency-index --"
 "repair\n"
 msgstr ""
 
-#: src/store.c:28018 src/store.c:28223 src/store.c:29144 src/store.c:42367
+#: src/store.c:28061 src/store.c:28266 src/store.c:29187 src/store.c:42824
 #, c-format
 msgid ""
 "dependency index is incomplete; run fsck --format v2 --dependency-index --"
 "repair\n"
 msgstr ""
 
-#: src/store.c:28348
+#: src/store.c:28391
 #, c-format
 msgid "ambiguous legacy mask blocks key visibility transition: %s\n"
 msgstr ""
 
-#: src/store.c:28359
+#: src/store.c:28402
 #, c-format
 msgid "hidden-name transition cannot preserve v1 rollback mask state: %s\n"
 msgstr ""
 
-#: src/store.c:28947
+#: src/store.c:28990
 #, c-format
 msgid "invalid dependency index node: %s\n"
 msgstr ""
 
-#: src/store.c:29282
+#: src/store.c:29325
 #, c-format
 msgid ""
 "dependency index generation changed: first=%s/%zu/%zu second=%s/%zu/%zu\n"
 msgstr ""
 
-#: src/store.c:29330
+#: src/store.c:29373
 #, c-format
 msgid "dependency index rebuild failed at %s\n"
 msgstr ""
 
-#: src/store.c:29892
+#: src/store.c:29935
 #, c-format
 msgid "invalid tombstone file: %s\n"
 msgstr ""
 
-#: src/store.c:29922 src/store.c:29931 src/store.c:29935
+#: src/store.c:29965 src/store.c:29974 src/store.c:29978
 #, c-format
 msgid "invalid v2 compatibility tombstone\n"
 msgstr ""
 
-#: src/store.c:30013
+#: src/store.c:30056
 #, c-format
 msgid "invalid v2 mask target store: %s\n"
 msgstr ""
 
-#: src/store.c:30052
+#: src/store.c:30095 src/store.c:41864
 #, c-format
 msgid "duplicate v2 mask target entry: %s\n"
 msgstr ""
 
-#: src/store.c:30090
+#: src/store.c:30133
 #, c-format
 msgid "invalid encrypted v2 mask name: %s\n"
 msgstr ""
 
-#: src/store.c:30111 src/store.c:30232
+#: src/store.c:30154 src/store.c:30275
 #, c-format
 msgid "invalid v2 mask target: %s\n"
 msgstr ""
 
-#: src/store.c:30151 src/store.c:30157
+#: src/store.c:30194 src/store.c:30200
 #, c-format
 msgid "invalid v2 mask target name: %s\n"
 msgstr ""
 
-#: src/store.c:30196
+#: src/store.c:30239
 #, c-format
 msgid "invalid v2 masks directory\n"
 msgstr ""
 
-#: src/store.c:30200 src/store.c:31399
+#: src/store.c:30243 src/store.c:31442
 #, c-format
 msgid "failed to inspect v2 masks directory\n"
 msgstr ""
 
-#: src/store.c:30220
+#: src/store.c:30263
 #, c-format
 msgid ""
 "invalid v2 mask record: %s; run fsck --format v2 --dangling for a diagnostic "
 "handle\n"
 msgstr ""
 
-#: src/store.c:30476 src/store.c:39415
+#: src/store.c:30519 src/store.c:39458
 #, c-format
 msgid "compatibility tombstone does not match its canonical mask: %s\n"
 msgstr ""
 
-#: src/store.c:30594
+#: src/store.c:30637
 #, c-format
 msgid "cannot analyze mask impact while hidden mask names are locked\n"
 msgstr ""
 
-#: src/store.c:31053 src/store.c:31195
+#: src/store.c:31096 src/store.c:31238
 #, c-format
 msgid "secret object excludes bulk select: %s\n"
 msgstr ""
 
-#: src/store.c:31361
+#: src/store.c:31404
 #, c-format
 msgid "failed to encode mask diagnostic handle\n"
 msgstr ""
 
-#: src/store.c:31948
+#: src/store.c:31991
 #, c-format
 msgid "deferred GC requires a valid reference epoch\n"
 msgstr ""
 
-#: src/store.c:32673
+#: src/store.c:32716
 #, c-format
 msgid "%s requires an exact-local persistent writable session\n"
 msgstr ""
 
-#: src/store.c:33300
+#: src/store.c:33343
 #, c-format
 msgid "GC mutation fence is busy; retry later\n"
 msgstr ""
 
-#: src/store.c:33715
+#: src/store.c:33758
 #, c-format
 msgid "GC candidate is structurally valid and cannot be quarantined\n"
 msgstr ""
 
-#: src/store.c:33984 src/store.c:34089
+#: src/store.c:34027 src/store.c:34132
 #, c-format
 msgid "fsck requires a registered current domain\n"
 msgstr ""
 
-#: src/store.c:33996
+#: src/store.c:34039
 #, c-format
 msgid "store format is v2; use --format v2\n"
 msgstr ""
 
-#: src/store.c:34101
+#: src/store.c:34144
 #, c-format
 msgid "store format is v1; use --format v1\n"
 msgstr ""
 
-#: src/store.c:34412 src/store.c:34802
+#: src/store.c:34455 src/store.c:34845
 #, c-format
 msgid "gc requires a registered current domain\n"
 msgstr ""
 
-#: src/store.c:34431
+#: src/store.c:34474
 #, c-format
 msgid "store format is v1; gc requires --format v2\n"
 msgstr ""
 
-#: src/store.c:34635
+#: src/store.c:34678
 #, c-format
 msgid "GC owner domain must be registered before mutation\n"
 msgstr ""
 
-#: src/store.c:34813
+#: src/store.c:34856
 #, c-format
 msgid "gc is only supported with --format v2\n"
 msgstr ""
 
-#: src/store.c:35219
+#: src/store.c:35262
 #, c-format
 msgid ""
 "%zu hidden mask(s) omitted; unlock the affected domains or use --json for "
 "counts\n"
 msgstr ""
 
-#: src/store.c:35230
+#: src/store.c:35273
 #, c-format
 msgid ""
 "%zu mask state(s) are incomplete while ancestor key names are locked; unlock "
 "the affected domains or use --json for counts\n"
 msgstr ""
 
-#: src/store.c:35315 src/store.c:35385
+#: src/store.c:35358 src/store.c:35428
 #, c-format
 msgid "cannot update inherited key attributes: %s\n"
 msgstr ""
 
-#: src/store.c:35377
+#: src/store.c:35420
 #, c-format
 msgid ""
 "secret attributes cannot be changed for an ephemeral secret; recreate it "
 "with set --ephemeral\n"
 msgstr ""
 
-#: src/store.c:35378
+#: src/store.c:35421
 #, c-format
 msgid "secret attributes cannot be changed for a volatile session overlay\n"
 msgstr ""
 
-#: src/store.c:35507 src/store.c:35627
+#: src/store.c:35550 src/store.c:35670
 #, c-format
 msgid "cannot update inherited key metadata: %s\n"
 msgstr ""
 
-#: src/store.c:35514 src/store.c:35634
+#: src/store.c:35557 src/store.c:35677
 #, c-format
 msgid "key metadata cannot be changed for an ephemeral secret\n"
 msgstr ""
 
-#: src/store.c:35515 src/store.c:35635
+#: src/store.c:35558 src/store.c:35678
 #, c-format
 msgid "key metadata cannot be changed for a volatile session overlay\n"
 msgstr ""
 
-#: src/store.c:35520
+#: src/store.c:35563
 #, c-format
 msgid "key metadata cannot be set for hidden v2 key: %s\n"
 msgstr ""
 
-#: src/store.c:35552
+#: src/store.c:35595
 #, c-format
 msgid "missing key for meta get\n"
 msgstr ""
 
-#: src/store.c:35552
+#: src/store.c:35595
 #, c-format
 msgid "invalid arguments for meta get\n"
 msgstr ""
 
-#: src/store.c:35580
+#: src/store.c:35623
 #, c-format
 msgid "missing key for meta set\n"
 msgstr ""
 
-#: src/store.c:35580
+#: src/store.c:35623
 #, c-format
 msgid "invalid arguments for meta set\n"
 msgstr ""
 
-#: src/store.c:35592
+#: src/store.c:35635
 #, c-format
 msgid "missing key for meta mark-leaked\n"
 msgstr ""
 
-#: src/store.c:35592
+#: src/store.c:35635
 #, c-format
 msgid "invalid arguments for meta mark-leaked\n"
 msgstr ""
 
-#: src/store.c:35615
+#: src/store.c:35658
 #, c-format
 msgid "missing key for meta unset\n"
 msgstr ""
 
-#: src/store.c:35615
+#: src/store.c:35658
 #, c-format
 msgid "invalid arguments for meta unset\n"
 msgstr ""
 
-#: src/store.c:35914
+#: src/store.c:35957
 #, c-format
 msgid "invalid relation kind: %s\n"
 msgstr ""
 
-#: src/store.c:35958
+#: src/store.c:36001
 #, c-format
 msgid "relation member cannot reference an ephemeral secret: %s\n"
 msgstr ""
 
-#: src/store.c:35964
+#: src/store.c:36007
 #, c-format
 msgid "relation member cannot reference hidden v2 key: %s\n"
 msgstr ""
 
-#: src/store.c:36001 src/store.c:36008
+#: src/store.c:36044 src/store.c:36051
 #, c-format
 msgid "invalid arguments for relation set\n"
 msgstr ""
 
-#: src/store.c:36008
+#: src/store.c:36051
 #, c-format
 msgid "missing relation id for relation set\n"
 msgstr ""
 
-#: src/store.c:36014 src/store.c:37208 src/store.c:37257
+#: src/store.c:36057 src/store.c:37251 src/store.c:37300
 #, c-format
 msgid "invalid relation id: %s\n"
 msgstr ""
 
-#: src/store.c:36019
+#: src/store.c:36062
 #, c-format
 msgid "relation set requires at least two --member ROLE=KEYREF options\n"
 msgstr ""
 
-#: src/store.c:36031 src/store.c:37267
+#: src/store.c:36074 src/store.c:37310
 #, c-format
 msgid "relations cannot be changed for a volatile session overlay\n"
 msgstr ""
 
-#: src/store.c:36884 src/store.c:36890
+#: src/store.c:36927 src/store.c:36933
 #, c-format
 msgid "invalid arguments for relation suggest-link\n"
 msgstr ""
 
-#: src/store.c:37083
+#: src/store.c:37126
 #, c-format
 msgid "invalid arguments for relation ls\n"
 msgstr ""
 
-#: src/store.c:37102
+#: src/store.c:37145
 #, c-format
 msgid "relation ls requires a registered current domain\n"
 msgstr ""
 
-#: src/store.c:37155
+#: src/store.c:37198
 #, c-format
 msgid "relation search requires a registered current domain\n"
 msgstr ""
 
-#: src/store.c:37188
+#: src/store.c:37231
 #, c-format
 msgid "missing key for relation suggest-refresh\n"
 msgstr ""
 
-#: src/store.c:37188
+#: src/store.c:37231
 #, c-format
 msgid "invalid arguments for relation suggest-refresh\n"
 msgstr ""
 
-#: src/store.c:37203
+#: src/store.c:37246
 #, c-format
 msgid "missing relation id for relation show\n"
 msgstr ""
 
-#: src/store.c:37203
+#: src/store.c:37246
 #, c-format
 msgid "invalid arguments for relation show\n"
 msgstr ""
 
-#: src/store.c:37215
+#: src/store.c:37258
 #, c-format
 msgid "relation show requires a registered current domain\n"
 msgstr ""
 
-#: src/store.c:37252
+#: src/store.c:37295
 #, c-format
 msgid "missing relation id for relation rm\n"
 msgstr ""
 
-#: src/store.c:37252
+#: src/store.c:37295
 #, c-format
 msgid "invalid arguments for relation rm\n"
 msgstr ""
 
-#: src/store.c:37297
+#: src/store.c:37340
 #, c-format
 msgid "missing key for exists\n"
 msgstr ""
 
-#: src/store.c:37302
+#: src/store.c:37345
 #, c-format
 msgid "invalid arguments for exists\n"
 msgstr ""
 
-#: src/store.c:37331
+#: src/store.c:37374
 #, c-format
 msgid "missing key for id\n"
 msgstr ""
 
-#: src/store.c:37336
+#: src/store.c:37379
 #, c-format
 msgid "invalid arguments for id\n"
 msgstr ""
 
-#: src/store.c:37356
+#: src/store.c:37399
 #, c-format
 msgid "secret id is available only for store format v2\n"
 msgstr ""
 
-#: src/store.c:37384
+#: src/store.c:37427
 #, c-format
 msgid "missing UUID for secret status\n"
 msgstr ""
 
-#: src/store.c:37394
+#: src/store.c:37437
 #, c-format
 msgid "invalid arguments for secret status\n"
 msgstr ""
 
-#: src/store.c:37399
+#: src/store.c:37442
 #, c-format
 msgid "invalid UUID for secret status: %s\n"
 msgstr ""
 
-#: src/store.c:37407
+#: src/store.c:37450
 #, c-format
 msgid "secret status requires a registered current domain\n"
 msgstr ""
 
-#: src/store.c:37419
+#: src/store.c:37462
 #, c-format
 msgid "secret status is available only for store format v2\n"
 msgstr ""
 
-#: src/store.c:37429
+#: src/store.c:37472
 #, c-format
 msgid "secret object not found: %s\n"
 msgstr ""
 
-#: src/store.c:37433
+#: src/store.c:37476
 #, c-format
 msgid "invalid secret object: %s\n"
 msgstr ""
 
-#: src/store.c:37563
+#: src/store.c:37606
 #, c-format
 msgid "key value contains NUL byte and cannot be shell-escaped: %s\n"
 msgstr ""
 
-#: src/store.c:37577 src/store.c:37645
+#: src/store.c:37620 src/store.c:37688
 #, c-format
 msgid "failed to write standard output\n"
 msgstr ""
 
-#: src/store.c:37626
+#: src/store.c:37669
 #, c-format
 msgid "refusing to write secret to a terminal\n"
 msgstr ""
 
-#: src/store.c:37773 src/store.c:38314
+#: src/store.c:37816 src/store.c:38357
 #, c-format
 msgid ""
 "ephemeral secrets require key_visibility=unlocked and value_access=unlocked\n"
 msgstr ""
 
-#: src/store.c:37828 src/store.c:38789 src/store.c:47160
+#: src/store.c:37871 src/store.c:38832 src/store.c:47891
 #, c-format
 msgid "mutation planning is not supported in a volatile session overlay\n"
 msgstr ""
 
-#: src/store.c:37843
+#: src/store.c:37886
 #, c-format
 msgid "secret attributes are not supported in a volatile session overlay\n"
 msgstr ""
 
-#: src/store.c:37948 src/store.c:38196 src/store.c:38206 src/store.c:38228
-#: src/store.c:38253 src/store.c:38262 src/store.c:38272 src/store.c:38301
-#: src/store.c:38377 src/store.c:38410 src/store.c:38419
+#: src/store.c:37991 src/store.c:38239 src/store.c:38249 src/store.c:38271
+#: src/store.c:38296 src/store.c:38305 src/store.c:38315 src/store.c:38344
+#: src/store.c:38420 src/store.c:38453 src/store.c:38462
 #, c-format
 msgid "invalid arguments for set\n"
 msgstr ""
 
-#: src/store.c:37980
+#: src/store.c:38023
 #, c-format
 msgid "invalid generated secret charset\n"
 msgstr ""
 
-#: src/store.c:38001
+#: src/store.c:38044
 #, c-format
 msgid "generated secret charset is too large\n"
 msgstr ""
 
-#: src/store.c:38049
+#: src/store.c:38092
 #, c-format
 msgid "invalid generated secret length or charset\n"
 msgstr ""
 
-#: src/store.c:38063 src/store.c:38072
+#: src/store.c:38106 src/store.c:38115
 #, c-format
 msgid "invalid generated secret charset: %s\n"
 msgstr ""
 
-#: src/store.c:38077
+#: src/store.c:38120
 #, c-format
 msgid "duplicate generated secret charset class: %s\n"
 msgstr ""
 
-#: src/store.c:38088
+#: src/store.c:38131
 #, c-format
 msgid "generated secret length is too short for the selected charset classes\n"
 msgstr ""
 
-#: src/store.c:38279
+#: src/store.c:38322
 #, c-format
 msgid "environment variable is not set: %s\n"
 msgstr ""
 
-#: src/store.c:38323
+#: src/store.c:38366
 #, c-format
 msgid "missing key for set\n"
 msgstr ""
 
-#: src/store.c:38333
+#: src/store.c:38376
 #, c-format
 msgid "invalid arguments for generated set\n"
 msgstr ""
 
-#: src/store.c:38359
+#: src/store.c:38402
 #, c-format
 msgid "--length, --charset, and --require-each-class require --generate\n"
 msgstr ""
 
-#: src/store.c:38383
+#: src/store.c:38426
 #, c-format
 msgid "set --ephemeral accepts exactly one key\n"
 msgstr ""
 
-#: src/store.c:38432
+#: src/store.c:38475
 #, c-format
 msgid "refusing to read secret from a terminal\n"
 msgstr ""
 
-#: src/store.c:38972
+#: src/store.c:39015
 #, c-format
 msgid "key has no inherited mask target: %s\n"
 msgstr ""
 
-#: src/store.c:39081
+#: src/store.c:39124
 #, c-format
 msgid "invalid orphan mask chain; inspect fsck --format v2 --dangling: %s\n"
 msgstr ""
 
-#: src/store.c:39090
+#: src/store.c:39133
 #, c-format
 msgid ""
 "multiple orphan mask chains match key; inspect list --all-masks --long: %s\n"
 msgstr ""
 
-#: src/store.c:39119
+#: src/store.c:39162
 #, c-format
 msgid "key has no mask barrier to rebind: %s\n"
 msgstr ""
 
-#: src/store.c:39146
+#: src/store.c:39189
 #, c-format
 msgid ""
 "mask rebind found no unique inherited v2 target; inspect domain ls --"
@@ -4508,522 +4526,534 @@ msgid ""
 "inaccessible candidates without unmasking: %s\n"
 msgstr ""
 
-#: src/store.c:39167
+#: src/store.c:39210
 #, c-format
 msgid "canonical mask requires an inherited v2 entry: %s\n"
 msgstr ""
 
-#: src/store.c:39225
+#: src/store.c:39268
 #, c-format
 msgid "orphan mask barrier requires mask --rebind: %s\n"
 msgstr ""
 
-#: src/store.c:39249
+#: src/store.c:39292
 #, c-format
 msgid "conflicting canonical mask target: %s\n"
 msgstr ""
 
-#: src/store.c:39255 src/store.c:39265
+#: src/store.c:39298 src/store.c:39308
 #, c-format
 msgid "conflicting canonical mask name: %s\n"
 msgstr ""
 
-#: src/store.c:39276
+#: src/store.c:39319
 #, c-format
 msgid ""
 "target is already masked by another chain; inspect list --all-masks --long "
 "and choose a chain with unmask --dry-run --mask-chain: %s\n"
 msgstr ""
 
-#: src/store.c:39363
+#: src/store.c:39406
 #, c-format
 msgid ""
 "hidden-name mask cannot be projected to v1 rollback state without exposing "
 "its name: %s\n"
 msgstr ""
 
-#: src/store.c:39391
+#: src/store.c:39434
 #, c-format
 msgid ""
 "ambiguous legacy mask blocks this write; inspect list --all-masks --long and "
 "use mask --rebind after exactly one inherited v2 target remains: %s\n"
 msgstr ""
 
-#: src/store.c:39498 src/store.c:40306 src/store.c:40341 src/store.c:40348
-#: src/store.c:40445 src/store.c:40451
+#: src/store.c:39541 src/store.c:40349 src/store.c:40384 src/store.c:40391
+#: src/store.c:40488 src/store.c:40494
 #, c-format
 msgid "failed to encode mask operation plan\n"
 msgstr ""
 
-#: src/store.c:39654
+#: src/store.c:39697
 #, c-format
 msgid "%s is not supported for an ephemeral secret: %s\n"
 msgstr ""
 
-#: src/store.c:39704 src/store.c:39736
+#: src/store.c:39747 src/store.c:39779
 #, c-format
 msgid "key exists locally and cannot be masked: %s\n"
 msgstr ""
 
-#: src/store.c:39856
+#: src/store.c:39899
 #, c-format
 msgid "cannot unmask while matching mask state is locked\n"
 msgstr ""
 
-#: src/store.c:39872
+#: src/store.c:39915
 #, c-format
 msgid "ambiguous legacy mask requires mask --rebind before unmask: %s\n"
 msgstr ""
 
-#: src/store.c:39905
+#: src/store.c:39948
 #, c-format
 msgid "mask chain does not protect requested key: %s\n"
 msgstr ""
 
-#: src/store.c:39913
+#: src/store.c:39956
 #, c-format
 msgid ""
 "multiple mask chains match key; use list --all-masks --long and --mask-"
 "chain: %s\n"
 msgstr ""
 
-#: src/store.c:39979
+#: src/store.c:40022
 #, c-format
 msgid "mask state changed since plan\n"
 msgstr ""
 
-#: src/store.c:39986 src/store.c:40624 src/store.c:40636
+#: src/store.c:40029 src/store.c:40667 src/store.c:40679
 #, c-format
 msgid "key is not masked in current domain: %s\n"
 msgstr ""
 
-#: src/store.c:40019
+#: src/store.c:40062
 #, c-format
 msgid ""
 "mask chain protects multiple key names; inspect with unmask --dry-run --mask-"
 "chain: %s\n"
 msgstr ""
 
-#: src/store.c:40621
+#: src/store.c:40664
 #, c-format
 msgid ""
 "cannot unmask a persisted tombstone while volatile session overlay is "
 "active: %s\n"
 msgstr ""
 
-#: src/store.c:40670
+#: src/store.c:40713
 #, c-format
 msgid "invalid UUID source for ln: %s\n"
 msgstr ""
 
-#: src/store.c:40704
+#: src/store.c:40747
 #, c-format
 msgid "secret UUID is not authorized in current context: %s\n"
 msgstr ""
 
-#: src/store.c:40846 src/store.c:40852
+#: src/store.c:40889 src/store.c:40895
 #, c-format
 msgid "invalid arguments for ln\n"
 msgstr ""
 
-#: src/store.c:40857
+#: src/store.c:40900
 #, c-format
 msgid "--skip-same-value-check requires --replace\n"
 msgstr ""
 
-#: src/store.c:40911 src/store.c:41219 src/store.c:42328 src/store.c:42773
-#: src/store.c:45318
+#: src/store.c:40954 src/store.c:41262 src/store.c:42772 src/store.c:43282
+#: src/store.c:45837
 #, c-format
 msgid "destination key already exists: %s\n"
 msgstr ""
 
-#: src/store.c:40963
+#: src/store.c:41006
 #, c-format
 msgid "UUID references are only valid as ln source: %s\n"
 msgstr ""
 
-#: src/store.c:40968 src/store.c:41003 src/store.c:41082 src/store.c:41166
-#: src/store.c:41190 src/store.c:42719 src/store.c:42743
+#: src/store.c:41011 src/store.c:41046 src/store.c:41125 src/store.c:41209
+#: src/store.c:41233 src/store.c:43228 src/store.c:43252
 #, c-format
 msgid "source and destination keys must differ\n"
 msgstr ""
 
-#: src/store.c:41019
+#: src/store.c:41062
 #, c-format
 msgid "ln is not supported in a volatile session overlay\n"
 msgstr ""
 
-#: src/store.c:41030 src/store.c:41055
+#: src/store.c:41073 src/store.c:41098
 #, c-format
 msgid "ln requires source and destination in v2 stores\n"
 msgstr ""
 
-#: src/store.c:41051 src/store.c:41063
+#: src/store.c:41094 src/store.c:41106
 #, c-format
 msgid "ln is not supported for an ephemeral secret: %s\n"
 msgstr ""
 
-#: src/store.c:41069
+#: src/store.c:41112
 #, c-format
 msgid ""
 "destination key already exists: %s (use --replace to replace a same-name key "
 "after value confirmation)\n"
 msgstr ""
 
-#: src/store.c:41075
+#: src/store.c:41118
 #, c-format
 msgid "ln --replace only supports existing same-name key references\n"
 msgstr ""
 
-#: src/store.c:41102
+#: src/store.c:41145
 #, c-format
 msgid ""
 "same-name destination value differs: %s (use --skip-same-value-check with --"
 "replace to replace anyway)\n"
 msgstr ""
 
-#: src/store.c:41161
+#: src/store.c:41204
 #, c-format
 msgid "invalid arguments for cp\n"
 msgstr ""
 
-#: src/store.c:41232
+#: src/store.c:41275
 #, c-format
 msgid "cp is not supported for an ephemeral secret: %s\n"
 msgstr ""
 
-#: src/store.c:41256 src/store.c:42471 src/store.c:42847
+#: src/store.c:41299 src/store.c:42935 src/store.c:43366
 #, c-format
 msgid "key metadata cannot be preserved for hidden v2 key: %s\n"
 msgstr ""
 
-#: src/store.c:41331
+#: src/store.c:41374
 #, c-format
 msgid "too many move relation dependencies\n"
 msgstr ""
 
-#: src/store.c:42334 src/store.c:42799
+#: src/store.c:41875
+#, c-format
+msgid "affected descendant mask is inaccessible: %s\n"
+msgstr ""
+
+#: src/store.c:42778 src/store.c:43308
 #, c-format
 msgid "mv requires v2 source and destination stores\n"
 msgstr ""
 
-#: src/store.c:42430
+#: src/store.c:42798
+#, c-format
+msgid ""
+"mv mutation planning requires a local source in the same v2 domain and "
+"store\n"
+msgstr ""
+
+#: src/store.c:42894
 #, c-format
 msgid "mv requires normalized v2 object value storage across namespaces\n"
 msgstr ""
 
-#: src/store.c:42714
+#: src/store.c:43223
 #, c-format
 msgid "invalid arguments for mv\n"
 msgstr ""
 
-#: src/store.c:42787
+#: src/store.c:43296
 #, c-format
 msgid "mv is not supported for an ephemeral secret: %s\n"
 msgstr ""
 
-#: src/store.c:42813
+#: src/store.c:43325 src/store.c:47921
+#, c-format
+msgid "mask mutation planning requires store format v2\n"
+msgstr ""
+
+#: src/store.c:43332
 #, c-format
 msgid "mv requires matching source and destination store formats\n"
 msgstr ""
 
-#: src/store.c:42977
+#: src/store.c:43496
 #, c-format
 msgid "invalid arguments for %s\n"
 msgstr ""
 
-#: src/store.c:43044
+#: src/store.c:43563
 #, c-format
 msgid "mask planning and rebind require a persisted v2 store\n"
 msgstr ""
 
-#: src/store.c:43073
+#: src/store.c:43592
 #, c-format
 msgid "canonical mask planning requires an inherited v2 entry\n"
 msgstr ""
 
-#: src/store.c:43193
+#: src/store.c:43712
 #, c-format
 msgid "unmask planning requires a persisted v2 store\n"
 msgstr ""
 
-#: src/store.c:43244
+#: src/store.c:43763
 #, c-format
 msgid ""
 "warning: unmask: removed mask chain; %s remains masked by %zu other chain or "
 "barrier\n"
 msgstr ""
 
-#: src/store.c:43251
+#: src/store.c:43770
 #, c-format
 msgid ""
 "warning: unmask: %s remains local; removing it later may expose the "
 "inherited value\n"
 msgstr ""
 
-#: src/store.c:43285
+#: src/store.c:43804
 #, c-format
 msgid "ephemeral key not found: %s\n"
 msgstr ""
 
-#: src/store.c:43291
+#: src/store.c:43810
 #, c-format
 msgid "cannot remove inherited ephemeral key; use its source domain: %s\n"
 msgstr ""
 
-#: src/store.c:43333 src/store.c:43340
+#: src/store.c:43852 src/store.c:43859
 #, c-format
 msgid "invalid arguments for rm\n"
 msgstr ""
 
-#: src/store.c:43468 src/store.c:43979 src/store.c:44337 src/store.c:44800
-#: src/store.c:44886
+#: src/store.c:43987 src/store.c:44498 src/store.c:44856 src/store.c:45319
+#: src/store.c:45405
 #, c-format
 msgid "--store is not valid with store commands\n"
 msgstr ""
 
-#: src/store.c:43568
+#: src/store.c:44087
 #, c-format
 msgid "store migrate requires a registered current domain\n"
 msgstr ""
 
-#: src/store.c:43579 src/store.c:44199 src/store.c:44921
+#: src/store.c:44098 src/store.c:44718 src/store.c:45440
 #, c-format
 msgid "store not found: %s\n"
 msgstr ""
 
-#: src/store.c:43590
+#: src/store.c:44109
 #, c-format
 msgid "store format is v2; migration is not needed\n"
 msgstr ""
 
-#: src/store.c:43868
+#: src/store.c:44387
 #, c-format
 msgid "v2 migration artifacts already exist\n"
 msgstr ""
 
-#: src/store.c:43937
+#: src/store.c:44456
 #, c-format
 msgid "v2 migration verification failed\n"
 msgstr ""
 
-#: src/store.c:44189
+#: src/store.c:44708
 #, c-format
 msgid "store finalize-migration requires a registered current domain\n"
 msgstr ""
 
-#: src/store.c:44210
+#: src/store.c:44729
 #, c-format
 msgid "store format is v1; finalize-migration requires a migrated v2 store\n"
 msgstr ""
 
-#: src/store.c:44748
+#: src/store.c:45267
 #, c-format
 msgid "domain is not empty: %s\n"
 msgstr ""
 
-#: src/store.c:44805
+#: src/store.c:45324
 #, c-format
 msgid "missing store name for store create\n"
 msgstr ""
 
-#: src/store.c:44810
+#: src/store.c:45329
 #, c-format
 msgid "invalid arguments for store create\n"
 msgstr ""
 
-#: src/store.c:44835
+#: src/store.c:45354
 #, c-format
 msgid "store already exists: %s\n"
 msgstr ""
 
-#: src/store.c:44891
+#: src/store.c:45410
 #, c-format
 msgid "missing store name for store delete\n"
 msgstr ""
 
-#: src/store.c:44896
+#: src/store.c:45415
 #, c-format
 msgid "invalid arguments for store delete\n"
 msgstr ""
 
-#: src/store.c:44937
+#: src/store.c:45456
 #, c-format
 msgid "store is not empty: %s\n"
 msgstr ""
 
-#: src/store.c:44946
+#: src/store.c:45465
 #, c-format
 msgid "store has pending or quarantined GC work: %s\n"
 msgstr ""
 
-#: src/store.c:44990
+#: src/store.c:45509
 #, c-format
 msgid "key value contains NUL byte and cannot be exported: %s\n"
 msgstr ""
 
-#: src/store.c:45190 src/store.c:45198
+#: src/store.c:45709 src/store.c:45717
 #, c-format
 msgid "invalid arguments for save\n"
 msgstr ""
 
-#: src/store.c:45210
+#: src/store.c:45729
 msgid "Create secdat bundle passphrase: "
 msgstr ""
 
-#: src/store.c:45211
+#: src/store.c:45730
 msgid "Confirm secdat bundle passphrase: "
 msgstr ""
 
-#: src/store.c:45267
+#: src/store.c:45786
 #, c-format
 msgid "invalid load conflict policy: %s\n"
 msgstr ""
 
-#: src/store.c:45272
+#: src/store.c:45791
 #, c-format
 msgid "conflicting load conflict policies\n"
 msgstr ""
 
-#: src/store.c:45285 src/store.c:45291
+#: src/store.c:45804 src/store.c:45810
 #, c-format
 msgid "invalid arguments for load\n"
 msgstr ""
 
-#: src/store.c:45350
+#: src/store.c:45869
 #, c-format
 msgid "cannot load linked v2 object into a v1 store without splitting links\n"
 msgstr ""
 
-#: src/store.c:45351
+#: src/store.c:45870
 #, c-format
 msgid ""
 "  use --allow-link-split to write independent v1 values, or load into a v2 "
 "store to preserve links\n"
 msgstr ""
 
-#: src/store.c:45385
+#: src/store.c:45904
 msgid "Enter secdat bundle passphrase: "
 msgstr ""
 
-#: src/store.c:45864
+#: src/store.c:46383
 #, c-format
 msgid "  dir=%s\n"
 msgstr ""
 
-#: src/store.c:45867
+#: src/store.c:46386
 #, c-format
 msgid "  domain=%s\n"
 msgstr ""
 
-#: src/store.c:45870
+#: src/store.c:46389
 #, c-format
 msgid "  store=%s\n"
 msgstr ""
 
-#: src/store.c:45909
+#: src/store.c:46428
 #, c-format
 msgid "invalid mask action: %s\n"
 msgstr ""
 
-#: src/store.c:45913
+#: src/store.c:46432
 #, c-format
 msgid "conflicting mask action options\n"
 msgstr ""
 
-#: src/store.c:45927
+#: src/store.c:46446
 #, c-format
 msgid "conflicting mask warning options\n"
 msgstr ""
 
-#: src/store.c:46008
+#: src/store.c:46527
 #, c-format
 msgid "missing value for --mask-action\n"
 msgstr ""
 
-#: src/store.c:46038 src/store.c:46070
+#: src/store.c:46557 src/store.c:46589
 #, c-format
 msgid "invalid mask warning policy: %s\n"
 msgstr ""
 
-#: src/store.c:46049
+#: src/store.c:46568
 #, c-format
 msgid "missing value for --mask-warnings\n"
 msgstr ""
 
-#: src/store.c:46523
+#: src/store.c:47105
 #, c-format
 msgid "mutation failed to preserve a mask\n"
 msgstr ""
 
-#: src/store.c:46619 src/store.c:46769
+#: src/store.c:47204 src/store.c:47466
 #, c-format
 msgid "failed to encode mutation plan\n"
 msgstr ""
 
-#: src/store.c:46832
+#: src/store.c:47563
 #, c-format
 msgid "warning: %s: "
 msgstr ""
 
-#: src/store.c:46846
+#: src/store.c:47577
 #, c-format
 msgid "%zu directly affected masked key slot(s)"
 msgstr ""
 
-#: src/store.c:46850
+#: src/store.c:47581
 #, c-format
 msgid "%zu mask(s) became dormant"
 msgstr ""
 
-#: src/store.c:46854
+#: src/store.c:47585
 #, c-format
 msgid "%zu dormant mask(s) reactivated"
 msgstr ""
 
-#: src/store.c:46858
+#: src/store.c:47589
 #, c-format
 msgid "%zu mask(s) became orphaned"
 msgstr ""
 
-#: src/store.c:46862
+#: src/store.c:47593
 #, c-format
 msgid "%zu source mask(s) created"
 msgstr ""
 
-#: src/store.c:46866
+#: src/store.c:47597
 msgid "; inspect with 'secdat --dir DIR list --all-masks --long'\n"
 msgstr ""
 
-#: src/store.c:46988
+#: src/store.c:47719
 msgid "ambiguous legacy mask blocks this mutation\n"
 msgstr ""
 
-#: src/store.c:46989
+#: src/store.c:47720
 msgid "mask interaction rejected before mutation\n"
 msgstr ""
 
-#: src/store.c:47172
+#: src/store.c:47903
 #, c-format
 msgid "mutation planning requires a registered current domain\n"
 msgstr ""
 
-#: src/store.c:47190
-#, c-format
-msgid "mask mutation planning requires store format v2\n"
-msgstr ""
-
-#: src/store.c:47290
+#: src/store.c:48021
 #, c-format
 msgid "mutation planning options are not supported with --ephemeral\n"
 msgstr ""
 
-#: src/store.c:47308
+#: src/store.c:48039
 #, c-format
 msgid "cannot combine --dir and --domain\n"
 msgstr ""
 
-#: src/store.c:47322 src/store.c:47331
+#: src/store.c:48053 src/store.c:48062
 #, c-format
 msgid "failed to recover pending transactions\n"
 msgstr ""

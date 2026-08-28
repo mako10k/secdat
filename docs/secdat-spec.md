@@ -81,7 +81,7 @@ secdat [--dir DIR] [--store STORE] set [MASK_MUTATION_OPTIONS] KEYREF --generate
 
 secdat [--dir DIR] [--store STORE] rm [-f|--ignore-missing] [MASK_MUTATION_OPTIONS] KEYREF
 secdat [--dir DIR] [--store STORE] rm --ephemeral [-f|--ignore-missing] KEYREF
-secdat [--dir DIR] [--store STORE] mv SRC_KEYREF DST_KEYREF
+secdat [--dir DIR] [--store STORE] mv [MASK_MUTATION_OPTIONS] SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] cp [MASK_MUTATION_OPTIONS] SRC_KEYREF DST_KEYREF
 secdat [--dir DIR] [--store STORE] ln [--replace] [--skip-same-value-check] [MASK_MUTATION_OPTIONS] SRC_KEYREF|@UUID DST_KEYREF
 
@@ -359,6 +359,10 @@ source removal.
 - for an unqualified source only, if `SRC_KEYREF` is inherited from a parent domain, the source name is hidden with a tombstone in the resolved source current domain after the destination is materialized
 - `mv` preserves the source entry storage mode, including plaintext-at-rest entries created with `set --unsafe`
 - `mv` preserves both the v2 entry UUID and secret UUID; a cross-domain/store move publishes the destination before removing the source and rotates the reference epoch before source removal
+- a same-domain/store local v2 `mv` is a rename of the existing entry, does not change the secret-object refcount, and leaves every existing `ln` alias linked to the same secret UUID
+- descendant canonical masks keep targeting the preserved entry UUID; their authorized last-known domain/store/name fields move in the same recoverable transaction
+- same-domain/store local v2 `mv` accepts `MASK_MUTATION_OPTIONS`; dry-run and JSON report source/destination entry and secret UUIDs, preservation booleans, mask effects, and separate name-based relation KEYREF rewrite consequences from the prepared commit candidate
+- mutation planning for inherited and cross-domain/store `mv` remains unavailable until those contracts are implemented
 - `mv` preserves searchable key metadata on the destination and removes local searchable key metadata from a removed local source
 
 #### FR-6 Key Copy
@@ -977,8 +981,19 @@ secdat [--dir DIR] [--store STORE] rm [--ignore-missing] [MASK_MUTATION_OPTIONS]
 ### 4.6 `mv`
 
 ```text
-secdat [--dir DIR] [--store STORE] mv SRC_KEY DST_KEY
+secdat [--dir DIR] [--store STORE] mv [MASK_MUTATION_OPTIONS] SRC_KEY DST_KEY
 ```
+
+- for a same-domain/store local v2 source, `mv` preserves `entry_id` and
+  `secret_id`, keeps existing links and refcount unchanged, and moves descendant
+  identity-mask last-known metadata atomically
+- `--dry-run` leaves source, destination, masks, metadata, relations, links, and
+  refcount unchanged
+- `--json` reports `source_secret_id`, `destination_secret_id`,
+  `source_entry_id`, `destination_entry_id`, `entry_id_preserved`,
+  `secret_id_preserved`, `mask_impact_rows`, and `relation_consequence_rows`
+- `--mask-action=reject` rejects a planned descendant-mask interaction before
+  live mutation
 
 ### 4.7 `cp`
 

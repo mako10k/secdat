@@ -266,7 +266,7 @@ local entry later may expose inheritance. `--mask-warnings=default|on|off`,
 `--warn-mask`, and `--no-warn-mask` control only this warning; they do not
 change the plan, persisted state, success, or exit status.
 
-Persisted v2 `set`, `cp`, `ln`, `rm`, and `load` writes use the same
+Persisted v2 `set`, `cp`, `ln`, `rm`, `mv`, and `load` writes use the same
 recoverable mutation plan. `--mask-action=preserve` is the default: it keeps
 canonical masks when a destination is written, permits active masks to become
 dormant and dormant masks to reactivate, and reports direct hits even when a
@@ -276,6 +276,15 @@ when any such interaction is planned. `--mask-warnings=default|on|off`,
 aggregate warning emitted after a successful commit. The preserve default is
 warning-on; reject defaults to warning-off because it reports the impact as an
 error.
+
+A same-domain/store local v2 `mv` is an identity-preserving rename. It keeps
+both the entry UUID and secret UUID, so existing `ln` aliases remain linked and
+the secret-object refcount does not change. Descendant identity masks continue
+to target the same entry while their authorized last-known address is updated.
+Dry-run and JSON output report the preserved IDs, mask effects, and any
+name-based relation KEYREF rewrites from the exact prepared commit candidate.
+Planning options for inherited or cross-domain/store `mv` remain unavailable
+until those move modes have their own accepted planning contracts.
 
 `--dry-run` and `--json` expose the same `secdat.mutation-plan.v1` used for
 commit. Multi-assignment `set` and `load` preflight and commit the whole batch:

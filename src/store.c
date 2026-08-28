@@ -783,6 +783,7 @@ struct secdat_mutation_impact_row {
     char domain_id[PATH_MAX];
     char store_name[PATH_MAX];
     char key[PATH_MAX];
+    char key_after[PATH_MAX];
     char target_entry_id[64];
     char mask_chain_id[64];
     enum secdat_mutation_impact_event event;
@@ -792,15 +793,34 @@ struct secdat_mutation_impact_row {
     int has_state_after;
 };
 
+struct secdat_mutation_relation_consequence {
+    char domain_id[PATH_MAX];
+    char store_name[PATH_MAX];
+    char relation_id[PATH_MAX];
+    char source_keyref[PATH_MAX * 2];
+    char destination_keyref[PATH_MAX * 2];
+    size_t rewritten_member_count;
+};
+
 struct secdat_mutation_plan {
     struct secdat_mutation_policy_options policy;
     struct secdat_mutation_slot_list slots;
     struct secdat_mutation_impact_row *rows;
+    struct secdat_mutation_relation_consequence *relation_consequences;
     size_t row_count;
     size_t row_capacity;
+    size_t relation_consequence_count;
+    size_t relation_consequence_capacity;
     size_t impact_counts[SECDAT_MUTATION_IMPACT_EVENT_COUNT];
     size_t changed_file_count;
     char operation[32];
+    char source_secret_id[64];
+    char destination_secret_id[64];
+    char source_entry_id[64];
+    char destination_entry_id[64];
+    int has_identity_result;
+    int entry_id_preserved;
+    int secret_id_preserved;
     int rejected;
 };
 
@@ -811,6 +831,7 @@ struct secdat_mutation_stage_context {
 };
 
 static struct secdat_mutation_stage_context secdat_mutation_stage;
+static struct secdat_mutation_plan *secdat_active_mutation_plan;
 
 struct secdat_prepared_state_file {
     char path[PATH_MAX];
@@ -1386,6 +1407,28 @@ static int secdat_prepared_write_set_record(
 static int secdat_prepared_directory_guard_record(
     struct secdat_prepared_write_set *write_set,
     const char *path
+);
+static int secdat_mutation_policy_was_requested(
+    const struct secdat_mutation_policy_options *policy
+);
+static int secdat_mutation_plan_append_row(
+    struct secdat_mutation_plan *plan,
+    const struct secdat_mutation_slot *slot,
+    const struct secdat_mask_view *view,
+    enum secdat_mutation_impact_event event,
+    const struct secdat_mask_view *after
+);
+static int secdat_print_mutation_plan(
+    const struct secdat_mutation_plan *plan,
+    int committed
+);
+static void secdat_mutation_emit_warning(
+    const struct secdat_mutation_plan *plan
+);
+static int secdat_render_scoped_precommit(
+    struct secdat_mutation_plan *plan,
+    int hard_error,
+    int *status
 );
 static int secdat_recover_transactions(void);
 static int secdat_transaction_ensure_root(char *root, size_t root_size);
@@ -41639,6 +41682,405 @@ static int secdat_move_apply_relation_updates(
     return 0;
 }
 
+static int secdat_mutation_plan_set_mv_identity(
+    struct secdat_mutation_plan *plan,
+    const char *source_secret_id,
+    const char *destination_secret_id,
+    const char *source_entry_id,
+    const char *destination_entry_id
+)
+{
+    if (plan == NULL) {
+        return 0;
+    }
+    if (secdat_copy_string(
+            plan->source_secret_id,
+            sizeof(plan->source_secret_id),
+            source_secret_id
+        ) != 0
+        || secdat_copy_string(
+            plan->destination_secret_id,
+            sizeof(plan->destination_secret_id),
+            destination_secret_id
+        ) != 0
+        || secdat_copy_string(
+            plan->source_entry_id,
+            sizeof(plan->source_entry_id),
+            source_entry_id
+        ) != 0
+        || secdat_copy_string(
+            plan->destination_entry_id,
+            sizeof(plan->destination_entry_id),
+            destination_entry_id
+        ) != 0) {
+        return 1;
+    }
+    plan->has_identity_result = 1;
+    plan->entry_id_preserved = strcmp(source_entry_id, destination_entry_id) == 0;
+    plan->secret_id_preserved = strcmp(source_secret_id, destination_secret_id) == 0;
+    return 0;
+}
+
+static int secdat_mutation_plan_append_relation_consequence(
+    struct secdat_mutation_plan *plan,
+    const struct secdat_move_relation_update *update,
+    const char *source_keyref,
+    const char *destination_keyref,
+    size_t rewritten_member_count
+)
+{
+    struct secdat_mutation_relation_consequence *resized;
+    struct secdat_mutation_relation_consequence *row;
+    size_t next_capacity;
+
+    if (plan == NULL || rewritten_member_count == 0) {
+        return 0;
+    }
+    if (plan->relation_consequence_count
+        == plan->relation_consequence_capacity) {
+        next_capacity = plan->relation_consequence_capacity == 0
+            ? 4
+            : plan->relation_consequence_capacity * 2;
+        resized = realloc(
+            plan->relation_consequences,
+            next_capacity * sizeof(*resized)
+        );
+        if (resized == NULL) {
+            fprintf(stderr, _("out of memory\n"));
+            return 1;
+        }
+        plan->relation_consequences = resized;
+        plan->relation_consequence_capacity = next_capacity;
+    }
+    row = &plan->relation_consequences[plan->relation_consequence_count];
+    memset(row, 0, sizeof(*row));
+    if (secdat_copy_string(
+            row->domain_id,
+            sizeof(row->domain_id),
+            update->domain_id
+        ) != 0
+        || secdat_copy_string(
+            row->store_name,
+            sizeof(row->store_name),
+            update->store_name
+        ) != 0
+        || secdat_copy_string(
+            row->relation_id,
+            sizeof(row->relation_id),
+            update->relation_id
+        ) != 0
+        || secdat_copy_string(
+            row->source_keyref,
+            sizeof(row->source_keyref),
+            source_keyref
+        ) != 0
+        || secdat_copy_string(
+            row->destination_keyref,
+            sizeof(row->destination_keyref),
+            destination_keyref
+        ) != 0) {
+        return 1;
+    }
+    row->rewritten_member_count = rewritten_member_count;
+    plan->relation_consequence_count += 1;
+    return 0;
+}
+
+static int secdat_mutation_plan_collect_mv_relations(
+    struct secdat_mutation_plan *plan,
+    const struct secdat_move_relation_update_list *updates,
+    const char *source_keyref,
+    const char *destination_keyref
+)
+{
+    size_t update_index;
+
+    if (plan == NULL) {
+        return 0;
+    }
+    for (update_index = 0; update_index < updates->count; update_index += 1) {
+        const struct secdat_move_relation_update *update =
+            &updates->items[update_index];
+        size_t member_index;
+        size_t rewritten_member_count = 0;
+
+        for (member_index = 0;
+             member_index < update->before_keyrefs.count;
+             member_index += 1) {
+            if (strcmp(
+                    update->before_keyrefs.items[member_index],
+                    source_keyref
+                ) == 0) {
+                rewritten_member_count += 1;
+            }
+        }
+        if (secdat_mutation_plan_append_relation_consequence(
+                plan,
+                update,
+                source_keyref,
+                destination_keyref,
+                rewritten_member_count
+            ) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_mutation_plan_find_mv_mask_view(
+    const char *mask_domain_id,
+    const char *mask_store,
+    const char *target_entry_id,
+    const char *mask_chain_id,
+    struct secdat_mask_view *view_out
+)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_mask_view_list views = {0};
+    size_t index;
+    int found = 0;
+    int status = 1;
+
+    memset(view_out, 0, sizeof(*view_out));
+    if (secdat_domain_chain_from_id(mask_domain_id, &chain) != 0
+        || secdat_collect_canonical_mask_views(
+            &chain,
+            mask_store,
+            &views
+        ) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < views.count; index += 1) {
+        const struct secdat_mask_view *candidate = &views.items[index];
+
+        if (strcmp(candidate->target_entry_id, target_entry_id) != 0
+            || (mask_chain_id != NULL && mask_chain_id[0] != '\0'
+                && strcmp(candidate->mask_chain_id, mask_chain_id) != 0)) {
+            continue;
+        }
+        if (found) {
+            fprintf(
+                stderr,
+                _("duplicate v2 mask target entry: %s\n"),
+                target_entry_id
+            );
+            goto cleanup;
+        }
+        *view_out = *candidate;
+        found = 1;
+    }
+    if (!found) {
+        fprintf(
+            stderr,
+            _("affected descendant mask is inaccessible: %s\n"),
+            target_entry_id
+        );
+        goto cleanup;
+    }
+    status = 0;
+
+cleanup:
+    secdat_mask_view_list_free(&views);
+    secdat_domain_chain_free(&chain);
+    return status;
+}
+
+static int secdat_mutation_plan_capture_mv_masks(
+    struct secdat_mutation_plan *plan,
+    struct secdat_dependency_update_plan *dependency_plan,
+    const char *target_entry_id
+)
+{
+    json_t *edges = NULL;
+    int found = 0;
+    size_t index;
+    int status = 1;
+
+    if (plan == NULL) {
+        return 0;
+    }
+    if (secdat_dependency_update_plan_collect_group(
+            dependency_plan,
+            'M',
+            target_entry_id,
+            &edges,
+            &found
+        ) != 0) {
+        goto cleanup;
+    }
+    if (!found) {
+        status = 0;
+        goto cleanup;
+    }
+    for (index = 0; index < json_array_size(edges); index += 1) {
+        json_t *edge = json_array_get(edges, index);
+        const char *mask_domain_id = json_string_value(
+            json_object_get(edge, "mask_domain_id")
+        );
+        const char *mask_store = json_string_value(
+            json_object_get(edge, "mask_store")
+        );
+        struct secdat_mask_view view;
+        struct secdat_mutation_slot slot;
+        size_t edge_count = 0;
+
+        memset(&slot, 0, sizeof(slot));
+        if (mask_domain_id == NULL || mask_store == NULL
+            || secdat_dependency_mask_edge_validate(
+                edge,
+                target_entry_id,
+                &edge_count
+            ) != 0
+            || edge_count != 1
+            || secdat_mutation_plan_find_mv_mask_view(
+                mask_domain_id,
+                mask_store,
+                target_entry_id,
+                NULL,
+                &view
+            ) != 0
+            || secdat_copy_string(
+                slot.domain_id,
+                sizeof(slot.domain_id),
+                mask_domain_id
+            ) != 0
+            || secdat_copy_string(
+                slot.store_name,
+                sizeof(slot.store_name),
+                secdat_effective_store_name(mask_store)
+            ) != 0
+            || secdat_copy_string(
+                slot.key,
+                sizeof(slot.key),
+                view.key
+            ) != 0
+            || secdat_mutation_plan_append_row(
+                plan,
+                &slot,
+                &view,
+                SECDAT_MUTATION_IMPACT_DIRECT_HIT,
+                NULL
+            ) != 0) {
+            goto cleanup;
+        }
+    }
+    status = 0;
+
+cleanup:
+    json_decref(edges);
+    return status;
+}
+
+static int secdat_mutation_plan_append_mv_mask_transition(
+    struct secdat_mutation_plan *plan,
+    const struct secdat_mutation_impact_row *row,
+    const struct secdat_mask_view *after
+)
+{
+    struct secdat_mask_view before;
+    struct secdat_mutation_slot slot;
+    enum secdat_mutation_impact_event transition;
+
+    if (!row->has_state_before || !row->has_state_after
+        || row->state_before == row->state_after) {
+        return 0;
+    }
+    if (row->state_after == SECDAT_MASK_STATE_ORPHANED) {
+        transition = SECDAT_MUTATION_IMPACT_ORPHANED;
+    } else if (row->state_before == SECDAT_MASK_STATE_ACTIVE
+        && row->state_after == SECDAT_MASK_STATE_DORMANT) {
+        transition = SECDAT_MUTATION_IMPACT_BECAME_DORMANT;
+    } else if (row->state_before == SECDAT_MASK_STATE_DORMANT
+        && row->state_after == SECDAT_MASK_STATE_ACTIVE) {
+        transition = SECDAT_MUTATION_IMPACT_REACTIVATED;
+    } else {
+        return 0;
+    }
+    memset(&before, 0, sizeof(before));
+    memset(&slot, 0, sizeof(slot));
+    before.record_kind = SECDAT_MASK_RECORD_CANONICAL;
+    before.resolution = SECDAT_MASK_RESOLUTION_BOUND;
+    before.state = row->state_before;
+    if (secdat_copy_string(before.key, sizeof(before.key), row->key) != 0
+        || secdat_copy_string(
+            before.target_entry_id,
+            sizeof(before.target_entry_id),
+            row->target_entry_id
+        ) != 0
+        || secdat_copy_string(
+            before.mask_chain_id,
+            sizeof(before.mask_chain_id),
+            row->mask_chain_id
+        ) != 0
+        || secdat_copy_string(
+            slot.domain_id,
+            sizeof(slot.domain_id),
+            row->domain_id
+        ) != 0
+        || secdat_copy_string(
+            slot.store_name,
+            sizeof(slot.store_name),
+            row->store_name
+        ) != 0
+        || secdat_copy_string(slot.key, sizeof(slot.key), row->key) != 0) {
+        return 1;
+    }
+    return secdat_mutation_plan_append_row(
+        plan,
+        &slot,
+        &before,
+        transition,
+        after
+    );
+}
+
+static int secdat_mutation_plan_finish_mv_masks(
+    struct secdat_mutation_plan *plan,
+    const char *target_entry_id
+)
+{
+    size_t original_row_count;
+    size_t index;
+
+    if (plan == NULL) {
+        return 0;
+    }
+    original_row_count = plan->row_count;
+    for (index = 0; index < original_row_count; index += 1) {
+        struct secdat_mutation_impact_row *row = &plan->rows[index];
+        struct secdat_mask_view after;
+
+        if (row->event != SECDAT_MUTATION_IMPACT_DIRECT_HIT
+            || strcmp(row->target_entry_id, target_entry_id) != 0) {
+            continue;
+        }
+        if (secdat_mutation_plan_find_mv_mask_view(
+                row->domain_id,
+                row->store_name,
+                row->target_entry_id,
+                row->mask_chain_id,
+                &after
+            ) != 0
+            || secdat_copy_string(
+                row->key_after,
+                sizeof(row->key_after),
+                after.key
+            ) != 0) {
+            return 1;
+        }
+        row->state_after = after.state;
+        row->has_state_after = !after.state_unknown;
+        if (secdat_mutation_plan_append_mv_mask_transition(
+                plan,
+                row,
+                &after
+            ) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int secdat_domain_move_relation_update_exists(
     const struct secdat_move_relation_update_list *updates,
     const char *domain_id,
@@ -42278,9 +42720,11 @@ static int secdat_move_v2_entry(
     char destination_entry_id[64];
     enum secdat_store_format source_format;
     enum secdat_store_format destination_format;
+    struct secdat_mutation_plan *mutation_plan = NULL;
     int source_is_local;
     int same_namespace;
     int need_source_mask = 0;
+    int precommit_status;
     int unsafe_store = 0;
     int status = 1;
     size_t changed_file_count = 0;
@@ -42343,6 +42787,19 @@ static int secdat_move_v2_entry(
             secdat_effective_store_name(source_reference->store_value),
             secdat_effective_store_name(destination_reference->store_value)
         ) == 0;
+    if (secdat_active_mutation_plan != NULL) {
+        if (source_is_local && same_namespace) {
+            mutation_plan = secdat_active_mutation_plan;
+        } else if (secdat_mutation_policy_was_requested(
+                &secdat_active_mutation_plan->policy
+            )) {
+            fprintf(
+                stderr,
+                _("mv mutation planning requires a local source in the same v2 domain and store\n")
+            );
+            goto cleanup;
+        }
+    }
     if (secdat_read_store_format(
             source_domain_id,
             source_reference->store_value,
@@ -42366,6 +42823,13 @@ static int secdat_move_v2_entry(
             stderr,
             _("dependency index is incomplete; run fsck --format v2 --dependency-index --repair\n")
         );
+        goto cleanup;
+    }
+    if (secdat_mutation_plan_capture_mv_masks(
+            mutation_plan,
+            &dependency_plan,
+            source_entry.entry_id
+        ) != 0) {
         goto cleanup;
     }
     object_domain_id = source_entry.object_domain[0] == '\0'
@@ -42494,6 +42958,12 @@ static int secdat_move_v2_entry(
                 old_keyref,
                 new_keyref,
                 &relation_updates
+            ) != 0
+            || secdat_mutation_plan_collect_mv_relations(
+                mutation_plan,
+                &relation_updates,
+                old_keyref,
+                new_keyref
             ) != 0)) {
         goto cleanup;
     }
@@ -42543,6 +43013,15 @@ static int secdat_move_v2_entry(
     } else if (secdat_generate_uuid_v4(
             destination_entry_id,
             sizeof(destination_entry_id)
+        ) != 0) {
+        goto cleanup;
+    }
+    if (secdat_mutation_plan_set_mv_identity(
+            mutation_plan,
+            source_entry.secret_id,
+            source_entry.secret_id,
+            source_entry.entry_id,
+            destination_entry_id
         ) != 0) {
         goto cleanup;
     }
@@ -42636,6 +43115,12 @@ static int secdat_move_v2_entry(
             ) != 0)) {
         goto cleanup;
     }
+    if (secdat_mutation_plan_finish_mv_masks(
+            mutation_plan,
+            source_entry.entry_id
+        ) != 0) {
+        goto cleanup;
+    }
     if (secdat_gc_topology_plan_apply(&secdat_gc_topology_plan) != 0) {
         goto cleanup;
     }
@@ -42663,11 +43148,35 @@ static int secdat_move_v2_entry(
         || secdat_dependency_update_plan_append(
             &transaction,
             &dependency_plan
-        ) != 0
-        || secdat_transaction_commit(&transaction) != 0) {
+        ) != 0) {
+        goto cleanup;
+    }
+    if (mutation_plan != NULL) {
+        mutation_plan->changed_file_count = changed_file_count;
+        mutation_plan->rejected =
+            mutation_plan->policy.action == SECDAT_MUTATION_MASK_REJECT
+            && mutation_plan->row_count > 0;
+        precommit_status = secdat_render_scoped_precommit(
+            mutation_plan,
+            0,
+            &status
+        );
+        if (precommit_status < 0) {
+            goto cleanup;
+        }
+        if (precommit_status > 0) {
+            goto cleanup;
+        }
+    }
+    if (secdat_transaction_commit(&transaction) != 0
+        || (mutation_plan != NULL
+            && secdat_print_mutation_plan(mutation_plan, 1) != 0)) {
         goto cleanup;
     }
     secdat_gc_topology_notify_agents(&secdat_gc_topology_plan);
+    if (mutation_plan != NULL) {
+        secdat_mutation_emit_warning(mutation_plan);
+    }
     (void)unsafe_store;
     (void)changed_file_count;
     status = 0;
@@ -42804,6 +43313,16 @@ static int secdat_command_mv(const struct secdat_cli *cli)
             &source_chain,
             &destination_reference,
             &destination_chain
+        );
+        goto cleanup;
+    }
+    if (secdat_active_mutation_plan != NULL
+        && secdat_mutation_policy_was_requested(
+            &secdat_active_mutation_plan->policy
+        )) {
+        fprintf(
+            stderr,
+            _("mask mutation planning requires store format v2\n")
         );
         goto cleanup;
     }
@@ -46172,7 +46691,90 @@ static void secdat_mutation_plan_reset(struct secdat_mutation_plan *plan)
         plan->row_capacity * sizeof(*plan->rows)
     );
     free(plan->rows);
+    secdat_secure_clear(
+        plan->relation_consequences,
+        plan->relation_consequence_capacity
+            * sizeof(*plan->relation_consequences)
+    );
+    free(plan->relation_consequences);
     memset(plan, 0, sizeof(*plan));
+}
+
+static int secdat_run_planned_mv(const struct secdat_cli *cli)
+{
+    struct secdat_cli filtered;
+    struct secdat_mutation_plan plan;
+    char **filtered_argv = NULL;
+    int status;
+
+    memset(&plan, 0, sizeof(plan));
+    status = secdat_parse_mutation_policy_options(
+        cli,
+        &filtered,
+        &plan.policy,
+        &filtered_argv
+    );
+    if (status != 0) {
+        return status;
+    }
+    if (secdat_copy_string(
+            plan.operation,
+            sizeof(plan.operation),
+            "mv"
+        ) != 0) {
+        free(filtered_argv);
+        return 1;
+    }
+    secdat_active_mutation_plan = &plan;
+    status = secdat_dispatch_command(&filtered);
+    secdat_active_mutation_plan = NULL;
+    free(filtered_argv);
+    secdat_mutation_plan_reset(&plan);
+    return status;
+}
+
+static int secdat_mutation_plan_fill_row_identity(
+    struct secdat_mutation_impact_row *row,
+    const struct secdat_mutation_slot *slot,
+    const struct secdat_mask_view *identity_view,
+    const struct secdat_mask_view *after
+)
+{
+    if (secdat_copy_string(
+            row->domain_id,
+            sizeof(row->domain_id),
+            slot->domain_id
+        ) != 0
+        || secdat_copy_string(
+            row->store_name,
+            sizeof(row->store_name),
+            slot->store_name
+        ) != 0
+        || secdat_copy_string(
+            row->key,
+            sizeof(row->key),
+            slot->key
+        ) != 0
+        || secdat_copy_string(
+            row->key_after,
+            sizeof(row->key_after),
+            after != NULL ? after->key : slot->key
+        ) != 0) {
+        return 1;
+    }
+    if (identity_view == NULL) {
+        return 0;
+    }
+    return secdat_copy_string(
+            row->target_entry_id,
+            sizeof(row->target_entry_id),
+            identity_view->target_entry_id
+        ) != 0
+        || secdat_copy_string(
+            row->mask_chain_id,
+            sizeof(row->mask_chain_id),
+            identity_view->mask_chain_id
+        ) != 0;
 }
 
 static int secdat_mutation_plan_append_row(
@@ -46207,32 +46809,12 @@ static int secdat_mutation_plan_append_row(
     row = &plan->rows[plan->row_count];
     memset(row, 0, sizeof(*row));
     row->event = event;
-    if (secdat_copy_string(
-            row->domain_id,
-            sizeof(row->domain_id),
-            slot->domain_id
-        ) != 0
-        || secdat_copy_string(
-            row->store_name,
-            sizeof(row->store_name),
-            slot->store_name
-        ) != 0
-        || secdat_copy_string(
-            row->key,
-            sizeof(row->key),
-            slot->key
-        ) != 0
-        || (identity_view != NULL
-            && (secdat_copy_string(
-                    row->target_entry_id,
-                    sizeof(row->target_entry_id),
-                    identity_view->target_entry_id
-                ) != 0
-                || secdat_copy_string(
-                    row->mask_chain_id,
-                    sizeof(row->mask_chain_id),
-                    identity_view->mask_chain_id
-                ) != 0))) {
+    if (secdat_mutation_plan_fill_row_identity(
+            row,
+            slot,
+            identity_view,
+            after
+        ) != 0) {
         return 1;
     }
     if (view != NULL && !view->state_unknown) {
@@ -46611,11 +47193,14 @@ static int secdat_print_mutation_plan(
         json_t *root = json_object();
         json_t *counts = json_object();
         json_t *rows = json_array();
+        json_t *relation_rows = json_array();
 
-        if (root == NULL || counts == NULL || rows == NULL) {
+        if (root == NULL || counts == NULL || rows == NULL
+            || relation_rows == NULL) {
             json_decref(root);
             json_decref(counts);
             json_decref(rows);
+            json_decref(relation_rows);
             fprintf(stderr, _("failed to encode mutation plan\n"));
             return 1;
         }
@@ -46653,6 +47238,11 @@ static int secdat_print_mutation_plan(
                     item,
                     "key",
                     json_string(row->key)
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "key_after",
+                    json_string(row->key_after)
                 ) != 0
                 || json_object_set_new(
                     item,
@@ -46699,6 +47289,57 @@ static int secdat_print_mutation_plan(
             }
             json_decref(item);
         }
+        for (index = 0;
+             index < plan->relation_consequence_count;
+             index += 1) {
+            const struct secdat_mutation_relation_consequence *row =
+                &plan->relation_consequences[index];
+            json_t *item = json_object();
+
+            if (item == NULL
+                || json_object_set_new(
+                    item,
+                    "domain_id",
+                    json_string(row->domain_id)
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "store",
+                    json_string(row->store_name)
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "relation_id",
+                    json_string(row->relation_id)
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "action",
+                    json_string("rewrite-keyref")
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "source_keyref",
+                    json_string(row->source_keyref)
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "destination_keyref",
+                    json_string(row->destination_keyref)
+                ) != 0
+                || json_object_set_new(
+                    item,
+                    "rewritten_member_count",
+                    json_integer(
+                        (json_int_t)row->rewritten_member_count
+                    )
+                ) != 0
+                || json_array_append(relation_rows, item) != 0) {
+                json_decref(item);
+                goto json_error;
+            }
+            json_decref(item);
+        }
         if (json_object_set_new(
                 root,
                 "plan_schema_version",
@@ -46723,6 +47364,48 @@ static int secdat_print_mutation_plan(
                 root,
                 "committed",
                 json_boolean(committed)
+            ) != 0
+            || json_object_set_new(
+                root,
+                "source_secret_id",
+                plan->has_identity_result
+                    ? json_string(plan->source_secret_id)
+                    : json_null()
+            ) != 0
+            || json_object_set_new(
+                root,
+                "destination_secret_id",
+                plan->has_identity_result
+                    ? json_string(plan->destination_secret_id)
+                    : json_null()
+            ) != 0
+            || json_object_set_new(
+                root,
+                "source_entry_id",
+                plan->has_identity_result
+                    ? json_string(plan->source_entry_id)
+                    : json_null()
+            ) != 0
+            || json_object_set_new(
+                root,
+                "destination_entry_id",
+                plan->has_identity_result
+                    ? json_string(plan->destination_entry_id)
+                    : json_null()
+            ) != 0
+            || json_object_set_new(
+                root,
+                "entry_id_preserved",
+                plan->has_identity_result
+                    ? json_boolean(plan->entry_id_preserved)
+                    : json_null()
+            ) != 0
+            || json_object_set_new(
+                root,
+                "secret_id_preserved",
+                plan->has_identity_result
+                    ? json_boolean(plan->secret_id_preserved)
+                    : json_null()
             ) != 0
             || json_object_set_new(
                 root,
@@ -46752,6 +47435,18 @@ static int secdat_print_mutation_plan(
             ) != 0
             || json_object_set(root, "mask_impact_counts", counts) != 0
             || json_object_set(root, "mask_impact_rows", rows) != 0
+            || json_object_set_new(
+                root,
+                "relation_consequence_count",
+                json_integer(
+                    (json_int_t)plan->relation_consequence_count
+                )
+            ) != 0
+            || json_object_set(
+                root,
+                "relation_consequence_rows",
+                relation_rows
+            ) != 0
             || json_dumpf(root, stdout, JSON_COMPACT | JSON_SORT_KEYS)
                 != 0) {
             goto json_error;
@@ -46759,12 +47454,14 @@ static int secdat_print_mutation_plan(
         fputc('\n', stdout);
         json_decref(counts);
         json_decref(rows);
+        json_decref(relation_rows);
         json_decref(root);
         return 0;
 
 json_error:
         json_decref(counts);
         json_decref(rows);
+        json_decref(relation_rows);
         json_decref(root);
         fprintf(stderr, _("failed to encode mutation plan\n"));
         return 1;
@@ -46776,6 +47473,20 @@ json_error:
     printf("operation=%s\n", plan->operation);
     printf("ok=%s\n", plan->rejected ? "no" : "yes");
     printf("dry_run=%s\n", plan->policy.dry_run ? "yes" : "no");
+    if (plan->has_identity_result) {
+        printf("source_secret_id=%s\n", plan->source_secret_id);
+        printf("destination_secret_id=%s\n", plan->destination_secret_id);
+        printf("source_entry_id=%s\n", plan->source_entry_id);
+        printf("destination_entry_id=%s\n", plan->destination_entry_id);
+        printf(
+            "entry_id_preserved=%s\n",
+            plan->entry_id_preserved ? "yes" : "no"
+        );
+        printf(
+            "secret_id_preserved=%s\n",
+            plan->secret_id_preserved ? "yes" : "no"
+        );
+    }
     printf(
         "mask_action=%s\n",
         secdat_mutation_action_name(plan->policy.action)
@@ -46815,6 +47526,26 @@ json_error:
             row->has_state_after
                 ? secdat_mask_state_name(row->state_after)
                 : "-"
+        );
+    }
+    printf(
+        "relation_consequence_count=%zu\n",
+        plan->relation_consequence_count
+    );
+    for (index = 0;
+         index < plan->relation_consequence_count;
+         index += 1) {
+        const struct secdat_mutation_relation_consequence *row =
+            &plan->relation_consequences[index];
+
+        printf(
+            "relation_consequence_row=%s:%s:%s:%s:%s:%zu\n",
+            row->domain_id,
+            row->store_name,
+            row->relation_id,
+            row->source_keyref,
+            row->destination_keyref,
+            row->rewritten_member_count
         );
     }
     return 0;
@@ -47332,7 +48063,9 @@ int secdat_run_command(const struct secdat_cli *cli)
         secdat_mutation_lock_release(lock_owned);
         return 1;
     }
-    if (secdat_cli_requests_ephemeral_mutation(cli)) {
+    if (cli->command == SECDAT_COMMAND_MV) {
+        status = secdat_run_planned_mv(cli);
+    } else if (secdat_cli_requests_ephemeral_mutation(cli)) {
         status = secdat_run_ephemeral_mutation(cli);
     } else {
         status = secdat_command_uses_mutation_plan(cli->command)

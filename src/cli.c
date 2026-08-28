@@ -1028,6 +1028,7 @@ static const char *secdat_cli_completion_command_prev_option_mode(const char *co
             return "none";
         }
     } else if (strcmp(command, "cp") == 0
+        || strcmp(command, "mv") == 0
         || strcmp(command, "ln") == 0
         || strcmp(command, "rm") == 0
         || strcmp(command, "load") == 0) {
@@ -1294,6 +1295,10 @@ int secdat_cli_complete(int argc, char **argv)
         "--mask-action", "--mask-warnings", "--warn-mask", "--no-warn-mask",
         "--dry-run", "--json", "--help", "-h", NULL,
     };
+    static const char *const mv_options[] = {
+        "--mask-action", "--mask-warnings", "--warn-mask", "--no-warn-mask",
+        "--dry-run", "--json", "--help", "-h", NULL,
+    };
     static const char *const ln_options[] = {
         "--replace", "--skip-same-value-check", "--mask-action",
         "--mask-warnings", "--warn-mask", "--no-warn-mask",
@@ -1459,6 +1464,8 @@ int secdat_cli_complete(int argc, char **argv)
         secdat_cli_completion_print_candidates(current, rm_options);
     } else if (strcmp(command, "cp") == 0) {
         secdat_cli_completion_print_candidates(current, cp_options);
+    } else if (strcmp(command, "mv") == 0) {
+        secdat_cli_completion_print_candidates(current, mv_options);
     } else if (strcmp(command, "ln") == 0) {
         secdat_cli_completion_print_candidates(current, ln_options);
     } else if (strcmp(command, "load") == 0) {
@@ -1678,7 +1685,7 @@ static void secdat_cli_print_usage_line(const char *program_name, enum secdat_co
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "rm", "--ephemeral [-f|--ignore-missing] KEYREF");
         break;
     case SECDAT_COMMAND_MV:
-        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mv", "SRC_KEYREF DST_KEYREF");
+        secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "mv", "[--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] SRC_KEYREF DST_KEYREF");
         break;
     case SECDAT_COMMAND_CP:
         secdat_cli_print_usage_columns(program_name, "[-d DIR|--dir DIR] [-s STORE|--store STORE]", "cp", "[--mask-action=preserve|reject] [--mask-warnings=default|on|off] [--warn-mask|--no-warn-mask] [--dry-run] [--json] SRC_KEYREF DST_KEYREF");
@@ -2049,6 +2056,9 @@ static void secdat_cli_print_target_meaning(const char *target)
     }
     if (target != NULL && strcmp(target, "mv") == 0) {
         secdat_cli_print_detail_line(_("  mv: rename or relocate one key between resolved locations\n"));
+        secdat_cli_print_detail_line(_("  a same-domain/store local v2 rename preserves both entry and secret IDs, existing links, and object refcount\n"));
+        secdat_cli_print_detail_line(_("  descendant identity masks follow the preserved entry; relation KEYREF rewrites are reported separately in the common mutation plan\n"));
+        secdat_cli_print_detail_line(_("  --mask-action=preserve is the default; reject, warning controls, dry-run, and JSON apply to local same-namespace v2 rename\n"));
         return;
     }
     if (target != NULL && strcmp(target, "cp") == 0) {
