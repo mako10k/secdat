@@ -409,6 +409,11 @@ if mode != "plain":
 mode, values, _ = run_completion("mv", "")
 if mode != "plain":
     raise SystemExit(f"FAIL: mv completion mode mismatch: {mode!r}")
+for expected in [
+    "--mask-action", "--mask-warnings", "--warn-mask", "--no-warn-mask",
+    "--dry-run", "--json",
+]:
+    assert_contains(values, expected, "mv options")
 
 mode, values, _ = run_completion("ln", "")
 if mode != "plain":
