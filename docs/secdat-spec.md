@@ -934,7 +934,7 @@ secdat [--dir DIR] [--store STORE] unmask [--dry-run] [--json] [--mask-chain UUI
 - `reject` fails before live mutation on any direct hit, transition, orphaning, or source-mask creation
 - warning policy is orthogonal to action: preserve defaults to warnings on, reject defaults to warnings off, and explicit `on`/`off` never changes state, success, exit status, or JSON rows
 - warnings are emitted only after a successful commit; dry-run and rejected/failed operations do not claim that a transition occurred
-- `--dry-run` and `--json` expose `secdat.mutation-plan.v1`, including normalized impact counts and authorized rows with domain/store/key, event, states, mask chain, and target entry identity
+- `--dry-run` and `--json` expose `secdat.mutation-plan.v1`, including normalized impact counts and authorized rows with domain/store/source key/effective after key, event, states, mask chain, and target entry identity
 - multi-assignment `set` and `load` execute their entire existing command against a protected state snapshot, preflight the aggregate result, and commit all changed files together
 - a later batch error, locked hidden mask name, ambiguous legacy mask, or `reject` outcome leaves all live entries unchanged
 - warning suppression cannot suppress locked/incomplete analysis, legacy ambiguity, invalid options, or rejection
@@ -992,6 +992,9 @@ secdat [--dir DIR] [--store STORE] mv [MASK_MUTATION_OPTIONS] SRC_KEY DST_KEY
 - `--json` reports `source_secret_id`, `destination_secret_id`,
   `source_entry_id`, `destination_entry_id`, `entry_id_preserved`,
   `secret_id_preserved`, `mask_impact_rows`, and `relation_consequence_rows`
+- a descendant identity mask that retains the moved `entry_id` is reported as
+  `followed`; source or destination name-slot mask interactions remain
+  `direct-hit`
 - `--mask-action=reject` rejects a planned descendant-mask interaction before
   live mutation
 

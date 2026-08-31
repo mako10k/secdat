@@ -748,6 +748,7 @@ enum secdat_mutation_slot_operation {
 
 enum secdat_mutation_impact_event {
     SECDAT_MUTATION_IMPACT_DIRECT_HIT = 0,
+    SECDAT_MUTATION_IMPACT_FOLLOWED,
     SECDAT_MUTATION_IMPACT_BECAME_DORMANT,
     SECDAT_MUTATION_IMPACT_REACTIVATED,
     SECDAT_MUTATION_IMPACT_ORPHANED,
@@ -1417,6 +1418,11 @@ static int secdat_mutation_plan_append_row(
     const struct secdat_mask_view *view,
     enum secdat_mutation_impact_event event,
     const struct secdat_mask_view *after
+);
+static int secdat_mutation_collect_slot_impacts(
+    struct secdat_mutation_plan *plan,
+    const struct secdat_mutation_slot *slot,
+    int *hard_error
 );
 static int secdat_print_mutation_plan(
     const struct secdat_mutation_plan *plan,
@@ -23027,6 +23033,31 @@ static int secdat_transaction_append_prepared_write_set(
     return 0;
 }
 
+static size_t secdat_transaction_changed_write_count(
+    const struct secdat_transaction *transaction
+)
+{
+    size_t changed = 0;
+    size_t index;
+
+    for (index = 0; index < transaction->target_count; index += 1) {
+        const struct secdat_transaction_target *target =
+            &transaction->targets[index];
+
+        if (target->is_guard
+            || (target->before_exists == target->after_exists
+                && (!target->before_exists
+                    || strcmp(
+                        target->before_digest,
+                        target->after_digest
+                    ) == 0))) {
+            continue;
+        }
+        changed += 1;
+    }
+    return changed;
+}
+
 static int secdat_transaction_mark_source_removal(
     struct secdat_transaction *transaction,
     const char *source_path
@@ -25203,11 +25234,15 @@ static int secdat_read_v2_mask_record(
     int seen_key_visibility = 0;
     int seen_key_encryption = 0;
     int valid = 0;
+    int projected;
 
     memset(record, 0, sizeof(*record));
-    if (lstat(path, &file_status) != 0
-        || !S_ISREG(file_status.st_mode)
-        || (file_status.st_mode & 077) != 0
+    projected = secdat_projected_file_exists(path);
+    if (projected == 0
+        || (projected < 0
+            && (lstat(path, &file_status) != 0
+                || !S_ISREG(file_status.st_mode)
+                || (file_status.st_mode & 077) != 0))
         || !secdat_uuid_is_valid(file_target_entry_id)
         || secdat_read_v2_text_file(path, secdat_v2_mask_magic, &text, &length) != 0) {
         return 1;
@@ -41979,7 +42014,7 @@ static int secdat_mutation_plan_capture_mv_masks(
                 plan,
                 &slot,
                 &view,
-                SECDAT_MUTATION_IMPACT_DIRECT_HIT,
+                SECDAT_MUTATION_IMPACT_FOLLOWED,
                 NULL
             ) != 0) {
             goto cleanup;
@@ -42071,7 +42106,7 @@ static int secdat_mutation_plan_finish_mv_masks(
         struct secdat_mutation_impact_row *row = &plan->rows[index];
         struct secdat_mask_view after;
 
-        if (row->event != SECDAT_MUTATION_IMPACT_DIRECT_HIT
+        if (row->event != SECDAT_MUTATION_IMPACT_FOLLOWED
             || strcmp(row->target_entry_id, target_entry_id) != 0) {
             continue;
         }
@@ -42095,6 +42130,48 @@ static int secdat_mutation_plan_finish_mv_masks(
                 plan,
                 row,
                 &after
+            ) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int secdat_mutation_plan_collect_mv_slots(
+    struct secdat_mutation_plan *plan,
+    const char *domain_id,
+    const char *store_name,
+    const char *source_key,
+    const char *destination_key,
+    int *hard_error
+)
+{
+    size_t index;
+
+    if (plan == NULL) {
+        return 0;
+    }
+    if (secdat_mutation_slot_list_append(
+            &plan->slots,
+            domain_id,
+            store_name,
+            source_key,
+            SECDAT_MUTATION_SLOT_REMOVE
+        ) != 0
+        || secdat_mutation_slot_list_append(
+            &plan->slots,
+            domain_id,
+            store_name,
+            destination_key,
+            SECDAT_MUTATION_SLOT_WRITE
+        ) != 0) {
+        return 1;
+    }
+    for (index = 0; index < plan->slots.count; index += 1) {
+        if (secdat_mutation_collect_slot_impacts(
+                plan,
+                &plan->slots.items[index],
+                hard_error
             ) != 0) {
             return 1;
         }
@@ -42744,6 +42821,7 @@ static int secdat_move_v2_entry(
     struct secdat_mutation_plan *mutation_plan = NULL;
     int source_is_local;
     int same_namespace;
+    int hard_error = 0;
     int need_source_mask = 0;
     int precommit_status;
     int unsafe_store = 0;
@@ -43139,6 +43217,14 @@ static int secdat_move_v2_entry(
     if (secdat_mutation_plan_finish_mv_masks(
             mutation_plan,
             source_entry.entry_id
+        ) != 0
+        || secdat_mutation_plan_collect_mv_slots(
+            mutation_plan,
+            source_domain_id,
+            source_reference->store_value,
+            source_reference->key,
+            destination_reference->key,
+            &hard_error
         ) != 0) {
         goto cleanup;
     }
@@ -43173,13 +43259,14 @@ static int secdat_move_v2_entry(
         goto cleanup;
     }
     if (mutation_plan != NULL) {
-        mutation_plan->changed_file_count = changed_file_count;
-        mutation_plan->rejected =
-            mutation_plan->policy.action == SECDAT_MUTATION_MASK_REJECT
-            && mutation_plan->row_count > 0;
+        mutation_plan->changed_file_count =
+            secdat_transaction_changed_write_count(&transaction);
+        mutation_plan->rejected = hard_error
+            || (mutation_plan->policy.action == SECDAT_MUTATION_MASK_REJECT
+                && mutation_plan->row_count > 0);
         precommit_status = secdat_render_scoped_precommit(
             mutation_plan,
-            0,
+            hard_error,
             &status
         );
         if (precommit_status < 0) {
@@ -46689,6 +46776,8 @@ static const char *secdat_mutation_impact_event_name(
     switch (event) {
     case SECDAT_MUTATION_IMPACT_DIRECT_HIT:
         return "direct-hit";
+    case SECDAT_MUTATION_IMPACT_FOLLOWED:
+        return "followed";
     case SECDAT_MUTATION_IMPACT_BECAME_DORMANT:
         return "became-dormant";
     case SECDAT_MUTATION_IMPACT_REACTIVATED:
@@ -47536,10 +47625,11 @@ json_error:
             &plan->rows[index];
 
         printf(
-            "mask_impact_row=%s:%s:%s:%s:%s:%s\n",
+            "mask_impact_row=%s:%s:%s:%s:%s:%s:%s\n",
             row->domain_id,
             row->store_name,
             row->key,
+            row->key_after,
             secdat_mutation_impact_event_name(row->event),
             row->has_state_before
                 ? secdat_mask_state_name(row->state_before)
@@ -47596,6 +47686,10 @@ static void secdat_mutation_emit_warning(
     SECDAT_MUTATION_WARNING_FACT(
         SECDAT_MUTATION_IMPACT_DIRECT_HIT,
         _("%zu directly affected masked key slot(s)")
+    );
+    SECDAT_MUTATION_WARNING_FACT(
+        SECDAT_MUTATION_IMPACT_FOLLOWED,
+        _("%zu mask(s) followed preserved entry identity")
     );
     SECDAT_MUTATION_WARNING_FACT(
         SECDAT_MUTATION_IMPACT_BECAME_DORMANT,
