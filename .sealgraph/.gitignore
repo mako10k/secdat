@@ -1,0 +1,4 @@
+/cache/
+/logs/
+/locks/*
+!/locks/.gitkeep
