@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify metadata relation behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -63,6 +64,12 @@ def assert_contains(output, expected, label):
 def assert_eq(actual, expected, label):
     if actual != expected:
         fail(f"{label}: expected [{expected}], got [{actual}]")
+
+
+def assert_refresh_rows(actual, expected, label):
+    # Refresh suggestions have no public ordering contract. Opaque v2 record
+    # addresses must not alter the required rows or hide duplicate suggestions.
+    assert_eq(sorted(actual.splitlines(keepends=True)), sorted(expected.splitlines(keepends=True)), label)
 
 
 def assert_not_contains(output, unexpected, label):
@@ -132,6 +139,7 @@ if rc != 0 or stderr != "":
     fail(f"copied metadata read failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "service=billing\n", "copy preserves service metadata")
 
+rebuild_dependency_index(domain)
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "mv", "BILLING_ID_COPY", "BILLING_ID_RENAMED"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"mv metadata key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -202,11 +210,11 @@ expected_refresh = f"high\tbilling-login\tpassword\tpassword\t{domain}/BILLING_P
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-refresh", "BILLING_PASSWORD"])
 if rc != 0 or stderr != "":
     fail(f"relation suggest-refresh password failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, expected_refresh, "relation suggest-refresh password")
+assert_refresh_rows(stdout, expected_refresh, "relation suggest-refresh password")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "meta", "mark-leaked", "BILLING_PASSWORD"])
 if rc != 0 or stderr != "":
     fail(f"meta mark-leaked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, expected_refresh, "meta mark-leaked suggestions")
+assert_refresh_rows(stdout, expected_refresh, "meta mark-leaked suggestions")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "meta", "get", "BILLING_PASSWORD"])
 if rc != 0 or stderr != "":
     fail(f"meta get leaked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -235,7 +243,7 @@ expected_generic_refresh = (
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-refresh", "GENERIC_PRIMARY"])
 if rc != 0 or stderr != "":
     fail(f"relation suggest-refresh generic role failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, expected_generic_refresh, "relation suggest-refresh generic role")
+assert_refresh_rows(stdout, expected_generic_refresh, "relation suggest-refresh generic role")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "unlock", "--readonly"])
 if rc != 0 or "readonly session unlocked from environment" not in stdout:
@@ -256,7 +264,7 @@ assert_eq(stdout, "billing-login\n", "readonly relation search")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-refresh", "BILLING_PASSWORD"], extra_env=readonly_env)
 if rc != 0 or stderr != "":
     fail(f"relation suggest-refresh should work in readonly session: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, expected_refresh, "readonly relation suggest-refresh")
+assert_refresh_rows(stdout, expected_refresh, "readonly relation suggest-refresh")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "set", "readonly-blocked", "--member", "id=BILLING_ID", "--member", "password=BILLING_PASSWORD"], extra_env=readonly_env)
 if rc == 0 or "current session is readonly and cannot run relation set" not in stderr:
     fail(f"relation set should be blocked in readonly session: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -281,7 +289,7 @@ expected_long_role_refresh = (
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-refresh", "GENERIC_PRIMARY"])
 if rc != 0 or stderr != "":
     fail(f"relation suggest-refresh long role failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, expected_long_role_refresh, "relation suggest-refresh long role")
+assert_refresh_rows(stdout, expected_long_role_refresh, "relation suggest-refresh long role")
 
 refresh_consumer = work_root / "refresh-consumer"
 refresh_consumer.mkdir(parents=True)
@@ -307,21 +315,21 @@ expected_cross_refresh = (
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "relation", "suggest-refresh", "BILLING_PASSWORD"])
 if rc != 0 or stderr != "":
     fail(f"relation suggest-refresh cross-domain failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, expected_cross_refresh, "relation suggest-refresh cross-domain")
+assert_refresh_rows(stdout, expected_cross_refresh, "relation suggest-refresh cross-domain")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "meta", "mark-leaked", "BILLING_PASSWORD"])
 if rc != 0 or stderr != "":
     fail(f"meta mark-leaked cross-domain failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, expected_cross_refresh, "meta mark-leaked cross-domain")
+assert_refresh_rows(stdout, expected_cross_refresh, "meta mark-leaked cross-domain")
 outside_domain = work_root / "outside"
 outside_domain.mkdir(parents=True)
 rc, stdout, stderr = run([bin_path, "--dir", str(outside_domain), "relation", "suggest-refresh", f"{domain}/BILLING_PASSWORD"])
 if rc != 0 or stderr != "":
     fail(f"relation suggest-refresh absolute key outside domain failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, expected_cross_refresh, "relation suggest-refresh absolute key outside domain")
+assert_refresh_rows(stdout, expected_cross_refresh, "relation suggest-refresh absolute key outside domain")
 rc, stdout, stderr = run([bin_path, "--dir", str(outside_domain), "meta", "mark-leaked", f"{domain}/BILLING_PASSWORD"])
 if rc != 0 or stderr != "":
     fail(f"meta mark-leaked absolute key outside domain failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-assert_eq(stdout, expected_cross_refresh, "meta mark-leaked absolute key outside domain")
+assert_refresh_rows(stdout, expected_cross_refresh, "meta mark-leaked absolute key outside domain")
 
 link_alpha = work_root / "link-alpha"
 link_beta = work_root / "link-beta"
@@ -383,9 +391,6 @@ for key, value in [
     rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "set", key, "--value", value])
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"hidden-domain set {key} failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "store", "migrate", "default", "--to-format", "v2"])
-if rc != 0 or stderr != "":
-    fail(f"hidden-domain v2 migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rebuild_dependency_index(hidden_domain)
 rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "attr", "HIDDEN_TOKEN", "--key-visibility", "unlocked"])
 if rc != 0 or stdout != "" or stderr != "":

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify deferred gc behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -71,10 +72,6 @@ def create_v2_domain(name):
     domain.mkdir()
     before = set(by_id.iterdir()) if by_id.exists() else set()
     require_ok(run(domain, "domain", "create"), f"create {name}", "")
-    require_ok(
-        run(domain, "store", "migrate", "default", "--to-format", "v2"),
-        f"migrate {name}",
-    )
     created = set(by_id.iterdir()) - before
     if len(created) != 1:
         fail(f"could not identify {name} domain state: {created!r}")

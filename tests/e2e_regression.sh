@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify session-backed cross-domain secret workflows with persisted v2 defaults.
 
 set -euo pipefail
 
@@ -21,6 +22,7 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
 python3 - "$bin_path" "$work_root" <<'PY'
 import os
+import json
 import pty
 import subprocess
 import sys
@@ -186,8 +188,9 @@ if rc != 0 or stderr != "":
     fail(f"get inherited key in child failed: rc={rc} stderr={stderr!r}")
 assert_eq(stdout, "root-secret", "child inherited key")
 
-rc, _, stderr = run([bin_path, "--dir", str(service_dir), "rm", "SHARED_KEY"])
-if rc != 0 or stderr != "":
+rc, stdout, stderr = run([bin_path, "--dir", str(service_dir), "rm", "SHARED_KEY"])
+expected_mask_warning = "warning: rm: 1 source mask(s) created; inspect with 'secdat --dir DIR list --all-masks --long'\n"
+if rc != 0 or stdout != "" or stderr != expected_mask_warning:
     fail(f"rm inherited key in child failed: rc={rc} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(service_dir), "ls"])
@@ -213,14 +216,45 @@ if rc != 0 or stderr != "":
     fail(f"exec after tombstone failed: rc={rc} stderr={stderr!r}")
 assert_eq(stdout, "missing", "tombstoned key hidden from exec")
 
-rc, _, stderr = run([bin_path, "--dir", str(service_dir), "set", "SHARED_KEY", "-v", "child-secret"])
-if rc != 0 or stderr != "":
+rc, stdout, stderr = run([bin_path, "--dir", str(service_dir), "set", "SHARED_KEY", "-v", "child-secret"])
+expected_override_warning = "warning: set: 1 directly affected masked key slot(s); 1 mask(s) became dormant; inspect with 'secdat --dir DIR list --all-masks --long'\n"
+if rc != 0 or stdout != "" or stderr != expected_override_warning:
     fail(f"override child key failed: rc={rc} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(service_dir), "get", "SHARED_KEY", "-o"])
 if rc != 0 or stderr != "":
     fail(f"get overridden child key failed: rc={rc} stderr={stderr!r}")
 assert_eq(stdout, "child-secret", "child override value")
+
+rc, stdout, stderr = run([bin_path, "--dir", str(service_dir), "ls", "--json"])
+if rc != 0 or stderr:
+    fail(f"list overridden child key failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+listed = json.loads(stdout)
+if listed["key_count"] != 1 or [item["key"] for item in listed["keys"]] != ["SHARED_KEY"]:
+    fail(f"list/get disagreed on the local override under a dormant mask: {listed!r}")
+rc, stdout, stderr = run([bin_path, "__completion", "--bash", "--dir", str(service_dir), "get", "SHARED_"])
+if rc != 0 or stderr or stdout != "__secdat_completion_mode=plain\nSHARED_KEY\n":
+    fail(f"completion hid local override under dormant mask: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, exports, stderr = run([bin_path, "--dir", str(service_dir), "export", "--pattern", "SHARED_*"])
+if rc != 0 or stderr:
+    fail(f"export overridden child key failed: rc={rc} stderr={stderr!r}")
+rc, stdout, stderr = run(["bash", "--noprofile", "--norc", "-c", exports + 'printf %s "${SHARED_KEY-missing}"'])
+if rc != 0 or stderr or stdout != "child-secret":
+    fail(f"export/get disagreed on local override: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([
+    bin_path, "--dir", str(service_dir), "exec", "--inject", "secret:only=SHARED_*",
+    "--dry-run", "--json", "--", "python3", "-c", "pass",
+])
+if rc != 0 or stderr:
+    fail(f"exec plan for overridden child key failed: rc={rc} stderr={stderr!r}")
+plan = json.loads(stdout)
+if plan["supply"]["secret"]["contributed"] != ["SHARED_KEY"] or plan["injected_key_count"] != 1:
+    fail(f"exec plan hid local override under dormant mask: {plan!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(service_dir), "list", "--all-masks", "--long"])
+mask_rows = [line for line in stdout.splitlines() if line.startswith("SHARED_KEY\t")]
+if rc != 0 or stderr or len(mask_rows) != 1 or "\tstate=dormant\t" not in mask_rows[0]:
+    fail(f"local override did not retain its dormant barrier: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+mask_before = dict(field.split("=", 1) for field in mask_rows[0].split("\t")[1:])
 
 rc, stdout, stderr = run([
     bin_path,
@@ -235,6 +269,29 @@ rc, stdout, stderr = run([
 if rc != 0 or not exec_stderr_ok(stderr):
     fail(f"exec overridden child key failed: rc={rc} stderr={stderr!r}")
 assert_eq(stdout, "child-secret", "exec overridden child key")
+
+# Removing the local entry must reactivate the retained inheritance barrier,
+# rather than fixing enumeration by discarding the mask during override.
+rc, stdout, stderr = run([bin_path, "--dir", str(service_dir), "fsck", "--dependency-index", "--repair"])
+if rc != 0 or stderr or not stdout.startswith("rebuilt-dependency-index\tglobal\t"):
+    fail(f"override removal coverage setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(service_dir), "rm", "SHARED_KEY"])
+expected_reactivated_warning = "warning: rm: 1 directly affected masked key slot(s); 1 dormant mask(s) reactivated; inspect with 'secdat --dir DIR list --all-masks --long'\n"
+if rc != 0 or stdout or stderr != expected_reactivated_warning:
+    fail(f"remove local override failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(service_dir), "get", "SHARED_KEY", "-o"])
+if rc != 1 or stdout or "key not found: SHARED_KEY" not in stderr:
+    fail(f"removing override exposed parent through retained barrier: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(service_dir), "ls"])
+if rc != 0 or stderr or "SHARED_KEY" in stdout.splitlines():
+    fail(f"listing exposed reactivated masked source: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(service_dir), "list", "--all-masks", "--long"])
+mask_rows = [line for line in stdout.splitlines() if line.startswith("SHARED_KEY\t")]
+if rc != 0 or stderr or len(mask_rows) != 1 or "\tstate=active\t" not in mask_rows[0]:
+    fail(f"retained mask did not reactivate: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+mask_after = dict(field.split("=", 1) for field in mask_rows[0].split("\t")[1:])
+for field in ("record_kind", "mask_chain_id", "target_entry_id", "target_secret_id", "target_domain_id"):
+    assert_eq(mask_after[field], mask_before[field], f"reactivated mask preserves {field}")
 
 
 # Scenario 3: save/load/export supports app-store migration into a new domain.

@@ -253,7 +253,7 @@ With
 append the durable candidate state, enqueue/attempt schedule, attempt count, and last error without printing the internal enqueue generation.
 .TP
 .B fsck [\-\-orphaned] [\-\-dangling] [\-\-refcount] [\-\-dependency-index] [\-\-repair] [\-\-format v1|v2]
-Check the current-domain local store namespace without decrypting secret values. Clean v1 output is
+Check the current-domain local store namespace without decrypting secret values. Without --format, detect the selected local store format; explicit v1/v2 selectors retain mismatch errors. Clean output is
 .B ok .
 .B --orphaned
 reports leftover metadata, searchable key metadata, or tombstones without an authoritative counterpart,
@@ -370,6 +370,7 @@ under
 The command-wide mutation lock covers recovery, plan construction, and commit.
 Recovery discards validated pre-commit journals or rolls committing journals
 forward, so later command views observe an all-before or all-after result.
+A mutation creating a new store journals its ready-v2 marker with a store-initialization role at phase 15. Required private directories are materialized and synchronized during COMMITTING before the marker and primary records are published. Interrupted commits roll forward; existing v1 recovery records retain their recorded meaning.
 Normal key, mask, relation, store, and domain mutations use bounded exact write
 sets instead of copying the store tree. Until deferred GC is implemented,
 local removal, destination replacement, and overwrite retain the documented
@@ -618,7 +619,7 @@ Report whether secret material is available from the current domain scope. Use
 for stable machine-readable state while preserving the normal status exit-code contract.
 .TP
 .B store create|delete|ls|migrate|finalize-migration
-Manage store namespaces and v1 to v2 migration inside the resolved current domain.
+Manage store namespaces and explicit v1 to v2 migration inside the resolved current domain. New stores use v2, including the default store in a newly created domain, store create, and implicit creation by supported persistent writes. Existing markerless or marked v1 stores remain v1. No new v1 creation option or automatic migration is provided. A legacy mask over a v1 parent entry can remain ambiguous in the new v2 child; ordinary unmask is refused until the operator explicitly migrates the parent and rebinds the mask. Store creation does not perform those actions. Read-only commands, completion and dry-runs do not create stores.
 .TP
 .B store ls [GLOBPATTERN] [\-p GLOBPATTERN|\-\-pattern GLOBPATTERN] [\-\-json]
 List store namespaces in the resolved current domain. Use

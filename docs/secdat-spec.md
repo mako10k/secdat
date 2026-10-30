@@ -672,9 +672,13 @@ Store-name Bash completion follows the operand's namespace: `--store` / `-s` inc
 
 The internal Bash completion protocol uses a `store` mode with hex-encoded name bytes to preserve whitespace, newlines and shell punctuation. The shell decodes these records without evaluating their contents and inserts shell-quoted names without filesystem-directory suffixes. Only input up to the cursor participates; option-looking operands and child-command arguments do not change the secdat global context. Existing KEYREF completion remains available.
 
+New persistent store namespaces use format v2, including new-domain default stores, explicit `store create`, and implicit creation by supported persistent writes, qualified destinations, SDK setters, or volatile overlay save. The write planner distinguishes an absent store root from an existing markerless root before format dispatch. Existing markerless roots (including empty roots) remain v1; explicit v1/v2 markers retain their meaning, and malformed markers or unsafe paths fail closed. Source and inherited-store lookups never select a new format. There is no public option for creating new v1 stores and no automatic v1 migration, fallback normalization, finalization or global dependency-index rebuild.
+
+`fsck` without `--format` detects the selected current-domain local store format. Explicit `--format v1|v2` retains mismatch errors. Format-specific repair and dependency-index validation runs after autodetection. Read-only commands and dry-runs do not initialize absent stores.
+
 #### FR-9 Store Management
 
-- `secdat [--dir DIR] store create STORE` creates an empty store in the resolved current domain
+- `secdat [--dir DIR] store create STORE` creates an empty v2 store in the resolved current domain
 - creating a store that already exists in the current domain is an error
 - `secdat [--dir DIR] store delete STORE` deletes a store from the resolved current domain
 - deleting a store fails if the store still contains local entries or tombstones
@@ -1646,3 +1650,11 @@ The recommended direction is:
 - require both entry-side and secret-side authorization for bulk-gated injection/export/list flows
 
 This approach preserves current users while creating a clean boundary between key visibility and value visibility.
+
+### New-store initialization in mutation journals
+
+A mutation creating a previously absent store stages an absent-root typed directory guard and the exact ready-v2 marker. A `store-initialization` state-file role at phase 15 materializes the private v2 directories before primary record writes. The ready marker is published only after those directories are synchronized. No initialization is published before COMMITTING; precommit failure and dry-run discard the planned store. Once COMMITTING is durable, failures retain the journal for roll-forward rather than promising rollback.
+
+The initialization role is bound to a canonical registered-domain store marker, an absent before-state and the ready-v2 payload. Recovery verifies the required directory types and permissions as well as the marker; populated directories are allowed after primary writes. Existing transaction roles, recorded v1 trees and markerless-v1 detection remain readable. Explicit domain/store creation uses the shared empty-v2 store template within its existing container publication transaction.
+
+For mixed-format inheritance, #244 retains ADR 0006's ambiguity barrier: masking a v1 parent entry from a new v2 child store can create a legacy-ambiguous mask, and ordinary unmask remains refused. The owner explicitly chose to preserve this existing v2 restriction and document its effect. Resolving it requires an operator-selected parent migration, dependency-index preparation where needed, and child `mask --rebind` before unmask. No parent migration or guard relaxation is implied by new-store initialization.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify mask transaction behavior against explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -15,13 +16,18 @@ export XDG_RUNTIME_DIR="$work_root/runtime"
 export XDG_DATA_HOME="$work_root/data"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
-python3 - "$bin_path" "$work_root" <<'PY'
+fixture_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+python3 - "$bin_path" "$work_root" "$fixture_dir" <<'PY'
 import json
 import os
 import socket
 import subprocess
 import sys
 from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
+from store_fixture import create_v1_store
 
 bin_path = sys.argv[1]
 work_root = Path(sys.argv[2])
@@ -294,6 +300,9 @@ def assert_mask_state(mask_path, tombstone_path, expected, context):
 create_domain(root)
 create_domain(parent)
 create_domain(child)
+# These fixtures intentionally exercise migrated v1 rollback projections.
+for legacy_domain in (root, parent, child):
+    create_v1_store(env["XDG_DATA_HOME"], legacy_domain)
 
 keys = [
     "PUBLIC",
@@ -1683,21 +1692,6 @@ expect_ok(
         "value",
     ]
 )
-for domain in (parent, child):
-    stdout = expect_ok(
-        [
-            bin_path,
-            "--dir",
-            str(domain),
-            "store",
-            "migrate",
-            "symlink",
-            "--to-format",
-            "v2",
-        ]
-    )
-    if "verified=yes\n" not in stdout:
-        fail(f"symlink store migration was not verified: {stdout!r}")
 parent_symlink_store = parent_store.parent / "symlink"
 child_symlink_store = child_store.parent / "symlink"
 symlink_entry = entry_for_key(parent_symlink_store, "SYMLINK_TARGET")

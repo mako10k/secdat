@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify dependency index behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -66,26 +67,14 @@ for key, value in (("ALPHA", "one"), ("BETA", "two")):
         "",
     )
 
-require_ok(
-    run("--dir", str(root), "store", "migrate", "app", "--to-format", "v2"),
-    "migrate root",
-)
-require_ok(
-    run("--dir", str(child), "store", "migrate", "app", "--to-format", "v2"),
-    "migrate child",
-)
-require_ok(
-    run("--dir", str(child2), "store", "migrate", "app", "--to-format", "v2"),
-    "migrate child2",
-)
 
 missing = run("--dir", str(root), "fsck", "--format", "v2", "--dependency-index")
 if missing.returncode != 1 or missing.stdout != (
     "dependency-index\tglobal\tmissing-building-corrupt-or-stale\n"
 ):
     fail(f"missing index did not fail closed: {missing}")
-wrong_format = run("--dir", str(root), "fsck", "--dependency-index")
-if wrong_format.returncode != 2 or "requires --format v2" not in wrong_format.stderr:
+wrong_format = run("--dir", str(root), "fsck", "--format", "v1", "--dependency-index")
+if wrong_format.returncode != 2 or "fsck --dependency-index requires a v2 store" not in wrong_format.stderr:
     fail(f"dependency index accepted v1 format: {wrong_format}")
 combined = run(
     "--dir", str(root), "fsck", "--format", "v2", "--dependency-index", "--orphaned"

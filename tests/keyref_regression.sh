@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify keyref behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -73,6 +74,8 @@ relative_cwd_value="$(cd "$child" && "$bin_path" get ../override_key --stdout)"
 assert_eq "$relative_cwd_value" 'parent' 'relative KEYREF base from cwd'
 
 "$bin_path" --dir "$root" set relative_move_key move-value >/dev/null
+# Default stores now use the existing v2 dependency-coverage prerequisite.
+"$bin_path" --dir "$root" fsck --dependency-index --repair >/dev/null
 "$bin_path" --dir "$child" mv ../relative_move_key ./relative_move_key >/dev/null
 relative_moved_value="$("$bin_path" --dir "$child" get ./relative_move_key --stdout)"
 assert_eq "$relative_moved_value" 'move-value' 'relative KEYREF mv'
@@ -184,8 +187,6 @@ assert_eq "$implicit_get_value" 'explicit_value' 'implicit get fallback for KEYR
 
 "$bin_path" --dir "$root" store create graph >/dev/null
 "$bin_path" --dir "$child" store create graph >/dev/null
-"$bin_path" --dir "$root" store migrate graph --to-format v2 >/dev/null
-"$bin_path" --dir "$child" store migrate graph --to-format v2 >/dev/null
 "$bin_path" --dir "$root" --store graph set V2_RELATIVE_MOVE graph-value >/dev/null
 "$bin_path" --dir "$root" fsck --format v2 --dependency-index --repair >/dev/null
 if "$bin_path" --dir "$child" --store graph get ./V2_RELATIVE_MOVE --stdout >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then

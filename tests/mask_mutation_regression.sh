@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify mask mutation behavior against explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -100,20 +101,6 @@ def parse_mutation_plan(stdout, context):
 
 def create_v2_domain(domain):
     expect_ok([bin_path, "--dir", str(domain), "domain", "create"])
-    migrated = expect_ok(
-        [
-            bin_path,
-            "--dir",
-            str(domain),
-            "store",
-            "migrate",
-            "default",
-            "--to-format",
-            "v2",
-        ]
-    )
-    if "verified=yes\n" not in migrated:
-        fail(f"migration was not verified for {domain}: {migrated!r}")
     rebuilt = expect_ok(
         [
             bin_path,

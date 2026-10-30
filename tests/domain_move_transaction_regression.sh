@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify domain move transaction behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -79,11 +80,6 @@ for key, value in (("ALPHA", "one"), ("BETA", "two")):
         run("--dir", str(source), "--store", "app", "set", key, "--value", value),
         f"set {key}",
     )
-require_ok(
-    run("--dir", str(source), "store", "migrate", "app", "--to-format", "v2"),
-    "migrate",
-    stdout=None,
-)
 require_ok(
     run(
         "--dir", str(source), "--store", "app", "relation", "set", "pair",

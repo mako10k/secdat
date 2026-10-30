@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify fsck behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -16,11 +17,16 @@ export XDG_RUNTIME_DIR="$work_root/runtime"
 export XDG_DATA_HOME="$work_root/data"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
-python3 - "$bin_path" "$work_root" <<'PY'
+fixture_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+python3 - "$bin_path" "$work_root" "$fixture_dir" <<'PY'
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
+from store_fixture import create_v1_store
 
 bin_path = sys.argv[1]
 work_root = Path(sys.argv[2])
@@ -52,6 +58,9 @@ rc, stdout, stderr = run([bin_path, "--dir", str(domain), "domain", "create"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+# Preserve legacy coverage independently of the new-store default.
+create_v1_store(env["XDG_DATA_HOME"], domain)
+
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "set", "GOOD", "--value", "good"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set GOOD failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -69,7 +78,7 @@ if rc != 2 or "store format is v1; use --format v1" not in stderr:
     fail(f"v2 fsck should reject a v1 store: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--repair"])
-if rc != 2 or stdout != "" or "fsck --repair is only supported with --format v2" not in stderr:
+if rc != 2 or stdout != "" or "fsck --repair requires a v2 store" not in stderr:
     fail(f"v1 fsck repair should be rejected: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v2", "--repair", "--orphaned"])

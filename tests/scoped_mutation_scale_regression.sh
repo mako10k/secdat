@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify scoped mutation scale behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -54,10 +55,6 @@ def create_v2_domain(env, path):
     by_id = state_root / "domains/by-id"
     before = set(by_id.iterdir()) if by_id.exists() else set()
     require_ok(run(env, "--dir", str(path), "domain", "create"), f"create {path}", "")
-    require_ok(
-        run(env, "--dir", str(path), "store", "migrate", "default", "--to-format", "v2"),
-        f"migrate {path}",
-    )
     created = set(by_id.iterdir()) - before
     if len(created) != 1:
         fail(f"could not identify created domain for {path}: {created!r}")

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify fuse behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -56,12 +57,29 @@ def run_bytes(args, cwd=None):
     return completed.returncode, completed.stdout, completed.stderr
 
 
-def corrupt_entry(key):
+def corrupt_value(key):
     entries_root = Path(env["XDG_DATA_HOME"]) / "secdat" / "domains" / "by-id"
-    matches = list(entries_root.glob(f"*/stores/default/entries/{key}.sec"))
+    matches = [
+        path for path in entries_root.glob("*/stores/default/domain-ent/*.dent")
+        if f"key={key}\n" in path.read_text(encoding="utf-8")
+    ]
     if len(matches) != 1:
-        fail(f"could not find one stored entry for {key}: {matches!r}")
-    matches[0].write_text("broken", encoding="utf-8")
+        fail(f"could not find one v2 entry for {key}: {matches!r}")
+    fields = dict(line.split("=", 1) for line in matches[0].read_text(encoding="utf-8").splitlines() if "=" in line)
+    objects = list(entries_root.glob(f"*/stores/default/objects/secret/{fields['secret_id']}.sec"))
+    if len(objects) != 1:
+        fail(f"could not find one v2 value object for {key}: {objects!r}")
+    data = bytearray(objects[0].read_bytes())
+    separator = data.find(b"\n\n")
+    if separator < 0 or len(data) <= separator + 2:
+        fail(f"v2 object has no owned value payload for {key}")
+    # Corrupt authenticated ciphertext, preserving metadata and payload length.
+    # Filtered dry-runs must remain metadata-only despite an unreadable value.
+    data[-1] ^= 1
+    objects[0].write_bytes(data)
+    rc, _, _ = run([bin_path, "--dir", str(domain), "get", key])
+    if rc == 0:
+        fail(f"v2 value corruption fixture did not reject reading {key}")
 
 
 rc, stdout, stderr = run([fuse_bin, "--help"])
@@ -89,8 +107,8 @@ for args in [
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"setup command failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-corrupt_entry("OTHER_TOKEN")
-corrupt_entry("ALT_TOKEN")
+corrupt_value("OTHER_TOKEN")
+corrupt_value("ALT_TOKEN")
 
 rc, stdout, stderr = run([
     fuse_bin,
@@ -532,7 +550,6 @@ v2_ephemeral_domain = work_root / "v2-ephemeral-domain"
 v2_ephemeral_domain.mkdir()
 for args in [
     [bin_path, "--dir", str(v2_ephemeral_domain), "domain", "create"],
-    [bin_path, "--dir", str(v2_ephemeral_domain), "store", "migrate", "default", "--to-format", "v2"],
     [
         bin_path,
         "--dir",
