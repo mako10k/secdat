@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify sdk behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -93,7 +94,6 @@ run_secdat --dir "$root_domain" --store team set SDK_EPHEMERAL_RACE --value pers
 run_secdat --dir "$root_domain" --store team set SDK_PERSISTENT_SOURCE --value sdk-persistent-source-value
 run_secdat --dir "$root_domain" --store team set SDK_MASKED_EPHEMERAL --value persisted-masked-value
 run_secdat --dir "$child_domain" --store team mask SDK_MASKED_EPHEMERAL
-run_secdat --dir "$root_domain" store migrate enumeration --to-format v2
 run_secdat --dir "$root_domain" fsck --format v2 --dependency-index --repair
 run_secdat --dir "$root_domain" --store enumeration set SDK_HIDDEN_EPHEMERAL \
     --key-visibility unlocked \
@@ -1709,5 +1709,101 @@ go_build_args+=(. "$root_domain" "$refresh_domain" "$long_role" "$cli_plan")
     GOCACHE="$work_root/go-cache" \
     "$go_bin" "${go_build_args[@]}")
 fi
+
+# The SDK must select the same new-store format as CLI operations.
+format_root="$work_root/sdk-format-root"
+format_child="$format_root/child"
+mkdir -p "$format_child"
+run_secdat --dir "$format_root" domain create
+run_secdat --dir "$format_child" domain create
+run_secdat --dir "$format_root" --store sdk-mask set PARENT --value parent-value
+run_secdat --dir "$format_root" --store sdk-rm set PARENT --value parent-value
+python3 "$script_dir/store_fixture.py" "$XDG_DATA_HOME" "$format_root" sdk-legacy --marked
+run_secdat --dir "$format_root" fsck --dependency-index --repair
+
+cat >"$work_root/sdk_format_harness.c" <<'C'
+/* R: Verify SDK namespace creation, inherited removal and legacy-format preservation. */
+#include "secdat-sdk.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static void require(int success, const char *message)
+{
+    if (!success) {
+        fprintf(stderr, "FAIL: SDK default format: %s\n", message);
+        exit(1);
+    }
+}
+
+static void set_key(const struct secdat_sdk_options *options, const char *key)
+{
+    static const unsigned char value[] = "sdk-format-value";
+    require(secdat_sdk_set(options, key, value, sizeof(value) - 1, 0) == 0, key);
+}
+
+int main(int argc, char **argv)
+{
+    struct secdat_sdk_options parent = {0};
+    struct secdat_sdk_options child = {0};
+    struct secdat_sdk_key_metadata_list keys = {0};
+    unsigned char *value = NULL;
+    size_t length = 0;
+    int unsafe_store = 0;
+    int exists = -1;
+    require(argc == 3, "arguments");
+    parent.dir = argv[1];
+    child.dir = argv[2];
+    parent.store = "sdk-set";
+    set_key(&parent, "NEW");
+    require(secdat_sdk_get(&parent, "NEW", &value, &length, &unsafe_store) == 0,
+        "new-store value read");
+    require(length == strlen("sdk-format-value") && memcmp(value, "sdk-format-value", length) == 0,
+        "new-store value bytes");
+    secdat_sdk_free(value);
+    require(secdat_sdk_cp(&parent, "NEW", "COPY:sdk-cp") == 0, "implicit cp");
+    set_key(&parent, "TO_MOVE");
+    require(secdat_sdk_mv(&parent, "TO_MOVE", "MOVED:sdk-mv") == 0, "implicit mv");
+    child.store = "sdk-mask";
+    require(secdat_sdk_mask(&child, "PARENT") == 0, "inherited mask into absent store");
+    require(secdat_sdk_exists(&child, "PARENT", &exists) == 0 && !exists, "masked child view");
+    parent.store = "sdk-mask";
+    require(secdat_sdk_exists(&parent, "PARENT", &exists) == 0 && exists, "mask preserved parent");
+    child.store = "sdk-rm";
+    require(secdat_sdk_rm(&child, "PARENT", 0) == 0, "inherited rm into absent store");
+    require(secdat_sdk_exists(&child, "PARENT", &exists) == 0 && !exists, "removed child view");
+    parent.store = "sdk-rm";
+    require(secdat_sdk_exists(&parent, "PARENT", &exists) == 0 && exists, "rm preserved parent");
+    child.store = "sdk-absent";
+    require(secdat_sdk_exists(&child, "MISSING", &exists) == 0 && !exists, "absent exists");
+    require(secdat_sdk_list_keys(&child, NULL, &keys) == 0 && keys.count == 0, "absent list");
+    secdat_sdk_free(keys.items);
+    require(secdat_sdk_rm(&child, "MISSING", 1) == 0, "ignored missing rm");
+    parent.store = "sdk-legacy";
+    set_key(&parent, "LEGACY");
+    return 0;
+}
+C
+cc -I"$source_root/src" -I"$build_root/src" "$work_root/sdk_format_harness.c" \
+    -L"$build_root/src/.libs" "${sdk_static_link_flags[@]}" \
+    -Wl,-rpath,"$build_root/src/.libs" \
+    -o "$work_root/sdk_format_harness"
+"$work_root/sdk_format_harness" "$format_root" "$format_child"
+python3 - "$XDG_DATA_HOME" "$format_root" "$format_child" "$script_dir" <<'PY'
+import sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[4])
+from store_fixture import store_root, V1_MARKER, V2_MARKER
+for domain, stores in ((sys.argv[2], ("sdk-set", "sdk-cp", "sdk-mv")), (sys.argv[3], ("sdk-mask", "sdk-rm"))):
+    for store in stores:
+        root = store_root(sys.argv[1], domain, store)
+        if (root / "format").read_bytes() != V2_MARKER:
+            raise SystemExit(f"FAIL: SDK did not initialize v2 store: {root}")
+if store_root(sys.argv[1], sys.argv[3], "sdk-absent").exists():
+    raise SystemExit("FAIL: SDK read/no-op created an absent store")
+legacy = store_root(sys.argv[1], sys.argv[2], "sdk-legacy")
+if (legacy / "format").read_bytes() != V1_MARKER or (legacy / "domain-ent").exists():
+    raise SystemExit("FAIL: SDK write migrated existing v1 store")
+PY
 
 printf 'PASS SDK exec plan regression\n'

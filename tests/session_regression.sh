@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify session behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -20,7 +21,7 @@ export XDG_RUNTIME_DIR="$work_root/runtime"
 export XDG_DATA_HOME="$work_root/data"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
-python3 - "$bin_path" "$SECDAT_SESSION_TEST_CLEANUP_SCRIPT" <<'PY'
+python3 - "$bin_path" "$SECDAT_SESSION_TEST_CLEANUP_SCRIPT" "$script_dir" <<'PY'
 import errno
 import os
 import pty
@@ -37,6 +38,10 @@ import unicodedata
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
+from store_fixture import create_v1_store
 import hashlib
 from urllib.parse import quote
 
@@ -855,6 +860,11 @@ rc, stdout, stderr = run(scoped(["get", "UNSAFE_COPIED_KEY", "-o"]))
 if rc != 0 or stdout != "visible-while-locked" or stderr != "":
     fail(f"get copied unsafe key while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+# New default stores use the existing v2 mutation coverage prerequisite. This
+# metadata repair must not unlock or downgrade the locked public-value case.
+rc, stdout, stderr = run(scoped(["fsck", "--dependency-index", "--repair"]))
+if rc != 0 or stderr != "" or not stdout.startswith("rebuilt-dependency-index\tglobal\t"):
+    fail(f"locked v2 mv dependency coverage setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run(scoped(["mv", "UNSAFE_COPIED_KEY", "UNSAFE_MOVED_KEY"]))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"mv unsafe key while locked failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -867,7 +877,15 @@ rc, stdout, stderr = run(scoped(["get", "UNSAFE_COPIED_KEY", "-o"]))
 if rc == 0 or "key not found: UNSAFE_COPIED_KEY" not in stderr:
     fail(f"moved unsafe source still visible while locked: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run(scoped(["set", "VOLATILE_TOMBSTONE_KEY", "--unsafe", "--value", "persistent-value"]))
+# Only the established v1 tombstone slice uses an explicit legacy namespace;
+# every other default-store session scenario continues to exercise new v2.
+volatile_tombstone_store = "volatile-legacy-v1"
+volatile_tombstone_keyref = "VOLATILE_TOMBSTONE_KEY:" + volatile_tombstone_store
+volatile_legacy_store_root = create_v1_store(env["XDG_DATA_HOME"], root_domain, volatile_tombstone_store)
+rc, stdout, stderr = run(scoped(["set", "VOLATILE_V2_PERSISTED", "--unsafe", "--value", "v2-backed-value"]))
+if rc != 0 or stdout or stderr:
+    fail(f"v2 volatile removal boundary seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["set", volatile_tombstone_keyref, "--unsafe", "--value", "persistent-value"]))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"persistent unsafe seed for volatile rm failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
@@ -888,6 +906,49 @@ volatile_status = json.loads(stdout)
 if not volatile_status["unlocked"] or volatile_status["key_source"] != "session" or volatile_status["effective_source"] != "local_unlock" or volatile_status["session_mode"] != "volatile" or volatile_status["remaining_seconds"] is None:
     fail(f"volatile status json unexpected: {volatile_status!r}")
 
+
+def volatile_backing_snapshot():
+    data_root = Path(env["XDG_DATA_HOME"])
+    return [
+        (
+            str(path.relative_to(data_root)), path.stat().st_mode,
+            hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None,
+        )
+        for path in sorted(data_root.rglob("*"))
+    ]
+
+
+# ADR 0006 does not attach persisted v2 identity to volatile deletion records.
+# Reject both a direct removal and a removal through a volatile value shadow,
+# before dropping that shadow or changing entries, reference epoch or GC state.
+for shadow in (False, True):
+    expected_value = "v2-shadow-value" if shadow else "v2-backed-value"
+    if shadow:
+        rc, stdout, stderr = run(scoped(["set", "VOLATILE_V2_PERSISTED", "--value", expected_value]))
+        if rc != 0 or stdout or stderr:
+            fail(f"v2 volatile shadow setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    before = volatile_backing_snapshot()
+    rc, stdout, stderr = run(scoped(["rm", "VOLATILE_V2_PERSISTED"]))
+    if rc != 1 or stdout or stderr != "removing a persisted v2 local entry requires a normal writable session\n":
+        fail(f"v2 local volatile removal did not reject (shadow={shadow}): rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    if volatile_backing_snapshot() != before:
+        fail(f"v2 rejected volatile removal changed backing/reference/GC state (shadow={shadow})")
+    rc, stdout, stderr = run(scoped(["get", "VOLATILE_V2_PERSISTED", "-o"]))
+    if rc != 0 or stdout != expected_value or stderr:
+        fail(f"v2 rejected volatile removal dropped its view (shadow={shadow}): rc={rc} stdout={stdout!r} stderr={stderr!r}")
+    rc, stdout, stderr = run(scoped(["get", "VOLATILE_V2_PERSISTED", "-o"]), volatile_env)
+    if rc != 0 or stdout != "v2-backed-value" or stderr:
+        fail(f"v2 rejected volatile removal changed persistent value (shadow={shadow}): rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
+overlay_only_before = volatile_backing_snapshot()
+for args in (["set", "VOLATILE_DELETE_ONLY", "--value", "overlay-only"], ["rm", "VOLATILE_DELETE_ONLY"]):
+    rc, stdout, stderr = run(scoped(args))
+    if rc != 0 or stdout or stderr:
+        fail(f"overlay-only volatile deletion failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run(scoped(["exists", "VOLATILE_DELETE_ONLY"]))
+if rc != 1 or stdout or stderr or volatile_backing_snapshot() != overlay_only_before:
+    fail(f"overlay-only volatile deletion leaked state: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+
 rc, stdout, stderr = run(scoped(["set", "VOLATILE_ONLY_KEY", "--value", "volatile-value"]))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"volatile set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -906,11 +967,11 @@ rc, stdout, stderr = run(scoped(["get", "VOLATILE_ONLY_KEY", "-o"]))
 if rc != 0 or stdout != "volatile-value" or stderr != "":
     fail(f"volatile value changed after rejected ephemeral replacement: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run(scoped(["rm", "VOLATILE_TOMBSTONE_KEY"]))
+rc, stdout, stderr = run(scoped(["rm", volatile_tombstone_keyref]))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"volatile rm failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run(scoped(["get", "VOLATILE_TOMBSTONE_KEY", "-o"]))
+rc, stdout, stderr = run(scoped(["get", volatile_tombstone_keyref, "-o"]))
 if rc == 0 or "key not found: VOLATILE_TOMBSTONE_KEY" not in stderr:
     fail(f"volatile tombstone should hide persistent key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
@@ -926,7 +987,7 @@ rc, stdout, stderr = run(
 if rc == 0 or "key not found: VOLATILE_ONLY_KEY" not in stderr:
     fail(f"process master-key override should bypass volatile value: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run(
-    scoped(["get", "VOLATILE_TOMBSTONE_KEY", "-o"]),
+    scoped(["get", volatile_tombstone_keyref, "-o"]),
     volatile_env,
 )
 if rc != 0 or stdout != "persistent-value" or stderr != "":
@@ -938,7 +999,7 @@ rc, stdout, stderr = run(
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"process master-key override list exposed volatile value: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run(
-    scoped(["ls", "--pattern", "VOLATILE_TOMBSTONE_KEY"], root_domain),
+    scoped(["--store", volatile_tombstone_store, "ls", "--pattern", "VOLATILE_TOMBSTONE_KEY"], root_domain),
     volatile_env,
 )
 if rc != 0 or stdout != "VOLATILE_TOMBSTONE_KEY\n" or stderr != "":
@@ -975,7 +1036,7 @@ rc, stdout, stderr = run(scoped(["exists", "VOLATILE_ONLY_KEY"]))
 if rc != 1 or stdout != "" or stderr != "":
     fail(f"volatile-only key leaked after lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run(scoped(["get", "VOLATILE_TOMBSTONE_KEY", "-o"]))
+rc, stdout, stderr = run(scoped(["get", volatile_tombstone_keyref, "-o"]))
 if rc != 0 or stdout != "persistent-value" or stderr != "":
     fail(f"persistent key should reappear after volatile lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
@@ -994,9 +1055,6 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run(scoped(["--store", repair_guard_store, "set", "REPAIR_GUARD_KEY", "--unsafe", "--value", "repair-guard-value"]))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"readonly repair guard set failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run(scoped(["store", "migrate", repair_guard_store, "--to-format", "v2"]))
-if rc != 0 or stderr != "":
-    fail(f"readonly repair guard migrate failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run(scoped(["--store", repair_guard_store, "id", "REPAIR_GUARD_KEY"]))
 if rc != 0 or stderr != "":
     fail(f"readonly repair guard id failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -1094,7 +1152,7 @@ rc, stdout, stderr = run(scoped(["set", "--ephemeral", "SAVE_EPHEMERAL_KEY", "--
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"ephemeral set before lock --save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run(scoped(["rm", "VOLATILE_TOMBSTONE_KEY"]))
+rc, stdout, stderr = run(scoped(["rm", volatile_tombstone_keyref]))
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"volatile rm for save failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
@@ -1110,9 +1168,11 @@ rc, stdout, stderr = run(scoped(["exists", "SAVE_EPHEMERAL_KEY"]))
 if rc != 1 or stdout != "" or stderr != "":
     fail(f"lock --save persisted an ephemeral key: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
-rc, stdout, stderr = run(scoped(["get", "VOLATILE_TOMBSTONE_KEY", "-o"]))
+rc, stdout, stderr = run(scoped(["get", volatile_tombstone_keyref, "-o"]))
 if rc == 0 or "key not found: VOLATILE_TOMBSTONE_KEY" not in stderr:
     fail(f"saved volatile tombstone should persist after lock: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+if (volatile_legacy_store_root / "format").exists() or (volatile_legacy_store_root / "domain-ent").exists():
+    fail("legacy volatile tombstone/save fixture was automatically migrated")
 
 for args, marker in [
     ([bin_path, "help", "status"], "[-d DIR|--dir DIR] status [-q|--quiet|--json]"),
@@ -1808,7 +1868,8 @@ if rc != 0 or stdout.strip() != "session locked":
 pending = run_background(scoped(["get", "--on-demand-unlock", "--unlock-timeout", "5", "PARENT_UNLOCK_VISIBLE", "-o"], child_domain))
 time.sleep(0.5)
 if pending.poll() is not None:
-    fail("on-demand unlock get exited before unlock arrived")
+    stdout, stderr = pending.communicate()
+    fail(f"on-demand unlock get exited before unlock arrived: rc={pending.returncode} stdout={stdout!r} stderr={stderr!r}")
 
 ready_wait_started = time.monotonic()
 rc, stdout, stderr = run(
@@ -1842,7 +1903,8 @@ pending = run_background(
 )
 time.sleep(0.5)
 if pending.poll() is not None:
-    fail("env-default on-demand get exited before unlock arrived")
+    stdout, stderr = pending.communicate()
+    fail(f"env-default on-demand get exited before unlock arrived: rc={pending.returncode} stdout={stdout!r} stderr={stderr!r}")
 
 rc, stdout, stderr = run(scoped(["unlock"], child_domain), {"SECDAT_MASTER_KEY_PASSPHRASE": passphrase})
 if rc != 0 or "session unlocked\n" not in stdout:
@@ -2166,9 +2228,6 @@ rc, stdout, stderr = run(
 )
 if rc != 0 or "session unlocked\n" not in stdout:
     fail(f"v2 enumeration unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run(scoped(["store", "migrate", "default", "--to-format", "v2"], v2_enumeration_domain))
-if rc != 0 or stderr != "":
-    fail(f"v2 enumeration migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run(scoped([
     "fsck", "--format", "v2", "--dependency-index", "--repair",
 ], v2_enumeration_domain))
@@ -2807,8 +2866,12 @@ rc, stdout, stderr = run(
 )
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"handover alternate store create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+# Handover must retain its legacy tombstone transfer coverage without moving
+# the other handover values or alternate store away from the new v2 default.
+handover_tombstone_keyref = "HANDOVER_TOMBSTONE:handover-legacy-v1"
+create_v1_store(env["XDG_DATA_HOME"], handover_domain, "handover-legacy-v1", marked=True)
 rc, stdout, stderr = run(
-    scoped(["set", "HANDOVER_TOMBSTONE", "--unsafe", "--value", "persisted-before-handover"], handover_domain),
+    scoped(["set", handover_tombstone_keyref, "--unsafe", "--value", "persisted-before-handover"], handover_domain),
     handover_env,
 )
 if rc != 0 or stdout != "" or stderr != "":
@@ -2827,7 +2890,7 @@ if rc != 0 or "volatile session unlocked from environment" not in stdout:
     fail(f"handover volatile unlock failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 for args in (
     ["set", "HANDOVER_VOLATILE", "--value", "volatile-after-handover"],
-    ["rm", "HANDOVER_TOMBSTONE"],
+    ["rm", handover_tombstone_keyref],
     ["set", "--ephemeral", "HANDOVER_EPHEMERAL", "--bulk-select", "include", "--value", "ephemeral-after-handover"],
     ["set", "--ephemeral", "HANDOVER_SHADOW", "--value", "ephemeral-over-handover"],
     ["set", "--ephemeral", "HANDOVER_EMPTY", "--bulk-select", "named", "--value", ""],
@@ -2975,7 +3038,7 @@ rc, stdout, stderr = run(
 )
 if rc != 0 or stdout != "alternate-store-after-handover" or stderr != "":
     fail(f"handover alternate store mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run(scoped(["exists", "HANDOVER_TOMBSTONE"], handover_domain))
+rc, stdout, stderr = run(scoped(["exists", handover_tombstone_keyref], handover_domain))
 if rc != 1 or stdout != "" or stderr != "":
     fail(f"handover lost volatile tombstone: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run(scoped(["attr", "HANDOVER_EPHEMERAL"], handover_domain))

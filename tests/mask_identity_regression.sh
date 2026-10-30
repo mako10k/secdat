@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify mask identity behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -69,9 +70,9 @@ def create_domain(domain):
         fail(f"expected one new entries directory for {domain}, found {created!r}")
     store_root = created.pop().parent
     domain_id = store_root.parents[1].name
-    (store_root / "domain-ent").mkdir(parents=True)
-    (store_root / "objects" / "secret").mkdir(parents=True)
-    (store_root / "masks").mkdir(parents=True)
+    (store_root / "domain-ent").mkdir(parents=True, exist_ok=True)
+    (store_root / "objects" / "secret").mkdir(parents=True, exist_ok=True)
+    (store_root / "masks").mkdir(parents=True, exist_ok=True)
     (store_root / "masks").chmod(0o700)
     (store_root / "format").write_text(
         "SECDATSTORE1\nformat=v2\nstate=ready\n",

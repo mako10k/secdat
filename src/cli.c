@@ -1982,7 +1982,7 @@ static void secdat_cli_print_command_meanings(void)
     secdat_cli_print_detail_line(_("  meta mark-leaked: mark one key as leaked metadata and suggest high-risk refresh targets\n"));
     secdat_cli_print_detail_line(_("  relation suggest-refresh: suggest high-risk refresh targets related to one leaked key\n"));
     secdat_cli_print_detail_line(_("  relation suggest-link: compare same-name keys across registered domains and show link candidates\n"));
-    secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and limited repair\n"));
+    secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata; omitted --format detects v1 or v2\n"));
     secdat_cli_print_detail_line(_("  gc: remove unreachable or dangling v2 graph files after review\n"));
     secdat_cli_print_detail_line(_("  mask: create a rollback-safe identity mask for one inherited key, or atomically rebind an orphan barrier\n"));
     secdat_cli_print_detail_line(_("  unmask: atomically remove one logical mask chain, with explicit chain selection when names are ambiguous\n"));
@@ -2103,7 +2103,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "fsck") == 0) {
-        secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata for migration and limited repair\n"));
+        secdat_cli_print_detail_line(_("  fsck: check current-domain store metadata; omitted --format detects v1 or v2\n"));
         secdat_cli_print_detail_line(_("  with no filters, fsck runs orphaned, dangling, and refcount checks; --repair only rebuilds cached v2 refcounts\n"));
         secdat_cli_print_detail_line(_("  v2 mask checks report orphaned-mask, ambiguous-mask, dangling-mask, and incomplete-mask-state; dormant masks are valid\n"));
         secdat_cli_print_detail_line(_("  corrupt mask rows use a non-reversible record-sha256 handle; <redacted> means the identity is not authorized\n"));
@@ -2271,6 +2271,7 @@ static void secdat_cli_print_target_meaning(const char *target)
         return;
     }
     if (target != NULL && strcmp(target, "store migrate") == 0) {
+        secdat_cli_print_detail_line(_("  new stores use v2; existing v1 stores change format only through explicit migration\n"));
         secdat_cli_print_detail_line(_("  store migrate: validate one v1 store; without --dry-run, write the side-by-side v2 domain-entry/object graph and leave v1 fallback files in place\n"));
         secdat_cli_print_detail_line(_("  mask plan counts separate existing canonical masks, conversion candidates, ambiguous legacy masks, and v1 rollback blockers\n"));
         secdat_cli_print_detail_line(_("  dry-run mask-plan rows name each authorized candidate, ambiguity, or existing canonical mask; ambiguity remains fail closed and does not alone block migration\n"));

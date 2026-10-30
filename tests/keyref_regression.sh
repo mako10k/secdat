@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify keyref behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -184,8 +185,6 @@ assert_eq "$implicit_get_value" 'explicit_value' 'implicit get fallback for KEYR
 
 "$bin_path" --dir "$root" store create graph >/dev/null
 "$bin_path" --dir "$child" store create graph >/dev/null
-"$bin_path" --dir "$root" store migrate graph --to-format v2 >/dev/null
-"$bin_path" --dir "$child" store migrate graph --to-format v2 >/dev/null
 "$bin_path" --dir "$root" --store graph set V2_RELATIVE_MOVE graph-value >/dev/null
 "$bin_path" --dir "$root" fsck --format v2 --dependency-index --repair >/dev/null
 if "$bin_path" --dir "$child" --store graph get ./V2_RELATIVE_MOVE --stdout >/tmp/secdat-keyref-test.out 2>/tmp/secdat-keyref-test.err; then

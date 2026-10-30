@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify scoped set behavior against explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -61,18 +62,6 @@ def expect_ok(args):
 def create_v2_domain(path):
     before = set(domains_by_id.iterdir()) if domains_by_id.exists() else set()
     expect_ok([bin_path, "--dir", str(path), "domain", "create"])
-    expect_ok(
-        [
-            bin_path,
-            "--dir",
-            str(path),
-            "store",
-            "migrate",
-            "default",
-            "--to-format",
-            "v2",
-        ]
-    )
     created = set(domains_by_id.iterdir()) - before
     if len(created) != 1:
         fail(f"could not identify created domain: {created!r}")

@@ -428,9 +428,23 @@ To describe how multiple keys belong together, use `relation`. A relation connec
 
 Relation members are validated as existing keys when the relation is written. Stored relation output never reads secret values; it stores the canonical member KEYREFs and the supplied non-secret meaning fields. `relation search` filters relation records with `FIELD` or `FIELD=GLOB`; supported fields are `relation_id`, `kind`, `security`, `exposure`, `impact`, `note`, `member`, and `member.ROLE`. `relation suggest-refresh KEYREF` treats the resolved key as leaked and scans registered relation records for matching canonical KEYREFs, including cross-domain references. It prints tab-separated high-risk suggestions as `high RELATION_ID LEAKED_ROLE REFRESH_ROLE REFRESH_KEYREF REASON`, using role names and relation security fields only. `relation suggest-link [KEYREF]` is an explicit, opt-in cross-domain scan for same-name local keys in the selected store: it compares values without printing them, emits `link-candidate` rows when values match, emits `same-name-different-value` rows when they differ, and displays optional cluster identifiers from the non-secret `link_cluster` key metadata field. Use `meta set KEYREF link_cluster VALUE` only when you want that manual grouping label. v2 hidden keys cannot be relation members, and a visible key with existing relation membership cannot be changed to `key_visibility=unlocked` until those relation records are removed.
 
-The storage v2 layout moves from one domain-local file per key to a directory/inode-like split between domain entries and secret objects. Domain entries own key names and key visibility; secret objects own values and value access. The current v2 path includes linked secrets (`ln`) across v2 domains/stores, secret UUID references, object address metadata, object-owned payloads for new or rewritten v2 values, refcount/orphan checks, cached refcount repair, and a migration-first compatibility path from the current v1 store. Direct source-object links such as `ln @UUID DST_KEYREF` are supported only when the current context can authorize the UUID through an existing visible or unlocked domain entry; `@UUID` is a source operand, not a destination. `ln --replace SRC_KEYREF DST_KEYREF` may replace an existing same-name destination key with a link after confirming the current source and destination values are equal; add `--skip-same-value-check` only when intentionally replacing a different value. See [docs/secdat-spec.md](docs/secdat-spec.md#510-store-v2-domain-entries-and-secret-objects).
+New stores use **v2**: this includes the default store of a new domain, `store create`, and new stores created by supported writes (including qualified destinations, SDK writes, and saved volatile changes). Existing v1 stores, including markerless and empty legacy stores, retain their format and normal read/write behavior. No new v1 creation option is provided. Masking a v1 inherited entry in a new child v2 store retains the legacy-mask ambiguity diagnostic in v2 fsck. Ordinary `unmask` is refused until the user explicitly migrates the parent store and runs `mask --rebind KEY` in the child. New-store creation never migrates the parent, invents an entry UUID, or weakens this ambiguity guard. Reading, completion, dry-run, and rejected precommit writes do not initialize or migrate stores. Changing an existing v1 store remains an explicit `store migrate` operation; migration cleanup and finalization are never automatic.
 
-For migration preparation and v2 cache maintenance, `fsck` checks the current domain/store without decrypting secret values:
+When choosing to resolve such an inherited legacy mask, review the parent migration dry-run, explicitly migrate that parent store, verify/rebuild the dependency index as required, and then rebind and unmask in the child:
+
+```sh
+secdat --dir PARENT store migrate STORE --to-format v2 --dry-run
+secdat --dir PARENT store migrate STORE --to-format v2
+secdat --dir PARENT --store STORE fsck --dependency-index --repair
+secdat --dir CHILD --store STORE mask --rebind KEY
+secdat --dir CHILD --store STORE unmask KEY
+```
+
+These commands are an explicit operator choice, not steps performed by store creation.
+
+The storage v2 layout moves from one domain-local file per key to a directory/inode-like split between domain entries and secret objects. Domain entries own key names and key visibility; secret objects own values and value access. The current v2 path includes linked secrets (`ln`) across v2 domains/stores, secret UUID references, object address metadata, object-owned payloads for new or rewritten v2 values, refcount/orphan checks, cached refcount repair, and an explicit migration path for existing v1 stores. Direct source-object links such as `ln @UUID DST_KEYREF` are supported only when the current context can authorize the UUID through an existing visible or unlocked domain entry; `@UUID` is a source operand, not a destination. `ln --replace SRC_KEYREF DST_KEYREF` may replace an existing same-name destination key with a link after confirming the current source and destination values are equal; add `--skip-same-value-check` only when intentionally replacing a different value. See [docs/secdat-spec.md](docs/secdat-spec.md#510-store-v2-domain-entries-and-secret-objects).
+
+For migration preparation and v2 cache maintenance, `fsck` checks the current domain/store without decrypting secret values. Omitting `--format` detects the selected local store's format; an explicit `--format v1` or `--format v2` still enforces that format. v2-only repair and dependency-index options require a v2 target, whether detected or explicit. New-store creation does not rebuild the global dependency index automatically:
 
 ```sh
 ./src/secdat fsck
@@ -445,6 +459,7 @@ For migration preparation and v2 cache maintenance, `fsck` checks the current do
 ./src/secdat gc --queued
 ./src/secdat gc --status --errors --json
 ./src/secdat secret status --gc UUID
+# Only for an existing v1 store:
 ./src/secdat store migrate default --to-format v2 --dry-run
 ./src/secdat store migrate default --to-format v2
 ./src/secdat store finalize-migration default --from-format v1 --dry-run
@@ -493,7 +508,7 @@ mkdir -p ~/example/project
 ./src/secdat --dir ~/example/project --store app set API_TOKEN --value token-123
 ./src/secdat --dir ~/example/project store ls
 ./src/secdat --dir ~/example/project store ls --json
-./src/secdat --dir ~/example/project store migrate app --to-format v2 --dry-run
+./src/secdat --dir ~/example/project --store app fsck
 ./src/secdat --dir ~/example/project-restored domain move --from ~/example/project
 ```
 

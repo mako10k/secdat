@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify inject behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -17,12 +18,17 @@ export XDG_DATA_HOME="$work_root/data"
 export SECDAT_MASTER_KEY='inject-regression-master-key'
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
-python3 - "$bin_path" "$work_root" <<'PY'
+fixture_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+python3 - "$bin_path" "$work_root" "$fixture_dir" <<'PY'
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
+from store_fixture import create_v1_store
 
 bin_path = sys.argv[1]
 work_root = Path(sys.argv[2])
@@ -1025,11 +1031,14 @@ invalid_key_domain.mkdir(parents=True)
 for args in [
     [bin_path, "--dir", str(invalid_key_domain), "domain", "create"],
     [bin_path, "--dir", str(invalid_key_domain), "store", "create", "app"],
-    [bin_path, "--dir", str(invalid_key_domain), "set", "LEGACY_SOURCE", "--value", "legacy-secret"],
 ]:
     rc, stdout, stderr = run(args)
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"invalid-key setup failed for {args}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+create_v1_store(env["XDG_DATA_HOME"], invalid_key_domain)
+rc, stdout, stderr = run([bin_path, "--dir", str(invalid_key_domain), "set", "LEGACY_SOURCE", "--value", "legacy-secret"])
+if rc != 0 or stdout or stderr:
+    fail(f"legacy invalid-key seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 source_files = list(Path(env["XDG_DATA_HOME"]).rglob("LEGACY_SOURCE.sec"))
 if len(source_files) != 1:
     fail(f"expected one LEGACY_SOURCE.sec, found {source_files!r}")

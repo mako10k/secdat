@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify metadata relation behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -383,9 +384,6 @@ for key, value in [
     rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "set", key, "--value", value])
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"hidden-domain set {key} failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "store", "migrate", "default", "--to-format", "v2"])
-if rc != 0 or stderr != "":
-    fail(f"hidden-domain v2 migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rebuild_dependency_index(hidden_domain)
 rc, stdout, stderr = run([bin_path, "--dir", str(hidden_domain), "attr", "HIDDEN_TOKEN", "--key-visibility", "unlocked"])
 if rc != 0 or stdout != "" or stderr != "":

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify mv transaction behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -13,12 +14,16 @@ export XDG_RUNTIME_DIR="$work_root/runtime"
 export XDG_DATA_HOME="$work_root/data"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
-python3 - "$bin_path" "$work_root" <<'PY'
+python3 - "$bin_path" "$work_root" "$script_dir" <<'PY'
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
+from store_fixture import create_v1_store
 
 bin_path = sys.argv[1]
 work_root = Path(sys.argv[2])
@@ -74,13 +79,6 @@ def domain_id(path):
         fail(f"could not identify domain id for {path}: {created!r}")
     return created.pop().name
 
-
-def migrate(path):
-    require_ok(
-        run("--dir", str(path), "store", "migrate", "default", "--to-format", "v2"),
-        f"migrate {path}",
-        stdout=None,
-    )
 
 
 def set_key(path, key, value):
@@ -146,8 +144,7 @@ root_id = domain_id(root)
 child_id = domain_id(child)
 destination_id = domain_id(destination)
 domain_id(legacy)
-for path in (root, child, destination):
-    migrate(path)
+create_v1_store(env["XDG_DATA_HOME"], legacy)
 
 for key, value in (
     ("MOVE_MASK", "masked-value"),

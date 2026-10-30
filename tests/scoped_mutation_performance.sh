@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify scoped mutation performance behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -63,11 +64,6 @@ def prepare_case(domain_count):
         domain.mkdir()
         domains.append(domain)
         run(env, "--dir", str(domain), "domain", "create")
-        run(
-            env,
-            "--dir", str(domain), "store", "migrate", "default",
-            "--to-format", "v2",
-        )
     run(env, "--dir", str(domains[0]), "set", "PERF_KEY", "--value", "initial")
     return env, domains[0]
 

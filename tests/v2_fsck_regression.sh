@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify v2 fsck behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -34,7 +35,7 @@ env["LANGUAGE"] = "C"
 env["SECDAT_MASTER_KEY"] = "v2-fsck-master-key"
 
 domain = work_root / "project"
-domain.mkdir(parents=True)
+domain.mkdir(parents=True, exist_ok=True)
 
 entry_id = "11111111-1111-4111-8111-111111111111"
 secret_id = "22222222-2222-4222-8222-222222222222"
@@ -155,12 +156,12 @@ if rc != 0 or stdout != "" or stderr != "":
 
 entries_dirs = list(Path(env["XDG_DATA_HOME"]).rglob("entries"))
 if len(entries_dirs) != 1:
-    fail(f"expected one v1 entries dir from domain create, found {entries_dirs!r}")
+    fail(f"expected one entries dir from domain create, found {entries_dirs!r}")
 store_root = entries_dirs[0].parent
 domain_entries_dir = store_root / "domain-ent"
 secret_objects_dir = store_root / "objects" / "secret"
-domain_entries_dir.mkdir(parents=True)
-secret_objects_dir.mkdir(parents=True)
+domain_entries_dir.mkdir(parents=True, exist_ok=True)
+secret_objects_dir.mkdir(parents=True, exist_ok=True)
 (store_root / "format").write_text("SECDATSTORE1\nformat=v2\nstate=ready\n", encoding="utf-8")
 
 write_entry(domain_entries_dir / f"{entry_id}.dent", entry_id, secret_id, "APP_TOKEN")
@@ -293,7 +294,7 @@ source_entry_text = (domain_entries_dir / f"{entry_id}.dent").read_text(encoding
 source_object_domain = read_field(source_entry_text, "object_domain")
 source_object_store = read_field(source_entry_text, "object_store")
 consumer_domain = work_root / "consumer"
-consumer_domain.mkdir(parents=True)
+consumer_domain.mkdir(parents=True, exist_ok=True)
 rc, stdout, stderr = run([bin_path, "--dir", str(consumer_domain), "domain", "create"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"consumer domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -303,8 +304,8 @@ if len(consumer_entries_dirs) != 1:
 consumer_store_root = consumer_entries_dirs[0].parent
 consumer_domain_entries_dir = consumer_store_root / "domain-ent"
 consumer_secret_objects_dir = consumer_store_root / "objects" / "secret"
-consumer_domain_entries_dir.mkdir(parents=True)
-consumer_secret_objects_dir.mkdir(parents=True)
+consumer_domain_entries_dir.mkdir(parents=True, exist_ok=True)
+consumer_secret_objects_dir.mkdir(parents=True, exist_ok=True)
 (consumer_store_root / "format").write_text("SECDATSTORE1\nformat=v2\nstate=ready\n", encoding="utf-8")
 remote_entry_id = "66666666-6666-4666-8666-666666666666"
 (consumer_domain_entries_dir / f"{remote_entry_id}.dent").write_text(
@@ -797,7 +798,7 @@ if (not (store_root / "format").is_file()
         or not (secret_objects_dir / f"{hidden_secret_id}.sec").exists()):
     fail("v2 non-empty store delete removed v2 artifacts")
 
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck"])
+rc, stdout, stderr = run([bin_path, "--dir", str(domain), "fsck", "--format", "v1"])
 if rc != 2 or "store format is v2; use --format v2" not in stderr:
     fail(f"v1 fsck should reject v2 marker: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 

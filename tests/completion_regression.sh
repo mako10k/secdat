@@ -19,7 +19,7 @@ fail() {
     exit 1
 }
 
-python3 - "$bin_path" "$completion_script" <<'PY'
+python3 - "$bin_path" "$completion_script" "$script_dir" <<'PY'
 import hashlib
 import os
 import pty
@@ -33,6 +33,9 @@ import time
 
 bin_path = os.path.abspath(sys.argv[1])
 completion_script = sys.argv[2]
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
+from store_fixture import create_v1_store
 
 
 def parse_completion_lines(lines, label):
@@ -542,7 +545,7 @@ def create_store(directory, name):
 
 
 parent_stores = ["cstore-parent", "cstore-shared"]
-child_stores = ["cstore-child", "cstore-shared", "cstore-empty", "cstore-v2"]
+child_stores = ["cstore-child", "cstore-shared", "cstore-empty", "cstore-v1", "cstore-v2"]
 shell_eval_marker = os.path.join(work_root, "completion-evaluated")
 special_stores = [
     "cstore-space name", "cstore-日本語", "cstore-slash/name",
@@ -557,10 +560,7 @@ for name in child_stores + special_stores:
     create_store(literal_child, name)
 create_store(literal_child, "-cstore-dash")
 create_store(space_domain, "cstore-unrelated")
-subprocess.run(
-    [bin_path, "--dir", literal_child, "store", "migrate", "cstore-v2", "--to-format", "v2"],
-    check=True, capture_output=True, text=True, env=env,
-)
+create_v1_store(env["XDG_DATA_HOME"], literal_child, "cstore-v1")
 
 local_store_names = sorted(set(child_stores + special_stores))
 effective_store_names = sorted(set(local_store_names + parent_stores))

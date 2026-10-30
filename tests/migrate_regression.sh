@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify migrate behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -19,11 +20,16 @@ export XDG_RUNTIME_DIR="$work_root/runtime"
 export XDG_DATA_HOME="$work_root/data"
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
-python3 - "$bin_path" "$work_root" <<'PY'
+fixture_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+python3 - "$bin_path" "$work_root" "$fixture_dir" <<'PY'
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
+from store_fixture import create_v1_store
 
 bin_path = sys.argv[1]
 work_root = Path(sys.argv[2])
@@ -82,6 +88,7 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "create", "app"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"store create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+create_v1_store(env["XDG_DATA_HOME"], domain, "app")
 
 rc, stdout, stderr = run([
     bin_path, "--dir", str(domain), "--store", "app", "set", "APP_TOKEN",
@@ -156,6 +163,7 @@ if rc != 2 or "--store is not valid with store commands" not in stderr:
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "create", "broken"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"broken store create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+create_v1_store(env["XDG_DATA_HOME"], domain, "broken")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "broken", "set", "BROKEN_TOKEN", "--value", "bad"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set BROKEN_TOKEN failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -174,6 +182,7 @@ assert_contains(stdout, "issues=1\n", "store migrate issue count")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "store", "create", "artifact"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"artifact store create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+create_v1_store(env["XDG_DATA_HOME"], domain, "artifact")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "--store", "artifact", "set", "ARTIFACT_TOKEN", "--value", "artifact"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"set ARTIFACT_TOKEN failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -501,6 +510,7 @@ child_domain.mkdir()
 rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "domain", "create"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"child domain create failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+create_v1_store(env["XDG_DATA_HOME"], child_domain, "app")
 rc, stdout, stderr = run([bin_path, "--dir", str(child_domain), "--store", "app", "get", "APP_TOKEN"])
 if rc != 0 or stdout != "secret-token" or stderr != "":
     fail(f"child should inherit finalized v2 key: rc={rc} stdout={stdout!r} stderr={stderr!r}")

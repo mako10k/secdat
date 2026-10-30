@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify save load behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -17,13 +18,18 @@ export XDG_DATA_HOME="$work_root/data"
 export SECDAT_MASTER_KEY='save-load-master-key'
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
-python3 - "$bin_path" "$work_root" <<'PY'
+fixture_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+python3 - "$bin_path" "$work_root" "$fixture_dir" <<'PY'
 import os
 import pty
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
+from store_fixture import create_v1_store
 
 bin_path = sys.argv[1]
 work_root = Path(sys.argv[2])
@@ -248,6 +254,7 @@ legacy_bundle_path.write_bytes(bytes.fromhex(
     "f25f396293219f311876ae8e432358478470a2931ef914c8c61f"
 ))
 
+create_v1_store(env["XDG_DATA_HOME"], legacy_restore_dir, "app")
 rc, stdout, stderr = run([bin_path, "--dir", str(legacy_restore_dir), "--store", "app", "set", "EXISTING", "-v", "keep"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"legacy restore setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -257,17 +264,21 @@ if rc != 0 or stdout != "" or stderr != "":
 rc, stdout, stderr = run([bin_path, "--dir", str(legacy_restore_dir), "--store", "app", "get", "LEGACY_KEY"])
 if rc != 0 or stdout != "legacy-value" or stderr != "":
     fail(f"legacy v1 value mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(legacy_restore_dir), "--store", "new-v2", "load", str(legacy_bundle_path)], askpass_env)
+if rc != 0 or stdout != "" or stderr != "":
+    fail(f"legacy bundle load into new v2 store failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+rc, stdout, stderr = run([bin_path, "--dir", str(legacy_restore_dir), "--store", "new-v2", "get", "LEGACY_KEY"])
+if rc != 0 or stdout != "legacy-value" or stderr != "":
+    fail(f"legacy bundle new-v2 value mismatch: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
 for path in [linked_v2_source_dir, linked_v1_restore_dir, linked_v2_restore_dir]:
     rc, stdout, stderr = run([bin_path, "--dir", str(path), "store", "create", "app"])
     if rc != 0 or stdout != "" or stderr != "":
         fail(f"linked bundle store setup failed for {path}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+create_v1_store(env["XDG_DATA_HOME"], linked_v1_restore_dir, "app", marked=True)
 rc, stdout, stderr = run([bin_path, "--dir", str(linked_v2_source_dir), "--store", "app", "set", "LINK_A", "-v", "shared-value"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"linked v2 source seed failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(linked_v2_source_dir), "store", "migrate", "app", "--to-format", "v2"])
-if rc != 0 or stderr != "":
-    fail(f"linked v2 source migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(linked_v2_source_dir), "--store", "app", "ln", "LINK_A", "LINK_B"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"linked v2 source link failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
@@ -287,9 +298,6 @@ for key in ["LINK_A", "LINK_B"]:
     rc, stdout, stderr = run([bin_path, "--dir", str(linked_v1_restore_dir), "--store", "app", "get", key])
     if rc != 0 or stdout != "shared-value" or stderr != "":
         fail(f"linked v2 v1 split value failed for {key}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
-rc, stdout, stderr = run([bin_path, "--dir", str(linked_v2_restore_dir), "store", "migrate", "app", "--to-format", "v2"])
-if rc != 0 or stderr != "":
-    fail(f"linked v2 restore migration failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(linked_v2_restore_dir), "--store", "app", "load", str(linked_bundle_path)], askpass_env)
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"linked v2 restore failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")

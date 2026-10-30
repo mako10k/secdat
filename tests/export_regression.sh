@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# R: Verify export behavior against its explicit store-format fixtures.
 
 set -euo pipefail
 
@@ -17,7 +18,8 @@ export XDG_DATA_HOME="$work_root/data"
 export SECDAT_MASTER_KEY='export-master-key'
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 
-python3 - "$bin_path" "$work_root" <<'PY'
+fixture_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+python3 - "$bin_path" "$work_root" "$fixture_dir" <<'PY'
 import os
 import json
 import re
@@ -25,6 +27,10 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
+from store_fixture import create_v1_store
 
 bin_path = sys.argv[1]
 work_root = Path(sys.argv[2])
@@ -577,6 +583,7 @@ rc, stdout, stderr = run([bin_path, "--dir", str(invalid_dir), "set", "BAD-KEY",
 if rc == 0 or "key is not a valid environment variable name: BAD-KEY" not in stderr:
     fail(f"invalid key-name check failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 
+create_v1_store(env["XDG_DATA_HOME"], invalid_dir)
 rc, stdout, stderr = run([bin_path, "--dir", str(invalid_dir), "set", "LEGACY_SOURCE", "legacy-secret"])
 if rc != 0 or stdout != "" or stderr != "":
     fail(f"legacy invalid-key setup failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
