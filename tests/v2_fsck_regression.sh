@@ -468,9 +468,10 @@ if rc != 0 or stderr != "":
     fail(f"v2 UUID linked secret status failed: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 assert_contains(stdout, "refcount_cached=2\n", "v2 UUID linked secret status cached refcount")
 assert_contains(stdout, "refcount_actual=2\n", "v2 UUID linked secret status actual refcount")
-rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "APP_SECRET", f"@{app_secret_id}"])
-if rc != 2 or stdout != "" or "UUID references are only valid as ln source" not in stderr:
-    fail(f"v2 ln should reject UUID destination: rc={rc} stdout={stdout!r} stderr={stderr!r}")
+for policy_args in ([], ["--dry-run"], ["--json"], ["--dry-run", "--json"]):
+    rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", *policy_args, "APP_SECRET", f"@{app_secret_id}"])
+    if rc != 2 or stdout != "" or "UUID references are only valid as ln source" not in stderr:
+        fail(f"v2 ln should reject UUID destination with {policy_args!r}: rc={rc} stdout={stdout!r} stderr={stderr!r}")
 rc, stdout, stderr = run([bin_path, "--dir", str(domain), "ln", "@not-a-uuid", "APP_SECRET_BAD_UUID"])
 if rc != 2 or stdout != "" or "invalid UUID source for ln: @not-a-uuid\n" not in stderr:
     fail(f"v2 ln should reject invalid UUID source: rc={rc} stdout={stdout!r} stderr={stderr!r}")

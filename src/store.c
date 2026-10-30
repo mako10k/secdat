@@ -14090,22 +14090,6 @@ static int secdat_collect_visible_keys(
         }
         secdat_key_list_free(&overlay_tombstones);
 
-        status = secdat_store_tombstones_dir(chain->ids[chain_index], store_name, tombstones_dir, sizeof(tombstones_dir));
-        if (status != 0) {
-            goto cleanup;
-        }
-        status = secdat_collect_directory_keys(tombstones_dir, ".tomb", &domain_keys);
-        if (status != 0) {
-            goto cleanup;
-        }
-        for (key_index = 0; key_index < domain_keys.count; key_index += 1) {
-            if (secdat_key_list_append(&decided_keys, domain_keys.items[key_index]) != 0) {
-                status = 1;
-                goto cleanup;
-            }
-        }
-        secdat_key_list_free(&domain_keys);
-
         if (secdat_read_store_format(chain->ids[chain_index], store_name, &format) != 0) {
             goto cleanup;
         }
@@ -14153,6 +14137,24 @@ static int secdat_collect_visible_keys(
             }
         }
         secdat_key_list_free(&domain_keys);
+
+        /* Local entries override dormant masks; tombstones block ancestors. */
+        status = secdat_store_tombstones_dir(chain->ids[chain_index], store_name, tombstones_dir, sizeof(tombstones_dir));
+        if (status != 0) {
+            goto cleanup;
+        }
+        status = secdat_collect_directory_keys(tombstones_dir, ".tomb", &domain_keys);
+        if (status != 0) {
+            goto cleanup;
+        }
+        for (key_index = 0; key_index < domain_keys.count; key_index += 1) {
+            if (secdat_key_list_append(&decided_keys, domain_keys.items[key_index]) != 0) {
+                status = 1;
+                goto cleanup;
+            }
+        }
+        secdat_key_list_free(&domain_keys);
+
     }
 
     qsort(visible_keys->items, visible_keys->count, sizeof(*visible_keys->items), secdat_compare_strings);
@@ -48634,6 +48636,8 @@ static const char *secdat_rm_target_reference(const struct secdat_cli *cli)
     return NULL;
 }
 
+enum { SECDAT_TARGET_FORMAT_DEFER_TO_COMMAND = 3 };
+
 static int secdat_planned_target_format(const struct secdat_cli *cli, struct secdat_domain_chain *owner, enum secdat_store_format *format)
 {
     const char *keyref = NULL;
@@ -48647,6 +48651,9 @@ static int secdat_planned_target_format(const struct secdat_cli *cli, struct sec
         struct secdat_ln_options options;
         if (secdat_parse_ln_options(cli, &options) != 0) {
             return 2;
+        }
+        if (secdat_ln_arg_is_uuid_reference(options.destination)) {
+            return SECDAT_TARGET_FORMAT_DEFER_TO_COMMAND;
         }
         keyref = options.destination;
     } else if (cli->command == SECDAT_COMMAND_ATTR) {
@@ -48708,6 +48715,12 @@ static int secdat_run_planned_mutation(const struct secdat_cli *cli)
         goto cleanup;
     }
     status = secdat_planned_target_format(&filtered, &owner_chain, &owner_format);
+    if (status == SECDAT_TARGET_FORMAT_DEFER_TO_COMMAND) {
+        /* This invalid operand must reach ln's dedicated syntax diagnostic,
+         * including when a mutation policy was requested. */
+        status = secdat_dispatch_command(&filtered);
+        goto cleanup;
+    }
     if (status != 0) {
         goto cleanup;
     }
