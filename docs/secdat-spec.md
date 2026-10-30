@@ -668,6 +668,10 @@ source removal.
 - if `--store` is omitted, the default store is used
 - stores are domain-local, so the same store name may exist independently in multiple domains
 
+Store-name Bash completion follows the operand's namespace: `--store` / `-s` includes existing names in the effective domain lookup chain, while the first store operand of `store delete`, `store migrate`, and `store finalize-migration` includes only existing names in the resolved current domain. `--dir`, `--domain`, cwd, and attached global option values use the same resolution rules as execution. Candidates use literal prefix matching, name sorting and deduplication, independent of store format, contents or session unlock state. `store create` does not complete existing names. Completion enumerates namespace metadata only: it does not read secret values, unlock, create or migrate stores, or preflight destructive operations. A failed enumeration returns no store candidates and does not fall back to another domain or filesystem paths.
+
+The internal Bash completion protocol uses a `store` mode with hex-encoded name bytes to preserve whitespace, newlines and shell punctuation. The shell decodes these records without evaluating their contents and inserts shell-quoted names without filesystem-directory suffixes. Only input up to the cursor participates; option-looking operands and child-command arguments do not change the secdat global context. Existing KEYREF completion remains available.
+
 #### FR-9 Store Management
 
 - `secdat [--dir DIR] store create STORE` creates an empty store in the resolved current domain

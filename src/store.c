@@ -1,3 +1,4 @@
+/* R: Implement secret-store operations and their persistent namespace semantics. */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE 1
 #endif
@@ -15371,6 +15372,54 @@ static int secdat_completion_collect_stores(
 
 cleanup:
     secdat_key_list_free(&domain_stores);
+    return status;
+}
+
+/* Hex records preserve every non-NUL name byte across the line-based shell protocol. */
+int secdat_print_completion_stores(
+    const char *dir_override,
+    const char *domain_override,
+    const char *prefix,
+    int local_only,
+    const char *leader
+)
+{
+    struct secdat_domain_chain chain = {0};
+    struct secdat_key_list stores = {0};
+    const char *base = domain_override != NULL ? domain_override : dir_override;
+    size_t index;
+    int status = 1;
+
+    if (dir_override != NULL && domain_override != NULL) {
+        return 1;
+    }
+    if (secdat_domain_resolve_chain(base, &chain) != 0) {
+        goto cleanup;
+    }
+    if (local_only) {
+        if (secdat_collect_store_names(chain.count == 0 ? "" : chain.ids[0], NULL, &stores) != 0) {
+            goto cleanup;
+        }
+    } else if (secdat_completion_collect_stores(&chain, &stores) != 0) {
+        goto cleanup;
+    }
+    for (index = 0; index < stores.count; index += 1) {
+        const unsigned char *byte;
+        if (strncmp(stores.items[index], prefix, strlen(prefix)) != 0) {
+            continue;
+        }
+        for (byte = (const unsigned char *)leader; *byte != '\0'; byte += 1) {
+            printf("%02x", *byte);
+        }
+        for (byte = (const unsigned char *)stores.items[index]; *byte != '\0'; byte += 1) {
+            printf("%02x", *byte);
+        }
+        putchar('\n');
+    }
+    status = 0;
+cleanup:
+    secdat_key_list_free(&stores);
+    secdat_domain_chain_free(&chain);
     return status;
 }
 
