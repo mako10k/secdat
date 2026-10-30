@@ -1552,7 +1552,7 @@ This is a large store-layout change and must be treated as a migration, not an i
 Migration requirements:
 
 - v1 stores remain readable until v2 is stable
-- v2 writes are gated behind an explicit store format upgrade command or configuration flag
+- converting an existing v1 store to v2 requires an explicit `store migrate STORE --to-format v2`; new stores use v2 by default
 - migration creates v2 domain entries and secret objects from v1 entries without deleting v1 data first
 - rollback keeps the v1 store usable until the user explicitly finalizes the migration
 - every migrated v1 key becomes one secret object and one domain entry
