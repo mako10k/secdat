@@ -1,0 +1,101 @@
+Making check in po
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+make[1]: Nothing to be done for 'check'.
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+Making check in src
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/src'
+make  check-am
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/src'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/src'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/src'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0'
+make  check-local
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0'
+make all-local
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0'
+bash ./tests/gettext_catalog_regression.sh "/home/katsumata-m/secdat-release-0.11.0"
+PASS gettext catalog regression (0.11.0)
+bash ./tests/release_metadata_regression.sh "/home/katsumata-m/secdat-release-0.11.0"
+PASS release metadata regression (0.11.0)
+bash ./tests/static_analysis_contract_regression.sh "/home/katsumata-m/secdat-release-0.11.0"
+PASS static analysis contract regression
+bash ./tests/static_analysis_regression.sh "/home/katsumata-m/secdat-release-0.11.0"
+PASS static analysis (jscpd=4.0.7 duplication<0.34%; lizard=1.23.0 warnings=171/171)
+bash ./tests/libtool_relink_regression.sh "/home/katsumata-m/secdat-release-0.11.0"
+PASS libtool relink regression
+bash ./tests/abi_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/.libs/libsecdat.so"
+PASS ABI regression (libsecdat.so.0 -> libsecdat.so.0.1.0)
+bash ./tests/build_id_regression.sh "/home/katsumata-m/secdat-release-0.11.0"
+ja.1po: 875 translated messages.
+libtool: warning: remember to run 'libtool --finish /usr/local/lib'
+PASS build ID regression
+bash ./tests/lower_level_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS lower-level regression
+bash ./tests/keyref_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS keyref regression
+bash ./tests/attribute_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS attribute regression
+bash ./tests/metadata_relation_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS metadata/relation regression
+bash ./tests/fsck_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS fsck regression
+bash ./tests/v2_fsck_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS v2 fsck regression
+bash ./tests/deferred_gc_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS deferred GC regression
+bash ./tests/dependency_index_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS dependency index regression
+bash ./tests/store_default_format_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS store default format regression
+bash ./tests/container_transaction_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS container transaction regression
+bash ./tests/domain_move_transaction_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS domain move transaction regression
+bash ./tests/mv_transaction_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS mv transaction regression
+bash ./tests/mask_identity_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+mask identity regression tests passed
+bash ./tests/mask_transaction_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+ok
+bash ./tests/mask_mutation_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+mask mutation regression tests passed
+bash ./tests/scoped_set_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS scoped set regression
+bash ./tests/scoped_mutation_scale_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS scoped mutation scale regression (openat=231 getdents64=42 guards=5 writes=3)
+bash ./tests/migrate_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS migrate regression
+bash ./tests/session_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+XFAIL #221: an ordinary command does not trigger handover from a same-protocol capable agent
+PASS session regression
+bash ./tests/install_regression.sh "/home/katsumata-m/secdat-release-0.11.0" "/home/katsumata-m/secdat-release-0.11.0"
+................................................................................................................................. done.
+ja.1po: 875 translated messages.
+libtool: warning: remember to run 'libtool --finish /tmp/secdat-v011-release-prefix/lib'
+libtool: warning: 'libsecdat.la' has not been installed in '/tmp/secdat-v011-release-prefix/lib'
+libtool: warning: 'libsecdat.la' has not been installed in '/tmp/secdat-v011-release-prefix/lib'
+libtool: warning: remember to run 'libtool --finish /tmp/secdat-v011-release-prefix/lib'
+libtool: warning: 'libsecdat.la' has not been installed in '/tmp/secdat-v011-release-prefix/lib'
+libtool: warning: 'libsecdat.la' has not been installed in '/tmp/secdat-v011-release-prefix/lib'
+PASS install regression
+bash ./tests/sdk_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat" "/home/katsumata-m/secdat-release-0.11.0/src/.libs/libsecdat.so"
+PASS SDK exec plan regression
+bash ./tests/redaction_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS redaction regression
+bash ./tests/completion_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS completion regression
+bash ./tests/e2e_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS e2e regression
+bash ./tests/save_load_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS save/load regression
+bash ./tests/generate_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS generate regression
+bash ./tests/export_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS export regression
+bash ./tests/inject_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat"
+PASS inject regression
+bash ./tests/fuse_regression.sh "/home/katsumata-m/secdat-release-0.11.0/src/secdat" "/home/katsumata-m/secdat-release-0.11.0/src/secdat-fuse"
+PASS fuse regression
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0'

@@ -1,0 +1,44 @@
+{
+  "result": "PUBLISHED_AND_READ_BACK",
+  "verified_utc": "2026-10-30T12:09:11.383436+00:00",
+  "candidate_commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+  "candidate_tree": "704a660340df464f159b500591eb2edd7edf581f",
+  "tag": "v0.11.0",
+  "annotated_tag_object": "c590167ae3ff16a9ed03f4829d1b09ef5d2708d4",
+  "release_url": "https://github.com/mako10k/secdat/releases/tag/v0.11.0",
+  "release_id": 428988273,
+  "published_utc": "2026-10-30T12:07:39Z",
+  "latest_stable": true,
+  "notes_git_blob": "ab973bd99585f84ffd72e3f6560b859fbd52acae",
+  "notes_sha256": "188ee5a62f819c79142f67673510c6dcfa081b70aecd35d8269d4409fa6187ba",
+  "explicit_assets": 0,
+  "attempt_status": {
+    "main-push": 0,
+    "tag-push": 0,
+    "release-create": 0
+  },
+  "remote_refs": {
+    "refs/heads/main": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+    "refs/tags/v0.11.0": "c590167ae3ff16a9ed03f4829d1b09ef5d2708d4",
+    "refs/tags/v0.11.0^{}": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97"
+  },
+  "record_sha256": {
+    "publication-inputs.json": "68cfb6bead700c0df24221a4fd87c66738a4db0ba01e03fe3cf7aaa411653866",
+    "publication-authorization.json": "4f3c24456b405ad58cf0957ad283772b20af8046deca5d03b2644229368787fc",
+    "publication-main-push.log": "033cbdfb80fce82dd8079e0b6ab985a6a50721f131358e52f3b3effa7d0f0110",
+    "publication-main-push-status.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-main-readback.txt": "72e05d60a3e317946cb4bc840d8d67d367315e6e0f12642e7a7a459e79b0b2ca",
+    "publication-local-tag.json": "023fb94baac2494b5428fa0d9bc79106322768edc8777696710591ec7bb2a609",
+    "publication-tag-push.log": "87a549de56852c6400b0b1766fba63f9f608fd5d9a8441ec6bd6d67718546edb",
+    "publication-tag-push-status.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-tag-readback.txt": "c2688d255a0c15a0379f2c15e5f93bf04a026b299d4c958bed6be388dfb86506",
+    "publication-release-create-preflight.txt": "b17b8739828e2047be646a534ae68df43e9d9dc1b5239a7f0465acffab826cd2",
+    "publication-release-create.log": "f6ce1d1c3290b109f335ac27bf895a73bfb9198f8a863a6d5176b4fedbebf996",
+    "publication-release-create-status.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "publication-release-readback.json": "99d5b6badac5c1e8d1949cbc9249ec9a2666b457bf581255b98b91fadf7a89f9",
+    "publication-post-release-refs.txt": "c2688d255a0c15a0379f2c15e5f93bf04a026b299d4c958bed6be388dfb86506",
+    "publication-latest-readback.json": "125e848f8f3c85efe40f57a620f0ee36dcc5ce1f0748d9d10f5c925bac52e755",
+    "frozen-release-notes.md": "188ee5a62f819c79142f67673510c6dcfa081b70aecd35d8269d4409fa6187ba"
+  },
+  "remaining": "None for authorized GitHub release. Registry publication/production install were not in scope."
+}

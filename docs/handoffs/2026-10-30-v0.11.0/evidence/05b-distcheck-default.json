@@ -1,0 +1,38 @@
+{
+  "gate": "05b-distcheck-default",
+  "candidate_commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+  "candidate_tree": "704a660340df464f159b500591eb2edd7edf581f",
+  "command": [
+    "make",
+    "distcheck",
+    "DISTCHECK_CONFIGURE_FLAGS=--enable-fuse"
+  ],
+  "cwd": "/home/katsumata-m/secdat-release-0.11.0",
+  "configure": "--enable-fuse --prefix=/tmp/secdat-v011-release-prefix",
+  "input_sha256": {
+    "/home/katsumata-m/secdat-release-evidence/v0.11.0/run_gate_v2.py": "746ccb403a2761892f267bd30f707a86ea59fb8db73887ffe2f603c12b047c31",
+    "/home/katsumata-m/secdat-release-evidence/v0.11.0/environment.txt": "bd89de175f9544a486051988cd6405a314b96c7e94feb2b830e097f6eb9b8dee",
+    "/home/katsumata-m/secdat-release-evidence/v0.11.0/candidate.json": "204b2975dedd8d183c3785cf08c3c7635ce1c2af971590c835faa263116be099"
+  },
+  "environment_file": "environment.txt",
+  "start_utc": "2026-10-30T10:26:09.488805+00:00",
+  "finish_utc": "2026-10-30T10:41:33.972465+00:00",
+  "elapsed_seconds": 855.810602819,
+  "exit_status": 0,
+  "result": "PASS",
+  "identity_before": {
+    "commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+    "tree": "704a660340df464f159b500591eb2edd7edf581f",
+    "status": ""
+  },
+  "identity_after": {
+    "commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+    "tree": "704a660340df464f159b500591eb2edd7edf581f",
+    "status": ""
+  },
+  "identity_valid": true,
+  "log": "/home/katsumata-m/secdat-release-evidence/v0.11.0/05b-distcheck-default.log",
+  "log_sha256": "64bb51047b32e5d8b8adecc683d2db4b7123ef275929fd3ed33165fe530ccfd4",
+  "resource_log": "/home/katsumata-m/secdat-release-evidence/v0.11.0/05b-distcheck-default.time",
+  "resource_sha256": "b334751d3b32d613ce0ba3d58356e52e1b74570c26a90bc24fcde8ad3ddf1f34"
+}

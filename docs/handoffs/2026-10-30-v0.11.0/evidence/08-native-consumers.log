@@ -1,0 +1,507 @@
+Distribution provenance PASS 117 tracked shipped files
+checking for a BSD-compatible install... /usr/bin/install -c
+checking whether build environment is sane... yes
+checking for a race-free mkdir -p... /usr/bin/mkdir -p
+checking for gawk... gawk
+checking whether make sets $(MAKE)... yes
+checking whether make supports nested variables... yes
+checking for gcc... gcc
+checking whether the C compiler works... yes
+checking for C compiler default output file name... a.out
+checking for suffix of executables... 
+checking whether we are cross compiling... no
+checking for suffix of object files... o
+checking whether the compiler supports GNU C... yes
+checking whether gcc accepts -g... yes
+checking for gcc option to enable C11 features... none needed
+checking whether gcc understands -c and -o together... yes
+checking whether make supports the include directive... yes (GNU style)
+checking dependency style of gcc... gcc3
+checking for ar... ar
+checking the archiver (ar) interface... ar
+checking build system type... x86_64-pc-linux-gnu
+checking host system type... x86_64-pc-linux-gnu
+checking how to print strings... printf
+checking for a sed that does not truncate output... /usr/bin/sed
+checking for grep that handles long lines and -e... /usr/bin/grep
+checking for egrep... /usr/bin/grep -E
+checking for fgrep... /usr/bin/grep -F
+checking for ld used by gcc... /usr/bin/ld
+checking if the linker (/usr/bin/ld) is GNU ld... yes
+checking for BSD- or MS-compatible name lister (nm)... /usr/bin/nm -B
+checking the name lister (/usr/bin/nm -B) interface... BSD nm
+checking whether ln -s works... yes
+checking the maximum length of command line arguments... 1572864
+checking how to convert x86_64-pc-linux-gnu file names to x86_64-pc-linux-gnu format... func_convert_file_noop
+checking how to convert x86_64-pc-linux-gnu file names to toolchain format... func_convert_file_noop
+checking for /usr/bin/ld option to reload object files... -r
+checking for file... file
+checking for objdump... objdump
+checking how to recognize dependent libraries... pass_all
+checking for dlltool... no
+checking how to associate runtime and link libraries... printf %s\n
+checking for archiver @FILE support... @
+checking for strip... strip
+checking for ranlib... ranlib
+checking command to parse /usr/bin/nm -B output from gcc object... ok
+checking for sysroot... no
+checking for a working dd... /usr/bin/dd
+checking how to truncate binary pipes... /usr/bin/dd bs=4096 count=1
+checking for mt... no
+checking if : is a manifest tool... no
+checking for stdio.h... yes
+checking for stdlib.h... yes
+checking for string.h... yes
+checking for inttypes.h... yes
+checking for stdint.h... yes
+checking for strings.h... yes
+checking for sys/stat.h... yes
+checking for sys/types.h... yes
+checking for unistd.h... yes
+checking for dlfcn.h... yes
+checking for objdir... .libs
+checking if gcc supports -fno-rtti -fno-exceptions... no
+checking for gcc option to produce PIC... -fPIC -DPIC
+checking if gcc PIC flag -fPIC -DPIC works... yes
+checking if gcc static flag -static works... yes
+checking if gcc supports -c -o file.o... yes
+checking if gcc supports -c -o file.o... (cached) yes
+checking whether the gcc linker (/usr/bin/ld -m elf_x86_64) supports shared libraries... yes
+checking whether -lc should be explicitly linked in... no
+checking dynamic linker characteristics... GNU/Linux ld.so
+checking how to hardcode library paths into programs... immediate
+checking whether stripping libraries is possible... yes
+checking if libtool supports shared libraries... yes
+checking whether to build shared libraries... yes
+checking whether to build static libraries... yes
+checking for pkg-config... /usr/bin/pkg-config
+checking pkg-config is at least version 0.9.0... yes
+checking for openssl... yes
+checking for jansson >= 2.7... yes
+checking for openssl jansson >= 2.7... yes
+checking for fuse3... yes
+checking whether NLS is requested... yes
+checking for msgfmt... /usr/bin/msgfmt
+checking for gmsgfmt... /usr/bin/msgfmt
+checking for xgettext... /usr/bin/xgettext
+checking for msgmerge... /usr/bin/msgmerge
+checking for ld... /usr/bin/ld -m elf_x86_64
+checking if the linker (/usr/bin/ld -m elf_x86_64) is GNU ld... yes
+checking for shared library run path origin... done
+checking 32-bit host C ABI... no
+checking how to run the C preprocessor... gcc -E
+checking for ELF binary format... yes
+checking for the common suffixes of directories in the library search path... lib,lib,lib64
+checking for CFPreferencesCopyAppValue... no
+checking for CFLocaleCopyPreferredLanguages... no
+checking for GNU gettext in libc... yes
+checking whether to use NLS... yes
+checking where the gettext function comes from... libc
+checking that generated files are newer than configure... done
+configure: creating ./config.status
+config.status: creating Makefile
+config.status: creating src/Makefile
+config.status: creating po/Makefile.in
+config.status: creating libsecdat.pc
+config.status: creating config.h
+config.status: executing depfiles commands
+config.status: executing libtool commands
+config.status: executing po-directories commands
+config.status: creating po/POTFILES
+config.status: creating po/Makefile
+make  all-recursive
+make[1]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared'
+Making all in po
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/po'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/po'
+Making all in src
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/src'
+make  all-am
+make[3]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/src'
+depbase=`echo cli.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT cli.lo -MD -MP -MF $depbase.Tpo -c -o cli.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/cli.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo domain.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT domain.lo -MD -MP -MF $depbase.Tpo -c -o domain.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/domain.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT cli.lo -MD -MP -MF .deps/cli.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/cli.c  -fPIC -DPIC -o .libs/cli.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT domain.lo -MD -MP -MF .deps/domain.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/domain.c  -fPIC -DPIC -o .libs/domain.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT cli.lo -MD -MP -MF .deps/cli.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/cli.c -o cli.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT domain.lo -MD -MP -MF .deps/domain.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/domain.c -o domain.o >/dev/null 2>&1
+depbase=`echo exec_inject.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT exec_inject.lo -MD -MP -MF $depbase.Tpo -c -o exec_inject.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/exec_inject.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT exec_inject.lo -MD -MP -MF .deps/exec_inject.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/exec_inject.c  -fPIC -DPIC -o .libs/exec_inject.o
+depbase=`echo exec_inject_policy_file.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT exec_inject_policy_file.lo -MD -MP -MF $depbase.Tpo -c -o exec_inject_policy_file.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/exec_inject_policy_file.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT exec_inject_policy_file.lo -MD -MP -MF .deps/exec_inject_policy_file.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/exec_inject_policy_file.c  -fPIC -DPIC -o .libs/exec_inject_policy_file.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT exec_inject_policy_file.lo -MD -MP -MF .deps/exec_inject_policy_file.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/exec_inject_policy_file.c -o exec_inject_policy_file.o >/dev/null 2>&1
+depbase=`echo json_util.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT json_util.lo -MD -MP -MF $depbase.Tpo -c -o json_util.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/json_util.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT json_util.lo -MD -MP -MF .deps/json_util.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/json_util.c  -fPIC -DPIC -o .libs/json_util.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT json_util.lo -MD -MP -MF .deps/json_util.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/json_util.c -o json_util.o >/dev/null 2>&1
+depbase=`echo redaction.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT redaction.lo -MD -MP -MF $depbase.Tpo -c -o redaction.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/redaction.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT exec_inject.lo -MD -MP -MF .deps/exec_inject.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/exec_inject.c -o exec_inject.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT redaction.lo -MD -MP -MF .deps/redaction.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/redaction.c  -fPIC -DPIC -o .libs/redaction.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT redaction.lo -MD -MP -MF .deps/redaction.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/redaction.c -o redaction.o >/dev/null 2>&1
+depbase=`echo store.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT store.lo -MD -MP -MF $depbase.Tpo -c -o store.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/store.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT store.lo -MD -MP -MF .deps/store.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/store.c  -fPIC -DPIC -o .libs/store.o
+gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\"   -I/usr/include/fuse3    -g -O2 -MT secdat_fuse-secdat-fuse.o -MD -MP -MF .deps/secdat_fuse-secdat-fuse.Tpo -c -o secdat_fuse-secdat-fuse.o `test -f 'secdat-fuse.c' || echo '/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/'`secdat-fuse.c
+mv -f .deps/secdat_fuse-secdat-fuse.Tpo .deps/secdat_fuse-secdat-fuse.Po
+depbase=`echo main.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT main.o -MD -MP -MF $depbase.Tpo -c -o main.o /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/main.c &&\
+mv -f $depbase.Tpo $depbase.Po
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT store.lo -MD -MP -MF .deps/store.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/store.c -o store.o >/dev/null 2>&1
+/bin/bash ../libtool  --tag=CC   --mode=link gcc  -g -O2 -version-info 1:0:1  -o libsecdat.la -rpath /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib cli.lo domain.lo exec_inject.lo exec_inject_policy_file.lo json_util.lo redaction.lo store.lo -lssl -lcrypto  -ljansson  
+libtool: link: gcc -shared  -fPIC -DPIC  .libs/cli.o .libs/domain.o .libs/exec_inject.o .libs/exec_inject_policy_file.o .libs/json_util.o .libs/redaction.o .libs/store.o   -lssl -lcrypto -ljansson  -g -O2   -Wl,-soname -Wl,libsecdat.so.0 -o .libs/libsecdat.so.0.1.0
+libtool: link: (cd ".libs" && rm -f "libsecdat.so.0" && ln -s "libsecdat.so.0.1.0" "libsecdat.so.0")
+libtool: link: (cd ".libs" && rm -f "libsecdat.so" && ln -s "libsecdat.so.0.1.0" "libsecdat.so")
+libtool: link: ar cr .libs/libsecdat.a  cli.o domain.o exec_inject.o exec_inject_policy_file.o json_util.o redaction.o store.o
+libtool: link: ranlib .libs/libsecdat.a
+libtool: link: ( cd ".libs" && rm -f "libsecdat.la" && ln -s "../libsecdat.la" "libsecdat.la" )
+/bin/bash ../libtool  --tag=CC   --mode=link gcc  -g -O2   -o secdat main.o libsecdat.la 
+/bin/bash ../libtool  --tag=CC   --mode=link gcc  -g -O2   -o secdat-fuse secdat_fuse-secdat-fuse.o libsecdat.la -lfuse3 -lpthread  
+libtool: link: gcc -g -O2 -o .libs/secdat main.o  ./.libs/libsecdat.so -Wl,-rpath -Wl,/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib
+libtool: link: gcc -g -O2 -o .libs/secdat-fuse secdat_fuse-secdat-fuse.o  ./.libs/libsecdat.so -lfuse3 -lpthread -Wl,-rpath -Wl,/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/src'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/src'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared'
+make[3]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/po'
+cd /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/po && /usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+............................................................................................................................... done.
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/po'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared'
+Making install in po
+make[1]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/po'
+installing /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/po/ja.gmo as /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/locale/ja/LC_MESSAGES/secdat.mo
+if test "secdat" = "gettext-tools"; then \
+  /usr/bin/mkdir -p /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/gettext/po; \
+  for file in Makefile.in.in remove-potcdate.sin quot.sed boldquot.sed en@quot.header en@boldquot.header insert-header.sin Rules-quot   Makevars.template; do \
+    /usr/bin/install -c -m 644 /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/po/$file \
+		    /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/gettext/po/$file; \
+  done; \
+  for file in Makevars; do \
+    rm -f /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/gettext/po/$file; \
+  done; \
+else \
+  : ; \
+fi
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/po'
+Making install in src
+make[1]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/src'
+make  install-am
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/src'
+make[3]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/src'
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib'
+ /bin/bash ../libtool   --mode=install /usr/bin/install -c   libsecdat.la '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib'
+libtool: install: /usr/bin/install -c .libs/libsecdat.so.0.1.0 /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib/libsecdat.so.0.1.0
+libtool: install: (cd /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib && { ln -s -f libsecdat.so.0.1.0 libsecdat.so.0 || { rm -f libsecdat.so.0 && ln -s libsecdat.so.0.1.0 libsecdat.so.0; }; })
+libtool: install: (cd /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib && { ln -s -f libsecdat.so.0.1.0 libsecdat.so || { rm -f libsecdat.so && ln -s libsecdat.so.0.1.0 libsecdat.so; }; })
+libtool: install: /usr/bin/install -c .libs/libsecdat.lai /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib/libsecdat.la
+libtool: install: /usr/bin/install -c .libs/libsecdat.a /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib/libsecdat.a
+libtool: install: chmod 644 /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib/libsecdat.a
+libtool: install: ranlib /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib/libsecdat.a
+libtool: finish: PATH="/home/katsumata-m/.local/bin:/home/katsumata-m/.cabal/bin:/home/katsumata-m/.ghcup/bin:/home/katsumata-m/.nvm/versions/node/v25.1.0/bin:/home/katsumata-m/.local/bin:/mnt/c/Users/katsumata-m/.codex/tmp/arg0-linux/codex-arg09ktbJz:/mnt/c/Users/katsumata-m/.codex/bin/wsl/41b07db48e50c5e5:/mnt/c/Users/katsumata-m/.codex/bin/wsl/1a4f6f66dd2f3710:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Microsoft SDKs/Azure/CLI2/wbin:/mnt/c/Windows/system32:/mnt/c/Windows:/mnt/c/Windows/System32/Wbem:/mnt/c/Windows/System32/WindowsPowerShell/v1.0/:/mnt/c/Windows/System32/OpenSSH/:/mnt/c/Program Files/dotnet/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/Program Files/WireGuard/:/mnt/c/Program Files/Amazon/AWSCLIV2/:/mnt/c/Program Files/GitHub CLI/:/mnt/c/Program Files/Microsoft VS Code Insiders/bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Program Files/Microsoft SQL Server/160/Tools/Binn/:/mnt/c/Program Files/Microsoft VS Code/bin/copilot-shim:/mnt/c/Program Files/PowerShell/7/:/mnt/c/Users/katsumata-m/.local/bin:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Python/Python314/Scripts/:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Python/Python314/:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Python/Launcher/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Git/cmd:/mnt/c/Users/katsumata-m/.dotnet-sdk-6.0.428/:/mnt/c/Program Files (x86)/Microsoft/Edge/Application:/mnt/c/Program Files/Git/cmd:/mnt/c/Users/katsumata-m/AppData/Local/Microsoft/WindowsApps:/mnt/c/Users/katsumata-m/AppData/Roaming/Code/User/globalStorage/github.copilot-chat/debugCommand:/mnt/c/Users/katsumata-m/.dotnet-sdk-6.0.428:/mnt/c/Users/k:/mnt/c/Users/katsumata-m/Apps/nodejs:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Git/cmd:/mnt/c/Users/katsumata-m/Apps/nvm/v22.9.0/node_modules/@openai/codex/vendor/x86_64-pc-windows-msvc/path:/mnt/c/Users/katsumata-m/.dotnet/tools:/mnt/c/Users/katsumata-m/AppData/Local/PowerToys/DSCModules/:/mnt/c/users/katsumata-m/appdata/roaming/python/python314/scripts:/mnt/c/Users/katsumata-m/AppData/Local/Kiro-Cli/:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Kiro/bin:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Ollama:/snap/bin:/home/katsumata-m/.dotnet/tools:/sbin" ldconfig -n /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib
+----------------------------------------------------------------------
+Libraries have been installed in:
+   /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib
+
+If you ever happen to want to link against installed libraries
+in a given directory, LIBDIR, you must either use libtool, and
+specify the full pathname of the library, or use the '-LLIBDIR'
+flag during linking and do at least one of the following:
+   - add LIBDIR to the 'LD_LIBRARY_PATH' environment variable
+     during execution
+   - add LIBDIR to the 'LD_RUN_PATH' environment variable
+     during linking
+   - use the '-Wl,-rpath -Wl,LIBDIR' linker flag
+   - have your system administrator add LIBDIR to '/etc/ld.so.conf'
+
+See any operating system documentation about shared libraries for
+more information, such as the ld(1) and ld.so(8) manual pages.
+----------------------------------------------------------------------
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/bin'
+  /bin/bash ../libtool   --mode=install /usr/bin/install -c secdat secdat-fuse '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/bin'
+libtool: install: /usr/bin/install -c .libs/secdat /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/bin/secdat
+libtool: install: /usr/bin/install -c .libs/secdat-fuse /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/bin/secdat-fuse
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/include'
+ /usr/bin/install -c -m 644 /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/secdat-sdk.h '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/include'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/src'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/src'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/src'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/po'
+cd /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/po && /usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+................................................................................................................................................... done.
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared/po'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared'
+/usr/bin/mkdir -p "/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/bash-completion/completions"
+/usr/bin/install -c -m 644 "/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/completions/secdat.bash" "/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/bash-completion/completions/secdat"
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/doc/secdat'
+ /usr/bin/install -c -m 644 /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/README.md /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/docs/secdat-spec.md '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/doc/secdat'
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/man/man1'
+ /usr/bin/install -c -m 644 /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/docs/secdat.1 /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/docs/secdat-fuse.1 '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/share/man/man1'
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib/pkgconfig'
+ /usr/bin/install -c -m 644 libsecdat.pc '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib/pkgconfig'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-shared'
+checking for a BSD-compatible install... /usr/bin/install -c
+checking whether build environment is sane... yes
+checking for a race-free mkdir -p... /usr/bin/mkdir -p
+checking for gawk... gawk
+checking whether make sets $(MAKE)... yes
+checking whether make supports nested variables... yes
+checking for gcc... gcc
+checking whether the C compiler works... yes
+checking for C compiler default output file name... a.out
+checking for suffix of executables... 
+checking whether we are cross compiling... no
+checking for suffix of object files... o
+checking whether the compiler supports GNU C... yes
+checking whether gcc accepts -g... yes
+checking for gcc option to enable C11 features... none needed
+checking whether gcc understands -c and -o together... yes
+checking whether make supports the include directive... yes (GNU style)
+checking dependency style of gcc... gcc3
+checking for ar... ar
+checking the archiver (ar) interface... ar
+checking build system type... x86_64-pc-linux-gnu
+checking host system type... x86_64-pc-linux-gnu
+checking how to print strings... printf
+checking for a sed that does not truncate output... /usr/bin/sed
+checking for grep that handles long lines and -e... /usr/bin/grep
+checking for egrep... /usr/bin/grep -E
+checking for fgrep... /usr/bin/grep -F
+checking for ld used by gcc... /usr/bin/ld
+checking if the linker (/usr/bin/ld) is GNU ld... yes
+checking for BSD- or MS-compatible name lister (nm)... /usr/bin/nm -B
+checking the name lister (/usr/bin/nm -B) interface... BSD nm
+checking whether ln -s works... yes
+checking the maximum length of command line arguments... 1572864
+checking how to convert x86_64-pc-linux-gnu file names to x86_64-pc-linux-gnu format... func_convert_file_noop
+checking how to convert x86_64-pc-linux-gnu file names to toolchain format... func_convert_file_noop
+checking for /usr/bin/ld option to reload object files... -r
+checking for file... file
+checking for objdump... objdump
+checking how to recognize dependent libraries... pass_all
+checking for dlltool... no
+checking how to associate runtime and link libraries... printf %s\n
+checking for archiver @FILE support... @
+checking for strip... strip
+checking for ranlib... ranlib
+checking command to parse /usr/bin/nm -B output from gcc object... ok
+checking for sysroot... no
+checking for a working dd... /usr/bin/dd
+checking how to truncate binary pipes... /usr/bin/dd bs=4096 count=1
+checking for mt... no
+checking if : is a manifest tool... no
+checking for stdio.h... yes
+checking for stdlib.h... yes
+checking for string.h... yes
+checking for inttypes.h... yes
+checking for stdint.h... yes
+checking for strings.h... yes
+checking for sys/stat.h... yes
+checking for sys/types.h... yes
+checking for unistd.h... yes
+checking for dlfcn.h... yes
+checking for objdir... .libs
+checking if gcc supports -fno-rtti -fno-exceptions... no
+checking for gcc option to produce PIC... -fPIC -DPIC
+checking if gcc PIC flag -fPIC -DPIC works... yes
+checking if gcc static flag -static works... yes
+checking if gcc supports -c -o file.o... yes
+checking if gcc supports -c -o file.o... (cached) yes
+checking whether the gcc linker (/usr/bin/ld -m elf_x86_64) supports shared libraries... yes
+checking dynamic linker characteristics... GNU/Linux ld.so
+checking how to hardcode library paths into programs... immediate
+checking whether stripping libraries is possible... yes
+checking if libtool supports shared libraries... yes
+checking whether to build shared libraries... no
+checking whether to build static libraries... yes
+checking for pkg-config... /usr/bin/pkg-config
+checking pkg-config is at least version 0.9.0... yes
+checking for openssl... yes
+checking for jansson >= 2.7... yes
+checking for openssl jansson >= 2.7... yes
+checking for fuse3... yes
+checking whether NLS is requested... yes
+checking for msgfmt... /usr/bin/msgfmt
+checking for gmsgfmt... /usr/bin/msgfmt
+checking for xgettext... /usr/bin/xgettext
+checking for msgmerge... /usr/bin/msgmerge
+checking for ld... /usr/bin/ld -m elf_x86_64
+checking if the linker (/usr/bin/ld -m elf_x86_64) is GNU ld... yes
+checking for shared library run path origin... done
+checking 32-bit host C ABI... no
+checking how to run the C preprocessor... gcc -E
+checking for ELF binary format... yes
+checking for the common suffixes of directories in the library search path... lib,lib,lib64
+checking for CFPreferencesCopyAppValue... no
+checking for CFLocaleCopyPreferredLanguages... no
+checking for GNU gettext in libc... yes
+checking whether to use NLS... yes
+checking where the gettext function comes from... libc
+checking that generated files are newer than configure... done
+configure: creating ./config.status
+config.status: creating Makefile
+config.status: creating src/Makefile
+config.status: creating po/Makefile.in
+config.status: creating libsecdat.pc
+config.status: creating config.h
+config.status: executing depfiles commands
+config.status: executing libtool commands
+config.status: executing po-directories commands
+config.status: creating po/POTFILES
+config.status: creating po/Makefile
+make  all-recursive
+make[1]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static'
+Making all in po
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/po'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/po'
+Making all in src
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/src'
+make  all-am
+make[3]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/src'
+depbase=`echo cli.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT cli.lo -MD -MP -MF $depbase.Tpo -c -o cli.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/cli.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo domain.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT domain.lo -MD -MP -MF $depbase.Tpo -c -o domain.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/domain.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT cli.lo -MD -MP -MF .deps/cli.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/cli.c -o cli.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT domain.lo -MD -MP -MF .deps/domain.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/domain.c -o domain.o
+depbase=`echo exec_inject.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT exec_inject.lo -MD -MP -MF $depbase.Tpo -c -o exec_inject.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/exec_inject.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT exec_inject.lo -MD -MP -MF .deps/exec_inject.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/exec_inject.c -o exec_inject.o
+depbase=`echo exec_inject_policy_file.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT exec_inject_policy_file.lo -MD -MP -MF $depbase.Tpo -c -o exec_inject_policy_file.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/exec_inject_policy_file.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT exec_inject_policy_file.lo -MD -MP -MF .deps/exec_inject_policy_file.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/exec_inject_policy_file.c -o exec_inject_policy_file.o
+depbase=`echo json_util.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT json_util.lo -MD -MP -MF $depbase.Tpo -c -o json_util.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/json_util.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT json_util.lo -MD -MP -MF .deps/json_util.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/json_util.c -o json_util.o
+depbase=`echo redaction.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT redaction.lo -MD -MP -MF $depbase.Tpo -c -o redaction.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/redaction.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT redaction.lo -MD -MP -MF .deps/redaction.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/redaction.c -o redaction.o
+depbase=`echo store.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT store.lo -MD -MP -MF $depbase.Tpo -c -o store.lo /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/store.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT store.lo -MD -MP -MF .deps/store.Tpo -c /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/store.c -o store.o
+gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\"   -I/usr/include/fuse3    -g -O2 -MT secdat_fuse-secdat-fuse.o -MD -MP -MF .deps/secdat_fuse-secdat-fuse.Tpo -c -o secdat_fuse-secdat-fuse.o `test -f 'secdat-fuse.c' || echo '/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/'`secdat-fuse.c
+mv -f .deps/secdat_fuse-secdat-fuse.Tpo .deps/secdat_fuse-secdat-fuse.Po
+depbase=`echo main.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+gcc -DHAVE_CONFIG_H -I. -I/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT main.o -MD -MP -MF $depbase.Tpo -c -o main.o /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/main.c &&\
+mv -f $depbase.Tpo $depbase.Po
+/bin/bash ../libtool  --tag=CC   --mode=link gcc  -g -O2 -version-info 1:0:1  -o libsecdat.la -rpath /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/lib cli.lo domain.lo exec_inject.lo exec_inject_policy_file.lo json_util.lo redaction.lo store.lo -lssl -lcrypto  -ljansson  
+libtool: link: ar cr .libs/libsecdat.a  cli.o domain.o exec_inject.o exec_inject_policy_file.o json_util.o redaction.o store.o
+libtool: link: ranlib .libs/libsecdat.a
+libtool: link: ( cd ".libs" && rm -f "libsecdat.la" && ln -s "../libsecdat.la" "libsecdat.la" )
+/bin/bash ../libtool  --tag=CC   --mode=link gcc  -g -O2   -o secdat main.o libsecdat.la 
+/bin/bash ../libtool  --tag=CC   --mode=link gcc  -g -O2   -o secdat-fuse secdat_fuse-secdat-fuse.o libsecdat.la -lfuse3 -lpthread  
+libtool: link: gcc -g -O2 -o secdat main.o  ./.libs/libsecdat.a -lssl -lcrypto -ljansson
+libtool: link: gcc -g -O2 -o secdat-fuse secdat_fuse-secdat-fuse.o  ./.libs/libsecdat.a -lssl -lcrypto -ljansson -lfuse3 -lpthread
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/src'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/src'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static'
+make[3]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/po'
+cd /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/po && /usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+.............................................................................................................................. done.
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/po'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static'
+Making install in po
+make[1]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/po'
+installing /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/po/ja.gmo as /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/locale/ja/LC_MESSAGES/secdat.mo
+if test "secdat" = "gettext-tools"; then \
+  /usr/bin/mkdir -p /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/gettext/po; \
+  for file in Makefile.in.in remove-potcdate.sin quot.sed boldquot.sed en@quot.header en@boldquot.header insert-header.sin Rules-quot   Makevars.template; do \
+    /usr/bin/install -c -m 644 /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/po/$file \
+		    /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/gettext/po/$file; \
+  done; \
+  for file in Makevars; do \
+    rm -f /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/gettext/po/$file; \
+  done; \
+else \
+  : ; \
+fi
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/po'
+Making install in src
+make[1]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/src'
+make  install-am
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/src'
+make[3]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/src'
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/lib'
+ /bin/bash ../libtool   --mode=install /usr/bin/install -c   libsecdat.la '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/lib'
+libtool: install: /usr/bin/install -c .libs/libsecdat.lai /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/lib/libsecdat.la
+libtool: install: /usr/bin/install -c .libs/libsecdat.a /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/lib/libsecdat.a
+libtool: install: chmod 644 /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/lib/libsecdat.a
+libtool: install: ranlib /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/lib/libsecdat.a
+libtool: finish: PATH="/home/katsumata-m/.local/bin:/home/katsumata-m/.cabal/bin:/home/katsumata-m/.ghcup/bin:/home/katsumata-m/.nvm/versions/node/v25.1.0/bin:/home/katsumata-m/.local/bin:/mnt/c/Users/katsumata-m/.codex/tmp/arg0-linux/codex-arg09ktbJz:/mnt/c/Users/katsumata-m/.codex/bin/wsl/41b07db48e50c5e5:/mnt/c/Users/katsumata-m/.codex/bin/wsl/1a4f6f66dd2f3710:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Microsoft SDKs/Azure/CLI2/wbin:/mnt/c/Windows/system32:/mnt/c/Windows:/mnt/c/Windows/System32/Wbem:/mnt/c/Windows/System32/WindowsPowerShell/v1.0/:/mnt/c/Windows/System32/OpenSSH/:/mnt/c/Program Files/dotnet/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/Program Files/WireGuard/:/mnt/c/Program Files/Amazon/AWSCLIV2/:/mnt/c/Program Files/GitHub CLI/:/mnt/c/Program Files/Microsoft VS Code Insiders/bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Program Files/Microsoft SQL Server/160/Tools/Binn/:/mnt/c/Program Files/Microsoft VS Code/bin/copilot-shim:/mnt/c/Program Files/PowerShell/7/:/mnt/c/Users/katsumata-m/.local/bin:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Python/Python314/Scripts/:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Python/Python314/:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Python/Launcher/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Git/cmd:/mnt/c/Users/katsumata-m/.dotnet-sdk-6.0.428/:/mnt/c/Program Files (x86)/Microsoft/Edge/Application:/mnt/c/Program Files/Git/cmd:/mnt/c/Users/katsumata-m/AppData/Local/Microsoft/WindowsApps:/mnt/c/Users/katsumata-m/AppData/Roaming/Code/User/globalStorage/github.copilot-chat/debugCommand:/mnt/c/Users/katsumata-m/.dotnet-sdk-6.0.428:/mnt/c/Users/k:/mnt/c/Users/katsumata-m/Apps/nodejs:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Git/cmd:/mnt/c/Users/katsumata-m/Apps/nvm/v22.9.0/node_modules/@openai/codex/vendor/x86_64-pc-windows-msvc/path:/mnt/c/Users/katsumata-m/.dotnet/tools:/mnt/c/Users/katsumata-m/AppData/Local/PowerToys/DSCModules/:/mnt/c/users/katsumata-m/appdata/roaming/python/python314/scripts:/mnt/c/Users/katsumata-m/AppData/Local/Kiro-Cli/:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Kiro/bin:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Ollama:/snap/bin:/home/katsumata-m/.dotnet/tools:/sbin" ldconfig -n /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/lib
+----------------------------------------------------------------------
+Libraries have been installed in:
+   /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/lib
+
+If you ever happen to want to link against installed libraries
+in a given directory, LIBDIR, you must either use libtool, and
+specify the full pathname of the library, or use the '-LLIBDIR'
+flag during linking and do at least one of the following:
+   - add LIBDIR to the 'LD_LIBRARY_PATH' environment variable
+     during execution
+   - add LIBDIR to the 'LD_RUN_PATH' environment variable
+     during linking
+   - use the '-Wl,-rpath -Wl,LIBDIR' linker flag
+   - have your system administrator add LIBDIR to '/etc/ld.so.conf'
+
+See any operating system documentation about shared libraries for
+more information, such as the ld(1) and ld.so(8) manual pages.
+----------------------------------------------------------------------
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/bin'
+  /bin/bash ../libtool   --mode=install /usr/bin/install -c secdat secdat-fuse '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/bin'
+libtool: install: /usr/bin/install -c secdat /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/bin/secdat
+libtool: install: /usr/bin/install -c secdat-fuse /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/bin/secdat-fuse
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/include'
+ /usr/bin/install -c -m 644 /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/src/secdat-sdk.h '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/include'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/src'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/src'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/src'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/po'
+cd /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/po && /usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+..................................................................................................................................... done.
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static/po'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static'
+/usr/bin/mkdir -p "/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/bash-completion/completions"
+/usr/bin/install -c -m 644 "/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/completions/secdat.bash" "/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/bash-completion/completions/secdat"
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/doc/secdat'
+ /usr/bin/install -c -m 644 /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/README.md /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/docs/secdat-spec.md '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/doc/secdat'
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/man/man1'
+ /usr/bin/install -c -m 644 /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/docs/secdat.1 /home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0/docs/secdat-fuse.1 '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/share/man/man1'
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/lib/pkgconfig'
+ /usr/bin/install -c -m 644 libsecdat.pc '/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static/lib/pkgconfig'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/build-static'
+ 0x0000000000000001 (NEEDED)             Shared library: [libsecdat.so.0]
+	libsecdat.so.0 => /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib/libsecdat.so.0 (0x00007ad4f56f9000)
+secdat 0.11.0
+Repository: https://github.com/mako10k/secdat
+Issues: https://github.com/mako10k/secdat/issues
+Author: Makoto Katsumata <mako10k@mk10.org>
+PASS installed shared C consumer
+secdat 0.11.0
+Repository: https://github.com/mako10k/secdat
+Issues: https://github.com/mako10k/secdat/issues
+Author: Makoto Katsumata <mako10k@mk10.org>
+PASS installed static C consumer

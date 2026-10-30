@@ -1,0 +1,5 @@
+secdat 0.11.0
+Build: 0e4eb24eba84
+Repository: https://github.com/mako10k/secdat
+Issues: https://github.com/mako10k/secdat/issues
+Author: Makoto Katsumata <mako10k@mk10.org>

@@ -1,0 +1,898 @@
+{
+  "purpose": "Closeout snapshot only; original receipts retain their original absolute paths and semantics.",
+  "source_root": "/home/katsumata-m/secdat-release-evidence/v0.11.0",
+  "files": [
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/01-build.json",
+      "snapshot": "evidence/01-build.json",
+      "size": 1222,
+      "sha256": "2ebbb71fa81991224f457518c176ea0cdc5ef1c81e4d8e4cb85254fb5dae8aed"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/01-build.log",
+      "snapshot": "evidence/01-build.log",
+      "size": 9206,
+      "sha256": "efc89f208ea71c5f7ced2c836c2c46d2eec266c393536a490c7a5578ba98f77b"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/01-build.time",
+      "snapshot": "evidence/01-build.time",
+      "size": 742,
+      "sha256": "860cf5e5370dc57d306a8f554e816190691c8f9ba87e9507c893ad62c6a99da6"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/02-gettext.json",
+      "snapshot": "evidence/02-gettext.json",
+      "size": 1308,
+      "sha256": "8ecb524b19185edb000bd744f4d7102d943567f40940ed846ed706ecb6b977b9"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/02-gettext.log",
+      "snapshot": "evidence/02-gettext.log",
+      "size": 41,
+      "sha256": "d41cea83b094907eb90dfc5a4add8792859061d031586c0b77b48e6aab6d2a52"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/02-gettext.time",
+      "snapshot": "evidence/02-gettext.time",
+      "size": 802,
+      "sha256": "37563acb460f0bcff59dbd03457f0bba8b05544a694bb5e1089ef8ff2569eb42"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/03-release-metadata.json",
+      "snapshot": "evidence/03-release-metadata.json",
+      "size": 1336,
+      "sha256": "6503a643ad8662778ec6e2d5ed0056c39bc00351d186cd1cfbe69e462e4b17b0"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/03-release-metadata.log",
+      "snapshot": "evidence/03-release-metadata.log",
+      "size": 42,
+      "sha256": "89149cf32e198ad3238f2b7fcdcd17489db72cce452cf35a530f0b598ecbe505"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/03-release-metadata.time",
+      "snapshot": "evidence/03-release-metadata.time",
+      "size": 799,
+      "sha256": "f0779dc1f1ce668f74bbbd5bda2c79a88b9d6e7c012d2e230dacdeb03d69879f"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/04-check.json",
+      "snapshot": "evidence/04-check.json",
+      "size": 1224,
+      "sha256": "ab8bb667f618f9e0990f0079f14a505bb7c9abad83219944b07e7aca9456efa5"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/04-check.log",
+      "snapshot": "evidence/04-check.log",
+      "size": 6504,
+      "sha256": "d6008f025470085575568eb1d07559c1b9da562c2db6d4094c478e669d81f2c7"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/04-check.time",
+      "snapshot": "evidence/04-check.time",
+      "size": 755,
+      "sha256": "e265778472141b22d3fc16562200524b788d9f7fe6c4364572ee3b0b256d96c0"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/05-disposition.txt",
+      "snapshot": "evidence/05-disposition.txt",
+      "size": 769,
+      "sha256": "a4c25be4e1579fb9094498f109f4566fb07e2a152cce806187c4a5b5c05613a1"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/05-distcheck-default.json",
+      "snapshot": "evidence/05-distcheck-default.json",
+      "size": 1781,
+      "sha256": "c284f604a93517b22eea7c828c6296e6feb69dc571c5fc052c7a9e622600c916"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/05-distcheck-default.log",
+      "snapshot": "evidence/05-distcheck-default.log",
+      "size": 32137,
+      "sha256": "0510fe1e2315d79dc69751457ab42c8629ac37414829711dcc73bcdc331e306f"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/05-distcheck-default.time",
+      "snapshot": "evidence/05-distcheck-default.time",
+      "size": 834,
+      "sha256": "f567285b8278eb0b19f485bda7af754f9a5bb0e462f7d0bf6d489620fa3a2d0c"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/05b-distcheck-default.json",
+      "snapshot": "evidence/05b-distcheck-default.json",
+      "size": 1755,
+      "sha256": "0b1b0a277205a8d9d8611587c290ef1fd616c0b91deb785615a236ac29066fb5"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/05b-distcheck-default.log",
+      "snapshot": "evidence/05b-distcheck-default.log",
+      "size": 64988,
+      "sha256": "64bb51047b32e5d8b8adecc683d2db4b7123ef275929fd3ed33165fe530ccfd4"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/05b-distcheck-default.time",
+      "snapshot": "evidence/05b-distcheck-default.time",
+      "size": 794,
+      "sha256": "b334751d3b32d613ce0ba3d58356e52e1b74570c26a90bc24fcde8ad3ddf1f34"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/06-distcheck-shared.json",
+      "snapshot": "evidence/06-distcheck-shared.json",
+      "size": 1786,
+      "sha256": "1d43d6df11ee96dfbe499e552ac567ff54b9531d7abd42d67112175c95c159e7"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/06-distcheck-shared.log",
+      "snapshot": "evidence/06-distcheck-shared.log",
+      "size": 61965,
+      "sha256": "46fc8a5ce7e5c1c2f399573ca1f8c3c4e9db815ec265231976d899588383cf2c"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/06-distcheck-shared.time",
+      "snapshot": "evidence/06-distcheck-shared.time",
+      "size": 827,
+      "sha256": "d81840b169197c4ded291759a910f343e9558775d428a4add142847798c72b64"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/07-distcheck-static.json",
+      "snapshot": "evidence/07-distcheck-static.json",
+      "size": 1786,
+      "sha256": "8074a271115f90ae624ebb1960e287beeee2209208a5862d676a4d78927ebf79"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/07-distcheck-static.log",
+      "snapshot": "evidence/07-distcheck-static.log",
+      "size": 59568,
+      "sha256": "cd43ac66c41b11cf2ebdb527cffb9d4185a502a10511dab1774471bc8b28e4de"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/07-distcheck-static.time",
+      "snapshot": "evidence/07-distcheck-static.time",
+      "size": 826,
+      "sha256": "8de218035464c466530ccb10bf8d3e4baa5bb96499b2a947dc380ea85c2dd37d"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/08-native-consumers.json",
+      "snapshot": "evidence/08-native-consumers.json",
+      "size": 1911,
+      "sha256": "c3ccfd9a332e2b24f89090ff7a7b0783cfa65d213f1e1ad0ac727ef0f4ff6bef"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/08-native-consumers.log",
+      "snapshot": "evidence/08-native-consumers.log",
+      "size": 53330,
+      "sha256": "d89d43555a16ae4e3bc7e178d95531ef8d1e06331304c4ee91ae64f2ee42ab15"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/08-native-consumers.time",
+      "snapshot": "evidence/08-native-consumers.time",
+      "size": 812,
+      "sha256": "a9ea9ad746e7f9617e8f89f527d3ad0a804771a2d79a37d70c0d58d3f62577e5"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/09-binding-consumers.json",
+      "snapshot": "evidence/09-binding-consumers.json",
+      "size": 2341,
+      "sha256": "1234d21c7585b7600100a5406da692580f14045602963315f596e4dc00501d11"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/09-binding-consumers.log",
+      "snapshot": "evidence/09-binding-consumers.log",
+      "size": 11849,
+      "sha256": "fedb8fcaf029921ffc764c3c63dcc924355ce953ee045fe2d01ffc295e335be6"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/09-binding-consumers.time",
+      "snapshot": "evidence/09-binding-consumers.time",
+      "size": 1234,
+      "sha256": "e88d7aca3b37bdbb32ad137499c3f3865b85efcb6eec3f85695e895924ce4f29"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/10-go-consumers.json",
+      "snapshot": "evidence/10-go-consumers.json",
+      "size": 1891,
+      "sha256": "08fa389c9a13a69249a217b9abac78ca44e8025bb17b88cfdefb7672913dbda3"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/10-go-consumers.log",
+      "snapshot": "evidence/10-go-consumers.log",
+      "size": 267,
+      "sha256": "11b938e2021720c80ee9999ca090ef4f88e7712b08f90dd808ab80ce1922f420"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/10-go-consumers.time",
+      "snapshot": "evidence/10-go-consumers.time",
+      "size": 802,
+      "sha256": "596ce0cdd72e2a5060ed5d14ec330f44e352e034807bbe255b03922b0f76c564"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/11-build-pkgconfig.json",
+      "snapshot": "evidence/11-build-pkgconfig.json",
+      "size": 1963,
+      "sha256": "93c4aef35ec295189fedc37698723233d14c91ac5d1d3262cd92932ef9507d18"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/11-build-pkgconfig.log",
+      "snapshot": "evidence/11-build-pkgconfig.log",
+      "size": 90,
+      "sha256": "53a2687ceb2ff626d104c72b9b40b768f535b1ca0d26c9259e543e40f3d47686"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/11-build-pkgconfig.time",
+      "snapshot": "evidence/11-build-pkgconfig.time",
+      "size": 969,
+      "sha256": "457534e33de6a629238be50e4dd8fed3311a9c0f2d60f386511796d6fc241116"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/FINAL-JUDGMENT.md",
+      "snapshot": "evidence/FINAL-JUDGMENT.md",
+      "size": 5803,
+      "sha256": "2743f9a98b5570144b3054b72a0c1ab25c616e2d7ad1df4f3ae3177c4db4fd62"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/PUBLICATION-RESULT.md",
+      "snapshot": "evidence/PUBLICATION-RESULT.md",
+      "size": 1265,
+      "sha256": "31b18583406b6338b709460c3e7bb29fc01629e7e649f7f0250145584472241f"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/archive-provenance.json",
+      "snapshot": "evidence/archive-provenance.json",
+      "size": 4518,
+      "sha256": "b126b2118f7f753a2f4df476204cdc0f36ab2269e5c5529321e3eca5b552b247"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/candidate.json",
+      "snapshot": "evidence/candidate.json",
+      "size": 381,
+      "sha256": "204b2975dedd8d183c3785cf08c3c7635ce1c2af971590c835faa263116be099"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/consumer-shared.dynamic",
+      "snapshot": "evidence/consumer-shared.dynamic",
+      "size": 1512,
+      "sha256": "1a525e67dbd92930b0e048e5c5ee670f5ebfb2e6c7d29ae15240115bd4ca18e2"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/consumer-shared.ldd",
+      "snapshot": "evidence/consumer-shared.ldd",
+      "size": 434,
+      "sha256": "87452aef2d1e59fc4c2c598a32e5a55dfb0442705c7287955f9e69ebac2e0b37"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/consumer-static.dynamic",
+      "snapshot": "evidence/consumer-static.dynamic",
+      "size": 1604,
+      "sha256": "a84ba8bba9ac7a72a2a7f779289442b3f3bdaadc033723542e788a09443575e0"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/consumer.c",
+      "snapshot": "evidence/consumer.c",
+      "size": 73,
+      "sha256": "f85fd85419832a6ff7f193c1552f145746ced95974646cb35285fb385a32022c"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/environment.txt",
+      "snapshot": "evidence/environment.txt",
+      "size": 1928,
+      "sha256": "bd89de175f9544a486051988cd6405a314b96c7e94feb2b830e097f6eb9b8dee"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/final-review.txt",
+      "snapshot": "evidence/final-review.txt",
+      "size": 758,
+      "sha256": "c4f38500362773bc8359535f36e71a163d6fa3b48a714dfff5a4c4c1f2a4228c"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/frozen-release-notes.md",
+      "snapshot": "evidence/frozen-release-notes.md",
+      "size": 4670,
+      "sha256": "188ee5a62f819c79142f67673510c6dcfa081b70aecd35d8269d4409fa6187ba"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/go-build-diagnostic.log",
+      "snapshot": "evidence/go-build-diagnostic.log",
+      "size": 163,
+      "sha256": "d5b9383c0bbf1b87adaf48a65946fa940eab8842c53d7874a0301289d48a85b5"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/go-consumers.sh",
+      "snapshot": "evidence/go-consumers.sh",
+      "size": 1755,
+      "sha256": "80961a1bac34811defd89978a6dabdd3f4f2f4de1fcab5ea38535f93acdf9b39"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/initial-gates-inventory.json",
+      "snapshot": "evidence/initial-gates-inventory.json",
+      "size": 829,
+      "sha256": "38dd0009596efb511e25c0626bb7470a392dc147b22c820c9367e0eccce6ede9"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers.sh",
+      "snapshot": "evidence/installed-consumers.sh",
+      "size": 5472,
+      "sha256": "5c383f6344f777f14915c55d5825c33cbe33e45b8033da585f76c1e089d7b2d3"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/issue-final.md",
+      "snapshot": "evidence/issue-final.md",
+      "size": 3092,
+      "sha256": "6602d6a94f2caca533d6ccd8a34070d9c3fca70b1719fefb1f05d053f6604159"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/issue-publication.md",
+      "snapshot": "evidence/issue-publication.md",
+      "size": 1426,
+      "sha256": "278f325025b7f0aafdc18332f9705e03979c307f4ec62353f9d0e3dcd159566a"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/matrix-summary.json",
+      "snapshot": "evidence/matrix-summary.json",
+      "size": 8467,
+      "sha256": "c9028688a5cbc5fa366394fb203903b4cbed7ffe9d6341e6d452b05bb3451d43"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/native-consumers.sh",
+      "snapshot": "evidence/native-consumers.sh",
+      "size": 3988,
+      "sha256": "aae5f6c986f7900e3bca45e045aadbf5d29eb5ed6628deafcb4dee41df5a3f0f"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/plan-analysis-before-report.txt",
+      "snapshot": "evidence/plan-analysis-before-report.txt",
+      "size": 1103,
+      "sha256": "2f310c77dc88c3d2dc1836843cbe362f6b96bca50a66f357f1624cc5d5615c79"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/plan-analysis-final.txt",
+      "snapshot": "evidence/plan-analysis-final.txt",
+      "size": 1048,
+      "sha256": "0e6b668b58e07cb336099ac8ed5422fad494d6d2872563aab5fe583ceffa9273"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/prefreeze-autoreconf.log",
+      "snapshot": "evidence/prefreeze-autoreconf.log",
+      "size": 1314,
+      "sha256": "2883d70225f3b87f01d9eb56e61eba083a7ee256f90be417c7feed281d782a3f"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/prefreeze-configure.log",
+      "snapshot": "evidence/prefreeze-configure.log",
+      "size": 5104,
+      "sha256": "19aea940ea12dff73f55014d972546341b5f75c404416b91e2a2d494c7943729"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/prefreeze-gettext.log",
+      "snapshot": "evidence/prefreeze-gettext.log",
+      "size": 3636,
+      "sha256": "45e53cf2468083c853f7d231a21191827ca2a16752a28ff5aba68135055ec4c4"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/prepublish-remote-refs.txt",
+      "snapshot": "evidence/prepublish-remote-refs.txt",
+      "size": 57,
+      "sha256": "264b2a1cd88dcdfcf00676e9b7e45e6751518dcc56233afc470d649fbd2ca1d5"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-authorization.json",
+      "snapshot": "evidence/publication-authorization.json",
+      "size": 892,
+      "sha256": "4f3c24456b405ad58cf0957ad283772b20af8046deca5d03b2644229368787fc"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-inputs.json",
+      "snapshot": "evidence/publication-inputs.json",
+      "size": 961,
+      "sha256": "68cfb6bead700c0df24221a4fd87c66738a4db0ba01e03fe3cf7aaa411653866"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-issue-readback.json",
+      "snapshot": "evidence/publication-issue-readback.json",
+      "size": 3017,
+      "sha256": "b7ea325f66e119369e80b46db1f75521c4fedb7e2d3037ce806cd5f96d6730f4"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-latest-readback.json",
+      "snapshot": "evidence/publication-latest-readback.json",
+      "size": 6489,
+      "sha256": "125e848f8f3c85efe40f57a620f0ee36dcc5ce1f0748d9d10f5c925bac52e755"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-local-tag.json",
+      "snapshot": "evidence/publication-local-tag.json",
+      "size": 166,
+      "sha256": "023fb94baac2494b5428fa0d9bc79106322768edc8777696710591ec7bb2a609"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-main-push-status.txt",
+      "snapshot": "evidence/publication-main-push-status.txt",
+      "size": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-main-push.log",
+      "snapshot": "evidence/publication-main-push.log",
+      "size": 75,
+      "sha256": "033cbdfb80fce82dd8079e0b6ab985a6a50721f131358e52f3b3effa7d0f0110"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-main-readback.txt",
+      "snapshot": "evidence/publication-main-readback.txt",
+      "size": 57,
+      "sha256": "72e05d60a3e317946cb4bc840d8d67d367315e6e0f12642e7a7a459e79b0b2ca"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-post-release-refs.txt",
+      "snapshot": "evidence/publication-post-release-refs.txt",
+      "size": 178,
+      "sha256": "c2688d255a0c15a0379f2c15e5f93bf04a026b299d4c958bed6be388dfb86506"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-release-create-preflight.stderr",
+      "snapshot": "evidence/publication-release-create-preflight.stderr",
+      "size": 25,
+      "sha256": "d2c8985c89b29a842ac4946d13bdbc297709f44f20bb968faf9682664b211db6"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-release-create-preflight.txt",
+      "snapshot": "evidence/publication-release-create-preflight.txt",
+      "size": 1372,
+      "sha256": "b17b8739828e2047be646a534ae68df43e9d9dc1b5239a7f0465acffab826cd2"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-release-create-status.txt",
+      "snapshot": "evidence/publication-release-create-status.txt",
+      "size": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-release-create.log",
+      "snapshot": "evidence/publication-release-create.log",
+      "size": 55,
+      "sha256": "f6ce1d1c3290b109f335ac27bf895a73bfb9198f8a863a6d5176b4fedbebf996"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-release-preflight.stderr",
+      "snapshot": "evidence/publication-release-preflight.stderr",
+      "size": 25,
+      "sha256": "d2c8985c89b29a842ac4946d13bdbc297709f44f20bb968faf9682664b211db6"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-release-preflight.txt",
+      "snapshot": "evidence/publication-release-preflight.txt",
+      "size": 1372,
+      "sha256": "899140295d0b75db818018d47a8f358da4f16b8668ce56f2623b0841894ed044"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-release-readback.json",
+      "snapshot": "evidence/publication-release-readback.json",
+      "size": 4975,
+      "sha256": "99d5b6badac5c1e8d1949cbc9249ec9a2666b457bf581255b98b91fadf7a89f9"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-result.json",
+      "snapshot": "evidence/publication-result.json",
+      "size": 2811,
+      "sha256": "641c2337ea0b428846442689aacda8816342f7eae4091db1715caa0be7d0fea0"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-tag-push-status.txt",
+      "snapshot": "evidence/publication-tag-push-status.txt",
+      "size": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-tag-push.log",
+      "snapshot": "evidence/publication-tag-push.log",
+      "size": 81,
+      "sha256": "87a549de56852c6400b0b1766fba63f9f608fd5d9a8441ec6bd6d67718546edb"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-tag-readback.txt",
+      "snapshot": "evidence/publication-tag-readback.txt",
+      "size": 178,
+      "sha256": "c2688d255a0c15a0379f2c15e5f93bf04a026b299d4c958bed6be388dfb86506"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/release-0.11.0.pert",
+      "snapshot": "evidence/release-0.11.0.pert",
+      "size": 3187,
+      "sha256": "b4ca55c16f172a046e941aa1c59029eed314faf679eb6b1d84b1891b79e53c86"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/remote-releases.json",
+      "snapshot": "evidence/remote-releases.json",
+      "size": 826,
+      "sha256": "ce8638a681d3a31981cb5e2e43b0014dd2a5f21130bfd812c5826f3f621eb22e"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/run_gate.py",
+      "snapshot": "evidence/run_gate.py",
+      "size": 2256,
+      "sha256": "e72a915471597aefbc98004e763c968336916f1aab16df698cd951f8155a471b"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/run_gate_v2.py",
+      "snapshot": "evidence/run_gate_v2.py",
+      "size": 2581,
+      "sha256": "746ccb403a2761892f267bd30f707a86ea59fb8db73887ffe2f603c12b047c31"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/summarize.py",
+      "snapshot": "evidence/summarize.py",
+      "size": 5272,
+      "sha256": "0451088a687fff1456ed74cbbd0d4c5b19420f269a1eaf44ba407ed17918241c"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/velocity-after-prep.json",
+      "snapshot": "evidence/velocity-after-prep.json",
+      "size": 4137,
+      "sha256": "11df700d8eea9192e8d0c0094ebdc4784acaec4e220227fd14ada50580407fb5"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/velocity-initial.json",
+      "snapshot": "evidence/velocity-initial.json",
+      "size": 6301,
+      "sha256": "aa510b28440c4e8b7501c9269f446f162aaae73dbba2fc3cfbed70cf9fda8038"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/RESULT.md",
+      "snapshot": "evidence/local-install/RESULT.md",
+      "size": 1200,
+      "sha256": "1a541a466af3cb98569a17e90bd081c7aa4684aa829b8d83f1da76325d10054d"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/autoreconf.log",
+      "snapshot": "evidence/local-install/autoreconf.log",
+      "size": 1314,
+      "sha256": "2883d70225f3b87f01d9eb56e61eba083a7ee256f90be417c7feed281d782a3f"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/bash-smoke-callback-fixture.txt",
+      "snapshot": "evidence/local-install/bash-smoke-callback-fixture.txt",
+      "size": 20,
+      "sha256": "3500421d748a9efedd0a916f6e74f8106195b33d17e1f409bf6780dcae2eaede"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/bash-smoke-callback-status.txt",
+      "snapshot": "evidence/local-install/bash-smoke-callback-status.txt",
+      "size": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/bash-smoke-callback.log",
+      "snapshot": "evidence/local-install/bash-smoke-callback.log",
+      "size": 624,
+      "sha256": "7e9f8839a470661d55f623c605cbdc34dd4ec77e14bf20a170f68bbaef1624e0"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/bash-smoke-callback.sh",
+      "snapshot": "evidence/local-install/bash-smoke-callback.sh",
+      "size": 2827,
+      "sha256": "c55c65594713f4293803e737760b30f2438a5548fcdd3599ddfad9688a2a780c"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/bash-smoke-short-fixture.txt",
+      "snapshot": "evidence/local-install/bash-smoke-short-fixture.txt",
+      "size": 20,
+      "sha256": "0db866f235cbb0259cf32fb8daa233549cfc8c00aa8b3dca9c99a651cd3487ef"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/bash-smoke-short-status.txt",
+      "snapshot": "evidence/local-install/bash-smoke-short-status.txt",
+      "size": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/bash-smoke-short.log",
+      "snapshot": "evidence/local-install/bash-smoke-short.log",
+      "size": 284,
+      "sha256": "6bf10ffba05abe56374682c09f34274c275d3e2363a327b819c81207de6f63a5"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/bash-smoke-short.sh",
+      "snapshot": "evidence/local-install/bash-smoke-short.sh",
+      "size": 2583,
+      "sha256": "f921abfd9687d86437acc1c43cdc1c7fb73b94e2a42aab9e1b2144350ae18fe9"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/bash-smoke-status.txt",
+      "snapshot": "evidence/local-install/bash-smoke-status.txt",
+      "size": 2,
+      "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/bash-smoke.log",
+      "snapshot": "evidence/local-install/bash-smoke.log",
+      "size": 471,
+      "sha256": "344f011904a0adaadc3c4c826bbf13e8a11c67f08cdcee735550a351434c544f"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/bash-smoke.sh",
+      "snapshot": "evidence/local-install/bash-smoke.sh",
+      "size": 2632,
+      "sha256": "3fd5efc606668570e11fb96da599e1166423e1b9c5f6361bd52786756d5f16c7"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/before-version.txt",
+      "snapshot": "evidence/local-install/before-version.txt",
+      "size": 173,
+      "sha256": "234d9ad04db5a98b2cbfa05a86537227f6f568fd64dfa7fb59efcc7850f558bc"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build.log",
+      "snapshot": "evidence/local-install/build.log",
+      "size": 11935,
+      "sha256": "ff7e6a5691f9e7a35b94b25c8d8209957c35fc8a5be90e6124f42e2bd42957e8"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/completion-regression.log",
+      "snapshot": "evidence/local-install/completion-regression.log",
+      "size": 27,
+      "sha256": "87ae47b0e9744f8ec20314357df7df1e24827d2226be48c067ae8eac56cf7327"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/configure.log",
+      "snapshot": "evidence/local-install/configure.log",
+      "size": 5104,
+      "sha256": "19aea940ea12dff73f55014d972546341b5f75c404416b91e2a2d494c7943729"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/install-manifest.json",
+      "snapshot": "evidence/local-install/install-manifest.json",
+      "size": 6610,
+      "sha256": "96bef38795896692415565340bbefdd91603ad656dcc829f6f399a13bc616ff2"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/installed-ldd.txt",
+      "snapshot": "evidence/local-install/installed-ldd.txt",
+      "size": 381,
+      "sha256": "967498627def11a2fe565eb5986c156de3f02b9f5b6738de9b9936dfcbfc5ab4"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/installed-version.txt",
+      "snapshot": "evidence/local-install/installed-version.txt",
+      "size": 173,
+      "sha256": "3fa7743ce2858c7f3e0a2abd6a8a26bf0ecad1ced434e4264fc5ad24b0d6d90a"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/result.json",
+      "snapshot": "evidence/local-install/result.json",
+      "size": 2803,
+      "sha256": "6dbebf77eafffc6bdc93b8f9c93c6c7a0740f2c40d3c8cf29d6170dda56e2c75"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/stage-install.log",
+      "snapshot": "evidence/local-install/stage-install.log",
+      "size": 6308,
+      "sha256": "03c7be80a27d6cc72a8285eea057dd31a7bead2ed405fe52351348f3dca419c7"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/system-install.log",
+      "snapshot": "evidence/local-install/system-install.log",
+      "size": 5342,
+      "sha256": "99a271c8d78904107d8b5099085697bea7cefa7959531c3b9080438d41667985"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/clear-both.stderr",
+      "snapshot": "evidence/probes/clear-both.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/clear-both.stdout",
+      "snapshot": "evidence/probes/clear-both.stdout",
+      "size": 329,
+      "sha256": "560a99cf8e657c13d4fca6c625afd935695d413b6312f52adad5c00a9dc4ee3e"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/clear-mflags.stderr",
+      "snapshot": "evidence/probes/clear-mflags.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/clear-mflags.stdout",
+      "snapshot": "evidence/probes/clear-mflags.stdout",
+      "size": 329,
+      "sha256": "560a99cf8e657c13d4fca6c625afd935695d413b6312f52adad5c00a9dc4ee3e"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/env.txt",
+      "snapshot": "evidence/probes/env.txt",
+      "size": 44,
+      "sha256": "adf2193d7cfbc3caf922d78053cfd93fb28d3219cfb1c723353998e063f8dbb4"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/inherited.stderr",
+      "snapshot": "evidence/probes/inherited.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/inherited.stdout",
+      "snapshot": "evidence/probes/inherited.stdout",
+      "size": 329,
+      "sha256": "560a99cf8e657c13d4fca6c625afd935695d413b6312f52adad5c00a9dc4ee3e"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/j1.env.txt",
+      "snapshot": "evidence/probes/j1.env.txt",
+      "size": 44,
+      "sha256": "adf2193d7cfbc3caf922d78053cfd93fb28d3219cfb1c723353998e063f8dbb4"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/j1.inherited.stderr",
+      "snapshot": "evidence/probes/j1.inherited.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/j1.inherited.stdout",
+      "snapshot": "evidence/probes/j1.inherited.stdout",
+      "size": 329,
+      "sha256": "560a99cf8e657c13d4fca6c625afd935695d413b6312f52adad5c00a9dc4ee3e"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/j1.outer.stderr",
+      "snapshot": "evidence/probes/j1.outer.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/j1.outer.stdout",
+      "snapshot": "evidence/probes/j1.outer.stdout",
+      "size": 238,
+      "sha256": "922dc971ea685613ce26089bf7249e9294650cddc8adcbb92aaf2166528b76f6"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/nested.err",
+      "snapshot": "evidence/probes/nested.err",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/nested.out",
+      "snapshot": "evidence/probes/nested.out",
+      "size": 238,
+      "sha256": "922dc971ea685613ce26089bf7249e9294650cddc8adcbb92aaf2166528b76f6"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/outer.mk",
+      "snapshot": "evidence/probes/outer.mk",
+      "size": 187,
+      "sha256": "52b1b733a9bbcf0f68a35d6329b3d2c7ab3be8b061b46d3f1a705549fabf3a29"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/plain.env.txt",
+      "snapshot": "evidence/probes/plain.env.txt",
+      "size": 34,
+      "sha256": "df6c913418975838df6a1500304c95fadfadef5c0b3097d40c8a92518f17a4e9"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/plain.inherited.stderr",
+      "snapshot": "evidence/probes/plain.inherited.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/plain.inherited.stdout",
+      "snapshot": "evidence/probes/plain.inherited.stdout",
+      "size": 329,
+      "sha256": "560a99cf8e657c13d4fca6c625afd935695d413b6312f52adad5c00a9dc4ee3e"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/plain.outer.stderr",
+      "snapshot": "evidence/probes/plain.outer.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/plain.outer.stdout",
+      "snapshot": "evidence/probes/plain.outer.stdout",
+      "size": 238,
+      "sha256": "922dc971ea685613ce26089bf7249e9294650cddc8adcbb92aaf2166528b76f6"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/probes/query.sh",
+      "snapshot": "evidence/probes/query.sh",
+      "size": 688,
+      "sha256": "d67c25519e24e877e9da6f7ab708c66ccd665c63549a4c86accab73d21d9077b"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-issue-244/build/issue-244-v2-default.pert",
+      "snapshot": "evidence/plans/issue-244-v2-default.pert",
+      "size": 2871,
+      "sha256": "ae7b15817457b0961cb739d8965a7feddbcdad9d945508d41dc736c13b9a6bb5"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-0.11.0/build/release-0.11.0.pert",
+      "snapshot": "evidence/plans/release-0.11.0-current.pert",
+      "size": 3187,
+      "sha256": "b4ca55c16f172a046e941aa1c59029eed314faf679eb6b1d84b1891b79e53c86"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/closeout/gc-domain-source.json",
+      "snapshot": "evidence/closeout/gc-domain-source.json",
+      "size": 1785,
+      "sha256": "62cd9edea17feeff0f98bd7fbae2c6ee50826777bccefc83cf2ffb09e56643c0"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/closeout/gc-domain-original-status.txt",
+      "snapshot": "evidence/closeout/gc-domain-original-status.txt",
+      "size": 213,
+      "sha256": "5c679ef6e94d638a84b9191242fb27a9afabe78132ad402fc129d3d139496d18"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/closeout/wip-remote-readback.txt",
+      "snapshot": "evidence/closeout/wip-remote-readback.txt",
+      "size": 225,
+      "sha256": "4df3454efefc1eab838599582d582285ad84a4aa657fead6121de0a217510c56"
+    }
+  ],
+  "local_only_top_level_files": [
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/closeout-auth-preflight.json",
+      "size": 4575,
+      "sha256": "3413b8890e420b38a90cc8e5a35217c2dc817aef4168790c57629704b7149ad9",
+      "reason": "Authentication routing context or rebuildable binary/archive; retained locally, not copied into Git"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/consumer-shared",
+      "size": 15960,
+      "sha256": "98a57f9fb08395767e75a1522d720f1d6e24c870274193051277db7a4c5c4bf7",
+      "reason": "Authentication routing context or rebuildable binary/archive; retained locally, not copied into Git"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/consumer-static",
+      "size": 2859056,
+      "sha256": "de637d759318f1e0783f247cf099971563174d8e21178fe9a78aacf3bfa5c5c9",
+      "reason": "Authentication routing context or rebuildable binary/archive; retained locally, not copied into Git"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/final-remote-preflight.json",
+      "size": 4575,
+      "sha256": "3413b8890e420b38a90cc8e5a35217c2dc817aef4168790c57629704b7149ad9",
+      "reason": "Authentication routing context or rebuildable binary/archive; retained locally, not copied into Git"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/publication-auth-preflight.json",
+      "size": 4575,
+      "sha256": "3413b8890e420b38a90cc8e5a35217c2dc817aef4168790c57629704b7149ad9",
+      "reason": "Authentication routing context or rebuildable binary/archive; retained locally, not copied into Git"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/secdat-0.11.0.tar.gz",
+      "size": 1125893,
+      "sha256": "fb03e1862ba68a6b5add2dc5bdee9ce15935a002ec72f5210f74384c61aaba79",
+      "reason": "Authentication routing context or rebuildable binary/archive; retained locally, not copied into Git"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/previous-install.tar",
+      "size": 8601600,
+      "sha256": "8965d3103b9aa7358260c3233b43051d429ea95b81ccb5e98b3f19f26592d808",
+      "reason": "Authentication routing context or rebuildable binary/archive; retained locally, not copied into Git"
+    },
+    {
+      "source": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/previous-paths.list0",
+      "size": 508,
+      "sha256": "f4157c547625f7dd018507ad25d850070ca682f51714b90045fb17e4bd280766",
+      "reason": "Authentication routing context or rebuildable binary/archive; retained locally, not copied into Git"
+    }
+  ],
+  "excluded_generated_directories": [
+    "build-shared",
+    "build-static",
+    "prefix-shared",
+    "prefix-static",
+    "distribution",
+    "failed-distcheck-default-tree",
+    "installed-consumers-work",
+    "local-install/build",
+    "local-install/stage",
+    "local-install/install-replacement-probe",
+    "local-install/bash-smoke"
+  ],
+  "note": "200MB original evidence/build/backup tree retained locally. Test-fixture data, dependency caches, installed native objects and old-install backup archive are not pushed. This snapshot is not a claim that omitted artifact bytes are present in Git."
+}

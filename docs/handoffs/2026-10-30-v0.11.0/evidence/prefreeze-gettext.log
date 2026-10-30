@@ -1,0 +1,84 @@
+make: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+make secdat.pot-update
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+sed -e '/^#/d' remove-potcdate.sin > t-remove-potcdate.sed
+mv t-remove-potcdate.sed remove-potcdate.sed
+package_gnu=""; \
+test -n "$package_gnu" || { \
+  if { if (LC_ALL=C find --version) 2>/dev/null | grep GNU >/dev/null; then \
+         LC_ALL=C find -L .. -maxdepth 1 -type f -size -10000000c -exec grep -i 'GNU secdat' /dev/null '{}' ';' 2>/dev/null; \
+       else \
+         LC_ALL=C grep -i 'GNU secdat' ../* 2>/dev/null; \
+       fi; \
+     } | grep -v 'libtool:' >/dev/null; then \
+     package_gnu=yes; \
+   else \
+     package_gnu=no; \
+   fi; \
+}; \
+if test "$package_gnu" = "yes"; then \
+  package_prefix='GNU '; \
+else \
+  package_prefix=''; \
+fi; \
+if test -n 'noreply@example.invalid' || test 'noreply@example.invalid' = '@'PACKAGE_BUGREPORT'@'; then \
+  msgid_bugs_address='noreply@example.invalid'; \
+else \
+  msgid_bugs_address='noreply@example.invalid'; \
+fi; \
+case `/usr/bin/xgettext --version | sed 1q | sed -e 's,^[^0-9]*,,'` in \
+  '' | 0.[0-9] | 0.[0-9].* | 0.1[0-5] | 0.1[0-5].* | 0.16 | 0.16.[0-1]*) \
+    /usr/bin/xgettext --default-domain=secdat --directory=.. \
+      --add-comments=TRANSLATORS: \
+      --files-from=./POTFILES.in \
+      --copyright-holder='secdat contributors' \
+      --msgid-bugs-address="$msgid_bugs_address" \
+      --keyword=_  \
+    ;; \
+  *) \
+    /usr/bin/xgettext --default-domain=secdat --directory=.. \
+      --add-comments=TRANSLATORS: \
+      --files-from=./POTFILES.in \
+      --copyright-holder='secdat contributors' \
+      --package-name="${package_prefix}secdat" \
+      --package-version='0.11.0' \
+      --msgid-bugs-address="$msgid_bugs_address" \
+      --keyword=_  \
+    ;; \
+esac
+test ! -f secdat.po || { \
+  if test -f ./secdat.pot-header; then \
+    sed -e '1,/^#$/d' < secdat.po > secdat.1po && \
+    cat ./secdat.pot-header secdat.1po > secdat.po && \
+    rm -f secdat.1po \
+    || exit 1; \
+  fi; \
+  if test -f ./secdat.pot; then \
+    sed -f remove-potcdate.sed < ./secdat.pot > secdat.1po && \
+    sed -f remove-potcdate.sed < secdat.po > secdat.2po && \
+    if cmp secdat.1po secdat.2po >/dev/null 2>&1; then \
+      rm -f secdat.1po secdat.2po secdat.po; \
+    else \
+      rm -f secdat.1po secdat.2po ./secdat.pot && \
+      mv secdat.po ./secdat.pot; \
+    fi; \
+  else \
+    mv secdat.po ./secdat.pot; \
+  fi; \
+}
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+test -z "ja.po-update" || make ja.po-update
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+ja:
+/usr/bin/msgmerge  --lang=ja --previous ja.po secdat.pot -o ja.new.po
+................................................................................................................................................. done.
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+make update-gmo
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+/usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+.......................................................................................................................................................... done.
+rm -f ja.gmo && /usr/bin/msgmerge --for-msgfmt -o ja.1po ja.po secdat.pot && /usr/bin/msgfmt -c --statistics --verbose -o ja.gmo ja.1po && rm -f ja.1po
+ja.1po: 875 translated messages.
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+make: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+PASS gettext catalog regression (0.11.0)

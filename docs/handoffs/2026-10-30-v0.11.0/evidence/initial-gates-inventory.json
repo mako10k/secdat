@@ -1,0 +1,15 @@
+{
+  "created_utc": "2026-10-30T10:08:28.179898+00:00",
+  "kind": "retrospective inventory for original gates01-04; not an execution-time hash assertion",
+  "files": {
+    "run_gate.py": "e72a915471597aefbc98004e763c968336916f1aab16df698cd951f8155a471b",
+    "environment.txt": "bd89de175f9544a486051988cd6405a314b96c7e94feb2b830e097f6eb9b8dee",
+    "candidate.json": "204b2975dedd8d183c3785cf08c3c7635ce1c2af971590c835faa263116be099"
+  },
+  "receipts": {
+    "01-build.json": "2ebbb71fa81991224f457518c176ea0cdc5ef1c81e4d8e4cb85254fb5dae8aed",
+    "02-gettext.json": "8ecb524b19185edb000bd744f4d7102d943567f40940ed846ed706ecb6b977b9",
+    "03-release-metadata.json": "6503a643ad8662778ec6e2d5ed0056c39bc00351d186cd1cfbe69e462e4b17b0",
+    "04-check.json": "ab8bb667f618f9e0990f0079f14a505bb7c9abad83219944b07e7aca9456efa5"
+  }
+}

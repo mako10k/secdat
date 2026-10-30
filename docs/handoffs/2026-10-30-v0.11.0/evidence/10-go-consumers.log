@@ -1,0 +1,5 @@
+	libsecdat.so.0 => /home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared/lib/libsecdat.so.0 (0x00007c80af41c000)
+Go linked C runtime PASS: public_text
+PASS installed Go shared consumer
+Go linked C runtime PASS: public_text
+PASS installed Go static consumer

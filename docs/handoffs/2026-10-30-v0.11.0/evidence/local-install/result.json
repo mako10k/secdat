@@ -1,0 +1,47 @@
+{
+  "result": "INSTALLED_AND_VERIFIED",
+  "verified_utc": "2026-10-30T12:24:25.762271+00:00",
+  "install_prefix": "/usr/local",
+  "binary": "/usr/local/bin/secdat",
+  "version": "0.11.0",
+  "build": "0e4eb24eba84",
+  "candidate_commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+  "candidate_tree": "704a660340df464f159b500591eb2edd7edf581f",
+  "configuration": "--prefix=/usr/local --enable-fuse",
+  "install_command": "sudo -n make install",
+  "staged_files_verified": 15,
+  "old_install_backup": "/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/previous-install.tar",
+  "completion_autoload_file": "/usr/local/share/bash-completion/completions/secdat",
+  "completion_regression": "PASS installed binary; installed script byte-identical to source regression script target",
+  "interactive_completion_smoke": "PASS system autoload with actual user Bash startup; isolated XDG fixtures",
+  "cases": [
+    "Inherited --store namespace",
+    "Local management-store namespace",
+    "Space-escaped store name",
+    "Attached --store= prefix",
+    "No existing-name suggestions for create",
+    "Fixture data unchanged by completion"
+  ],
+  "harness_failures_preserved": [
+    "Long evidence runtime exceeded Unix socket108-byte bound; rerun used short/tmp runtime",
+    "Direct callback under harness set-e exited in system helper; conditional invocation matches normal interactive completion, same assertions pass"
+  ],
+  "running_user_agent_restart": false,
+  "global_shell_rc_edits": false,
+  "registry_or_remote_mutations": false,
+  "record_sha256": {
+    "configure.log": "19aea940ea12dff73f55014d972546341b5f75c404416b91e2a2d494c7943729",
+    "build.log": "ff7e6a5691f9e7a35b94b25c8d8209957c35fc8a5be90e6124f42e2bd42957e8",
+    "stage-install.log": "03c7be80a27d6cc72a8285eea057dd31a7bead2ed405fe52351348f3dca419c7",
+    "system-install.log": "99a271c8d78904107d8b5099085697bea7cefa7959531c3b9080438d41667985",
+    "install-manifest.json": "96bef38795896692415565340bbefdd91603ad656dcc829f6f399a13bc616ff2",
+    "previous-install.tar": "8965d3103b9aa7358260c3233b43051d429ea95b81ccb5e98b3f19f26592d808",
+    "installed-version.txt": "3fa7743ce2858c7f3e0a2abd6a8a26bf0ecad1ced434e4264fc5ad24b0d6d90a",
+    "installed-ldd.txt": "967498627def11a2fe565eb5986c156de3f02b9f5b6738de9b9936dfcbfc5ab4",
+    "completion-regression.log": "87ae47b0e9744f8ec20314357df7df1e24827d2226be48c067ae8eac56cf7327",
+    "bash-smoke.log": "344f011904a0adaadc3c4c826bbf13e8a11c67f08cdcee735550a351434c544f",
+    "bash-smoke-short.log": "6bf10ffba05abe56374682c09f34274c275d3e2363a327b819c81207de6f63a5",
+    "bash-smoke-callback.log": "7e9f8839a470661d55f623c605cbdc34dd4ec77e14bf20a170f68bbaef1624e0",
+    "bash-smoke-callback.sh": "c55c65594713f4293803e737760b30f2438a5548fcdd3599ddfad9688a2a780c"
+  }
+}

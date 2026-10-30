@@ -1,0 +1,1 @@
+-I/tmp/secdat-v011-release-prefix/include -L/tmp/secdat-v011-release-prefix/lib -lsecdat 

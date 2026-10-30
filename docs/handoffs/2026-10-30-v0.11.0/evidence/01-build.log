@@ -1,0 +1,72 @@
+make  all-recursive
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0'
+Making all in po
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+test ! -f ./secdat.pot || \
+  test -z "ja.gmo" || make ja.gmo
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+/usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+........................................................................................................................................ done.
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+touch ./stamp-po
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+Making all in src
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/src'
+make  all-am
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/src'
+depbase=`echo cli.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I..  -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT cli.lo -MD -MP -MF $depbase.Tpo -c -o cli.lo cli.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+depbase=`echo domain.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I..  -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT domain.lo -MD -MP -MF $depbase.Tpo -c -o domain.lo domain.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT cli.lo -MD -MP -MF .deps/cli.Tpo -c cli.c  -fPIC -DPIC -o .libs/cli.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT domain.lo -MD -MP -MF .deps/domain.Tpo -c domain.c  -fPIC -DPIC -o .libs/domain.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT cli.lo -MD -MP -MF .deps/cli.Tpo -c cli.c -o cli.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT domain.lo -MD -MP -MF .deps/domain.Tpo -c domain.c -o domain.o >/dev/null 2>&1
+depbase=`echo exec_inject.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I..  -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT exec_inject.lo -MD -MP -MF $depbase.Tpo -c -o exec_inject.lo exec_inject.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT exec_inject.lo -MD -MP -MF .deps/exec_inject.Tpo -c exec_inject.c  -fPIC -DPIC -o .libs/exec_inject.o
+depbase=`echo exec_inject_policy_file.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I..  -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT exec_inject_policy_file.lo -MD -MP -MF $depbase.Tpo -c -o exec_inject_policy_file.lo exec_inject_policy_file.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT exec_inject_policy_file.lo -MD -MP -MF .deps/exec_inject_policy_file.Tpo -c exec_inject_policy_file.c  -fPIC -DPIC -o .libs/exec_inject_policy_file.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT exec_inject_policy_file.lo -MD -MP -MF .deps/exec_inject_policy_file.Tpo -c exec_inject_policy_file.c -o exec_inject_policy_file.o >/dev/null 2>&1
+depbase=`echo json_util.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I..  -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT json_util.lo -MD -MP -MF $depbase.Tpo -c -o json_util.lo json_util.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT json_util.lo -MD -MP -MF .deps/json_util.Tpo -c json_util.c  -fPIC -DPIC -o .libs/json_util.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT json_util.lo -MD -MP -MF .deps/json_util.Tpo -c json_util.c -o json_util.o >/dev/null 2>&1
+depbase=`echo redaction.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I..  -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT redaction.lo -MD -MP -MF $depbase.Tpo -c -o redaction.lo redaction.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT exec_inject.lo -MD -MP -MF .deps/exec_inject.Tpo -c exec_inject.c -o exec_inject.o >/dev/null 2>&1
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT redaction.lo -MD -MP -MF .deps/redaction.Tpo -c redaction.c  -fPIC -DPIC -o .libs/redaction.o
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT redaction.lo -MD -MP -MF .deps/redaction.Tpo -c redaction.c -o redaction.o >/dev/null 2>&1
+depbase=`echo store.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I..  -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT store.lo -MD -MP -MF $depbase.Tpo -c -o store.lo store.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT store.lo -MD -MP -MF .deps/store.Tpo -c store.c  -fPIC -DPIC -o .libs/store.o
+gcc -DHAVE_CONFIG_H -I. -I..  -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\"   -I/usr/include/fuse3    -g -O2 -MT secdat_fuse-secdat-fuse.o -MD -MP -MF .deps/secdat_fuse-secdat-fuse.Tpo -c -o secdat_fuse-secdat-fuse.o `test -f 'secdat-fuse.c' || echo './'`secdat-fuse.c
+mv -f .deps/secdat_fuse-secdat-fuse.Tpo .deps/secdat_fuse-secdat-fuse.Po
+depbase=`echo main.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+gcc -DHAVE_CONFIG_H -I. -I..  -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT main.o -MD -MP -MF $depbase.Tpo -c -o main.o main.c &&\
+mv -f $depbase.Tpo $depbase.Po
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I.. -DLOCALEDIR=\"/tmp/secdat-v011-release-prefix/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT store.lo -MD -MP -MF .deps/store.Tpo -c store.c -o store.o >/dev/null 2>&1
+/bin/bash ../libtool  --tag=CC   --mode=link gcc  -g -O2 -version-info 1:0:1  -o libsecdat.la -rpath /tmp/secdat-v011-release-prefix/lib cli.lo domain.lo exec_inject.lo exec_inject_policy_file.lo json_util.lo redaction.lo store.lo -lssl -lcrypto  -ljansson  
+libtool: link: gcc -shared  -fPIC -DPIC  .libs/cli.o .libs/domain.o .libs/exec_inject.o .libs/exec_inject_policy_file.o .libs/json_util.o .libs/redaction.o .libs/store.o   -lssl -lcrypto -ljansson  -g -O2   -Wl,-soname -Wl,libsecdat.so.0 -o .libs/libsecdat.so.0.1.0
+libtool: link: (cd ".libs" && rm -f "libsecdat.so.0" && ln -s "libsecdat.so.0.1.0" "libsecdat.so.0")
+libtool: link: (cd ".libs" && rm -f "libsecdat.so" && ln -s "libsecdat.so.0.1.0" "libsecdat.so")
+libtool: link: ar cr .libs/libsecdat.a  cli.o domain.o exec_inject.o exec_inject_policy_file.o json_util.o redaction.o store.o
+libtool: link: ranlib .libs/libsecdat.a
+libtool: link: ( cd ".libs" && rm -f "libsecdat.la" && ln -s "../libsecdat.la" "libsecdat.la" )
+/bin/bash ../libtool  --tag=CC   --mode=link gcc  -g -O2   -o secdat-fuse secdat_fuse-secdat-fuse.o libsecdat.la -lfuse3 -lpthread  
+/bin/bash ../libtool  --tag=CC   --mode=link gcc  -g -O2   -o secdat main.o libsecdat.la 
+libtool: link: gcc -g -O2 -o .libs/secdat-fuse secdat_fuse-secdat-fuse.o  ./.libs/libsecdat.so -lfuse3 -lpthread -Wl,-rpath -Wl,/tmp/secdat-v011-release-prefix/lib
+libtool: link: gcc -g -O2 -o .libs/secdat main.o  ./.libs/libsecdat.so -Wl,-rpath -Wl,/tmp/secdat-v011-release-prefix/lib
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/src'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/src'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0'

@@ -1,0 +1,44 @@
+{
+  "gate": "09-binding-consumers",
+  "candidate_commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+  "candidate_tree": "704a660340df464f159b500591eb2edd7edf581f",
+  "command": [
+    "env",
+    "RELEASE_SOURCE=/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0",
+    "SHARED_PREFIX=/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared",
+    "STATIC_PREFIX=/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static",
+    "EVIDENCE_DIR=/home/katsumata-m/secdat-release-evidence/v0.11.0",
+    "npm_config_nodedir=/home/katsumata-m/.nvm/versions/node/v25.1.0",
+    "bash",
+    "/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers.sh"
+  ],
+  "cwd": "/home/katsumata-m/secdat-release-0.11.0",
+  "configure": "--enable-fuse --prefix=/tmp/secdat-v011-release-prefix",
+  "input_sha256": {
+    "/home/katsumata-m/secdat-release-evidence/v0.11.0/run_gate_v2.py": "746ccb403a2761892f267bd30f707a86ea59fb8db73887ffe2f603c12b047c31",
+    "/home/katsumata-m/secdat-release-evidence/v0.11.0/environment.txt": "bd89de175f9544a486051988cd6405a314b96c7e94feb2b830e097f6eb9b8dee",
+    "/home/katsumata-m/secdat-release-evidence/v0.11.0/candidate.json": "204b2975dedd8d183c3785cf08c3c7635ce1c2af971590c835faa263116be099",
+    "/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers.sh": "5c383f6344f777f14915c55d5825c33cbe33e45b8033da585f76c1e089d7b2d3"
+  },
+  "environment_file": "environment.txt",
+  "start_utc": "2026-10-30T11:16:38.983449+00:00",
+  "finish_utc": "2026-10-30T11:18:15.476640+00:00",
+  "elapsed_seconds": 90.04930932299976,
+  "exit_status": 1,
+  "result": "FAIL",
+  "identity_before": {
+    "commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+    "tree": "704a660340df464f159b500591eb2edd7edf581f",
+    "status": ""
+  },
+  "identity_after": {
+    "commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+    "tree": "704a660340df464f159b500591eb2edd7edf581f",
+    "status": ""
+  },
+  "identity_valid": true,
+  "log": "/home/katsumata-m/secdat-release-evidence/v0.11.0/09-binding-consumers.log",
+  "log_sha256": "fedb8fcaf029921ffc764c3c63dcc924355ce953ee045fe2d01ffc295e335be6",
+  "resource_log": "/home/katsumata-m/secdat-release-evidence/v0.11.0/09-binding-consumers.time",
+  "resource_sha256": "e88d7aca3b37bdbb32ad137499c3f3865b85efcb6eec3f85695e895924ce4f29"
+}

@@ -1,0 +1,18 @@
+{
+  "status": "PREPARATION ONLY; no tag or release writes authorized",
+  "repo": "mako10k/secdat",
+  "expected_main_base": "c465ab9e05a15a1b8054f52a402e93cfe006366d",
+  "candidate_commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+  "candidate_tree": "704a660340df464f159b500591eb2edd7edf581f",
+  "release_tag": "v0.11.0",
+  "annotated_tag_subject": "secdat v0.11.0",
+  "release_title": "secdat v0.11.0",
+  "release_target": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+  "notes_path": "docs/release-notes/v0.11.0.md",
+  "notes_git_blob": "ab973bd99585f84ffd72e3f6560b859fbd52acae",
+  "notes_sha256": "188ee5a62f819c79142f67673510c6dcfa081b70aecd35d8269d4409fa6187ba",
+  "expected_explicit_asset_count": 0,
+  "is_draft": false,
+  "is_prerelease": false,
+  "remaining_before_any_write": "Final acceptance and owner decision; verify unchanged candidate and remote main. Publish exact candidate to main before tagging under repository workflow; stop on drift."
+}

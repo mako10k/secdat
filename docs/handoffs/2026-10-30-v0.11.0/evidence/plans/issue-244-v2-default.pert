@@ -1,0 +1,74 @@
+project ISSUE244:
+  version 5
+  title "New stores default to v2 without automatic v1 migration"
+  description "Owner authorized new-store v2 defaults, fsck autodetection, no new v1 option, preservation of existing v1, and explicitly retained ADR0006 mixed-format mask/unmask ambiguity guard with documented manual migration/rebind. Initial estimate 1-3 hours is provisional low confidence. This same canonical plan/history moved from plans/ to existing ignored build/ before source freeze, so measured verification actuals can be recorded without changing the tested source tree. No historical velocity is assumed."
+  duration_unit point
+  finish DONE
+
+milestone START:
+  title "Owner authorized #244 implementation and fsck autodetection"
+  state reached
+
+milestone READY:
+  title "Implementation and fixtures ready for review"
+  state reached
+
+milestone DONE:
+  title "Reviewed candidate validated and recorded"
+  description "Local reviewed candidate 44173e79a6f12f0c6f60b4747c4170bc1289f38e tree f28321d7519d220036c9c17db5a6bd91fb3dd746 passed make check with --enable-fuse: wall 411.01s, CPU user 172.38s system 69.11s, max RSS 461448 KiB. Exact receipt /tmp/secdat-244-validation-2.json. Known XFAIL221 and installed-locale smoke prefix skip retained. Issue244 result posted and closed; no push/PR/merge/install/release. Historical velocity unavailable PTHIS-101; no fabricated effort/velocity."
+  state reached
+
+task IMPLEMENT START -> READY:
+  title "Implement initialization, compatibility and fsck autodetection"
+  duration 3p
+  status done
+  source "https://github.com/mako10k/secdat/issues/244"
+
+task FIXTURES START -> READY:
+  title "Retain v1 fixtures and cover new v2 stores"
+  duration 2p
+  status done
+
+task VERIFY READY -> DONE:
+  title "Static review, focused checks, frozen candidate and full validation"
+  duration 2p
+  status done
+
+work_event WE-5bccffe72dbde8bc768909011d151e1b4daa92670a67f51f0f1130a3b457cfa1:
+  model 1
+  task IMPLEMENT
+  kind start
+  occurred_at 2026-10-30T10:54:03+09:00
+  planned_value 3p
+
+work_event WE-c1d9d0f990d41fdabeb8b37658e30f6ccba6fcda0f844a9496c435d4c1412356:
+  model 1
+  task FIXTURES
+  kind start
+  occurred_at 2026-10-30T10:54:04+09:00
+  planned_value 2p
+
+work_event WE-f95fcc6814d5f6ba8a685490beccd0aa2330a7f81dddf76a1ff191c4a1ad4c17:
+  model 1
+  task IMPLEMENT
+  kind finish
+  occurred_at 2026-10-30T12:13:57+09:00
+
+work_event WE-dc1742b7cf9f9db0e3f045c141f68b515fb0edf2015d07d056bd49f1585a2406:
+  model 1
+  task FIXTURES
+  kind finish
+  occurred_at 2026-10-30T12:13:57+09:00
+
+work_event WE-c13354ebc62134d691b4796befdda5da3320024ef9c30ade34e009b4b4774773:
+  model 1
+  task VERIFY
+  kind start
+  occurred_at 2026-10-30T12:13:59+09:00
+  planned_value 2p
+
+work_event WE-4fc2f1c2e7f9f79b40c1a2bd96445da4a472525b6fe2154af6e29e836413a51e:
+  model 1
+  task VERIFY
+  kind finish
+  occurred_at 2026-10-30T13:35:05+09:00

@@ -1,0 +1,236 @@
+{
+  "generated_utc": "2026-10-30T12:05:04.712747+00:00",
+  "candidate": {
+    "commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+    "tree": "704a660340df464f159b500591eb2edd7edf581f",
+    "base": "c465ab9e05a15a1b8054f52a402e93cfe006366d",
+    "branch": "codex/release-0.11.0",
+    "configure": "--enable-fuse --prefix=/tmp/secdat-v011-release-prefix",
+    "issue": 247,
+    "boundary": "Preparation only; no tags, push, publication or production installation"
+  },
+  "matrix_result": "COMPLETE with retained failed attempts and explicit successful-axis evidence",
+  "required_pass_receipts": [
+    "01-build",
+    "02-gettext",
+    "03-release-metadata",
+    "04-check",
+    "05b-distcheck-default",
+    "06-distcheck-shared",
+    "07-distcheck-static",
+    "08-native-consumers",
+    "10-go-consumers",
+    "11-build-pkgconfig"
+  ],
+  "partial_binding_evidence": {
+    "receipt": "09-binding-consumers.json",
+    "overall_result": "FAIL in later Go VCS stamping",
+    "accepted_completed_axes": [
+      "Python source wrapper runtime",
+      "Python wheel build and isolated installed runtime/version",
+      "Rust locked check and package verification",
+      "Node ci/build/dry-pack and external real-tarball load/version/functions"
+    ],
+    "basis": "Ordered set -e script + explicit completion output before Go failure; exact checker and log hashes bound in receipt. Go shared/static completed separately in10."
+  },
+  "failures": [
+    {
+      "receipt": "05-distcheck-default.json",
+      "disposition": "Parallel make query output contamination; documented serial05b passes, no source change; Issue248."
+    },
+    {
+      "receipt": "09-binding-consumers.json",
+      "disposition": "Archive consumer Go VCS auto-detection hit unrelated empty HOME/.git; command-local buildvcs=false in10, no global or product change."
+    }
+  ],
+  "limits": [
+    "Known XFAIL221 same-protocol agent handover",
+    "Known242 orphan renamed-domain move failure remains unresolved",
+    "ADR0006 work166-169 not claimed complete",
+    "Mixed v1-parent/v2-child mask ambiguity guard retained; explicit migration/index/rebind required",
+    "Distcheck prefix skips installed-locale smoke;04 under/tmp covers installed Japanese locale",
+    "Static-only skips shared ABI and Python runtime; other profiles + isolated wheel cover those axes",
+    "Parallel distcheck harness issue248 remains open",
+    "Go archive-consumer VCS stamping explicitly disabled; source provenance separately verified",
+    "Rust manifest license metadata warning; package verification passed, registry publication not included",
+    "npm current-version configuration/install-script warnings recorded; external native addon consumer passed"
+  ],
+  "resources": [
+    {
+      "gate": "01-build",
+      "result": "PASS",
+      "elapsed_seconds": 94.99143791699998,
+      "cpu_user_seconds": 101.9,
+      "cpu_system_seconds": 6.45,
+      "max_rss_kib": 324792.0
+    },
+    {
+      "gate": "02-gettext",
+      "result": "PASS",
+      "elapsed_seconds": 1.0056858839998313,
+      "cpu_user_seconds": 2.46,
+      "cpu_system_seconds": 0.37,
+      "max_rss_kib": 8684.0
+    },
+    {
+      "gate": "03-release-metadata",
+      "result": "PASS",
+      "elapsed_seconds": 1.8260667919998923,
+      "cpu_user_seconds": 0.28,
+      "cpu_system_seconds": 0.66,
+      "max_rss_kib": 4168.0
+    },
+    {
+      "gate": "04-check",
+      "result": "PASS",
+      "elapsed_seconds": 817.4125016060002,
+      "cpu_user_seconds": 291.94,
+      "cpu_system_seconds": 190.75,
+      "max_rss_kib": 417308.0
+    },
+    {
+      "gate": "05b-distcheck-default",
+      "result": "PASS",
+      "elapsed_seconds": 855.810602819,
+      "cpu_user_seconds": 381.87,
+      "cpu_system_seconds": 161.0,
+      "max_rss_kib": 487188.0
+    },
+    {
+      "gate": "06-distcheck-shared",
+      "result": "PASS",
+      "elapsed_seconds": 810.4906035189997,
+      "cpu_user_seconds": 330.09,
+      "cpu_system_seconds": 177.92,
+      "max_rss_kib": 484868.0
+    },
+    {
+      "gate": "07-distcheck-static",
+      "result": "PASS",
+      "elapsed_seconds": 889.3269675219999,
+      "cpu_user_seconds": 290.01,
+      "cpu_system_seconds": 140.2,
+      "max_rss_kib": 437856.0
+    },
+    {
+      "gate": "08-native-consumers",
+      "result": "PASS",
+      "elapsed_seconds": 193.6054492960002,
+      "cpu_user_seconds": 166.39,
+      "cpu_system_seconds": 21.34,
+      "max_rss_kib": 324656.0
+    },
+    {
+      "gate": "10-go-consumers",
+      "result": "PASS",
+      "elapsed_seconds": 44.61977376100003,
+      "cpu_user_seconds": 18.46,
+      "cpu_system_seconds": 14.18,
+      "max_rss_kib": 131140.0
+    },
+    {
+      "gate": "11-build-pkgconfig",
+      "result": "PASS",
+      "elapsed_seconds": 0.08779704999960813,
+      "cpu_user_seconds": 0.0,
+      "cpu_system_seconds": 0.01,
+      "max_rss_kib": 3316.0
+    },
+    {
+      "gate": "05-distcheck-default",
+      "result": "FAIL",
+      "elapsed_seconds": 632.069489947,
+      "cpu_user_seconds": 305.51,
+      "cpu_system_seconds": 111.45,
+      "max_rss_kib": 412592.0
+    },
+    {
+      "gate": "09-binding-consumers",
+      "result": "FAIL",
+      "elapsed_seconds": 90.04930932299976,
+      "cpu_user_seconds": 83.44,
+      "cpu_system_seconds": 24.52,
+      "max_rss_kib": 276776.0
+    }
+  ],
+  "resource_totals_all_attempts": {
+    "elapsed_gate_seconds": 4431.295685435999,
+    "cpu_seconds": 2821.2,
+    "max_rss_kib": 487188.0
+  },
+  "artifacts": {
+    "secdat-0.11.0.tar.gz": {
+      "sha256": "fb03e1862ba68a6b5add2dc5bdee9ce15935a002ec72f5210f74384c61aaba79",
+      "size_bytes": 1125893
+    },
+    "frozen-release-notes.md": {
+      "sha256": "188ee5a62f819c79142f67673510c6dcfa081b70aecd35d8269d4409fa6187ba",
+      "size_bytes": 4670
+    },
+    "consumer-shared": {
+      "sha256": "98a57f9fb08395767e75a1522d720f1d6e24c870274193051277db7a4c5c4bf7",
+      "size_bytes": 15960
+    },
+    "consumer-static": {
+      "sha256": "de637d759318f1e0783f247cf099971563174d8e21178fe9a78aacf3bfa5c5c9",
+      "size_bytes": 2859056
+    },
+    "installed-consumers-work/go-shared": {
+      "sha256": "3264300d34c4e83a461e24f07ad0793d5216438daba6d983265a8c752a233b6e",
+      "size_bytes": 2332008
+    },
+    "installed-consumers-work/go-static": {
+      "sha256": "73dcf7dcd812285d1b4a6a595515b8a0ffb5bfd05cde8d875a042632ddaee0ab",
+      "size_bytes": 3982360
+    },
+    "installed-consumers-work/wheels/secdat_sdk-0.11.0-py3-none-any.whl": {
+      "sha256": "0cd5919f995bba420d0880664fce010bd49ac6900d15b81b61eac2b5477b3790",
+      "size_bytes": 6583
+    },
+    "installed-consumers-work/secdat-sdk-node-0.11.0.tgz": {
+      "sha256": "ba7e008aa8fda296df3179fa04dde3344417ea4ce38a47572f85a36b9c16d00c",
+      "size_bytes": 4740
+    },
+    "installed-consumers-work/rust-target/package/secdat-sdk-0.11.0.crate": {
+      "sha256": "05e85b33c9a2422f1e8b618c1366b0e85beda70c36d76b47a6b84b2af4ecee90",
+      "size_bytes": 5171
+    },
+    "prefix-shared/lib/libsecdat.a": {
+      "sha256": "80c9b4f29b80b580ef54501e95f01ed6ca92f3809573fa27cda8d371df4481cb",
+      "size_bytes": 5415264
+    },
+    "prefix-shared/lib/libsecdat.la": {
+      "sha256": "54cc758f6c371e96336cdff54aeabeee769d6b76b1014007cf18518251da4f2d",
+      "size_bytes": 1029
+    },
+    "prefix-shared/lib/libsecdat.so": {
+      "sha256": "c12d17cf65416aa93cbfddf085d17b3af90377732309bf00554b5e4dd252f88a",
+      "size_bytes": 2907208
+    },
+    "prefix-shared/lib/libsecdat.so.0": {
+      "sha256": "c12d17cf65416aa93cbfddf085d17b3af90377732309bf00554b5e4dd252f88a",
+      "size_bytes": 2907208
+    },
+    "prefix-shared/lib/libsecdat.so.0.1.0": {
+      "sha256": "c12d17cf65416aa93cbfddf085d17b3af90377732309bf00554b5e4dd252f88a",
+      "size_bytes": 2907208
+    },
+    "prefix-static/lib/libsecdat.a": {
+      "sha256": "fada28563db4dd241fa43404b712b05a45fdb0c20c082463a504a907347f9b3a",
+      "size_bytes": 5415264
+    },
+    "prefix-static/lib/libsecdat.la": {
+      "sha256": "95d92143fbacc7ff05b1ac2331dfae5f901d5ff7c9e7b245ae2202007fb9869a",
+      "size_bytes": 969
+    },
+    "prefix-shared/lib/pkgconfig/libsecdat.pc": {
+      "sha256": "e09e48df684c31bac95b65ecdd259fe6c5de291bdbd2fae3e65d669fa02be408",
+      "size_bytes": 364
+    },
+    "prefix-static/lib/pkgconfig/libsecdat.pc": {
+      "sha256": "990287f779d399d437bb3918dd35cae9ff253dafa9d09e23832ca4c74710ed99",
+      "size_bytes": 364
+    }
+  },
+  "publication": "NOT PERFORMED; final owner decision required before main/tag/release writes"
+}

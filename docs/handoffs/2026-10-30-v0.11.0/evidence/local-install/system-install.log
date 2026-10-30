@@ -1,0 +1,74 @@
+Making install in po
+make[1]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build/po'
+installing /home/katsumata-m/secdat-install-0.11.0/po/ja.gmo as /usr/local/share/locale/ja/LC_MESSAGES/secdat.mo
+if test "secdat" = "gettext-tools"; then \
+  /usr/bin/mkdir -p /usr/local/share/gettext/po; \
+  for file in Makefile.in.in remove-potcdate.sin quot.sed boldquot.sed en@quot.header en@boldquot.header insert-header.sin Rules-quot   Makevars.template; do \
+    /usr/bin/install -c -m 644 /home/katsumata-m/secdat-install-0.11.0/po/$file \
+		    /usr/local/share/gettext/po/$file; \
+  done; \
+  for file in Makevars; do \
+    rm -f /usr/local/share/gettext/po/$file; \
+  done; \
+else \
+  : ; \
+fi
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build/po'
+Making install in src
+make[1]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build/src'
+make  install-am
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build/src'
+make[3]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build/src'
+ /usr/bin/mkdir -p '/usr/local/lib'
+ /bin/bash ../libtool   --mode=install /usr/bin/install -c   libsecdat.la '/usr/local/lib'
+libtool: install: /usr/bin/install -c .libs/libsecdat.so.0.1.0 /usr/local/lib/libsecdat.so.0.1.0
+libtool: install: (cd /usr/local/lib && { ln -s -f libsecdat.so.0.1.0 libsecdat.so.0 || { rm -f libsecdat.so.0 && ln -s libsecdat.so.0.1.0 libsecdat.so.0; }; })
+libtool: install: (cd /usr/local/lib && { ln -s -f libsecdat.so.0.1.0 libsecdat.so || { rm -f libsecdat.so && ln -s libsecdat.so.0.1.0 libsecdat.so; }; })
+libtool: install: /usr/bin/install -c .libs/libsecdat.lai /usr/local/lib/libsecdat.la
+libtool: install: /usr/bin/install -c .libs/libsecdat.a /usr/local/lib/libsecdat.a
+libtool: install: chmod 644 /usr/local/lib/libsecdat.a
+libtool: install: ranlib /usr/local/lib/libsecdat.a
+libtool: finish: PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin:/sbin" ldconfig -n /usr/local/lib
+----------------------------------------------------------------------
+Libraries have been installed in:
+   /usr/local/lib
+
+If you ever happen to want to link against installed libraries
+in a given directory, LIBDIR, you must either use libtool, and
+specify the full pathname of the library, or use the '-LLIBDIR'
+flag during linking and do at least one of the following:
+   - add LIBDIR to the 'LD_LIBRARY_PATH' environment variable
+     during execution
+   - add LIBDIR to the 'LD_RUN_PATH' environment variable
+     during linking
+   - use the '-Wl,-rpath -Wl,LIBDIR' linker flag
+   - have your system administrator add LIBDIR to '/etc/ld.so.conf'
+
+See any operating system documentation about shared libraries for
+more information, such as the ld(1) and ld.so(8) manual pages.
+----------------------------------------------------------------------
+ /usr/bin/mkdir -p '/usr/local/bin'
+  /bin/bash ../libtool   --mode=install /usr/bin/install -c secdat secdat-fuse '/usr/local/bin'
+libtool: install: /usr/bin/install -c .libs/secdat /usr/local/bin/secdat
+libtool: install: /usr/bin/install -c .libs/secdat-fuse /usr/local/bin/secdat-fuse
+ /usr/bin/mkdir -p '/usr/local/include'
+ /usr/bin/install -c -m 644 /home/katsumata-m/secdat-install-0.11.0/src/secdat-sdk.h '/usr/local/include'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build/src'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build/src'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build/src'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build/po'
+cd /home/katsumata-m/secdat-install-0.11.0/po && /usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+........................................................................................................................................ done.
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build/po'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build'
+/usr/bin/mkdir -p "/usr/local/share/bash-completion/completions"
+/usr/bin/install -c -m 644 "/home/katsumata-m/secdat-install-0.11.0/completions/secdat.bash" "/usr/local/share/bash-completion/completions/secdat"
+ /usr/bin/mkdir -p '/usr/local/share/doc/secdat'
+ /usr/bin/install -c -m 644 /home/katsumata-m/secdat-install-0.11.0/README.md /home/katsumata-m/secdat-install-0.11.0/docs/secdat-spec.md '/usr/local/share/doc/secdat'
+ /usr/bin/mkdir -p '/usr/local/share/man/man1'
+ /usr/bin/install -c -m 644 /home/katsumata-m/secdat-install-0.11.0/docs/secdat.1 /home/katsumata-m/secdat-install-0.11.0/docs/secdat-fuse.1 '/usr/local/share/man/man1'
+ /usr/bin/mkdir -p '/usr/local/lib/pkgconfig'
+ /usr/bin/install -c -m 644 libsecdat.pc '/usr/local/lib/pkgconfig'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/local-install/build'

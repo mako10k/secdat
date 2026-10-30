@@ -1,0 +1,32 @@
+{
+  "gate": "01-build",
+  "candidate_commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+  "candidate_tree": "704a660340df464f159b500591eb2edd7edf581f",
+  "command": [
+    "make",
+    "-j2"
+  ],
+  "cwd": "/home/katsumata-m/secdat-release-0.11.0",
+  "configure": "--enable-fuse --prefix=/tmp/secdat-v011-release-prefix",
+  "environment_file": "environment.txt",
+  "start_utc": "2026-10-30T09:51:11.619427+00:00",
+  "finish_utc": "2026-10-30T09:52:53.004246+00:00",
+  "elapsed_seconds": 94.99143791699998,
+  "exit_status": 0,
+  "result": "PASS",
+  "identity_before": {
+    "commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+    "tree": "704a660340df464f159b500591eb2edd7edf581f",
+    "status": ""
+  },
+  "identity_after": {
+    "commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+    "tree": "704a660340df464f159b500591eb2edd7edf581f",
+    "status": ""
+  },
+  "identity_valid": true,
+  "log": "/home/katsumata-m/secdat-release-evidence/v0.11.0/01-build.log",
+  "log_sha256": "efc89f208ea71c5f7ced2c836c2c46d2eec266c393536a490c7a5578ba98f77b",
+  "resource_log": "/home/katsumata-m/secdat-release-evidence/v0.11.0/01-build.time",
+  "resource_sha256": "860cf5e5370dc57d306a8f554e816190691c8f9ba87e9507c893ad62c6a99da6"
+}

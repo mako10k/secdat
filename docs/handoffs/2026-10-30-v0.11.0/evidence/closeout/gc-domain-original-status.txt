@@ -1,0 +1,9 @@
+ M Makefile.am
+ M docs/secdat-spec.md
+ M po/ja.po
+ M po/secdat.pot
+ M src/domain.c
+ M src/store.c
+ M tests/container_transaction_regression.sh
+ M tests/deferred_gc_regression.sh
+?? plans/orphan-domain-delete.pert

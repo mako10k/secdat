@@ -1,0 +1,18 @@
+{
+  "owner_instruction": "\u3067\u306f\u3001\u30ea\u30ea\u30fc\u30b9\u304a\u9858\u3044\u3057\u307e\u3059\u3002",
+  "verified_at_utc": "2026-10-30T12:05:42.635585+00:00",
+  "authorized_scope": "Publish exact reviewed candidate to main, annotated v0.11.0 tag, and GitHub Release with exact frozen notes; no registry publication or production installation.",
+  "executor": "/root",
+  "inputs_sha256": "68cfb6bead700c0df24221a4fd87c66738a4db0ba01e03fe3cf7aaa411653866",
+  "candidate_commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+  "candidate_tree": "704a660340df464f159b500591eb2edd7edf581f",
+  "expected_main_base": "c465ab9e05a15a1b8054f52a402e93cfe006366d",
+  "preflight_release": "Conclusive404, exit1",
+  "preflight_tag": "Absent locally and remotely",
+  "maximum_core_remote_writes": {
+    "main_push": 1,
+    "tag_push": 1,
+    "release_create": 1
+  },
+  "automatic_retry": false
+}

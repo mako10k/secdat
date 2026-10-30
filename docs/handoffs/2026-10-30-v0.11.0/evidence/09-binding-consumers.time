@@ -1,0 +1,24 @@
+Command exited with non-zero status 1
+	Command being timed: "env RELEASE_SOURCE=/home/katsumata-m/secdat-release-evidence/v0.11.0/distribution/secdat-0.11.0 SHARED_PREFIX=/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-shared STATIC_PREFIX=/home/katsumata-m/secdat-release-evidence/v0.11.0/prefix-static EVIDENCE_DIR=/home/katsumata-m/secdat-release-evidence/v0.11.0 npm_config_nodedir=/home/katsumata-m/.nvm/versions/node/v25.1.0 bash /home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers.sh"
+	User time (seconds): 83.44
+	System time (seconds): 24.52
+	Percent of CPU this job got: 111%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:36.42
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 276776
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 107
+	Minor (reclaiming a frame) page faults: 990232
+	Voluntary context switches: 52282
+	Involuntary context switches: 3763
+	Swaps: 0
+	File system inputs: 495168
+	File system outputs: 190904
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1

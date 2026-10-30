@@ -1,0 +1,6 @@
+make -f /home/katsumata-m/secdat-release-evidence/v0.11.0/probes/outer.mk inner
+make[1]: Entering directory '/home/katsumata-m/secdat'
+inherited rc=0
+clear-mflags rc=0
+clear-both rc=0
+make[1]: Leaving directory '/home/katsumata-m/secdat'

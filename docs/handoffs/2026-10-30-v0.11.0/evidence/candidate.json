@@ -1,0 +1,9 @@
+{
+  "commit": "0e4eb24eba841a901dd6b320cbb3eb71ddf37f97",
+  "tree": "704a660340df464f159b500591eb2edd7edf581f",
+  "base": "c465ab9e05a15a1b8054f52a402e93cfe006366d",
+  "branch": "codex/release-0.11.0",
+  "configure": "--enable-fuse --prefix=/tmp/secdat-v011-release-prefix",
+  "issue": 247,
+  "boundary": "Preparation only; no tags, push, publication or production installation"
+}

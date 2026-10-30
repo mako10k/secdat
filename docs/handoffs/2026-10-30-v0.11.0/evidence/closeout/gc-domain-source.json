@@ -1,0 +1,32 @@
+{
+  "original_root": "/home/katsumata-m/secdat",
+  "original_head": "1aa50367d91e14b2d8beece3f09f57986845af8a",
+  "original_branch": "codex/adr-0010-gc-owner-queue-emptiness",
+  "original_status": " M Makefile.am\n M docs/secdat-spec.md\n M po/ja.po\n M po/secdat.pot\n M src/domain.c\n M src/store.c\n M tests/container_transaction_regression.sh\n M tests/deferred_gc_regression.sh\n?? plans/orphan-domain-delete.pert\n",
+  "tracked_changes": [
+    "Makefile.am",
+    "docs/secdat-spec.md",
+    "po/ja.po",
+    "po/secdat.pot",
+    "src/domain.c",
+    "src/store.c",
+    "tests/container_transaction_regression.sh",
+    "tests/deferred_gc_regression.sh"
+  ],
+  "untracked_files": [
+    "plans/orphan-domain-delete.pert"
+  ],
+  "file_sha256": {
+    "Makefile.am": "f3f24c691cebd958e661a15d93f5f8db27269272b4cb037cbda2e642328c8b30",
+    "docs/secdat-spec.md": "b7844840a600f7411674bb68a1f31fc1c8afb0da15186271a8f7b60d201c5c3d",
+    "po/ja.po": "6936d7e53ef71c992e30378e8067d6cadeaa32b6b850c827eedbece03699d7d5",
+    "po/secdat.pot": "8f7318e37817fea11c0302d4c2356d788e83763462d6ae441a5f979e1f2e705a",
+    "src/domain.c": "b97436070b1a408603cf9fa878429292fc15cd8cfe2d506b9d31bf233e10c4ed",
+    "src/store.c": "08769eff158a321678cc8fc58912de7cc074aa3936c7b4b8555bf9058c3b9200",
+    "tests/container_transaction_regression.sh": "9278e5277e383c3c5d83dca715ec4f53e646281e0811667c77935cdcb451662b",
+    "tests/deferred_gc_regression.sh": "8cad0fa0a34842bbaa298e78e291dcb71916538587b7544a65f1ebb20dc755b8",
+    "plans/orphan-domain-delete.pert": "179b013be492a0ad1bb1ec00f6302154dd733b9fda60c9c29507d84d57bb94a6"
+  },
+  "patch_sha256": "551c7fde07ab3a530e52c3d3414783e81e8c3d686483d7b16b1160529e078df6",
+  "ownership": "Unknown; preservation only, no implementation/review/acceptance claim"
+}

@@ -1,0 +1,10 @@
+bash: cannot set terminal process group (3333065): Inappropriate ioctl for device
+bash: no job control in this shell
+domain not found for: /home/katsumata-m
+complete -F _secdat_complete secdat
+Loaded completion: _secdat_complete 90 /usr/local/share/bash-completion/completions/secdat
+PASS inherited store completion: ["app\\ space", "app-child", "app-parent"]
+PASS local management store completion: ["app\\ space", "app-child"]
+PASS attached store completion: ["--store=app\\ space", "--store=app-child", "--store=app-parent"]
+PASS create does not suggest existing stores: []
+PASS completion leaves fixture state unchanged

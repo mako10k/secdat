@@ -1,0 +1,836 @@
+make  dist-gzip am__post_remove_distdir='@:'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0'
+make  distdir-am
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0'
+if test -d "secdat-0.11.0"; then find "secdat-0.11.0" -type d ! -perm -200 -exec chmod u+w {} ';' && rm -rf "secdat-0.11.0" || { sleep 5 && rm -rf "secdat-0.11.0"; }; else :; fi
+test -d "secdat-0.11.0" || mkdir "secdat-0.11.0"
+ (cd po && make  top_distdir=../secdat-0.11.0 distdir=../secdat-0.11.0/po \
+     am__remove_distdir=: am__skip_length_check=: am__skip_mode_fix=: distdir)
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+test -z "update-po" || make update-po
+make[4]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+make secdat.pot-update
+make[5]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+package_gnu=""; \
+test -n "$package_gnu" || { \
+  if { if (LC_ALL=C find --version) 2>/dev/null | grep GNU >/dev/null; then \
+         LC_ALL=C find -L .. -maxdepth 1 -type f -size -10000000c -exec grep -i 'GNU secdat' /dev/null '{}' ';' 2>/dev/null; \
+       else \
+         LC_ALL=C grep -i 'GNU secdat' ../* 2>/dev/null; \
+       fi; \
+     } | grep -v 'libtool:' >/dev/null; then \
+     package_gnu=yes; \
+   else \
+     package_gnu=no; \
+   fi; \
+}; \
+if test "$package_gnu" = "yes"; then \
+  package_prefix='GNU '; \
+else \
+  package_prefix=''; \
+fi; \
+if test -n 'noreply@example.invalid' || test 'noreply@example.invalid' = '@'PACKAGE_BUGREPORT'@'; then \
+  msgid_bugs_address='noreply@example.invalid'; \
+else \
+  msgid_bugs_address='noreply@example.invalid'; \
+fi; \
+case `/usr/bin/xgettext --version | sed 1q | sed -e 's,^[^0-9]*,,'` in \
+  '' | 0.[0-9] | 0.[0-9].* | 0.1[0-5] | 0.1[0-5].* | 0.16 | 0.16.[0-1]*) \
+    /usr/bin/xgettext --default-domain=secdat --directory=.. \
+      --add-comments=TRANSLATORS: \
+      --files-from=./POTFILES.in \
+      --copyright-holder='secdat contributors' \
+      --msgid-bugs-address="$msgid_bugs_address" \
+      --keyword=_  \
+    ;; \
+  *) \
+    /usr/bin/xgettext --default-domain=secdat --directory=.. \
+      --add-comments=TRANSLATORS: \
+      --files-from=./POTFILES.in \
+      --copyright-holder='secdat contributors' \
+      --package-name="${package_prefix}secdat" \
+      --package-version='0.11.0' \
+      --msgid-bugs-address="$msgid_bugs_address" \
+      --keyword=_  \
+    ;; \
+esac
+test ! -f secdat.po || { \
+  if test -f ./secdat.pot-header; then \
+    sed -e '1,/^#$/d' < secdat.po > secdat.1po && \
+    cat ./secdat.pot-header secdat.1po > secdat.po && \
+    rm -f secdat.1po \
+    || exit 1; \
+  fi; \
+  if test -f ./secdat.pot; then \
+    sed -f remove-potcdate.sed < ./secdat.pot > secdat.1po && \
+    sed -f remove-potcdate.sed < secdat.po > secdat.2po && \
+    if cmp secdat.1po secdat.2po >/dev/null 2>&1; then \
+      rm -f secdat.1po secdat.2po secdat.po; \
+    else \
+      rm -f secdat.1po secdat.2po ./secdat.pot && \
+      mv secdat.po ./secdat.pot; \
+    fi; \
+  else \
+    mv secdat.po ./secdat.pot; \
+  fi; \
+}
+make[5]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+test -z "ja.po-update" || make ja.po-update
+make[5]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+ja:
+/usr/bin/msgmerge  --lang=ja --previous ja.po secdat.pot -o ja.new.po
+................................................................................................................................................ done.
+make[5]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+make update-gmo
+make[5]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+/usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+.......................................................................................................................................................... done.
+make[5]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+make[4]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+make[4]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/po'
+/usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+....................................................................................................................................................... done.
+make[4]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/po'
+ (cd src && make  top_distdir=../secdat-0.11.0 distdir=../secdat-0.11.0/src \
+     am__remove_distdir=: am__skip_length_check=: am__skip_mode_fix=: distdir)
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/src'
+make  distdir-am
+make[4]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/src'
+make[4]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/src'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/src'
+test -n "" \
+|| find "secdat-0.11.0" -type d ! -perm -755 \
+	-exec chmod u+rwx,go+rx {} \; -o \
+  ! -type d ! -perm -444 -links 1 -exec chmod a+r {} \; -o \
+  ! -type d ! -perm -400 -exec chmod a+r {} \; -o \
+  ! -type d ! -perm -444 -exec /bin/bash /home/katsumata-m/secdat-release-0.11.0/install-sh -c -m a+r {} {} \; \
+|| chmod -R a+r "secdat-0.11.0"
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0'
+tardir=secdat-0.11.0 && ${TAR-tar} chof - "$tardir" | eval GZIP= gzip --best -c >secdat-0.11.0.tar.gz
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0'
+if test -d "secdat-0.11.0"; then find "secdat-0.11.0" -type d ! -perm -200 -exec chmod u+w {} ';' && rm -rf "secdat-0.11.0" || { sleep 5 && rm -rf "secdat-0.11.0"; }; else :; fi
+case 'secdat-0.11.0.tar.gz' in \
+*.tar.gz*) \
+  eval GZIP= gzip --best -dc secdat-0.11.0.tar.gz | ${TAR-tar} xf - ;;\
+*.tar.bz2*) \
+  bzip2 -dc secdat-0.11.0.tar.bz2 | ${TAR-tar} xf - ;;\
+*.tar.lz*) \
+  lzip -dc secdat-0.11.0.tar.lz | ${TAR-tar} xf - ;;\
+*.tar.xz*) \
+  xz -dc secdat-0.11.0.tar.xz | ${TAR-tar} xf - ;;\
+*.tar.Z*) \
+  uncompress -c secdat-0.11.0.tar.Z | ${TAR-tar} xf - ;;\
+*.shar.gz*) \
+  eval GZIP= gzip --best -dc secdat-0.11.0.shar.gz | unshar ;;\
+*.zip*) \
+  unzip secdat-0.11.0.zip ;;\
+*.tar.zst*) \
+  zstd -dc secdat-0.11.0.tar.zst | ${TAR-tar} xf - ;;\
+esac
+chmod -R a-w secdat-0.11.0
+chmod u+w secdat-0.11.0
+mkdir secdat-0.11.0/_build secdat-0.11.0/_build/sub secdat-0.11.0/_inst
+chmod a-w secdat-0.11.0
+test -d secdat-0.11.0/_build || exit 0; \
+dc_install_base=`CDPATH="${ZSH_VERSION+.}:" && cd secdat-0.11.0/_inst && pwd | sed -e 's,^[^:\\/]:[\\/],/,'` \
+  && dc_destdir="${TMPDIR-/tmp}/am-dc-$$/" \
+  && am__cwd=`pwd` \
+  && CDPATH="${ZSH_VERSION+.}:" && cd secdat-0.11.0/_build/sub \
+  && ../../configure \
+     \
+    --enable-fuse --disable-shared --enable-static \
+    --srcdir=../.. --prefix="$dc_install_base" \
+  && make  \
+  && make  dvi \
+  && make  check \
+  && make  install \
+  && make  installcheck \
+  && make  uninstall \
+  && make  distuninstallcheck_dir="$dc_install_base" \
+        distuninstallcheck \
+  && chmod -R a-w "$dc_install_base" \
+  && ({ \
+       (cd ../.. && umask 077 && mkdir "$dc_destdir") \
+       && make  DESTDIR="$dc_destdir" install \
+       && make  DESTDIR="$dc_destdir" uninstall \
+       && make  DESTDIR="$dc_destdir" \
+            distuninstallcheck_dir="$dc_destdir" distuninstallcheck; \
+      } || { rm -rf "$dc_destdir"; exit 1; }) \
+  && rm -rf "$dc_destdir" \
+  && make  dist \
+  && rm -rf secdat-0.11.0.tar.gz \
+  && make  distcleancheck \
+  && cd "$am__cwd" \
+  || exit 1
+checking for a BSD-compatible install... /usr/bin/install -c
+checking whether build environment is sane... yes
+checking for a race-free mkdir -p... /usr/bin/mkdir -p
+checking for gawk... gawk
+checking whether make sets $(MAKE)... yes
+checking whether make supports nested variables... yes
+checking for gcc... gcc
+checking whether the C compiler works... yes
+checking for C compiler default output file name... a.out
+checking for suffix of executables... 
+checking whether we are cross compiling... no
+checking for suffix of object files... o
+checking whether the compiler supports GNU C... yes
+checking whether gcc accepts -g... yes
+checking for gcc option to enable C11 features... none needed
+checking whether gcc understands -c and -o together... yes
+checking whether make supports the include directive... yes (GNU style)
+checking dependency style of gcc... gcc3
+checking for ar... ar
+checking the archiver (ar) interface... ar
+checking build system type... x86_64-pc-linux-gnu
+checking host system type... x86_64-pc-linux-gnu
+checking how to print strings... printf
+checking for a sed that does not truncate output... /usr/bin/sed
+checking for grep that handles long lines and -e... /usr/bin/grep
+checking for egrep... /usr/bin/grep -E
+checking for fgrep... /usr/bin/grep -F
+checking for ld used by gcc... /usr/bin/ld
+checking if the linker (/usr/bin/ld) is GNU ld... yes
+checking for BSD- or MS-compatible name lister (nm)... /usr/bin/nm -B
+checking the name lister (/usr/bin/nm -B) interface... BSD nm
+checking whether ln -s works... yes
+checking the maximum length of command line arguments... 1572864
+checking how to convert x86_64-pc-linux-gnu file names to x86_64-pc-linux-gnu format... func_convert_file_noop
+checking how to convert x86_64-pc-linux-gnu file names to toolchain format... func_convert_file_noop
+checking for /usr/bin/ld option to reload object files... -r
+checking for file... file
+checking for objdump... objdump
+checking how to recognize dependent libraries... pass_all
+checking for dlltool... no
+checking how to associate runtime and link libraries... printf %s\n
+checking for archiver @FILE support... @
+checking for strip... strip
+checking for ranlib... ranlib
+checking command to parse /usr/bin/nm -B output from gcc object... ok
+checking for sysroot... no
+checking for a working dd... /usr/bin/dd
+checking how to truncate binary pipes... /usr/bin/dd bs=4096 count=1
+checking for mt... no
+checking if : is a manifest tool... no
+checking for stdio.h... yes
+checking for stdlib.h... yes
+checking for string.h... yes
+checking for inttypes.h... yes
+checking for stdint.h... yes
+checking for strings.h... yes
+checking for sys/stat.h... yes
+checking for sys/types.h... yes
+checking for unistd.h... yes
+checking for dlfcn.h... yes
+checking for objdir... .libs
+checking if gcc supports -fno-rtti -fno-exceptions... no
+checking for gcc option to produce PIC... -fPIC -DPIC
+checking if gcc PIC flag -fPIC -DPIC works... yes
+checking if gcc static flag -static works... yes
+checking if gcc supports -c -o file.o... yes
+checking if gcc supports -c -o file.o... (cached) yes
+checking whether the gcc linker (/usr/bin/ld -m elf_x86_64) supports shared libraries... yes
+checking dynamic linker characteristics... GNU/Linux ld.so
+checking how to hardcode library paths into programs... immediate
+checking whether stripping libraries is possible... yes
+checking if libtool supports shared libraries... yes
+checking whether to build shared libraries... no
+checking whether to build static libraries... yes
+checking for pkg-config... /usr/bin/pkg-config
+checking pkg-config is at least version 0.9.0... yes
+checking for openssl... yes
+checking for jansson >= 2.7... yes
+checking for openssl jansson >= 2.7... yes
+checking for fuse3... yes
+checking whether NLS is requested... yes
+checking for msgfmt... /usr/bin/msgfmt
+checking for gmsgfmt... /usr/bin/msgfmt
+checking for xgettext... /usr/bin/xgettext
+checking for msgmerge... /usr/bin/msgmerge
+checking for ld... /usr/bin/ld -m elf_x86_64
+checking if the linker (/usr/bin/ld -m elf_x86_64) is GNU ld... yes
+checking for shared library run path origin... done
+checking 32-bit host C ABI... no
+checking how to run the C preprocessor... gcc -E
+checking for ELF binary format... yes
+checking for the common suffixes of directories in the library search path... lib,lib,lib64
+checking for CFPreferencesCopyAppValue... no
+checking for CFLocaleCopyPreferredLanguages... no
+checking for GNU gettext in libc... yes
+checking whether to use NLS... yes
+checking where the gettext function comes from... libc
+checking that generated files are newer than configure... done
+configure: creating ./config.status
+config.status: creating Makefile
+config.status: creating src/Makefile
+config.status: creating po/Makefile.in
+config.status: creating libsecdat.pc
+config.status: creating config.h
+config.status: executing depfiles commands
+config.status: executing libtool commands
+config.status: executing po-directories commands
+config.status: creating po/POTFILES
+config.status: creating po/Makefile
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make  all-recursive
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+Making all in po
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make[3]: Nothing to be done for 'all'.
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+Making all in src
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make  all-am
+make[4]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+depbase=`echo main.o | sed 's|[^/]*$|.deps/&|;s|\.o$||'`;\
+gcc -DHAVE_CONFIG_H -I. -I../../../src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT main.o -MD -MP -MF $depbase.Tpo -c -o main.o ../../../src/main.c &&\
+mv -f $depbase.Tpo $depbase.Po
+depbase=`echo cli.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I../../../src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT cli.lo -MD -MP -MF $depbase.Tpo -c -o cli.lo ../../../src/cli.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I../../../src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT cli.lo -MD -MP -MF .deps/cli.Tpo -c ../../../src/cli.c -o cli.o
+depbase=`echo domain.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I../../../src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT domain.lo -MD -MP -MF $depbase.Tpo -c -o domain.lo ../../../src/domain.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I../../../src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT domain.lo -MD -MP -MF .deps/domain.Tpo -c ../../../src/domain.c -o domain.o
+depbase=`echo exec_inject.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I../../../src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT exec_inject.lo -MD -MP -MF $depbase.Tpo -c -o exec_inject.lo ../../../src/exec_inject.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I../../../src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT exec_inject.lo -MD -MP -MF .deps/exec_inject.Tpo -c ../../../src/exec_inject.c -o exec_inject.o
+depbase=`echo exec_inject_policy_file.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I../../../src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT exec_inject_policy_file.lo -MD -MP -MF $depbase.Tpo -c -o exec_inject_policy_file.lo ../../../src/exec_inject_policy_file.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I../../../src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT exec_inject_policy_file.lo -MD -MP -MF .deps/exec_inject_policy_file.Tpo -c ../../../src/exec_inject_policy_file.c -o exec_inject_policy_file.o
+depbase=`echo json_util.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I../../../src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT json_util.lo -MD -MP -MF $depbase.Tpo -c -o json_util.lo ../../../src/json_util.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I../../../src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT json_util.lo -MD -MP -MF .deps/json_util.Tpo -c ../../../src/json_util.c -o json_util.o
+depbase=`echo redaction.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I../../../src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT redaction.lo -MD -MP -MF $depbase.Tpo -c -o redaction.lo ../../../src/redaction.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I../../../src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT redaction.lo -MD -MP -MF .deps/redaction.Tpo -c ../../../src/redaction.c -o redaction.o
+depbase=`echo store.lo | sed 's|[^/]*$|.deps/&|;s|\.lo$||'`;\
+/bin/bash ../libtool  --tag=CC   --mode=compile gcc -DHAVE_CONFIG_H -I. -I../../../src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\"     -g -O2 -MT store.lo -MD -MP -MF $depbase.Tpo -c -o store.lo ../../../src/store.c &&\
+mv -f $depbase.Tpo $depbase.Plo
+libtool: compile:  gcc -DHAVE_CONFIG_H -I. -I../../../src -I.. -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\" -g -O2 -MT store.lo -MD -MP -MF .deps/store.Tpo -c ../../../src/store.c -o store.o
+/bin/bash ../libtool  --tag=CC   --mode=link gcc  -g -O2 -version-info 1:0:1  -o libsecdat.la -rpath /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib cli.lo domain.lo exec_inject.lo exec_inject_policy_file.lo json_util.lo redaction.lo store.lo -lssl -lcrypto  -ljansson  
+libtool: link: ar cr .libs/libsecdat.a  cli.o domain.o exec_inject.o exec_inject_policy_file.o json_util.o redaction.o store.o
+libtool: link: ranlib .libs/libsecdat.a
+libtool: link: ( cd ".libs" && rm -f "libsecdat.la" && ln -s "../libsecdat.la" "libsecdat.la" )
+/bin/bash ../libtool  --tag=CC   --mode=link gcc  -g -O2   -o secdat main.o libsecdat.la 
+libtool: link: gcc -g -O2 -o secdat main.o  ./.libs/libsecdat.a -lssl -lcrypto -ljansson
+gcc -DHAVE_CONFIG_H -I. -I../../../src -I..  -DLOCALEDIR=\"/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale\" -DPACKAGE_NAME=\"secdat\"   -I/usr/include/fuse3    -g -O2 -MT secdat_fuse-secdat-fuse.o -MD -MP -MF .deps/secdat_fuse-secdat-fuse.Tpo -c -o secdat_fuse-secdat-fuse.o `test -f 'secdat-fuse.c' || echo '../../../src/'`secdat-fuse.c
+mv -f .deps/secdat_fuse-secdat-fuse.Tpo .deps/secdat_fuse-secdat-fuse.Po
+/bin/bash ../libtool  --tag=CC   --mode=link gcc  -g -O2   -o secdat-fuse secdat_fuse-secdat-fuse.o libsecdat.la -lfuse3 -lpthread  
+libtool: link: gcc -g -O2 -o secdat-fuse secdat_fuse-secdat-fuse.o  ./.libs/libsecdat.a -lssl -lcrypto -ljansson -lfuse3 -lpthread
+make[4]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[4]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+cd ../../../po && /usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+...................................................................................................................... done.
+make[4]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+Making dvi in po
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make[2]: Nothing to be done for 'dvi'.
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+Making dvi in src
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Nothing to be done for 'dvi'.
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[2]: Nothing to be done for 'dvi-am'.
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+Making check in po
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make[2]: Nothing to be done for 'check'.
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+Making check in src
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make  check-am
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+cd ../../../po && /usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+................................................................................................................................................... done.
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make  check-local
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make all-local
+make[4]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[5]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+cd ../../../po && /usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+............................................................................................................................................. done.
+make[5]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make[4]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+bash ../../tests/gettext_catalog_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/../.."
+PASS gettext catalog regression (0.11.0)
+bash ../../tests/release_metadata_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/../.."
+PASS release metadata regression (0.11.0)
+bash ../../tests/static_analysis_contract_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/../.."
+PASS static analysis contract regression
+bash ../../tests/static_analysis_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/../.."
+PASS static analysis (jscpd=4.0.7 duplication<0.34%; lizard=1.23.0 warnings=171/171)
+bash ../../tests/libtool_relink_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub"
+PASS libtool relink regression
+SKIP ABI regression: shared libraries disabled
+bash ../../tests/build_id_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/../.."
+libtool: warning: remember to run 'libtool --finish /usr/local/lib'
+PASS build ID regression
+bash ../../tests/lower_level_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS lower-level regression
+bash ../../tests/keyref_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS keyref regression
+bash ../../tests/attribute_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS attribute regression
+bash ../../tests/metadata_relation_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS metadata/relation regression
+bash ../../tests/fsck_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS fsck regression
+bash ../../tests/v2_fsck_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS v2 fsck regression
+bash ../../tests/deferred_gc_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS deferred GC regression
+bash ../../tests/dependency_index_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS dependency index regression
+bash ../../tests/store_default_format_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS store default format regression
+bash ../../tests/container_transaction_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS container transaction regression
+bash ../../tests/domain_move_transaction_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS domain move transaction regression
+bash ../../tests/mv_transaction_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS mv transaction regression
+bash ../../tests/mask_identity_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+mask identity regression tests passed
+bash ../../tests/mask_transaction_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+ok
+bash ../../tests/mask_mutation_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+mask mutation regression tests passed
+bash ../../tests/scoped_set_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS scoped set regression
+bash ../../tests/scoped_mutation_scale_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS scoped mutation scale regression (openat=184 getdents64=42 guards=5 writes=3)
+bash ../../tests/migrate_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS migrate regression
+bash ../../tests/session_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+XFAIL #221: an ordinary command does not trigger handover from a same-protocol capable agent
+PASS session regression
+bash ../../tests/install_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub" "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/../.."
+libtool: warning: remember to run 'libtool --finish /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib'
+.......................................................................................................................... done.
+libtool: warning: remember to run 'libtool --finish /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib'
+.................................................................................................................... done.
+SKIP installed locale smoke: configured prefix is not under /tmp (/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst)
+PASS install regression
+bash ../../tests/sdk_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat" ""
+SKIP Python SDK regression: shared libraries disabled
+PASS SDK exec plan regression
+bash ../../tests/redaction_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS redaction regression
+bash ../../tests/completion_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS completion regression
+bash ../../tests/e2e_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS e2e regression
+bash ../../tests/save_load_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS save/load regression
+bash ../../tests/generate_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS generate regression
+bash ../../tests/export_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS export regression
+bash ../../tests/inject_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat"
+PASS inject regression
+bash ../../tests/fuse_regression.sh "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat" "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src/secdat-fuse"
+PASS fuse regression
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+Making install in po
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+installing ../../../po/ja.gmo as /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale/ja/LC_MESSAGES/secdat.mo
+if test "secdat" = "gettext-tools"; then \
+  /usr/bin/mkdir -p /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/gettext/po; \
+  for file in Makefile.in.in remove-potcdate.sin quot.sed boldquot.sed en@quot.header en@boldquot.header insert-header.sin Rules-quot   Makevars.template; do \
+    /usr/bin/install -c -m 644 ../../../po/$file \
+		    /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/gettext/po/$file; \
+  done; \
+  for file in Makevars; do \
+    rm -f /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/gettext/po/$file; \
+  done; \
+else \
+  : ; \
+fi
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+Making install in src
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make  install-am
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[4]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib'
+ /bin/bash ../libtool   --mode=install /usr/bin/install -c   libsecdat.la '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib'
+libtool: install: /usr/bin/install -c .libs/libsecdat.lai /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.la
+libtool: install: /usr/bin/install -c .libs/libsecdat.a /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.a
+libtool: install: chmod 644 /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.a
+libtool: install: ranlib /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.a
+libtool: finish: PATH="/home/katsumata-m/.local/bin:/home/katsumata-m/.cabal/bin:/home/katsumata-m/.ghcup/bin:/home/katsumata-m/.nvm/versions/node/v25.1.0/bin:/home/katsumata-m/.local/bin:/mnt/c/Users/katsumata-m/.codex/tmp/arg0-linux/codex-arg09ktbJz:/mnt/c/Users/katsumata-m/.codex/bin/wsl/41b07db48e50c5e5:/mnt/c/Users/katsumata-m/.codex/bin/wsl/1a4f6f66dd2f3710:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files/Microsoft SDKs/Azure/CLI2/wbin:/mnt/c/Windows/system32:/mnt/c/Windows:/mnt/c/Windows/System32/Wbem:/mnt/c/Windows/System32/WindowsPowerShell/v1.0/:/mnt/c/Windows/System32/OpenSSH/:/mnt/c/Program Files/dotnet/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/Program Files/WireGuard/:/mnt/c/Program Files/Amazon/AWSCLIV2/:/mnt/c/Program Files/GitHub CLI/:/mnt/c/Program Files/Microsoft VS Code Insiders/bin:/mnt/c/Program Files/Microsoft VS Code/bin:/mnt/c/Program Files/Microsoft SQL Server/160/Tools/Binn/:/mnt/c/Program Files/Microsoft VS Code/bin/copilot-shim:/mnt/c/Program Files/PowerShell/7/:/mnt/c/Users/katsumata-m/.local/bin:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Python/Python314/Scripts/:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Python/Python314/:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Python/Launcher/:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Git/cmd:/mnt/c/Users/katsumata-m/.dotnet-sdk-6.0.428/:/mnt/c/Program Files (x86)/Microsoft/Edge/Application:/mnt/c/Program Files/Git/cmd:/mnt/c/Users/katsumata-m/AppData/Local/Microsoft/WindowsApps:/mnt/c/Users/katsumata-m/AppData/Roaming/Code/User/globalStorage/github.copilot-chat/debugCommand:/mnt/c/Users/katsumata-m/.dotnet-sdk-6.0.428:/mnt/c/Users/k:/mnt/c/Users/katsumata-m/Apps/nodejs:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Git/cmd:/mnt/c/Users/katsumata-m/Apps/nvm/v22.9.0/node_modules/@openai/codex/vendor/x86_64-pc-windows-msvc/path:/mnt/c/Users/katsumata-m/.dotnet/tools:/mnt/c/Users/katsumata-m/AppData/Local/PowerToys/DSCModules/:/mnt/c/users/katsumata-m/appdata/roaming/python/python314/scripts:/mnt/c/Users/katsumata-m/AppData/Local/Kiro-Cli/:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Kiro/bin:/mnt/c/Users/katsumata-m/AppData/Local/Programs/Ollama:/snap/bin:/home/katsumata-m/.dotnet/tools:/sbin" ldconfig -n /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib
+----------------------------------------------------------------------
+Libraries have been installed in:
+   /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib
+
+If you ever happen to want to link against installed libraries
+in a given directory, LIBDIR, you must either use libtool, and
+specify the full pathname of the library, or use the '-LLIBDIR'
+flag during linking and do at least one of the following:
+   - add LIBDIR to the 'LD_LIBRARY_PATH' environment variable
+     during execution
+   - add LIBDIR to the 'LD_RUN_PATH' environment variable
+     during linking
+   - use the '-Wl,-rpath -Wl,LIBDIR' linker flag
+   - have your system administrator add LIBDIR to '/etc/ld.so.conf'
+
+See any operating system documentation about shared libraries for
+more information, such as the ld(1) and ld.so(8) manual pages.
+----------------------------------------------------------------------
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/bin'
+  /bin/bash ../libtool   --mode=install /usr/bin/install -c secdat secdat-fuse '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/bin'
+libtool: install: /usr/bin/install -c secdat /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/bin/secdat
+libtool: install: /usr/bin/install -c secdat-fuse /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/bin/secdat-fuse
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/include'
+ /usr/bin/install -c -m 644 ../../../src/secdat-sdk.h '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/include'
+make[4]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+cd ../../../po && /usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+..................................................................................................................................... done.
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+/usr/bin/mkdir -p "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/bash-completion/completions"
+/usr/bin/install -c -m 644 "../../completions/secdat.bash" "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/bash-completion/completions/secdat"
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/doc/secdat'
+ /usr/bin/install -c -m 644 ../../README.md ../../docs/secdat-spec.md '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/doc/secdat'
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/man/man1'
+ /usr/bin/install -c -m 644 ../../docs/secdat.1 ../../docs/secdat-fuse.1 '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/man/man1'
+ /usr/bin/mkdir -p '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/pkgconfig'
+ /usr/bin/install -c -m 644 libsecdat.pc '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/pkgconfig'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+Making installcheck in po
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make[2]: Nothing to be done for 'installcheck'.
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+Making installcheck in src
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Nothing to be done for 'installcheck'.
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[2]: Nothing to be done for 'installcheck-am'.
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+Making uninstall in po
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+catalogs='ja.gmo'; \
+for cat in $catalogs; do \
+  cat=`basename $cat`; \
+  lang=`echo $cat | sed -e 's/\.gmo$//'`; \
+  for lc in LC_MESSAGES ; do \
+    rm -f /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale/$lang/$lc/secdat.mo; \
+  done; \
+done
+if test "secdat" = "gettext-tools"; then \
+  for file in Makefile.in.in remove-potcdate.sin quot.sed boldquot.sed en@quot.header en@boldquot.header insert-header.sin Rules-quot   Makevars.template; do \
+    rm -f /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/gettext/po/$file; \
+  done; \
+else \
+  : ; \
+fi
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+Making uninstall in src
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+ ( cd '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/bin' && rm -f secdat secdat-fuse )
+ ( cd '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/include' && rm -f secdat-sdk.h )
+ /bin/bash ../libtool   --mode=uninstall rm -f '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.la'
+libtool: uninstall: rm -f /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.la /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.a
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+ ( cd '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/doc/secdat' && rm -f README.md secdat-spec.md )
+rm -f "/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/bash-completion/completions/secdat"
+ ( cd '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/man/man1' && rm -f secdat.1 secdat-fuse.1 )
+ ( cd '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/pkgconfig' && rm -f libsecdat.pc )
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+Making install in po
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+installing ../../../po/ja.gmo as /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale/ja/LC_MESSAGES/secdat.mo
+if test "secdat" = "gettext-tools"; then \
+  /usr/bin/mkdir -p /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/gettext/po; \
+  for file in Makefile.in.in remove-potcdate.sin quot.sed boldquot.sed en@quot.header en@boldquot.header insert-header.sin Rules-quot   Makevars.template; do \
+    /usr/bin/install -c -m 644 ../../../po/$file \
+		    /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/gettext/po/$file; \
+  done; \
+  for file in Makevars; do \
+    rm -f /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/gettext/po/$file; \
+  done; \
+else \
+  : ; \
+fi
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+Making install in src
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make  install-am
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[4]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+ /usr/bin/mkdir -p '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib'
+ /bin/bash ../libtool   --mode=install /usr/bin/install -c   libsecdat.la '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib'
+libtool: install: /usr/bin/install -c .libs/libsecdat.lai /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.la
+libtool: install: /usr/bin/install -c .libs/libsecdat.a /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.a
+libtool: install: chmod 644 /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.a
+libtool: install: ranlib /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.a
+libtool: warning: remember to run 'libtool --finish /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib'
+ /usr/bin/mkdir -p '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/bin'
+  /bin/bash ../libtool   --mode=install /usr/bin/install -c secdat secdat-fuse '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/bin'
+libtool: install: /usr/bin/install -c secdat /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/bin/secdat
+libtool: install: /usr/bin/install -c secdat-fuse /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/bin/secdat-fuse
+ /usr/bin/mkdir -p '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/include'
+ /usr/bin/install -c -m 644 ../../../src/secdat-sdk.h '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/include'
+make[4]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+cd ../../../po && /usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+....................................................................................................................................................... done.
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+/usr/bin/mkdir -p "/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/bash-completion/completions"
+/usr/bin/install -c -m 644 "../../completions/secdat.bash" "/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/bash-completion/completions/secdat"
+ /usr/bin/mkdir -p '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/doc/secdat'
+ /usr/bin/install -c -m 644 ../../README.md ../../docs/secdat-spec.md '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/doc/secdat'
+ /usr/bin/mkdir -p '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/man/man1'
+ /usr/bin/install -c -m 644 ../../docs/secdat.1 ../../docs/secdat-fuse.1 '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/man/man1'
+ /usr/bin/mkdir -p '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/pkgconfig'
+ /usr/bin/install -c -m 644 libsecdat.pc '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/pkgconfig'
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+Making uninstall in po
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+catalogs='ja.gmo'; \
+for cat in $catalogs; do \
+  cat=`basename $cat`; \
+  lang=`echo $cat | sed -e 's/\.gmo$//'`; \
+  for lc in LC_MESSAGES ; do \
+    rm -f /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/locale/$lang/$lc/secdat.mo; \
+  done; \
+done
+if test "secdat" = "gettext-tools"; then \
+  for file in Makefile.in.in remove-potcdate.sin quot.sed boldquot.sed en@quot.header en@boldquot.header insert-header.sin Rules-quot   Makevars.template; do \
+    rm -f /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/gettext/po/$file; \
+  done; \
+else \
+  : ; \
+fi
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+Making uninstall in src
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+ ( cd '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/bin' && rm -f secdat secdat-fuse )
+ ( cd '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/include' && rm -f secdat-sdk.h )
+ /bin/bash ../libtool   --mode=uninstall rm -f '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.la'
+libtool: uninstall: rm -f /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.la /tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/libsecdat.a
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+ ( cd '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/doc/secdat' && rm -f README.md secdat-spec.md )
+rm -f "/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/bash-completion/completions/secdat"
+ ( cd '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/share/man/man1' && rm -f secdat.1 secdat-fuse.1 )
+ ( cd '/tmp/am-dc-1911901//home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_inst/lib/pkgconfig' && rm -f libsecdat.pc )
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make  dist-gzip am__post_remove_distdir='@:'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make  distdir-am
+make[3]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+if test -d "secdat-0.11.0"; then find "secdat-0.11.0" -type d ! -perm -200 -exec chmod u+w {} ';' && rm -rf "secdat-0.11.0" || { sleep 5 && rm -rf "secdat-0.11.0"; }; else :; fi
+test -d "secdat-0.11.0" || mkdir "secdat-0.11.0"
+ (cd po && make  top_distdir=../secdat-0.11.0 distdir=../secdat-0.11.0/po \
+     am__remove_distdir=: am__skip_length_check=: am__skip_mode_fix=: distdir)
+make[4]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+test -z "update-po" || make update-po
+make[5]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make secdat.pot-update
+make[6]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+sed -e '/^#/d' ../../../po/remove-potcdate.sin > t-remove-potcdate.sed
+mv t-remove-potcdate.sed remove-potcdate.sed
+package_gnu=""; \
+test -n "$package_gnu" || { \
+  if { if (LC_ALL=C find --version) 2>/dev/null | grep GNU >/dev/null; then \
+         LC_ALL=C find -L ../../.. -maxdepth 1 -type f -size -10000000c -exec grep -i 'GNU secdat' /dev/null '{}' ';' 2>/dev/null; \
+       else \
+         LC_ALL=C grep -i 'GNU secdat' ../../../* 2>/dev/null; \
+       fi; \
+     } | grep -v 'libtool:' >/dev/null; then \
+     package_gnu=yes; \
+   else \
+     package_gnu=no; \
+   fi; \
+}; \
+if test "$package_gnu" = "yes"; then \
+  package_prefix='GNU '; \
+else \
+  package_prefix=''; \
+fi; \
+if test -n 'noreply@example.invalid' || test 'noreply@example.invalid' = '@'PACKAGE_BUGREPORT'@'; then \
+  msgid_bugs_address='noreply@example.invalid'; \
+else \
+  msgid_bugs_address='noreply@example.invalid'; \
+fi; \
+case `/usr/bin/xgettext --version | sed 1q | sed -e 's,^[^0-9]*,,'` in \
+  '' | 0.[0-9] | 0.[0-9].* | 0.1[0-5] | 0.1[0-5].* | 0.16 | 0.16.[0-1]*) \
+    /usr/bin/xgettext --default-domain=secdat --directory=../../.. \
+      --add-comments=TRANSLATORS: \
+      --files-from=../../../po/POTFILES.in \
+      --copyright-holder='secdat contributors' \
+      --msgid-bugs-address="$msgid_bugs_address" \
+      --keyword=_  \
+    ;; \
+  *) \
+    /usr/bin/xgettext --default-domain=secdat --directory=../../.. \
+      --add-comments=TRANSLATORS: \
+      --files-from=../../../po/POTFILES.in \
+      --copyright-holder='secdat contributors' \
+      --package-name="${package_prefix}secdat" \
+      --package-version='0.11.0' \
+      --msgid-bugs-address="$msgid_bugs_address" \
+      --keyword=_  \
+    ;; \
+esac
+test ! -f secdat.po || { \
+  if test -f ../../../po/secdat.pot-header; then \
+    sed -e '1,/^#$/d' < secdat.po > secdat.1po && \
+    cat ../../../po/secdat.pot-header secdat.1po > secdat.po && \
+    rm -f secdat.1po \
+    || exit 1; \
+  fi; \
+  if test -f ../../../po/secdat.pot; then \
+    sed -f remove-potcdate.sed < ../../../po/secdat.pot > secdat.1po && \
+    sed -f remove-potcdate.sed < secdat.po > secdat.2po && \
+    if cmp secdat.1po secdat.2po >/dev/null 2>&1; then \
+      rm -f secdat.1po secdat.2po secdat.po; \
+    else \
+      rm -f secdat.1po secdat.2po ../../../po/secdat.pot && \
+      mv secdat.po ../../../po/secdat.pot; \
+    fi; \
+  else \
+    mv secdat.po ../../../po/secdat.pot; \
+  fi; \
+}
+make[6]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+test -z "ja.po-update" || make ja.po-update
+make[6]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+ja:
+cd ../../../po && /usr/bin/msgmerge  --lang=ja --previous ja.po secdat.pot -o ja.new.po
+..................................................................................................................................... done.
+make[6]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make update-gmo
+make[6]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+cd ../../../po && /usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+................................................................................................................................................ done.
+make[6]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make[5]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make[5]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+cd ../../../po && /usr/bin/msgmerge --update  --lang=ja --previous ja.po secdat.pot
+..................................................................................................................................................... done.
+make[5]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+make[4]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+ (cd src && make  top_distdir=../secdat-0.11.0 distdir=../secdat-0.11.0/src \
+     am__remove_distdir=: am__skip_length_check=: am__skip_mode_fix=: distdir)
+make[4]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make  distdir-am
+make[5]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[5]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[4]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+test -n "" \
+|| find "secdat-0.11.0" -type d ! -perm -755 \
+	-exec chmod u+rwx,go+rx {} \; -o \
+  ! -type d ! -perm -444 -links 1 -exec chmod a+r {} \; -o \
+  ! -type d ! -perm -400 -exec chmod a+r {} \; -o \
+  ! -type d ! -perm -444 -exec /bin/bash /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/install-sh -c -m a+r {} {} \; \
+|| chmod -R a+r "secdat-0.11.0"
+make[3]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+tardir=secdat-0.11.0 && ${TAR-tar} chof - "$tardir" | eval GZIP= gzip --best -c >secdat-0.11.0.tar.gz
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+if test -d "secdat-0.11.0"; then find "secdat-0.11.0" -type d ! -perm -200 -exec chmod u+w {} ';' && rm -rf "secdat-0.11.0" || { sleep 5 && rm -rf "secdat-0.11.0"; }; else :; fi
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+make[1]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+Making distclean in po
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+rm -f *.insert-header
+rm -f remove-potcdate.sed
+rm -f ../../../po/stamp-poT
+rm -f core core.* secdat.po secdat.1po secdat.2po *.new.po
+rm -fr *.o
+rm -f Makefile Makefile.in POTFILES
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po'
+Making distclean in src
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+ rm -f secdat secdat-fuse
+test -z "secdat-build-id.h secdat-build-id.h.tmp" || rm -f secdat-build-id.h secdat-build-id.h.tmp
+test -z "libsecdat.la" || rm -f libsecdat.la
+rm -f ./so_locations
+rm -rf .libs _libs
+rm -f *.o
+rm -f *.lo
+rm -f *.tab.c
+test -z "" || rm -f 
+test . = "../../../src" || test -z "" || rm -f 
+rm -f TAGS ID GTAGS GRTAGS GSYMS GPATH tags
+rm -f ./.deps/cli.Plo
+rm -f ./.deps/domain.Plo
+rm -f ./.deps/exec_inject.Plo
+rm -f ./.deps/exec_inject_policy_file.Plo
+rm -f ./.deps/json_util.Plo
+rm -f ./.deps/main.Po
+rm -f ./.deps/redaction.Plo
+rm -f ./.deps/secdat_fuse-secdat-fuse.Po
+rm -f ./.deps/store.Plo
+rm -f Makefile
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/src'
+make[2]: Entering directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+rm -rf .libs _libs
+rm -rf /home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub/po/.locale
+rm -f *.lo
+test -z "libsecdat.pc" || rm -f libsecdat.pc
+test . = "../.." || test -z "" || rm -f 
+rm -f config.h stamp-h1
+rm -f libtool config.lt
+rm -f TAGS ID GTAGS GRTAGS GSYMS GPATH tags
+rm -f cscope.out cscope.in.out cscope.po.out cscope.files
+make[2]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+rm -f config.status config.cache config.log configure.lineno config.status.lineno
+rm -f Makefile
+make[1]: Leaving directory '/home/katsumata-m/secdat-release-0.11.0/secdat-0.11.0/_build/sub'
+if test -d "secdat-0.11.0"; then find "secdat-0.11.0" -type d ! -perm -200 -exec chmod u+w {} ';' && rm -rf "secdat-0.11.0" || { sleep 5 && rm -rf "secdat-0.11.0"; }; else :; fi
+===============================================
+secdat-0.11.0 archives ready for distribution: 
+secdat-0.11.0.tar.gz
+===============================================

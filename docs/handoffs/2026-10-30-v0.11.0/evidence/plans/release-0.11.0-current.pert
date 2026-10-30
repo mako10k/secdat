@@ -1,0 +1,79 @@
+project RELEASE011:
+  version 5
+  title "Prepare v0.11.0 and report final decision before publication"
+  description "Owner authorized release preparation and necessary verification only, ending at final judgment before tags or publication. Issue247; base c465ab9. Release workflow matrix governs acceptance. Initial elapsed estimate 60-120 minutes low confidence; measured gate time is not person effort. No historical velocity assumed. Evidence persists at /home/katsumata-m/secdat-release-evidence/v0.11.0."
+  duration_unit point
+  finish REPORTED
+
+milestone START:
+  title "Owner authorized preparation"
+  state reached
+
+milestone FROZEN:
+  title "Version metadata and known limits reviewed; candidate frozen"
+  state reached
+
+milestone VERIFIED:
+  title "Exact candidate release matrix receipts complete"
+  description "Exact candidate matrix axes complete. Failed parallel05 retained Issue248; serial05b/06/07 PASS. Binding09 records prior Python/Rust/Node successes then Go VCS failure; Go-only10 passes with command-local buildvcs=false. Receipts persisted outside /tmp. Gate elapsed all attempts4431.30s CPU2821.20s maxRSS487188KiB; not person effort. Velocity observation remains unavailable PTHIS-101 for ignored local plan; lifecycle timestamps measured, no fabricated effort/velocity."
+  state reached
+
+milestone REPORTED:
+  title "Final judgment reported; no tagging or publication"
+  description "Final judgment GO with disclosed known limitations. Independent read-only acceptance clear; reports/receipts/artifacts and exact futurepublication inputs persisted. Candidate0e4eb24 tree704a660 clean, localunpublished. No main/tag/release writes or production install. Owner decision remains before publication, outside completed preparation."
+  state reached
+
+task PREP START -> FROZEN:
+  title "Prepare version, release notes, review and candidate"
+  duration 1p
+  status done
+  source "https://github.com/mako10k/secdat/issues/247"
+
+task MATRIX FROZEN -> VERIFIED:
+  title "Serial release matrix and installed consumers"
+  duration 4p
+  status done
+
+task REVIEW VERIFIED -> REPORTED:
+  title "Read-only receipt acceptance and owner report"
+  duration 1p
+  status done
+
+work_event WE-2f5eaf0f93eebb5f50c4e73f7e03071892ba6bd898cafd0014cc3f66d41b9ef3:
+  model 1
+  task PREP
+  kind start
+  occurred_at 2026-10-30T18:46:42+09:00
+  planned_value 1p
+
+work_event WE-7ad7c78d3635222bdba66734819932a41536169cdcbfe72b10b9daeed685b483:
+  model 1
+  task PREP
+  kind finish
+  occurred_at 2026-10-30T18:50:53+09:00
+
+work_event WE-9e453e5999c4816b6a0f89411bf88ec261681b9d7389f28fc3b35a78d62000ec:
+  model 1
+  task MATRIX
+  kind start
+  occurred_at 2026-10-30T18:50:56+09:00
+  planned_value 4p
+
+work_event WE-ce48bd8c012b788c3719adeb9f1394c9a68a698c65567748b64240a74f168175:
+  model 1
+  task MATRIX
+  kind finish
+  occurred_at 2026-10-30T20:24:27+09:00
+
+work_event WE-ad6d8ac6aae1d333af618155e05e1993df016c7495d30f6ae346a84bb992c841:
+  model 1
+  task REVIEW
+  kind start
+  occurred_at 2026-10-30T20:24:28+09:00
+  planned_value 1p
+
+work_event WE-75180d6b5493fcbeac50b8da97533e11d6141c4da35d0f5aafca9d788d28d12f:
+  model 1
+  task REVIEW
+  kind finish
+  occurred_at 2026-10-30T20:26:49+09:00

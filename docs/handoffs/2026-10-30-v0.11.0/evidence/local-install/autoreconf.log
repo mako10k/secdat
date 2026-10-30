@@ -1,0 +1,36 @@
+Copying file ABOUT-NLS
+Copying file config.rpath
+Creating directory m4
+Copying file m4/gettext.m4
+Copying file m4/host-cpu-c-abi.m4
+Copying file m4/iconv.m4
+Copying file m4/intlmacosx.m4
+Copying file m4/lib-ld.m4
+Copying file m4/lib-link.m4
+Copying file m4/lib-prefix.m4
+Copying file m4/nls.m4
+Copying file m4/po.m4
+Copying file m4/progtest.m4
+Copying file po/Makefile.in.in
+Copying file po/Makevars.template
+Copying file po/Rules-quot
+Copying file po/boldquot.sed
+Copying file po/en@boldquot.header
+Copying file po/en@quot.header
+Copying file po/insert-header.sin
+Copying file po/quot.sed
+Copying file po/remove-potcdate.sin
+libtoolize: putting auxiliary files in '.'.
+libtoolize: copying file './ltmain.sh'
+libtoolize: Consider adding 'AC_CONFIG_MACRO_DIRS([m4])' to configure.ac,
+libtoolize: and rerunning libtoolize and aclocal.
+libtoolize: Consider adding '-I m4' to ACLOCAL_AMFLAGS in Makefile.am.
+configure.ac:8: installing './ar-lib'
+configure.ac:7: installing './compile'
+configure.ac:9: installing './config.guess'
+configure.ac:9: installing './config.sub'
+configure.ac:5: installing './install-sh'
+configure.ac:5: installing './missing'
+src/Makefile.am:1: warning: shell cd $(top_srcdir: non-POSIX variable name
+src/Makefile.am:1: (probably a GNU make extension)
+src/Makefile.am: installing './depcomp'

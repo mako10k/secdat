@@ -1,0 +1,205 @@
+Python runtime: /home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/python/secdat_sdk.py
+Processing /home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/python
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: secdat-sdk
+  Building wheel for secdat-sdk (pyproject.toml): started
+  Building wheel for secdat-sdk (pyproject.toml): finished with status 'done'
+  Created wheel for secdat-sdk: filename=secdat_sdk-0.11.0-py3-none-any.whl size=6583 sha256=0cd5919f995bba420d0880664fce010bd49ac6900d15b81b61eac2b5477b3790
+  Stored in directory: /tmp/pip-ephem-wheel-cache-9mbivubl/wheels/d8/0a/33/721a17bf7e1d0f2072dfaeccde41a87fe933a384aa666b6ad8
+Successfully built secdat-sdk
+Processing /home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/wheels/secdat_sdk-0.11.0-py3-none-any.whl
+Installing collected packages: secdat-sdk
+Successfully installed secdat-sdk-0.11.0
+Installed wheel runtime/version PASS
+   Compiling pkg-config v0.3.33
+   Compiling secdat-sdk v0.11.0 (/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/rust)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.69s
+warning: manifest has no license or license-file
+  |
+  = note: see https://doc.rust-lang.org/cargo/reference/manifest.html#package-metadata for more info
+   Packaging secdat-sdk v0.11.0 (/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/rust)
+    Updating crates.io index
+    Packaged 6 files, 23.9KiB (5.0KiB compressed)
+   Verifying secdat-sdk v0.11.0 (/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/rust)
+   Compiling secdat-sdk v0.11.0 (/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/rust-target/package/secdat-sdk-0.11.0)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.92s
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "nodedir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "nodedir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> secdat-sdk-node@0.11.0 install
+> node-gyp rebuild
+
+gyp info it worked if it ends with ok
+gyp info using node-gyp@12.4.0
+gyp info using node@25.1.0 | linux | x64
+gyp info find Python using Python version 3.12.3 found at "/usr/bin/python3"
+gyp info spawn /usr/bin/python3
+gyp info spawn args [
+gyp info spawn args '/home/katsumata-m/.nvm/versions/node/v25.1.0/lib/node_modules/npm/node_modules/node-gyp/gyp/gyp_main.py',
+gyp info spawn args 'binding.gyp',
+gyp info spawn args '-f',
+gyp info spawn args 'make',
+gyp info spawn args '-I',
+gyp info spawn args '/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/node/build/config.gypi',
+gyp info spawn args '-I',
+gyp info spawn args '/home/katsumata-m/.nvm/versions/node/v25.1.0/lib/node_modules/npm/node_modules/node-gyp/addon.gypi',
+gyp info spawn args '-I',
+gyp info spawn args '/home/katsumata-m/.nvm/versions/node/v25.1.0/include/node/common.gypi',
+gyp info spawn args '-Dlibrary=shared_library',
+gyp info spawn args '-Dvisibility=default',
+gyp info spawn args '-Dnode_root_dir=/home/katsumata-m/.nvm/versions/node/v25.1.0',
+gyp info spawn args '-Dnode_gyp_dir=/home/katsumata-m/.nvm/versions/node/v25.1.0/lib/node_modules/npm/node_modules/node-gyp',
+gyp info spawn args '-Dnode_lib_file=/home/katsumata-m/.nvm/versions/node/v25.1.0/$(Configuration)/node.lib',
+gyp info spawn args '-Dmodule_root_dir=/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/node',
+gyp info spawn args '-Dnode_engine=v8',
+gyp info spawn args '--depth=.',
+gyp info spawn args '--no-parallel',
+gyp info spawn args '--generator-output',
+gyp info spawn args 'build',
+gyp info spawn args '-Goutput_dir=.'
+gyp info spawn args ]
+gyp info spawn make
+gyp info spawn args [ 'BUILDTYPE=Release', '-C', 'build' ]
+make: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/node/build'
+  CC(target) Release/obj.target/nothing/node_modules/node-addon-api/nothing.o
+rm -f Release/obj.target/node_modules/node-addon-api/nothing.a Release/obj.target/node_modules/node-addon-api/nothing.a.ar-file-list; mkdir -p `dirname Release/obj.target/node_modules/node-addon-api/nothing.a`
+ar crs Release/obj.target/node_modules/node-addon-api/nothing.a @Release/obj.target/node_modules/node-addon-api/nothing.a.ar-file-list
+  COPY Release/nothing.a
+  CXX(target) Release/obj.target/secdat_sdk/src/addon.o
+  SOLINK_MODULE(target) Release/obj.target/secdat_sdk.node
+  COPY Release/secdat_sdk.node
+make: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/node/build'
+gyp info ok 
+
+added 1 package in 15s
+npm notice
+npm notice New minor version of npm available! 11.19.0 -> 11.21.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.21.1
+npm notice To update run: npm install -g npm@11.21.1
+npm notice
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "nodedir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> secdat-sdk-node@0.11.0 build
+> node-gyp rebuild
+
+gyp info it worked if it ends with ok
+gyp info using node-gyp@12.4.0
+gyp info using node@25.1.0 | linux | x64
+gyp info find Python using Python version 3.12.3 found at "/usr/bin/python3"
+gyp info spawn /usr/bin/python3
+gyp info spawn args [
+gyp info spawn args '/home/katsumata-m/.nvm/versions/node/v25.1.0/lib/node_modules/npm/node_modules/node-gyp/gyp/gyp_main.py',
+gyp info spawn args 'binding.gyp',
+gyp info spawn args '-f',
+gyp info spawn args 'make',
+gyp info spawn args '-I',
+gyp info spawn args '/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/node/build/config.gypi',
+gyp info spawn args '-I',
+gyp info spawn args '/home/katsumata-m/.nvm/versions/node/v25.1.0/lib/node_modules/npm/node_modules/node-gyp/addon.gypi',
+gyp info spawn args '-I',
+gyp info spawn args '/home/katsumata-m/.nvm/versions/node/v25.1.0/include/node/common.gypi',
+gyp info spawn args '-Dlibrary=shared_library',
+gyp info spawn args '-Dvisibility=default',
+gyp info spawn args '-Dnode_root_dir=/home/katsumata-m/.nvm/versions/node/v25.1.0',
+gyp info spawn args '-Dnode_gyp_dir=/home/katsumata-m/.nvm/versions/node/v25.1.0/lib/node_modules/npm/node_modules/node-gyp',
+gyp info spawn args '-Dnode_lib_file=/home/katsumata-m/.nvm/versions/node/v25.1.0/$(Configuration)/node.lib',
+gyp info spawn args '-Dmodule_root_dir=/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/node',
+gyp info spawn args '-Dnode_engine=v8',
+gyp info spawn args '--depth=.',
+gyp info spawn args '--no-parallel',
+gyp info spawn args '--generator-output',
+gyp info spawn args 'build',
+gyp info spawn args '-Goutput_dir=.'
+gyp info spawn args ]
+gyp info spawn make
+gyp info spawn args [ 'BUILDTYPE=Release', '-C', 'build' ]
+make: Entering directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/node/build'
+  CC(target) Release/obj.target/nothing/node_modules/node-addon-api/nothing.o
+rm -f Release/obj.target/node_modules/node-addon-api/nothing.a Release/obj.target/node_modules/node-addon-api/nothing.a.ar-file-list; mkdir -p `dirname Release/obj.target/node_modules/node-addon-api/nothing.a`
+ar crs Release/obj.target/node_modules/node-addon-api/nothing.a @Release/obj.target/node_modules/node-addon-api/nothing.a.ar-file-list
+  COPY Release/nothing.a
+  CXX(target) Release/obj.target/secdat_sdk/src/addon.o
+  SOLINK_MODULE(target) Release/obj.target/secdat_sdk.node
+  COPY Release/secdat_sdk.node
+make: Leaving directory '/home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/bindings/node/build'
+gyp info ok 
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "nodedir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm notice
+npm notice 📦  secdat-sdk-node@0.11.0
+npm notice Tarball Contents
+npm notice 1.9kB README.md
+npm notice 600B binding.gyp
+npm notice 441B index.js
+npm notice 422B package.json
+npm notice 24.7kB src/addon.cc
+npm notice Tarball Details
+npm notice name: secdat-sdk-node
+npm notice version: 0.11.0
+npm notice filename: secdat-sdk-node-0.11.0.tgz
+npm notice package size: 4.7 kB
+npm notice unpacked size: 28.1 kB
+npm notice shasum: 105d13c5c165a17facbaded457db47212efa0ef0
+npm notice integrity: sha512-gkvkGULmNfKtp[...]B3WYGMLr341jg==
+npm notice total files: 5
+npm notice
+secdat-sdk-node-0.11.0.tgz
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "nodedir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm notice
+npm notice 📦  secdat-sdk-node@0.11.0
+npm notice Tarball Contents
+npm notice 1.9kB README.md
+npm notice 600B binding.gyp
+npm notice 441B index.js
+npm notice 422B package.json
+npm notice 24.7kB src/addon.cc
+npm notice Tarball Details
+npm notice name: secdat-sdk-node
+npm notice version: 0.11.0
+npm notice filename: secdat-sdk-node-0.11.0.tgz
+npm notice package size: 4.7 kB
+npm notice unpacked size: 28.1 kB
+npm notice shasum: 105d13c5c165a17facbaded457db47212efa0ef0
+npm notice integrity: sha512-gkvkGULmNfKtp[...]B3WYGMLr341jg==
+npm notice total files: 5
+npm notice
+secdat-sdk-node-0.11.0.tgz
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "nodedir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+Wrote to /home/katsumata-m/secdat-release-evidence/v0.11.0/installed-consumers-work/node-consumer/package.json:
+
+{
+  "name": "consumer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
+
+
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "nodedir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+added 2 packages in 12s
+npm warn install-scripts 1 package has install scripts not yet covered by allowScripts:
+npm warn install-scripts   secdat-sdk-node@0.11.0 (install: node-gyp rebuild)
+npm warn install-scripts
+npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+External Node tarball consumer/version/functions PASS
+error obtaining VCS status: exit status 128
+	Use -buildvcs=false to disable VCS stamping.
