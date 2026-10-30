@@ -104,6 +104,85 @@ state_root = data_root / "secdat"
 by_id = state_root / "domains/by-id"
 owner, owner_state = create_v2_domain("owner")
 
+# Domain deletion treats canonical empty store shards as queue structure, not
+# as queued work. A real candidate still blocks until it is collected, and an
+# empty candidate plus quarantine shard then permits deletion.
+lifecycle, lifecycle_state = create_v2_domain("domain-delete-lifecycle")
+require_ok(run(lifecycle, "set", "DELETE_GC", "--value", "delete"), "delete lifecycle seed", "")
+require_ok(run(lifecycle, "rm", "DELETE_GC"), "delete lifecycle removal", "")
+lifecycle_candidate_root = (
+    data_root / "secdat/gc/candidates/by-owner" / lifecycle_state.name
+)
+lifecycle_candidate_shard = lifecycle_candidate_root / "default"
+blocked_lifecycle_delete = run(lifecycle, "domain", "delete")
+if (
+    blocked_lifecycle_delete.returncode == 0
+    or "domain is not empty:" not in blocked_lifecycle_delete.stderr
+    or not lifecycle_state.is_dir()
+    or len(candidate_files(lifecycle_state)) != 1
+):
+    fail(f"queued work did not block domain deletion: {blocked_lifecycle_delete}")
+require_ok(run(lifecycle, "gc", "--queued"), "delete lifecycle collection")
+if (
+    not lifecycle_candidate_shard.is_dir()
+    or any(lifecycle_candidate_shard.iterdir())
+):
+    fail("queued collection did not leave the expected empty candidate shard")
+lifecycle_quarantine_root = (
+    data_root / "secdat/gc/quarantine/by-owner" / lifecycle_state.name
+)
+lifecycle_quarantine_root.mkdir(parents=True, exist_ok=True)
+lifecycle_quarantine_root.chmod(0o700)
+lifecycle_quarantine_shard = lifecycle_quarantine_root / "default"
+lifecycle_quarantine_shard.mkdir()
+lifecycle_quarantine_shard.chmod(0o700)
+require_ok(run(lifecycle, "domain", "delete"), "delete with empty GC shards", "")
+if lifecycle_state.exists() or any(
+    path.read_text(encoding="utf-8") == lifecycle_state.name
+    for path in (state_root / "domains/registry/by-root").iterdir()
+):
+    fail("domain deletion with empty GC shards retained domain state")
+
+# Unknown component spelling and object types remain fail-closed even when
+# they contain no candidate files.
+malformed, malformed_state = create_v2_domain("domain-delete-malformed-gc")
+malformed_owner_root = (
+    data_root / "secdat/gc/candidates/by-owner" / malformed_state.name
+)
+malformed_owner_root.mkdir(parents=True)
+malformed_owner_root.chmod(0o700)
+noncanonical_shard = malformed_owner_root / "%41pp"
+noncanonical_shard.mkdir()
+noncanonical_shard.chmod(0o700)
+blocked_noncanonical_shard = run(malformed, "domain", "delete")
+if (
+    blocked_noncanonical_shard.returncode == 0
+    or "domain is not empty:" not in blocked_noncanonical_shard.stderr
+    or not malformed_state.is_dir()
+    or not noncanonical_shard.is_dir()
+):
+    fail(
+        "noncanonical empty GC shard did not block domain deletion: "
+        f"{blocked_noncanonical_shard}"
+    )
+noncanonical_shard.rmdir()
+wrong_type_shard = malformed_owner_root / "default"
+wrong_type_shard.write_text("", encoding="utf-8")
+wrong_type_shard.chmod(0o600)
+blocked_wrong_type_shard = run(malformed, "domain", "delete")
+if (
+    blocked_wrong_type_shard.returncode == 0
+    or "domain is not empty:" not in blocked_wrong_type_shard.stderr
+    or not malformed_state.is_dir()
+    or not wrong_type_shard.is_file()
+):
+    fail(
+        "non-directory GC shard did not block domain deletion: "
+        f"{blocked_wrong_type_shard}"
+    )
+wrong_type_shard.unlink()
+require_ok(run(malformed, "domain", "delete"), "malformed GC cleanup", "")
+
 # A PREPARED crash must retain both the reference and candidate absence.
 require_ok(run(owner, "set", "FAULT_KEY", "--value", "fault"), "fault seed", "")
 fault_id = run(owner, "id", "FAULT_KEY").stdout.strip()

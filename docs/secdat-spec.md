@@ -328,7 +328,10 @@ recovery discards validated pre-commit operations, rolls committing operations
 forward, verifies committed after-images, and then removes the journal. Target
 paths are rebuilt from validated domain/store/artifact identifiers, and exact
 before-image guards are revalidated so changed-since-plan state fails before
-live mutation.
+live mutation. Persisted filesystem components are accepted at enumeration
+boundaries only when decoding and canonical re-escaping reproduce the exact
+stored bytes; a redundant, lower-case, malformed, or otherwise non-canonical
+escape fails closed instead of being exposed as a phantom logical name.
 
 Normal v2 `set`, `cp`, `ln`, `rm`, `load`, `attr`, `meta`, `relation`, `mask`,
 `unmask`, and `mv` writers derive direct guarded write sets. They do not clone
@@ -699,6 +702,9 @@ source removal.
 - if `--dir` is omitted, the target directory is the current working directory
 - creating a domain for a directory that already has a domain is an error
 - `secdat [--dir DIR] domain delete` deletes the domain definition for the target directory
+- `domain delete` requires every store to match a canonical empty v1 or v2 skeleton and requires both owner-scoped GC subtrees to be semantically empty
+- an owner-scoped GC subtree is semantically empty when it is absent or every immediate canonical store shard is a secure empty directory; an actual queue entry, unknown or non-canonical shard name, symlink, wrong type, insecure mode, or inspection failure blocks deletion without mutation
+- empty canonical candidate and quarantine store-shard directories are structural queue state and do not by themselves block deletion
 - `domain delete` does not modify parent-domain data
 - `secdat [--dir DIR] domain move --from OLD_ROOT [--to NEW_ROOT]` moves an existing registered domain root to another existing directory without changing the domain ID or deleting store data
 - `domain move --from OLD_ROOT` uses `--dir DIR` or the current working directory as the destination when `--to` is omitted
@@ -1250,8 +1256,9 @@ Responsibilities:
 
 1. look up the domain ID for the target directory
 2. check whether child domains exist
-3. if allowed, remove the registry entry
-4. remove the corresponding on-disk state
+3. validate every store against the canonical empty v1/v2 skeleton, including optional empty v2 metadata/relation directories
+4. validate semantic emptiness of the owner-scoped candidate and quarantine queues one canonical store shard below each owner root
+5. if allowed, transactionally remove the registry entry and corresponding on-disk domain state
 
 #### `domain move`
 

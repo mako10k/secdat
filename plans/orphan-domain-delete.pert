@@ -1,0 +1,153 @@
+# Existing .pert plans should normally be maintained through perttool commands; direct DSL editing bypasses goal/DAG owner-confirmation checks.
+project ORPHAN_DOMAIN_DELETE:
+  version 6
+  title "Orphan-domain deletion and canonical persisted components"
+  description "Implement ADR 0010 semantic GC owner-queue emptiness and fix the shared persisted-component canonicality gap proven by adjacent reproductions. Focused and full validation are acceptance tasks. Commit, push, Issue mutation, PR, merge, release, and deployment remain outside this plan."
+  as_of 2026-09-01
+  duration_unit point
+  velocity 5p/1d
+  finish ACCEPTED
+  goal_owner user
+  goal_delegates [codex]
+  dag_owner user
+  dag_delegates [codex]
+
+milestone NOW:
+  title "ADR 0010 and reproduced root-cause evidence available"
+  state reached
+
+resource CODEX:
+  title "Implementation and verification capacity"
+  capacity 1
+
+milestone CANONICAL_GUARDS:
+  title "Persisted component boundaries reject noncanonical aliases"
+
+milestone GC_SEMANTICS:
+  title "GC owner queues use semantic leaf emptiness"
+
+milestone REGRESSION_VERIFIED:
+  title "Focused regression matrix passes"
+
+milestone ACCEPTED:
+  title "Repository acceptance checks pass"
+
+task T_CANONICAL_COMPONENTS NOW -> CANONICAL_GUARDS:
+  title "Enforce canonical persisted path components"
+  description "At filesystem trust boundaries, decode then re-escape and require exact byte equality. Apply the shared guard to store discovery, registered-root discovery, v1 key enumeration, and empty-store validation so aliases cannot be listed under an unusable name, orphaned, or treated as deletable canonical state."
+  duration 3p
+  status done
+  priority 40
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [root-cause, filesystem, canonicalization]
+
+task T_GC_SEMANTIC_EMPTY CANONICAL_GUARDS -> GC_SEMANTICS:
+  title "Implement semantic GC owner-queue emptiness"
+  description "Treat a candidates or quarantine owner subtree as empty only when every immediate canonical store shard exists as a secure directory and that leaf directory contains no entries. Missing owner roots are empty; unexpected, noncanonical, insecure, unreadable, or non-directory entries fail closed and block deletion."
+  duration 2p
+  status done
+  priority 30
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [adr-0010, gc, domain-delete]
+
+task T_FOCUSED_REGRESSIONS GC_SEMANTICS -> REGRESSION_VERIFIED:
+  title "Cover empty shards and noncanonical aliases"
+  description "Add joined lifecycle regressions proving domain deletion succeeds with empty canonical GC shards, still blocks on queued entries and malformed shard state, and fails closed without destructive side effects for noncanonical store, registry-root, and v1 key components."
+  duration 3p
+  status done
+  priority 20
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [regression, fail-closed]
+
+task T_ACCEPTANCE REGRESSION_VERIFIED -> ACCEPTED:
+  title "Run focused and repository acceptance checks"
+  description "Review the exact diff, run the nearest regression after each slice, then run make and make check. Regenerate and verify gettext artifacts only if translatable messages change. Record residual risks without claiming commit, push, Issue, PR, merge, release, or deployment completion."
+  duration 2p
+  status done
+  priority 10
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [review, acceptance]
+
+task T_V2_EMPTY_SKELETON CANONICAL_GUARDS -> GC_SEMANTICS:
+  title "Align v2 empty-store validation with generated skeletons"
+  description "The migrated empty v2 skeleton omits optional key-meta and relations directories, while deletion validation incorrectly requires them despite validating them as optional. Remove that internal contract contradiction so physically empty migrated stores can satisfy the empty-container predicate."
+  duration 1p
+  status done
+  priority 35
+  requires:
+    CODEX 1
+  owner "codex"
+  tags [root-cause, v2, domain-delete]
+
+work_event WE-d61fbe1a70a82063263e431a25b2e3c2d310f36cc51961d4f4a71f1a007e8532:
+  model 1
+  task T_CANONICAL_COMPONENTS
+  kind start
+  occurred_at 2026-09-01T11:13:38+09:00
+  planned_value 3p
+
+work_event WE-564991720e979b902e74392b8f49d6864caa6998e58143d94b64e401bdf0ec52:
+  model 1
+  task T_CANONICAL_COMPONENTS
+  kind finish
+  occurred_at 2026-09-01T11:19:28+09:00
+
+work_event WE-5f744000201cbf6cd061fc2d6e92706eb7b95cc11ff379ca2c3a4734f9206de6:
+  model 1
+  task T_GC_SEMANTIC_EMPTY
+  kind start
+  occurred_at 2026-09-01T11:19:28+09:00
+  planned_value 2p
+
+work_event WE-089868b43e01b7b42738f52ad8099689bd0249f84d560a0d97d0c12b92871e40:
+  model 1
+  task T_GC_SEMANTIC_EMPTY
+  kind finish
+  occurred_at 2026-09-01T11:23:55+09:00
+
+work_event WE-f4b6d044c7304e002efdd1630b6357ff923edcdd15291156b756bf731b889966:
+  model 1
+  task T_V2_EMPTY_SKELETON
+  kind start
+  occurred_at 2026-09-01T11:23:55+09:00
+  planned_value 1p
+
+work_event WE-204ccc5e49703c56c8b15d4c2797f99cb1134d1fbe269f34b4103d1ff91dcd84:
+  model 1
+  task T_V2_EMPTY_SKELETON
+  kind finish
+  occurred_at 2026-09-01T11:23:55+09:00
+
+work_event WE-dd0143787b9d4b841ec6713553afd8ea5c5bef539699245133ca5beddea49e2e:
+  model 1
+  task T_FOCUSED_REGRESSIONS
+  kind start
+  occurred_at 2026-09-01T11:24:26+09:00
+  planned_value 3p
+
+work_event WE-032ff4c02908c7783f67a0ccf80bfb4bd8da06272bbbcc44711db54524fbeb42:
+  model 1
+  task T_FOCUSED_REGRESSIONS
+  kind finish
+  occurred_at 2026-09-01T11:24:26+09:00
+
+work_event WE-6bb88337070c2589b3adde1a80bab9d3c17e206c171715cb30d5fe667dd10b0d:
+  model 1
+  task T_ACCEPTANCE
+  kind start
+  occurred_at 2026-09-01T11:26:01+09:00
+  planned_value 2p
+
+work_event WE-5e7f53a5c43b895eade5309eae3d0687ef1377fcb49babcc2d71253c64418060:
+  model 1
+  task T_ACCEPTANCE
+  kind finish
+  occurred_at 2026-09-01T11:41:32+09:00

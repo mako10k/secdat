@@ -612,6 +612,31 @@ static int secdat_unescape_component(const char *input, char **output)
     return 0;
 }
 
+static int secdat_unescape_canonical_component(
+    const char *input,
+    char **output
+)
+{
+    char *canonical = NULL;
+    int result = 1;
+
+    *output = NULL;
+    if (secdat_unescape_component(input, output) != 0
+        || secdat_escape_component(*output, &canonical) != 0
+        || strcmp(canonical, input) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(canonical);
+    if (result != 0) {
+        free(*output);
+        *output = NULL;
+    }
+    return result;
+}
+
 static int secdat_join_path(char *buffer, size_t size, const char *left, const char *right)
 {
     int written;
@@ -1274,7 +1299,11 @@ static int secdat_collect_registered_roots(struct secdat_string_list *roots)
             continue;
         }
 
-        if (secdat_unescape_component(entry->d_name, &decoded_root) != 0) {
+        if (secdat_unescape_canonical_component(
+                entry->d_name,
+                &decoded_root
+            ) != 0) {
+            fprintf(stderr, _("invalid path: %s\n"), entry->d_name);
             closedir(directory);
             return 1;
         }

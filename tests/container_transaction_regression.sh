@@ -16,6 +16,7 @@ mkdir -p "$XDG_RUNTIME_DIR" "$XDG_DATA_HOME"
 python3 - "$bin_path" "$work_root" <<'PY'
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -124,6 +125,94 @@ if (
     fail(f"unknown store artifact was not rejected before mutation: {blocked_store}")
 unknown.unlink()
 require_ok(run("--dir", str(root), "store", "delete", "app"), "store delete")
+
+# Canonical escaped store names remain usable, while noncanonical aliases fail
+# closed before listing or deletion can reinterpret them as another store.
+require_ok(
+    run("--dir", str(root), "store", "create", "ops/team"),
+    "escaped store create",
+)
+require_ok(
+    run("--dir", str(root), "store", "ls"),
+    "escaped store list",
+    "default\nops/team\n",
+)
+require_ok(
+    run("--dir", str(root), "store", "delete", "ops/team"),
+    "escaped store delete",
+)
+noncanonical_store = domain_data / "stores/%41pp"
+shutil.copytree(domain_data / "stores/default", noncanonical_store)
+noncanonical_store_list = run("--dir", str(root), "store", "ls")
+if (
+    noncanonical_store_list.returncode == 0
+    or "invalid path: %41pp" not in noncanonical_store_list.stderr
+    or noncanonical_store_list.stdout
+    or not noncanonical_store.is_dir()
+):
+    fail(f"noncanonical store alias was accepted: {noncanonical_store_list}")
+noncanonical_store_delete = run("--dir", str(root), "domain", "delete")
+if (
+    noncanonical_store_delete.returncode == 0
+    or "domain is not empty:" not in noncanonical_store_delete.stderr
+    or not noncanonical_store.is_dir()
+    or not domain_data.is_dir()
+    or len(registry_files()) != 1
+):
+    fail(
+        "noncanonical store alias was deleted or treated as empty: "
+        f"{noncanonical_store_delete}"
+    )
+shutil.rmtree(noncanonical_store)
+
+# Registry aliases must not be decoded to a canonical root and then left
+# behind after the canonical registration is removed.
+canonical_registry = registry_files()[0]
+noncanonical_registry_name = canonical_registry.name.replace("%2F", "%2f", 1)
+if noncanonical_registry_name == canonical_registry.name:
+    fail(f"registry path did not contain a canonical escape: {canonical_registry}")
+noncanonical_registry = canonical_registry.with_name(noncanonical_registry_name)
+noncanonical_registry.write_bytes(canonical_registry.read_bytes())
+noncanonical_registry.chmod(0o600)
+noncanonical_domain_list = run("--dir", str(root), "domain", "ls", "--json")
+if (
+    noncanonical_domain_list.returncode == 0
+    or f"invalid path: {noncanonical_registry_name}" not in noncanonical_domain_list.stderr
+    or not noncanonical_registry.is_file()
+):
+    fail(f"noncanonical registry alias was accepted: {noncanonical_domain_list}")
+noncanonical_registry_delete = run("--dir", str(root), "domain", "delete")
+if (
+    noncanonical_registry_delete.returncode == 0
+    or f"invalid path: {noncanonical_registry_name}" not in noncanonical_registry_delete.stderr
+    or not domain_data.is_dir()
+    or len(registry_files()) != 2
+):
+    fail(
+        "noncanonical registry alias was orphaned by deletion: "
+        f"{noncanonical_registry_delete}"
+    )
+noncanonical_registry.unlink()
+
+# Persisted v1 key components also require exact canonical bytes. A redundant
+# escape must neither produce a phantom key nor be removed as a canonical key.
+require_ok(run("--dir", str(root), "set", "AB", "--value", "alias"), "key alias seed")
+canonical_entry = domain_data / "stores/default/entries/AB.sec"
+noncanonical_entry = canonical_entry.with_name("%41B.sec")
+canonical_entry.rename(noncanonical_entry)
+noncanonical_key_list = run("--dir", str(root), "ls")
+if (
+    noncanonical_key_list.returncode == 0
+    or "invalid path: %41B.sec" not in noncanonical_key_list.stderr
+    or noncanonical_key_list.stdout
+    or not noncanonical_entry.is_file()
+):
+    fail(f"noncanonical key alias was accepted: {noncanonical_key_list}")
+canonical_entry_get = run("--dir", str(root), "get", "AB")
+if canonical_entry_get.returncode == 0 or not noncanonical_entry.is_file():
+    fail(f"canonical key lookup consumed its alias: {canonical_entry_get}")
+noncanonical_entry.rename(canonical_entry)
+require_ok(run("--dir", str(root), "rm", "AB"), "key alias cleanup")
 
 epoch_before = epoch_path.read_bytes()
 unknown = domain_data / "unknown"

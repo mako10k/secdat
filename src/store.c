@@ -4715,6 +4715,31 @@ static int secdat_unescape_component(const char *input, char **output)
     return 0;
 }
 
+static int secdat_unescape_canonical_component(
+    const char *input,
+    char **output
+)
+{
+    char *canonical = NULL;
+    int result = 1;
+
+    *output = NULL;
+    if (secdat_unescape_component(input, output) != 0
+        || secdat_escape_component(*output, &canonical) != 0
+        || strcmp(canonical, input) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(canonical);
+    if (result != 0) {
+        free(*output);
+        *output = NULL;
+    }
+    return result;
+}
+
 static const char *secdat_overlay_dump_encode_component(const char *input)
 {
     return input != NULL && input[0] != '\0' ? input : "%";
@@ -13868,7 +13893,11 @@ static int secdat_collect_directory_keys(const char *directory_path, const char 
 
         memcpy(encoded_name, entry->d_name, name_length - suffix_length);
         encoded_name[name_length - suffix_length] = '\0';
-        if (secdat_unescape_component(encoded_name, &decoded_name) != 0) {
+        if (secdat_unescape_canonical_component(
+                encoded_name,
+                &decoded_name
+            ) != 0) {
+            fprintf(stderr, _("invalid path: %s\n"), entry->d_name);
             status = 1;
             break;
         }
@@ -13915,7 +13944,11 @@ static int secdat_collect_directory_keys(const char *directory_path, const char 
             }
             memcpy(encoded_name, basename, name_length - suffix_length);
             encoded_name[name_length - suffix_length] = '\0';
-            if (secdat_unescape_component(encoded_name, &decoded_name) != 0) {
+            if (secdat_unescape_canonical_component(
+                    encoded_name,
+                    &decoded_name
+                ) != 0) {
+                fprintf(stderr, _("invalid path: %s\n"), basename);
                 status = 1;
                 break;
             }
@@ -19695,19 +19728,18 @@ static void secdat_transaction_reset(struct secdat_transaction *transaction)
 static int secdat_transaction_gc_store_name_is_valid(const char *escaped_store)
 {
     char *decoded_store = NULL;
-    char *canonical_store = NULL;
     int valid = 0;
 
     if (escaped_store != NULL
         && escaped_store[0] != '\0'
-        && secdat_unescape_component(escaped_store, &decoded_store) == 0
-        && decoded_store[0] != '\0'
-        && secdat_escape_component(decoded_store, &canonical_store) == 0
-        && strcmp(canonical_store, escaped_store) == 0) {
+        && secdat_unescape_canonical_component(
+            escaped_store,
+            &decoded_store
+        ) == 0
+        && decoded_store[0] != '\0') {
         valid = 1;
     }
     free(decoded_store);
-    free(canonical_store);
     return valid;
 }
 
@@ -20286,8 +20318,7 @@ static int secdat_container_validate_empty_store(
         "relations", "masks", "format",
     };
     static const char *const v2_required[] = {
-        "entries", "tombstones", "domain-ent", "objects", "key-meta",
-        "relations", "format",
+        "entries", "tombstones", "domain-ent", "objects", "format",
     };
     char path[PATH_MAX];
     const char *const *allowed;
@@ -20412,22 +20443,35 @@ static int secdat_container_validate_named_store(
 )
 {
     char store_path[PATH_MAX];
+    char *decoded_name = NULL;
     const char *schema = NULL;
+    int result = 1;
 
-    if (strcmp(name, "default") == 0) {
+    if (secdat_unescape_canonical_component(name, &decoded_name) != 0
+        || decoded_name[0] == '\0'
+        || strchr(name, '/') != NULL
+        || strcmp(name, ".") == 0
+        || strcmp(name, "..") == 0) {
+        goto cleanup;
+    }
+    if (strcmp(decoded_name, "default") == 0) {
         *found_default = 1;
     }
-    return strchr(name, '/') != NULL
-        || strcmp(name, ".") == 0
-        || strcmp(name, "..") == 0
-        || secdat_join_path(
+    if (secdat_join_path(
             store_path,
             sizeof(store_path),
             stores_path,
             name
         ) != 0
         || secdat_container_detect_store_schema(store_path, &schema) != 0
-        || secdat_container_validate_empty_store(store_path, schema) != 0;
+        || secdat_container_validate_empty_store(store_path, schema) != 0) {
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    free(decoded_name);
+    return result;
 }
 
 static int secdat_container_validate_empty_domain(const char *root)
@@ -32105,21 +32149,20 @@ static int secdat_gc_store_component_is_canonical(
     char **decoded_store
 )
 {
-    char *canonical = NULL;
     int result = 1;
 
     *decoded_store = NULL;
     if (escaped_store[0] == '\0'
-        || secdat_unescape_component(escaped_store, decoded_store) != 0
-        || (*decoded_store)[0] == '\0'
-        || secdat_escape_component(*decoded_store, &canonical) != 0
-        || strcmp(canonical, escaped_store) != 0) {
+        || secdat_unescape_canonical_component(
+            escaped_store,
+            decoded_store
+        ) != 0
+        || (*decoded_store)[0] == '\0') {
         goto cleanup;
     }
     result = 0;
 
 cleanup:
-    free(canonical);
     if (result != 0) {
         free(*decoded_store);
         *decoded_store = NULL;
@@ -33998,7 +34041,10 @@ static int secdat_gc_owner_queue_is_empty(
     }
     for (index = 0; index < sizeof(subtrees) / sizeof(subtrees[0]); index += 1) {
         char path[PATH_MAX];
-        int subtree_empty = 0;
+        DIR *directory = NULL;
+        struct dirent *entry;
+        int exists = 0;
+        int subtree_empty = 1;
 
         if (snprintf(
                 path,
@@ -34008,10 +34054,50 @@ static int secdat_gc_owner_queue_is_empty(
                 subtrees[index],
                 owner_domain_id
             ) >= (int)sizeof(path)
-            || secdat_gc_directory_is_secure_and_empty(
+            || secdat_gc_open_secure_directory(
                 path,
-                &subtree_empty
+                &directory,
+                &exists
             ) != 0) {
+            return 1;
+        }
+        if (!exists) {
+            continue;
+        }
+        while ((entry = readdir(directory)) != NULL) {
+            char shard_path[PATH_MAX];
+            char *store_name = NULL;
+            int shard_empty = 0;
+
+            if (strcmp(entry->d_name, ".") == 0
+                || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+            if (secdat_gc_store_component_is_canonical(
+                    entry->d_name,
+                    &store_name
+                ) != 0
+                || secdat_join_path(
+                    shard_path,
+                    sizeof(shard_path),
+                    path,
+                    entry->d_name
+                ) != 0
+                || secdat_gc_directory_is_secure_and_empty(
+                    shard_path,
+                    &shard_empty
+                ) != 0) {
+                free(store_name);
+                closedir(directory);
+                return 1;
+            }
+            free(store_name);
+            if (!shard_empty) {
+                subtree_empty = 0;
+                break;
+            }
+        }
+        if (closedir(directory) != 0) {
             return 1;
         }
         if (!subtree_empty) {
@@ -44020,7 +44106,11 @@ static int secdat_collect_store_names(const char *domain_id, const char *pattern
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
-        if (secdat_unescape_component(entry->d_name, &decoded_name) != 0) {
+        if (secdat_unescape_canonical_component(
+                entry->d_name,
+                &decoded_name
+            ) != 0) {
+            fprintf(stderr, _("invalid path: %s\n"), entry->d_name);
             closedir(directory);
             return 1;
         }
