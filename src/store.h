@@ -1,3 +1,4 @@
+/* R: Expose the store command and metadata interfaces to CLI consumers. */
 #ifndef SECDAT_STORE_H
 #define SECDAT_STORE_H
 
@@ -37,6 +38,13 @@ struct secdat_domain_status_summary {
 };
 
 int secdat_run_command(const struct secdat_cli *cli);
+int secdat_print_completion_stores(
+    const char *dir_override,
+    const char *domain_override,
+    const char *prefix,
+    int local_only,
+    const char *leader
+);
 int secdat_print_completion_keys(
 	const char *dir_override,
 	const char *domain_override,

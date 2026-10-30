@@ -1,3 +1,4 @@
+/* R: Parse the secdat command surface and produce contextual help and completion. */
 #include "cli.h"
 
 #include "exec_inject.h"
@@ -798,6 +799,34 @@ static void secdat_cli_completion_print_candidates(const char *current, const ch
     }
 }
 
+struct secdat_completion_context {
+    const char *dir;
+    const char *domain;
+    const char *store;
+    int next;
+};
+
+static struct secdat_completion_context secdat_cli_completion_context(int argc, char **argv)
+{
+    struct secdat_completion_context context = {0};
+    int index = 0;
+    /* Leave the current word and a pending value option to the caller. */
+    while (index + 2 < argc
+        && secdat_cli_completion_is_global_option_with_value(argv[index])) {
+        const char *token = argv[index];
+        if (strcmp(token, "--dir") == 0 || strcmp(token, "-d") == 0) {
+            context.dir = argv[index + 1];
+        } else if (strcmp(token, "--domain") == 0) {
+            context.domain = argv[index + 1];
+        } else {
+            context.store = argv[index + 1];
+        }
+        index += 2;
+    }
+    context.next = index;
+    return context;
+}
+
 static void secdat_cli_completion_print_keys(
     int argc,
     char **argv,
@@ -805,33 +834,8 @@ static void secdat_cli_completion_print_keys(
     int append_equals
 )
 {
-    const char *dir = NULL;
-    const char *domain = NULL;
-    const char *store = NULL;
-    int index;
-
-    for (index = 0; index + 1 < argc; index += 1) {
-        const char *token = argv[index];
-
-        if (strcmp(token, "--dir") == 0 || strcmp(token, "-d") == 0) {
-            if (index + 1 < argc - 1) {
-                dir = argv[index + 1];
-            }
-            index += 1;
-        } else if (strcmp(token, "--domain") == 0) {
-            if (index + 1 < argc - 1) {
-                domain = argv[index + 1];
-            }
-            index += 1;
-        } else if (strcmp(token, "--store") == 0 || strcmp(token, "-s") == 0) {
-            if (index + 1 < argc - 1) {
-                store = argv[index + 1];
-            }
-            index += 1;
-        }
-    }
-
-    (void)secdat_print_completion_keys(dir, domain, store, current, append_equals);
+    struct secdat_completion_context context = secdat_cli_completion_context(argc, argv);
+    (void)secdat_print_completion_keys(context.dir, context.domain, context.store, current, append_equals);
 }
 
 static void secdat_cli_completion_print_destination_key(
@@ -841,39 +845,8 @@ static void secdat_cli_completion_print_destination_key(
     const char *current
 )
 {
-    const char *dir = NULL;
-    const char *domain = NULL;
-    const char *store = NULL;
-    int index;
-
-    for (index = 0; index + 1 < argc; index += 1) {
-        const char *token = argv[index];
-
-        if (strcmp(token, "--dir") == 0 || strcmp(token, "-d") == 0) {
-            if (index + 1 < argc - 1) {
-                dir = argv[index + 1];
-            }
-            index += 1;
-        } else if (strcmp(token, "--domain") == 0) {
-            if (index + 1 < argc - 1) {
-                domain = argv[index + 1];
-            }
-            index += 1;
-        } else if (strcmp(token, "--store") == 0 || strcmp(token, "-s") == 0) {
-            if (index + 1 < argc - 1) {
-                store = argv[index + 1];
-            }
-            index += 1;
-        }
-    }
-
-    (void)secdat_print_completion_destination_key(
-        dir,
-        domain,
-        store,
-        source,
-        current
-    );
+    struct secdat_completion_context context = secdat_cli_completion_context(argc, argv);
+    (void)secdat_print_completion_destination_key(context.dir, context.domain, context.store, source, current);
 }
 
 static void secdat_cli_completion_print_top_level_commands(const char *current)
@@ -1240,7 +1213,80 @@ static const char *secdat_cli_completion_first_positional(
     return NULL;
 }
 
-int secdat_cli_complete(int argc, char **argv)
+/* Classify only options belonging to the chosen management command. */
+static int secdat_cli_completion_store_option(const char *subcommand, const char *token)
+{
+    const char *format_option = strcmp(subcommand, "migrate") == 0 ? "--to-format" : "--from-format";
+    size_t length = strlen(format_option);
+    if (strcmp(token, format_option) == 0) {
+        return 2;
+    }
+    if (strcmp(token, "--dry-run") == 0
+        || (strncmp(token, format_option, length) == 0 && token[length] == '=')) {
+        return 1;
+    }
+    return 0;
+}
+
+static int secdat_cli_completion_is_store_operand(int argc, char **argv, int index)
+{
+    const char *subcommand = argv[index + 1];
+    const char *current = argv[argc - 1];
+    int end_options = 0;
+    int positional = 0;
+
+    if (strcmp(subcommand, "delete") == 0) {
+        return index + 2 == argc - 1;
+    }
+    if (strcmp(subcommand, "migrate") != 0 && strcmp(subcommand, "finalize-migration") != 0) {
+        return 0;
+    }
+    for (index += 2; index + 1 < argc; index += 1) {
+        const char *token = argv[index];
+        int option = end_options ? 0 : secdat_cli_completion_store_option(subcommand, token);
+        if (!end_options && strcmp(token, "--") == 0) {
+            end_options = 1;
+        } else if (option == 2) {
+            if (index + 1 == argc - 1) {
+                return 0;
+            }
+            index += 1;
+        } else if (option == 1) {
+            continue;
+        } else {
+            positional += 1;
+        }
+    }
+    return positional == 0 && (end_options || current[0] != '-');
+}
+
+/* Store selection follows lookup inheritance; management operands are local. */
+static int secdat_cli_completion_stores(int argc, char **argv, const char *leader)
+{
+    struct secdat_completion_context context = secdat_cli_completion_context(argc, argv);
+    const char *current = argc > 0 ? argv[argc - 1] : "";
+    int index = context.next;
+    int local = 0;
+
+    if (index + 1 == argc - 1
+        && (strcmp(argv[index], "--store") == 0 || strcmp(argv[index], "-s") == 0)) {
+        goto print;
+    }
+    if (index + 1 < argc && strcmp(argv[index], "--") == 0) {
+        index += 1;
+    }
+    if (index + 2 >= argc || strcmp(argv[index], "store") != 0
+        || !secdat_cli_completion_is_store_operand(argc, argv, index)) {
+        return 0;
+    }
+    local = 1;
+print:
+    secdat_cli_completion_print_mode("store", 0);
+    (void)secdat_print_completion_stores(context.dir, context.domain, current, local, leader);
+    return 1;
+}
+
+static int secdat_cli_complete_normalized(int argc, char **argv, const char *store_leader, const int *original_index)
 {
     static const char *const global_options[] = {
         "--dir", "-d", "--domain", "--store", "-s", "--help", "-h", "--version", "-V", NULL,
@@ -1361,6 +1407,9 @@ int secdat_cli_complete(int argc, char **argv)
     int delegate_offset = 0;
     int exec_command_index;
 
+    if (secdat_cli_completion_stores(argc, argv, store_leader)) {
+        return 0;
+    }
     secdat_cli_completion_parse_context(argc, argv, &command, &subcommand, &current, &previous);
     mode = secdat_cli_completion_command_prev_option_mode(command, subcommand, previous);
     if (command != NULL && strcmp(command, "save") == 0 && current[0] == '-') {
@@ -1377,6 +1426,9 @@ int secdat_cli_complete(int argc, char **argv)
                 mode = "command";
             }
         }
+    }
+    if (strcmp(mode, "delegate") == 0 && delegate_offset > 0) {
+        delegate_offset = original_index[delegate_offset - 1] + 1;
     }
     secdat_cli_completion_print_mode(mode, delegate_offset);
 
@@ -1501,6 +1553,65 @@ int secdat_cli_complete(int argc, char **argv)
     }
 
     return 0;
+}
+
+static void secdat_cli_completion_attached_option(const char *token, const char **option, size_t *offset)
+{
+    if (strncmp(token, "--store=", 8) == 0) {
+        *option = "--store";
+        *offset = 8;
+    } else if (strncmp(token, "--domain=", 9) == 0) {
+        *option = "--domain";
+        *offset = 9;
+    } else if (strncmp(token, "--dir=", 6) == 0) {
+        *option = "--dir";
+        *offset = 6;
+    } else if (token[0] == '-' && token[1] != '\0' && token[2] != '\0'
+        && (token[1] == 's' || token[1] == 'd')) {
+        *option = token[1] == 's' ? "-s" : "-d";
+        *offset = 2;
+    }
+}
+
+/* Normalize attached global values once, before command/operand parsing. */
+int secdat_cli_complete(int argc, char **argv)
+{
+    char *words[2 * (size_t)argc + 1];
+    int original_index[2 * (size_t)argc + 1];
+    const char *leader = "";
+    int count = 0;
+    int index = 0;
+
+    while (index < argc) {
+        char *token = argv[index];
+        const char *option = NULL;
+        size_t offset = 0;
+        secdat_cli_completion_attached_option(token, &option, &offset);
+        if (option != NULL) {
+            original_index[count] = index;
+            words[count++] = (char *)option;
+            original_index[count] = index;
+            words[count++] = token + offset;
+            if (index == argc - 1 && (strcmp(option, "--store") == 0 || strcmp(option, "-s") == 0)) {
+                leader = offset == 8 ? "--store=" : "-s";
+            }
+            index += 1;
+        } else if (secdat_cli_completion_is_global_option_with_value(token)) {
+            original_index[count] = index;
+            words[count++] = argv[index++];
+            if (index < argc) {
+                original_index[count] = index;
+                words[count++] = argv[index++];
+            }
+        } else {
+            break;
+        }
+    }
+    while (index < argc) {
+        original_index[count] = index;
+        words[count++] = argv[index++];
+    }
+    return secdat_cli_complete_normalized(count, words, leader, original_index);
 }
 
 enum secdat_command_type secdat_cli_parse_command_name(const char *name)
@@ -1837,6 +1948,7 @@ static void secdat_cli_print_shell_routes(const char *program_name)
         secdat_cli_print_detail_line(buffer);
     }
     secdat_cli_print_detail_line(_("  bash completion script: completions/secdat.bash\n"));
+    secdat_cli_print_detail_line(_("  store-name completion: --store includes inherited stores; store management operands are local\n"));
     secdat_cli_print_detail_line(_("  man page source: docs/secdat.1\n"));
 }
 

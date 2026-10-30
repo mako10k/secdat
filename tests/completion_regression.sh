@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# R: Verify command-aware completion candidates and their Bash insertion contract.
 set -euo pipefail
 
 bin_path="${1:-./src/secdat}"
@@ -19,12 +20,18 @@ fail() {
 }
 
 python3 - "$bin_path" "$completion_script" <<'PY'
+import hashlib
 import os
+import pty
+import select
+import shlex
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 
-bin_path = sys.argv[1]
+bin_path = os.path.abspath(sys.argv[1])
 completion_script = sys.argv[2]
 
 
@@ -37,7 +44,13 @@ def parse_completion_lines(lines, label):
     if len(lines) > start and lines[start].startswith("__secdat_completion_offset="):
         offset = int(lines[start].split("=", 1)[1])
         start += 1
-    return mode, lines[start:], offset
+    values = lines[start:]
+    if mode == "store":
+        try:
+            values = [bytes.fromhex(value).decode("utf-8") for value in values]
+        except (ValueError, UnicodeDecodeError) as error:
+            raise SystemExit(f"FAIL: invalid encoded store candidate for {label}: {error}")
+    return mode, values, offset
 
 
 def run_completion(*words):
@@ -389,6 +402,23 @@ mode, values, offset = run_completion("exec", "--inject", "secret:only=APP_", "-
 if mode != "delegate" or values or offset != 5:
     raise SystemExit(f"FAIL: exec child option completion should delegate: mode={mode!r} values={values!r} offset={offset!r}")
 
+for words, expected_offset in [
+    (["-d/tmp", "exec", "--", "printf", ""], 4),
+    (["--dir=/tmp", "exec", "--", "printf", ""], 4),
+    (["--domain=/tmp", "exec", "--", "printf", ""], 4),
+    (["-sdefault", "exec", "--", "printf", ""], 4),
+    (["--store=default", "exec", "--", "printf", ""], 4),
+    (["-d/tmp", "-sdefault", "exec", "--", "printf", ""], 5),
+    (["-d/tmp", "exec", "--", "printf", "foo", "=", "bar", ""], 4),
+    (["-d/tmp", "exec", "--", "printf", "foo", ":", "bar", ""], 4),
+]:
+    mode, values, offset = run_completion(*words)
+    if mode != "delegate" or values or offset != expected_offset:
+        raise SystemExit(
+            f"FAIL: attached global option changed child offset for {words!r}: "
+            f"mode={mode!r} values={values!r} offset={offset!r} expected={expected_offset}"
+        )
+
 for unexpected in ["--inject", "--bulk-gate", "--dry-run"]:
     mode, values, offset = run_completion("exec", "--inject", "secret:only=APP_", "--", "")
     if unexpected in values:
@@ -443,7 +473,7 @@ if mode != "dir" or values:
     raise SystemExit(f"FAIL: --domain completion mode mismatch: mode={mode!r} values={values!r}")
 
 mode, values, _ = run_completion("--store", "")
-if mode != "none" or values:
+if mode != "store":
     raise SystemExit(f"FAIL: --store completion mode mismatch: mode={mode!r} values={values!r}")
 
 mode, values, _ = run_completion("save", "")
@@ -488,17 +518,385 @@ literal_get = subprocess.run([bin_path, "--dir", literal_dir, "__completion"], c
 if literal_get.returncode != 0 or literal_get.stdout != "literal-value":
     raise SystemExit(f"FAIL: bare __completion no longer falls back to get: rc={literal_get.returncode} stdout={literal_get.stdout!r} stderr={literal_get.stderr!r}")
 
-def run_scoped_completion(*words):
+def run_scoped_completion(*words, environment=None, cwd=None):
     completed = subprocess.run(
         [bin_path, "__completion", "--bash", *words],
         text=True,
         capture_output=True,
-        env=env,
+        env=env if environment is None else environment,
+        cwd=cwd,
         check=False,
     )
     if completed.returncode != 0:
         raise SystemExit(f"FAIL: scoped __completion failed for {words!r}: rc={completed.returncode} stderr={completed.stderr!r}")
     return parse_completion_lines(completed.stdout.splitlines(), words)
+
+
+# Store candidates are namespace metadata. Keep inherited/local scopes
+# distinct, and exercise the real shell wrapper as well as its wire protocol.
+def create_store(directory, name):
+    subprocess.run(
+        [bin_path, "--dir", directory, "store", "create", name],
+        check=True, capture_output=True, text=True, env=env,
+    )
+
+
+parent_stores = ["cstore-parent", "cstore-shared"]
+child_stores = ["cstore-child", "cstore-shared", "cstore-empty", "cstore-v2"]
+shell_eval_marker = os.path.join(work_root, "completion-evaluated")
+special_stores = [
+    "cstore-space name", "cstore-日本語", "cstore-slash/name",
+    "cstore-new\nline", "cstore-trailing\n", "cstore-tab\tname",
+    "cstore-quote'\"\\name", f"cstore-$(touch {shell_eval_marker});*?[]",
+    "cstore-colon:name", "cstore-equals=name",
+    "cstore-ansi'quote\nend", "cstore-control\x01end",
+]
+for name in parent_stores:
+    create_store(literal_dir, name)
+for name in child_stores + special_stores:
+    create_store(literal_child, name)
+create_store(literal_child, "-cstore-dash")
+create_store(space_domain, "cstore-unrelated")
+subprocess.run(
+    [bin_path, "--dir", literal_child, "store", "migrate", "cstore-v2", "--to-format", "v2"],
+    check=True, capture_output=True, text=True, env=env,
+)
+
+local_store_names = sorted(set(child_stores + special_stores))
+effective_store_names = sorted(set(local_store_names + parent_stores))
+
+
+def assert_store_candidates(words, expected, *, environment=None, cwd=None):
+    mode, values, _ = run_scoped_completion(*words, environment=environment, cwd=cwd)
+    if mode != "store" or values != expected:
+        raise SystemExit(
+            f"FAIL: store completion for {words!r}: mode={mode!r} "
+            f"values={values!r} expected={expected!r}"
+        )
+
+
+for scope in [
+    ["--dir", literal_child], ["-d", literal_child], ["--domain", literal_child],
+    [f"--dir={literal_child}"], [f"-d{literal_child}"], [f"--domain={literal_child}"],
+]:
+    for option in ["--store", "-s"]:
+        assert_store_candidates([*scope, option, "cstore-"], effective_store_names)
+    assert_store_candidates(
+        [*scope, "--store=cstore-"], [f"--store={name}" for name in effective_store_names]
+    )
+    assert_store_candidates([*scope, "-scstore-"], [f"-s{name}" for name in effective_store_names])
+    for command in ["delete", "migrate", "finalize-migration"]:
+        assert_store_candidates([*scope, "store", command, "cstore-"], local_store_names)
+
+assert_store_candidates(["--store", "cstore-"], effective_store_names, cwd=literal_child)
+unregistered_child = os.path.join(literal_child, "unregistered-child")
+os.makedirs(unregistered_child)
+assert_store_candidates(["--dir", unregistered_child, "--store", "cstore-"], effective_store_names)
+assert_store_candidates(
+    ["--dir", unregistered_child, "store", "delete", "cstore-"], local_store_names
+)
+assert_store_candidates(["--dir", work_root, "--store", "cstore-"], [])
+assert_store_candidates(["--dir", literal_child, "--store", "cstore-ch"], ["cstore-child"])
+assert_store_candidates(["--dir", literal_child, "--store", "absent-"], [])
+assert_store_candidates(["--dir", literal_child, "store", "delete", "-cstore-"], ["-cstore-dash"])
+assert_store_candidates(["--dir", os.path.join(work_root, "missing"), "--store", "cstore-"], [])
+assert_store_candidates(["--dir", literal_child, "--domain", literal_dir, "--store", "cstore-"], [])
+assert_store_candidates(
+    ["--dir", space_domain, "--store", "cstore-"], ["cstore-unrelated"]
+)
+
+for command, option, value in [
+    ("migrate", "--to-format", "v2"),
+    ("finalize-migration", "--from-format", "v1"),
+]:
+    for options in [[option, value], [f"{option}={value}"], ["--dry-run", option, value]]:
+        assert_store_candidates(
+            ["--dir", literal_child, "store", command, *options, "cstore-"], local_store_names
+        )
+    mode, values, _ = run_scoped_completion("--dir", literal_child, "store", command, option, "")
+    if mode == "store" or any(value.startswith("cstore-") for value in values):
+        raise SystemExit(f"FAIL: {option} value mistaken for store operand: {mode!r} {values!r}")
+
+for words in [
+    ["store", "create", "cstore-"], ["store", "ls", "cstore-"],
+    ["store", "delete", "cstore-child", "cstore-"],
+    ["store", "migrate", "cstore-child", "--to-format", "v2", "cstore-"],
+    ["store", "finalize-migration", "cstore-child", "--from-format", "v1", "cstore-"],
+    ["get", "--store", "cstore-"], ["set", "KEY", "--store", "cstore-"],
+    ["help", "store", "delete", "cstore-"],
+    ["exec", "--", "printf", "--store", "cstore-"],
+]:
+    mode, values, _ = run_scoped_completion("--dir", literal_child, *words)
+    if mode == "store" or any(value.startswith("cstore-") for value in values):
+        raise SystemExit(f"FAIL: store candidates escaped operand boundary for {words!r}: {mode!r} {values!r}")
+
+
+def shell_quote_candidates(values):
+    completed = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-c", 'printf "%q\\0" "$@"', "quote-test", *values],
+        capture_output=True, check=True, env=env,
+    )
+    return [value.decode("utf-8") for value in completed.stdout.split(b"\0")[:-1]]
+
+
+def bash_store_candidates(words, *, cword=None, cwd=None, environment=None, line=None, point=None):
+    # Pass words as positional parameters instead of embedding shell syntax.
+    # NUL output preserves names containing whitespace, newlines and quotes.
+    completed = subprocess.run(
+        [
+            "bash", "--noprofile", "--norc", "-c",
+            'source "$1"; export SECDAT_COMPLETION_BIN="$2"; '
+            'COMP_CWORD=$3; COMP_LINE=$4; COMP_POINT=$5; '
+            'if [[ $COMP_LINE ]]; then COMP_POINT=${COMP_POINT:-${#COMP_LINE}}; else unset COMP_LINE COMP_POINT; fi; '
+            'shift 5; COMP_WORDS=("$@"); '
+            '_comp_command_offset() { COMPREPLY=("delegate-offset:$1"); }; '
+            '_secdat_complete; '
+            'if ((${#COMPREPLY[@]})); then printf "%s\\0" "${COMPREPLY[@]}"; fi',
+            "completion-test", completion_script, bin_path,
+            str(len(words) - 1 if cword is None else cword), "" if line is None else line,
+            "" if point is None else str(point), *words,
+        ],
+        capture_output=True, env=env if environment is None else environment, cwd=cwd,
+    )
+    if completed.returncode != 0:
+        raise SystemExit(f"FAIL: Bash store completion failed for {words!r}: {completed.stderr!r}")
+    return [value.decode("utf-8") for value in completed.stdout.split(b"\0")[:-1]]
+
+
+for option in ["--store", "-s"]:
+    words = ["secdat", "--dir", literal_child, option, "cstore-"]
+    values = bash_store_candidates(words)
+    if values != shell_quote_candidates(effective_store_names):
+        raise SystemExit(f"FAIL: Bash {option} store candidates: {values!r}")
+    # A later token must not change the target or turn the cursor into a
+    # different operand. This also protects completion during line editing.
+    values = bash_store_candidates([*words, "--dir", space_domain, "get", "KEY"], cword=4)
+    if values != shell_quote_candidates(effective_store_names):
+        raise SystemExit(f"FAIL: Bash cursor-middle {option} completion: {values!r}")
+
+middle_line = f"secdat --dir {literal_child} --store cstore-chsuffix get KEY"
+middle_prefix = f"secdat --dir {literal_child} --store cstore-ch"
+values = bash_store_candidates(
+    ["secdat", "--dir", literal_child, "--store", "cstore-chsuffix", "get", "KEY"],
+    cword=4, line=middle_line, point=len(middle_prefix),
+)
+if values != shell_quote_candidates(["cstore-child"]):
+    raise SystemExit(f"FAIL: Bash completion consumed the suffix after the cursor: {values!r}")
+
+# Bash normally puts '=' in COMP_WORDBREAKS. Cover both its split words and
+# the unsplit representation used when users customize that variable.
+for words, expected, suffix in [
+    (["--store", "=", "cstore-"], effective_store_names, "--store=cstore-"),
+    (["--store", "=", ""], ["-cstore-dash", "default", *effective_store_names, "team"], "--store="),
+    (["--store=cstore-"], [f"--store={name}" for name in effective_store_names], "--store=cstore-"),
+    (["-scstore-"], [f"-s{name}" for name in effective_store_names], "-scstore-"),
+]:
+    values = bash_store_candidates(
+        ["secdat", "--dir", literal_child, *words],
+        line=f"secdat --dir {literal_child} {suffix}",
+    )
+    if values != shell_quote_candidates(sorted(expected)):
+        raise SystemExit(f"FAIL: Bash attached option {words!r}: {values!r} expected={sorted(expected)!r}")
+
+for words in [
+    ["secdat", "--dir", "=", literal_child, "--store", "cstore-"],
+    ["secdat", "--domain", "=", literal_child, "--store", "cstore-"],
+]:
+    option = words[1]
+    values = bash_store_candidates(words, line=f"secdat {option}={literal_child} --store cstore-")
+    if values != shell_quote_candidates(effective_store_names):
+        raise SystemExit(f"FAIL: Bash split context option {words!r}: {values!r}")
+
+values = bash_store_candidates(
+    ["secdat", "--dir", literal_child, "--store", "=", "cstore-"],
+    line=f"secdat --dir {literal_child} --store = cstore-",
+)
+if values:
+    raise SystemExit(f"FAIL: Bash whitespace-separated equals was treated as attached syntax: {values!r}")
+
+for name in special_stores:
+    values = bash_store_candidates(["secdat", "--dir", literal_child, "store", "delete", name])
+    if values != shell_quote_candidates([name]):
+        raise SystemExit(f"FAIL: Bash special store name was changed: {name!r} -> {values!r}")
+
+values = bash_store_candidates(["secdat", "--dir", literal_child, "store", "delete", "-cstore-"])
+if values != shell_quote_candidates(["-cstore-dash"]):
+    raise SystemExit(f"FAIL: Bash leading-dash store name was mistaken for an option: {values!r}")
+
+for suffix, line_suffix in [
+    ([""], ""),
+    (["foo", "=", "bar", ""], "foo=bar "),
+    (["foo", ":", "bar", ""], "foo:bar "),
+]:
+    words = ["secdat", f"-d{literal_child}", "exec", "--", "printf", *suffix]
+    values = bash_store_candidates(words, line=f"secdat -d{literal_child} exec -- printf {line_suffix}")
+    if values != ["delegate-offset:4"]:
+        raise SystemExit(f"FAIL: Bash normalization changed child delegation offset: {words!r} -> {values!r}")
+
+# A slash in a store name is not a request for filesystem directory
+# completion. Deliberately provide a matching real directory as a trap.
+os.makedirs(os.path.join(work_root, "cstore-slash", "not-a-store"))
+os.makedirs(os.path.join(work_root, "cstore-slash", "name"))
+os.makedirs(os.path.join(work_root, "cstore-child"))
+values = bash_store_candidates(
+    ["secdat", "--dir", literal_child, "--store", "cstore-slash/"], cwd=work_root
+)
+if values != shell_quote_candidates(["cstore-slash/name"]):
+    raise SystemExit(f"FAIL: Bash store completion mixed filesystem paths: {values!r}")
+if os.path.exists(shell_eval_marker):
+    raise SystemExit("FAIL: a store name was evaluated as shell code")
+
+
+def check_readline_insertion():
+    # COMPREPLY alone cannot prove that Readline inserts one literal argument:
+    # quoting, word breaks and filename mode all affect the executed argv.
+    prompt = b"__SECDAT_COMPLETION_PROMPT__ "
+    result_path = os.path.join(work_root, "readline-argv")
+    interactive_env = {
+        **env, "PS1": prompt.decode("ascii"), "TERM": "xterm",
+        "SECDAT_COMPLETION_BIN": bin_path,
+    }
+    interactive_env.pop("PROMPT_COMMAND", None)
+    child, terminal = pty.fork()
+    if child == 0:
+        os.chdir(work_root)
+        os.execve("/bin/bash", ["bash", "--noprofile", "--norc", "-i"], interactive_env)
+
+    case_label = "shell startup"
+
+    def read_prompt():
+        output = b""
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if select.select([terminal], [], [], 0.1)[0]:
+                try:
+                    chunk = os.read(terminal, 65536)
+                except OSError as error:
+                    raise SystemExit(f"FAIL: Readline shell exited: {output!r}: {error}")
+                if not chunk:
+                    break
+                output += chunk
+                if output.endswith(prompt):
+                    return output
+        raise SystemExit(f"FAIL: timed out waiting for Readline prompt ({case_label}): {output!r}")
+
+    def send_line(line):
+        os.write(terminal, line)
+        return read_prompt()
+
+    cases = [
+        ("--store cstore-ch", ["--store", "cstore-child"]),
+        ("--store cstore-space", ["--store", "cstore-space name"]),
+        ("--store cstore-quote", ["--store", "cstore-quote'\"\\name"]),
+        ("--store cstore-colon:na", ["--store", "cstore-colon:name"]),
+        ("--store cstore-equals=na", ["--store", "cstore-equals=name"]),
+        ("--store cstore-trailing", ["--store", "cstore-trailing\n"]),
+        ("--store cstore-slash/na", ["--store", "cstore-slash/name"]),
+        ("--store 'cstore-space", ["--store", "cstore-space name"]),
+        ('--store "cstore-space', ["--store", "cstore-space name"]),
+        ("--store 'cstore-quote", ["--store", "cstore-quote'\"\\name"]),
+        ('--store "cstore-quote', ["--store", "cstore-quote'\"\\name"]),
+        ("--store=cstore-ch", ["--store=cstore-child"]),
+        ("-scstore-ch", ["-scstore-child"]),
+        ("store delete -cstore-da", ["store", "delete", "-cstore-dash"]),
+        ("--store cstore-\\$", ["--store", special_stores[7]]),
+        ("--store $'cstore-spa'", ["--store", "cstore-space name"]),
+        ("--store $'cstore-\\x73pa'", ["--store", "cstore-space name"]),
+        ("--store $'cstore-\\163pa'", ["--store", "cstore-space name"]),
+        ("--store $'cstore-spa", ["--store", "cstore-space name"]),
+        ("--store cstore-ansi", ["--store", "cstore-ansi'quote\nend"]),
+        ("--store $'cstore-ansi\\'quote\\n'", ["--store", "cstore-ansi'quote\nend"]),
+        ("--store $'cstore-control\\cA'", ["--store", "cstore-control\x01end"]),
+        (
+            "--store " + shell_quote_candidates(["cstore-ansi'quote\nend"])[0],
+            ["--store", "cstore-ansi'quote\nend"],
+        ),
+    ]
+    try:
+        read_prompt()
+        setup = (
+            f"source {shlex.quote(completion_script)}; "
+            f"secdat() {{ printf '%s\\0' \"$@\" > {shlex.quote(result_path)}; }}; "
+            "bind 'set bell-style none'"
+        )
+        send_line(setup.encode("utf-8") + b"\n")
+        helper_path = "/usr/share/bash-completion/bash_completion"
+        for with_helper in [False, True] if os.path.isfile(helper_path) else [False]:
+            if with_helper:
+                send_line(f"source {shlex.quote(helper_path)}\n".encode("utf-8"))
+            for typed, expected in cases:
+                case_label = f"helper={with_helper}, input={typed!r}"
+                if os.path.exists(result_path):
+                    os.unlink(result_path)
+                command = f"secdat --dir {shlex.quote(literal_child)} {typed}"
+                rendered = send_line(command.encode("utf-8") + b"\t\n")
+                if os.path.exists(result_path):
+                    with open(result_path, "rb") as stream:
+                        actual = stream.read().split(b"\0")[:-1]
+                else:
+                    actual = []
+                expected_bytes = [value.encode("utf-8") for value in ["--dir", literal_child, *expected]]
+                if actual != expected_bytes:
+                    raise SystemExit(
+                        f"FAIL: Readline store insertion (helper={with_helper}) for {typed!r}: "
+                        f"argv={actual!r} expected={expected_bytes!r} terminal={rendered!r}"
+                    )
+    finally:
+        # Never leave the interactive child behind after an assertion/timeout.
+        try:
+            os.kill(child, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            exited, _ = os.waitpid(child, os.WNOHANG)
+            if exited:
+                break
+            time.sleep(0.05)
+        else:
+            os.kill(child, signal.SIGKILL)
+            os.waitpid(child, 0)
+        os.close(terminal)
+    if os.path.exists(shell_eval_marker):
+        raise SystemExit("FAIL: Readline completion executed a store name")
+
+
+check_readline_insertion()
+
+
+def tree_contents(root):
+    snapshot = []
+    for directory, directories, files in os.walk(root):
+        directories.sort()
+        for name in sorted(directories + files):
+            path = os.path.join(directory, name)
+            info = os.lstat(path)
+            digest = None
+            if os.path.isfile(path) and not os.path.islink(path):
+                with open(path, "rb") as stream:
+                    digest = hashlib.sha256(stream.read()).hexdigest()
+            snapshot.append((os.path.relpath(path, root), info.st_mode, digest))
+    return snapshot
+
+
+locked_env = {key: value for key, value in env.items() if key != "SECDAT_MASTER_KEY"}
+before_data = tree_contents(env["XDG_DATA_HOME"])
+before_runtime = tree_contents(env["XDG_RUNTIME_DIR"])
+assert_store_candidates(
+    ["--dir", literal_child, "--store", "cstore-"], effective_store_names, environment=locked_env
+)
+for command in ["delete", "migrate", "finalize-migration"]:
+    assert_store_candidates(
+        ["--dir", literal_child, "store", command, "cstore-"], local_store_names,
+        environment=locked_env,
+    )
+values = bash_store_candidates(
+    ["secdat", "--dir", literal_child, "--store", "cstore-"], environment=locked_env
+)
+if values != shell_quote_candidates(effective_store_names):
+    raise SystemExit(f"FAIL: Bash locked store metadata completion: {values!r}")
+if tree_contents(env["XDG_DATA_HOME"]) != before_data or tree_contents(env["XDG_RUNTIME_DIR"]) != before_runtime:
+    raise SystemExit("FAIL: store completion changed persistent data or session state")
 
 mode, values, _ = run_scoped_completion("--dir", literal_dir, "COMPLETION_")
 if mode != "plain":
